@@ -1,9 +1,9 @@
 ---
 name: Evaluate operation
 description: Quality scoring across type-specific dimensions — dispatches to quality evaluators, computes aggregate, supports JSON output and SQLite persistence
-status: WIP
+status: Done
 created_at: 2026-06-16T00:00:00.000Z
-updated_at: 2026-06-16T21:29:51.160Z
+updated_at: 2026-06-16T21:32:17.866Z
 folder: docs/tasks
 type: task
 feature-id: F011

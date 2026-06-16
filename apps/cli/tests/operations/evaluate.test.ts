@@ -1,12 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createDbAdapter, type DbAdapter } from '@gobing-ai/ts-db';
-import type { QualityReport } from '../../src/quality/dimensions';
 import { evaluate, formatEvaluationReport } from '../../src/operations/evaluate';
-import { evaluations } from '../../src/store/schema';
+import type { QualityReport } from '../../src/quality/dimensions';
 import { EvaluationDao } from '../../src/store/evaluations';
+import { evaluations } from '../../src/store/schema';
 
 /** Create a temp content file with frontmatter. */
 function createTempFile(content: string): string {
@@ -154,17 +154,26 @@ describe('evaluate', () => {
         expect(cmd.type).toBe('command');
 
         // Agent
-        writeFileSync(file, '---\nname: reviewer\ndescription: Code reviewer\nmodel: sonnet\n---\n\nYou are a code review specialist.');
+        writeFileSync(
+            file,
+            '---\nname: reviewer\ndescription: Code reviewer\nmodel: sonnet\n---\n\nYou are a code review specialist.',
+        );
         const agent = await evaluate('agent', file);
         expect(agent.type).toBe('agent');
 
         // Hook
-        writeFileSync(file, '---\nname: block-dangerous\ndescription: Blocks dangerous commands\nevent: PreToolUse\nenabled: true\n---\n\nHooks intercept.');
+        writeFileSync(
+            file,
+            '---\nname: block-dangerous\ndescription: Blocks dangerous commands\nevent: PreToolUse\nenabled: true\n---\n\nHooks intercept.',
+        );
         const hook = await evaluate('hook', file);
         expect(hook.type).toBe('hook');
 
         // Magent
-        writeFileSync(file, '---\nname: dev-agent\ndescription: Dev agent\nplatforms:\n  - claude\n---\n\n## IDENTITY\n\nAgent.\n\n## SOUL\n\nTone.\n\n## AGENTS\n\nOps.\n\n## USER\n\nProfile.');
+        writeFileSync(
+            file,
+            '---\nname: dev-agent\ndescription: Dev agent\nplatforms:\n  - claude\n---\n\n## IDENTITY\n\nAgent.\n\n## SOUL\n\nTone.\n\n## AGENTS\n\nOps.\n\n## USER\n\nProfile.',
+        );
         const magent = await evaluate('magent', file);
         expect(magent.type).toBe('magent');
     });
