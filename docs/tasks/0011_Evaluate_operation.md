@@ -11,11 +11,11 @@ priority: high
 estimated_hours: 4
 tags: ["operations","quality","evaluation","scoring"]
 impl_progress:
-  planning: pending
-  design: pending
-  implementation: pending
-  review: pending
-  testing: pending
+  planning: done
+  design: done
+  implementation: done
+  review: done
+  testing: done
 ---
 
 ## 0011. Evaluate operation
@@ -235,6 +235,21 @@ The `formatEvaluationReport` function is tested in a separate test file (`tests/
 
 **Verdict:** PASS
 
+#### Re-verification — 2026-06-16 (`/rd3:dev-verify 0011 --force --fix all`)
+
+**Verdict:** PASS — Phase 7 (SECU, all dimensions) + Phase 8 (R1–R15 traceability).
+
+- Gate: `bun run lint` clean (Biome + typecheck, 70 files). `bun test evaluate.test.ts` → 14 pass / 0 fail; evaluate.ts 100% funcs / 100% lines.
+- Phase 7: 0×P1, 0×P2, 0×P3, 1×P4 (cosmetic, see below). Read-only evaluator + local SQLite write via parameterized F008 DAO — no injection/secrets/auth surface; lazy store import on `--save`; `--save` errors → stderr, never fail the evaluation.
+- Phase 8: 15/15 requirements MET, no scope drift, no untraced code. Dependencies confirmed: 5 F009 evaluators, F007 identity/hash, F008 openStore/EvaluationDao (DAO JSON-stringifies `dimensions` internally — no double-stringify in evaluate).
+- Working tree: clean (no uncommitted changes to evaluate source/test).
+- Fix pass: no-op (verdict PASS; the lone P4 is cosmetic — left unchanged to avoid risk on green code).
+
+**P4 — Suggestions (re-verification)**
+| # | Title | Dimension | Location | Recommendation |
+|---|-------|-----------|----------|----------------|
+| 1 | Unsafe cast of `opts.operation` (arbitrary string) to the operation union | Correctness | apps/cli/src/operations/evaluate.ts:107 | Validate against the allowed set or type `operation` as the union in `EvaluateOptions`. Runtime-safe today (store enum rejects invalid values; no caller passes one). Cosmetic. |
+
 - **R1–R4 (API):** `evaluate(type, nameOrPath, opts?)`, `EvaluateOptions` (target, json, save, operation, adapter), `EvaluationResult` alias, `formatEvaluationReport` — all exported.
 - **R5 (Type dispatch):** `EVALUATORS` record mapping `ContentType` to F009 evaluator functions — skill, command, agent, hook, magent.
 - **R6 (Aggregate):** Uses F009's `computeAggregate` via evaluators — equal-weighted mean.
@@ -250,10 +265,10 @@ The `formatEvaluationReport` function is tested in a separate test file (`tests/
 ### Testing
 
 - **Command:** `bun run test`
-- **Executed:** 2026-06-16
-- **Scope:** 14 tests — file access, target resolution, dispatch, save with adapter, save failure resilience, operation override, formatValidation human/JSON
-- **Result:** All 14 pass, 0 fail
-- **Coverage:** evaluate.ts at 100% funcs, 100% lines
+- **Executed:** 2026-06-16 (re-verified)
+- **Scope:** 14 tests — file access, target resolution, dispatch, save with adapter, save failure resilience, operation override, formatEvaluationReport human/JSON
+- **Result:** 14 pass, 0 fail in evaluate.test.ts; 332 pass, 0 fail across 27 files (full suite)
+- **Coverage:** evaluate.ts 100% funcs, 100% lines; 99.67% funcs / 98.08% lines aggregate
 - **Evidence:** `apps/cli/tests/operations/evaluate.test.ts`
 - **Next action:** None — all gates pass.
 
@@ -272,10 +287,6 @@ The `formatEvaluationReport` function is tested in a separate test file (`tests/
 | # | Title | Dimension | Location | Recommendation |
 |---|-------|-----------|----------|----------------|
 | _none_ | | | | |
-
-
-### Testing
-
 
 
 ### Artifacts
