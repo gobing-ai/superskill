@@ -11,11 +11,11 @@ priority: high
 estimated_hours: 6
 tags: ["operations","evolve","self-improvement","longitudinal"]
 impl_progress:
-  planning: pending
-  design: pending
-  implementation: pending
-  review: pending
-  testing: pending
+  planning: done
+  design: done
+  implementation: done
+  review: done
+  testing: done
 ---
 
 ## 0013. Evolve operation
@@ -381,6 +381,23 @@ const postScore = postReport.aggregate;
 
 **Verdict:** PASS
 
+#### Re-verification — 2026-06-16 (`/rd3:dev-verify 0013 --force --fix all`)
+
+**Verdict:** PASS (after fix pass — initial verdict **FAIL**: 2× P2 functional bugs + a third hidden by the untested orchestrator).
+
+- Gate: `bun run lint` clean (Biome + typecheck, 74 files). `bun test evolve.test.ts` → 26 pass / 0 fail; evolve.ts 96.15% funcs / 90.39% lines (was 42.86% / 16.51%). Full suite: 392 pass / 0 fail across 29 files.
+- Root cause: the **entire orchestration layer was untested** (only the 3 pure functions had tests). That masked three real bugs. SECU otherwise clean: parameterized DAOs, no injection/secrets, `applyChange` for all mutations, guarded `JSON.parse`.
+
+**Bugs found & fixed (initial P2/FAIL → resolved):**
+| # | Title | Dimension | Location | Fix |
+|---|-------|-----------|----------|-----|
+| 1 | R9: `updateProposalStatus(Number(proposalId))` where `proposalId` is the string `<type>-evolve-…` → always `NaN`; proposal status never marked accepted | Correctness | evolve.ts `stepApply` | Thread the numeric DB id from `stepPropose` (`proposalDbId`) into `stepApply`. |
+| 2 | R10: `stepVerify` re-evaluated for display only — no `save:true`, no `operation:'evolve'` persisted, no `verify_id` link back to the proposal | Correctness | evolve.ts `stepVerify` | Call `evaluate(..., {save:true, operation:'evolve', adapter:db})`, then link `verify_id` via `getLatestEvaluation`. |
+| 3 | R8: `--accept <id>` / `--reject <id>` still ran `stepPropose` (creating a *new* proposal) and applied/verified against that new id, so the *named* proposal was never marked accepted/rejected | Correctness | evolve.ts core | Short-circuit accept/reject **before** PROPOSE; apply & verify against the target proposal's own id. |
+
+- Tests added: in-memory-adapter orchestrator suite (propose-only, accept→R9+R10 assertions, reject, not-found, file-missing, no-history) + injectable-readline `interactiveReview` suite (accept/reject/edit/quit) — matching the `_createRl` seam refine (F012) uses. 16 → 26 tests.
+- Post-fix Phase 8: **14/14 MET**, no unmet, no partial, no scope drift.
+
 - **R1–R3 (API):** `evolve()`, `EvolveOptions`, `EvolveResult`, `TrendEntry`, `ProposedChange` — all exported. `computeTrends`, `generateChanges`, `generateProposalId` exported as pure functions.
 - **R4 (ANALYZE):** `stepAnalyze` queries evaluations via `EvaluationDao.getEvaluations`, filters by `opts.from` (epoch-millis comparison), computes trends via `computeTrends`. Throws with `code: 1` when no evaluations found.
 - **R5 (TrendTable):** `computeTrends(evaluations)` — ascending sort by `created_at`, per-dimension earliest/latest/delta/trend. Declining first, flat second, improving last; lowest latest first within group. Handles single eval, missing dimensions.
@@ -394,10 +411,10 @@ const postScore = postReport.aggregate;
 ### Testing
 
 - **Command:** `bun run test`
-- **Executed:** 2026-06-16
-- **Scope:** 16 tests — computeTrends (9), generateChanges (5), generateProposalId (2)
-- **Result:** 16 pass, 0 fail
-- **Coverage:** evolve.ts 42.86% funcs, 16.51% lines — pure functions well-covered; orchestrator requires DB/integration fixtures
+- **Executed:** 2026-06-16 (re-verified)
+- **Scope:** 26 tests — computeTrends (8), generateChanges (6), generateProposalId (2), orchestrator integration via in-memory adapter (6: propose-only, accept, reject, not-found, file-missing, no-history), interactiveReview via injectable readline (4: accept/reject/edit/quit)
+- **Result:** 26 pass, 0 fail in evolve.test.ts; 392 pass, 0 fail across 29 files (full suite)
+- **Coverage:** evolve.ts 96.15% funcs, 90.39% lines (meets the ≥90% target); 99.57% funcs / 97.80% lines aggregate. Remaining uncovered lines are defensive error branches.
 - **Evidence:** `apps/cli/tests/operations/evolve.test.ts`
 - **Next action:** None — all gates pass.
 
@@ -415,10 +432,6 @@ const postScore = postReport.aggregate;
 | # | Title | Dimension | Location | Recommendation |
 |---|-------|-----------|----------|----------------|
 | _none_ | | | | |
-
-
-### Testing
-
 
 
 ### Artifacts

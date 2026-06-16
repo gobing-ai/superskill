@@ -14,6 +14,7 @@ import { evaluate } from './evaluate';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
+/** Options controlling the evolve pipeline's behavior. */
 export interface EvolveOptions {
     target?: Target;
     /** ISO date string for filtering evaluations (only those after this date). */
@@ -28,6 +29,7 @@ export interface EvolveOptions {
     adapter?: DbAdapter;
 }
 
+/** A single dimension's trend over time: earliest score, latest score, delta, and trend direction. */
 export interface TrendEntry {
     dimension: string;
     earliest: number;
@@ -36,6 +38,7 @@ export interface TrendEntry {
     trend: 'improving' | 'declining' | 'flat';
 }
 
+/** A concrete change proposed by the evolve operation. */
 export interface ProposedChange {
     dimension: string;
     location: string;
@@ -44,6 +47,7 @@ export interface ProposedChange {
     reason: string;
 }
 
+/** Result of an evolve() call: baseline/post scores, delta, changes applied, and proposal path. */
 export interface EvolveResult {
     baselineScore: number;
     postScore: number;
@@ -51,7 +55,6 @@ export interface EvolveResult {
     changesApplied: number;
     proposalPath: string;
 }
-
 // ── Pure Helpers ─────────────────────────────────────────────────────────────
 
 /**
@@ -201,7 +204,13 @@ async function stepPropose(
     evaluations: Evaluation[],
     baselineScore: number,
     baselineDate: string,
-): Promise<{ proposalId: string; proposalPath: string; changes: ProposedChange[]; proposalRecord: Proposal }> {
+): Promise<{
+    proposalId: string;
+    proposalDbId: number;
+    proposalPath: string;
+    changes: ProposedChange[];
+    proposalRecord: Proposal;
+}> {
     const changes = generateChanges(report, trends);
     const proposalDao = new ProposalDao(db);
 
@@ -250,7 +259,7 @@ async function stepPropose(
         updated_at: 0,
     };
 
-    return { proposalId, proposalPath, changes, proposalRecord };
+    return { proposalId, proposalDbId: id, proposalPath, changes, proposalRecord };
 }
 
 function writeProposalFile(
@@ -307,11 +316,21 @@ function writeProposalFile(
 
 // ── Interactive Review ───────────────────────────────────────────────────────
 
-async function interactiveReview(
+/**
+ * Present proposed changes to the user via a readline interface.
+ * Displays a trend table first, then prompts accept/reject/edit/quit per change.
+ *
+ * @param changes  Proposed changes to review.
+ * @param trends  Trend entries for display.
+ * @param _createRl  Injectable readline factory for testing.
+ * @returns  Accepted and rejected changes.
+ */
+export async function interactiveReview(
     changes: ProposedChange[],
     trends: TrendEntry[],
+    _createRl: typeof createInterface = createInterface,
 ): Promise<{ accepted: ProposedChange[]; rejected: ProposedChange[] }> {
-    const rl = createInterface({ input: process.stdin, output: process.stdout });
+    const rl = _createRl({ input: process.stdin, output: process.stdout });
     const q = (prompt: string): Promise<string> => new Promise((resolve) => rl.question(prompt, resolve));
 
     // Display trend table
@@ -360,7 +379,7 @@ async function interactiveReview(
 async function stepApply(
     acceptedChanges: ProposedChange[],
     filePath: string,
-    proposalId: string,
+    proposalDbId: number,
     db: DbAdapter,
 ): Promise<number> {
     let content: string;
@@ -393,23 +412,36 @@ async function stepApply(
     await Bun.write(filePath, content);
 
     const proposalDao = new ProposalDao(db);
-    await proposalDao.updateProposalStatus(Number(proposalId), 'accepted', { applied_at: new Date().toISOString() });
+    await proposalDao.updateProposalStatus(proposalDbId, 'accepted', { applied_at: new Date().toISOString() });
 
     return applied;
 }
 
 async function stepVerify(
     type: ContentType,
-    _name: string,
+    name: string,
     filePath: string,
     baselineScore: number,
+    proposalDbId: number,
     opts: EvolveOptions | undefined,
     db: DbAdapter,
 ): Promise<{ postScore: number; delta: number }> {
     let postScore = baselineScore;
     try {
-        const report = await evaluate(type, filePath, { target: opts?.target, adapter: db });
+        // R10: persist the post-evolution evaluation with operation 'evolve' (reuses the same store adapter).
+        const report = await evaluate(type, filePath, {
+            target: opts?.target,
+            adapter: db,
+            save: true,
+            operation: 'evolve',
+        });
         postScore = report.aggregate;
+
+        // R10: link the proposal back to the verifying evaluation row.
+        const verifyEval = await new EvaluationDao(db).getLatestEvaluation(type, name);
+        if (verifyEval) {
+            await new ProposalDao(db).updateProposalStatus(proposalDbId, 'accepted', { verify_id: verifyEval.id });
+        }
     } catch {
         echoError('Cannot re-evaluate after changes.');
     }
@@ -482,8 +514,48 @@ export async function evolve(type: ContentType, name: string, opts?: EvolveOptio
         return { baselineScore, postScore: baselineScore, delta: 0, changesApplied: 0, proposalPath: '' };
     }
 
-    // Step 2: PROPOSE
-    const { proposalId, proposalPath, changes } = await stepPropose(
+    // Step 3 (early): --reject loads an existing proposal by id and rejects it; no new proposal, no apply.
+    if (opts?.rejectId) {
+        const proposalDao = new ProposalDao(db);
+        const existing = await proposalDao.getProposals(type, contentName);
+        const target = existing.find((p) => String(p.id) === opts.rejectId);
+        if (target) {
+            await proposalDao.updateProposalStatus(target.id, 'rejected');
+            echo(`Proposal ${opts.rejectId} rejected.`);
+        }
+        return { baselineScore, postScore: baselineScore, delta: 0, changesApplied: 0, proposalPath: '' };
+    }
+
+    // Step 3 (early): --accept loads an existing proposal by id and applies *its* changes against *its* id.
+    if (opts?.acceptId) {
+        const proposalDao = new ProposalDao(db);
+        const existing = await proposalDao.getProposals(type, contentName);
+        const target = existing.find((p) => String(p.id) === opts.acceptId);
+        if (!target) {
+            echoError(`Proposal ${opts.acceptId} not found for ${type}/${contentName}.`);
+            return { baselineScore, postScore: baselineScore, delta: 0, changesApplied: 0, proposalPath: '' };
+        }
+        let acceptedFromStore: ProposedChange[] = [];
+        try {
+            const json =
+                typeof target.proposal_json === 'string' ? JSON.parse(target.proposal_json) : target.proposal_json;
+            acceptedFromStore = (json?.changes as ProposedChange[]) ?? [];
+        } catch {
+            acceptedFromStore = [];
+        }
+        const appliedCount = await stepApply(acceptedFromStore, resolvedPath, target.id, db);
+        const verdict = await stepVerify(type, contentName, resolvedPath, baselineScore, target.id, opts, db);
+        return {
+            baselineScore,
+            postScore: verdict.postScore,
+            delta: verdict.delta,
+            changesApplied: appliedCount,
+            proposalPath: '',
+        };
+    }
+
+    // Step 2: PROPOSE (interactive and --propose-only paths create a fresh draft).
+    const { proposalDbId, proposalPath, changes } = await stepPropose(
         db,
         type,
         contentName,
@@ -494,49 +566,28 @@ export async function evolve(type: ContentType, name: string, opts?: EvolveOptio
         baselineDate,
     );
 
-    // Step 3: REVIEW
+    // Step 3: REVIEW — --propose-only writes the draft and stops.
     if (opts?.proposeOnly) {
         echo(`Proposal written to: ${proposalPath}`);
         return { baselineScore, postScore: baselineScore, delta: 0, changesApplied: 0, proposalPath };
     }
 
-    let acceptedChanges: ProposedChange[] = [];
-
-    if (opts?.rejectId) {
-        const proposalDao = new ProposalDao(db);
-        const proposals = await proposalDao.getProposals(type, contentName);
-        const target = proposals.find((p) => String(p.id) === opts.rejectId);
-        if (target) {
-            await proposalDao.updateProposalStatus(target.id, 'rejected');
-            echo(`Proposal ${opts.rejectId} rejected.`);
-        }
-        return { baselineScore, postScore: baselineScore, delta: 0, changesApplied: 0, proposalPath };
-    }
-
-    if (opts?.acceptId) {
-        const proposalDao = new ProposalDao(db);
-        const proposals = await proposalDao.getProposals(type, contentName);
-        const target = proposals.find((p) => String(p.id) === opts.acceptId);
-        if (target) {
-            try {
-                const json =
-                    typeof target.proposal_json === 'string' ? JSON.parse(target.proposal_json) : target.proposal_json;
-                acceptedChanges = (json?.changes as ProposedChange[]) ?? [];
-            } catch {
-                acceptedChanges = [];
-            }
-        }
-    } else {
-        // Interactive mode
-        const result = await interactiveReview(changes, trends);
-        acceptedChanges = result.accepted;
-    }
+    // Interactive mode
+    const { accepted: acceptedChanges } = await interactiveReview(changes, trends);
 
     // Step 4: APPLY
-    const changesApplied = await stepApply(acceptedChanges, resolvedPath, proposalId, db);
+    const changesApplied = await stepApply(acceptedChanges, resolvedPath, proposalDbId, db);
 
     // Step 5: VERIFY
-    const { postScore, delta } = await stepVerify(type, contentName, resolvedPath, baselineScore, opts, db);
+    const { postScore, delta } = await stepVerify(
+        type,
+        contentName,
+        resolvedPath,
+        baselineScore,
+        proposalDbId,
+        opts,
+        db,
+    );
 
     return { baselineScore, postScore, delta, changesApplied, proposalPath };
 }
