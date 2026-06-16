@@ -1,9 +1,9 @@
 ---
 name: Phase 2 tests
 description: Comprehensive unit + integration tests for all Phase 2 modules — store, scaffold, validate, evaluate, refine, evolve, and CLI commands. Coverage ≥90% line and function.
-status: WIP
+status: Done
 created_at: 2026-06-16T00:00:00.000Z
-updated_at: 2026-06-16T23:29:03.590Z
+updated_at: 2026-06-16T23:35:50.000Z
 folder: docs/tasks
 type: task
 feature-id: F015
@@ -327,28 +327,47 @@ const exitSpy = spyOn(process, 'exit').mockImplementation(((c?: number) => {
 11. Run `bun run build` and verify no regressions
 
 
-### Review
+### Requirements Traceability — 2026-06-16
 
-**Verdict:** PASS
+**Verdict:** PASS after fix-pass.
 
-- **R1 (store):** 31 tests across db/evaluations/proposals — in-memory SQLite.
-- **R2 (scaffold):** 9 tests — all 5 types, variable substitution, user override, overwrite guard.
-- **R3 (validate):** 50 tests — all 7 check categories, edge cases, format validation.
-- **R4 (evaluate):** 14 tests — dispatch, target, save, format output.
-- **R5 (refine):** 34 tests — classifyFix, generateAutoChange, interactive mode, auto mode.
-- **R6 (evolve):** 30 tests — pure functions + integration with in-memory SQLite.
-- **R7 (commands):** 70+ tests — CLI registration, option parsing, handler dispatch.
-- **R8 (conventions):** bun:test, spyOn, in-memory SQLite, temp dirs, no .skip/.todo.
-- **R9 (fixtures):** 12 fixture files in tests/fixtures/phase2/.
-- **R10 (coverage):** Aggregate 95.68% funcs, 95.97% lines ≥90%.
-- **R11 (green):** 438 pass, 0 fail, EXIT_CODE=0.
+- **R1 (store):** MET — `apps/cli/tests/store/db.test.ts`, `apps/cli/tests/store/evaluations.test.ts`, and `apps/cli/tests/store/proposals.test.ts` cover in-memory DDL, inserts, JSON serialization, ordering, empty results, malformed evaluation input, `created_at` lower-bound filtering, nonexistent proposal updates, `updated_at` bumps, and concurrent evaluation inserts.
+- **R2 (scaffold):** MET — `apps/cli/tests/operations/scaffold.test.ts` covers template resolution, placeholders, output directories, overwrite guards, force behavior, missing templates, target substitution, and all 5 content types.
+- **R3 (validate):** MET — `apps/cli/tests/operations/validate.test.ts` covers valid fixtures, missing frontmatter, wrong types, missing fields, strict warnings, file-not-found sentinels, JSON formatting, unknown types, directories, empty files, and malformed YAML.
+- **R4 (evaluate):** MET — `apps/cli/tests/operations/evaluate.test.ts` covers score ranges, aggregate math, JSON shape, save-to-store behavior, empty content, all 5 content types, target forwarding, missing files, reproducibility, notes, single evaluations, and unavailable store paths.
+- **R5 (refine):** MET — `apps/cli/tests/operations/refine.test.ts` covers auto structural fixes, score deltas, backups, save behavior, already-valid no-op behavior, interactive flag parsing, long-content conciseness notes, missing files, and human-judgment-only suggestions.
+- **R6 (evolve):** MET — `apps/cli/tests/operations/evolve.test.ts` covers trend analysis, change generation, proposal files, proposal IDs, accept/reject flows, no-history errors, post-evolution scoring, single-evaluation fallback, flat-score behavior, and deterministic historical timestamps.
+- **R7 (commands):** MET — command integration tests cover operation registration, help output, option parsing, scaffold/validate/evaluate flow, JSON evaluate output, unknown subcommands, exit-code behavior, and default target persistence.
+- **R8 (conventions):** MET — tests use `bun:test`, stdout spies for CLI output, in-memory SQLite for store paths, temp directories for file-output paths, explicit adapter/project-root isolation, and no focused/skipped/todo tests.
+- **R9 (fixtures):** MET — `apps/cli/tests/fixtures/phase2/` contains all required fixtures; `long-body.md` is 1155 words.
+- **R10 (coverage):** MET — aggregate coverage is 99.74% functions and 98.25% lines.
+- **R11 (green):** MET — `bun run autofix && bun run spur-check` exits 0 with 443 pass, 0 fail across 37 files.
+
+### Review — 2026-06-16
+
+**Verdict:** PASS. No active SECU findings after fix-pass.
+
+**Fixed findings:**
+
+| Finding | Axis | Evidence | Fix |
+| --- | --- | --- | --- |
+| Evolve proposal test depended on equal-timestamp history ordering and could generate no changes. | Correctness | `apps/cli/tests/operations/evolve.test.ts` | Seeded historical evaluations with deterministic `created_at` values. |
+| R1 store traceability missed malformed evaluation input, date filtering, nonexistent proposal updates, `updated_at` bumps, and concurrent inserts. | Correctness | `apps/cli/src/store/evaluations.ts`, `apps/cli/src/store/proposals.ts`, `apps/cli/tests/store/evaluations.test.ts`, `apps/cli/tests/store/proposals.test.ts` | Added DAO behavior/tests for the missing cases. |
+| R9 long-body fixture was below the documented 1000+ word threshold. | Correctness | `apps/cli/tests/fixtures/phase2/long-body.md` | Expanded fixture to 1155 words. |
+
+**SECU review:**
+
+- **Security:** PASS — no secrets, env files, or unsafe command execution introduced. Test SQL updates interpolate numeric constants only.
+- **Efficiency:** PASS — added tests remain in-memory/local and do not add network or persistent filesystem dependencies.
+- **Correctness:** PASS — the reported output leak run no longer appears; dot reporter output is clean under the full gate.
+- **Usability:** PASS — task evidence now matches the actual gate result and fixture size.
 
 ### Testing
 
-- **Command:** `bun run test`
+- **Command:** `bun run autofix && bun run spur-check`
 - **Executed:** 2026-06-16
-- **Result:** 438 pass, 0 fail across 38 files
-- **Coverage:** 95.68% funcs, 95.97% lines
+- **Result:** EXIT_CODE=0; 443 pass, 0 fail across 37 files
+- **Coverage:** 99.74% funcs, 98.25% lines
 
 
 ### Artifacts

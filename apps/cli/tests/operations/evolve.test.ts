@@ -222,16 +222,19 @@ describe('evolve — orchestrator', () => {
     /** Seed evaluations for skill 'widget' so trend analysis has history. */
     async function seedHistory(a: DbAdapter, scores: number[]): Promise<void> {
         const dao = new EvaluationDao(a);
-        for (const s of scores) {
-            await dao.insertEvaluation({
+        for (let i = 0; i < scores.length; i++) {
+            const score = scores[i];
+            if (score === undefined) continue;
+            const id = await dao.insertEvaluation({
                 content_type: 'skill',
                 content_name: 'widget',
                 target_agent: 'claude',
                 operation: 'evaluate',
-                aggregate: s,
-                dimensions: { clarity: { score: s, note: 'needs work' } },
+                aggregate: score,
+                dimensions: { clarity: { score, note: 'needs work' } },
                 file_hash: 'abc',
             });
+            await a.exec(`UPDATE evaluations SET created_at = ${Date.UTC(2026, 5, 1, 0, 0, i)} WHERE id = ${id}`);
         }
     }
 

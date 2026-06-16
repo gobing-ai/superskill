@@ -19,6 +19,11 @@ export interface Evaluation extends EvaluationInput {
     created_at: number;
 }
 
+type EvaluationFilter =
+    | { col: typeof evaluations.table.content_type; op: 'eq'; value: string }
+    | { col: typeof evaluations.table.content_name; op: 'eq'; value: string }
+    | { col: typeof evaluations.table.createdAt; op: 'gte'; value: number };
+
 /** Data access object for the evaluations table. */
 export class EvaluationDao extends EntityDao<typeof evaluations.table, typeof evaluations.table.id> {
     constructor(adapter: DbAdapter) {
@@ -42,13 +47,22 @@ export class EvaluationDao extends EntityDao<typeof evaluations.table, typeof ev
     }
 
     /** Get all evaluations for a given content type and name, newest first. */
-    async getEvaluations(contentType: string, contentName: string): Promise<Evaluation[]> {
+    async getEvaluations(
+        contentType: string,
+        contentName: string,
+        opts: { from?: number } = {},
+    ): Promise<Evaluation[]> {
+        const filters: EvaluationFilter[] = [
+            { col: evaluations.table.content_type, op: 'eq' as const, value: contentType },
+            { col: evaluations.table.content_name, op: 'eq' as const, value: contentName },
+        ];
+        if (opts.from !== undefined) {
+            filters.push({ col: evaluations.table.createdAt, op: 'gte' as const, value: opts.from });
+        }
+
         const rows = await this.list({
             where: {
-                and: [
-                    { col: evaluations.table.content_type, op: 'eq' as const, value: contentType },
-                    { col: evaluations.table.content_name, op: 'eq' as const, value: contentName },
-                ],
+                and: filters,
             },
             orderBy: [{ col: evaluations.table.createdAt, dir: 'desc' as const }],
         });

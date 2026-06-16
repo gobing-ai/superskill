@@ -48,11 +48,16 @@ export class ProposalDao extends EntityDao<typeof proposals.table, typeof propos
     }
 
     /** Update the status of a proposal by id, optionally setting `applied_at` and `verify_id`. */
-    async updateProposalStatus(id: number, status: Proposal['status'], opts?: UpdateProposalStatusOpts): Promise<void> {
+    async updateProposalStatus(
+        id: number,
+        status: Proposal['status'],
+        opts?: UpdateProposalStatusOpts,
+    ): Promise<Proposal | undefined> {
         const data: Record<string, unknown> = { status };
         if (opts?.applied_at !== undefined) data.applied_at = opts.applied_at;
         if (opts?.verify_id !== undefined) data.verify_id = opts.verify_id;
-        await this.update(id, data);
+        const row = await this.update(id, data);
+        return row ? deserializeProposal(row as unknown as Record<string, unknown>) : undefined;
     }
 
     /** Get all proposals for a given content type and name, newest first. */

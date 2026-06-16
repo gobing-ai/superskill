@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'bun:test';
 import { createDbAdapter, type DbAdapter } from '@gobing-ai/ts-db';
 import type { ProposalInput } from '../../src/store/proposals';
 import { ProposalDao } from '../../src/store/proposals';
@@ -26,6 +26,10 @@ describe('ProposalDao', () => {
         dao = new ProposalDao(adapter);
     });
 
+    afterEach(() => {
+        vi.useRealTimers();
+    });
+
     it('inserts a proposal with draft status', async () => {
         const id = await dao.insertProposal(sampleProposal);
         expect(id).toBeGreaterThan(0);
@@ -48,6 +52,20 @@ describe('ProposalDao', () => {
         const results = await dao.getProposals('skill', 'test-skill');
         expect(results[0]?.status).toBe('accepted');
         expect(results[0]?.applied_at).toBe('2026-06-16');
+    });
+
+    it('updateProposalStatus returns undefined for nonexistent proposal id', async () => {
+        await expect(dao.updateProposalStatus(9999, 'accepted')).resolves.toBeUndefined();
+    });
+
+    it('updateProposalStatus bumps updated_at', async () => {
+        vi.useFakeTimers();
+        const id = await dao.insertProposal(sampleProposal);
+        const before = (await dao.getProposals('skill', 'test-skill'))[0]?.updated_at ?? 0;
+        vi.advanceTimersByTime(10);
+        const updated = await dao.updateProposalStatus(id, 'accepted');
+
+        expect(updated?.updated_at).toBeGreaterThan(before);
     });
 
     it('updateProposalStatus sets optional verify_id', async () => {

@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'bun:test';
 import { createDbAdapter, type DbAdapter } from '@gobing-ai/ts-db';
 import type { EvaluationInput } from '../../src/store/evaluations';
 import { EvaluationDao } from '../../src/store/evaluations';
@@ -29,9 +29,19 @@ describe('EvaluationDao', () => {
         dao = new EvaluationDao(adapter);
     });
 
+    afterEach(() => {
+        vi.useRealTimers();
+    });
+
     it('inserts an evaluation and returns an id', async () => {
         const id = await dao.insertEvaluation(sampleEval);
         expect(id).toBeGreaterThan(0);
+    });
+
+    it('rejects malformed evaluation input', async () => {
+        await expect(
+            dao.insertEvaluation({ ...sampleEval, content_type: undefined } as unknown as EvaluationInput),
+        ).rejects.toThrow();
     });
 
     it('retrieves evaluations by content type and name', async () => {
@@ -50,7 +60,6 @@ describe('EvaluationDao', () => {
         await dao.insertEvaluation({ ...sampleEval, aggregate: 0.7 });
         vi.advanceTimersByTime(10);
         await dao.insertEvaluation({ ...sampleEval, aggregate: 0.9 });
-        vi.useRealTimers();
 
         const results = await dao.getEvaluations('skill', 'test-skill');
         expect(results).toHaveLength(2);
@@ -85,7 +94,6 @@ describe('EvaluationDao', () => {
         await dao.insertEvaluation({ ...sampleEval, aggregate: 0.6 });
         vi.advanceTimersByTime(10);
         await dao.insertEvaluation({ ...sampleEval, aggregate: 0.95 });
-        vi.useRealTimers();
 
         const latest = await dao.getLatestEvaluation('skill', 'test-skill');
         expect(latest).not.toBeNull();
@@ -100,6 +108,18 @@ describe('EvaluationDao', () => {
     it('getEvaluations returns empty array when no records', async () => {
         const results = await dao.getEvaluations('skill', 'nonexistent');
         expect(results).toEqual([]);
+    });
+
+    it('filters evaluations by created_at lower bound', async () => {
+        vi.useFakeTimers();
+        await dao.insertEvaluation({ ...sampleEval, aggregate: 0.7 });
+        vi.advanceTimersByTime(10);
+        const from = Date.now();
+        await dao.insertEvaluation({ ...sampleEval, aggregate: 0.9 });
+
+        const results = await dao.getEvaluations('skill', 'test-skill', { from });
+        expect(results).toHaveLength(1);
+        expect(results[0]?.aggregate).toBe(0.9);
     });
 
     it('filters by content_type and content_name independently', async () => {
@@ -117,5 +137,16 @@ describe('EvaluationDao', () => {
         await dao.insertEvaluation({ ...sampleEval, operation: 'refine' });
         const results = await dao.getEvaluations('skill', 'test-skill');
         expect(results[0]?.operation).toBe('refine');
+    });
+
+    it('concurrent inserts produce distinct increasing ids', async () => {
+        const [first, second] = await Promise.all([
+            dao.insertEvaluation({ ...sampleEval, aggregate: 0.7 }),
+            dao.insertEvaluation({ ...sampleEval, aggregate: 0.9 }),
+        ]);
+
+        expect(first).not.toBe(second);
+        expect(Math.max(first, second)).toBeGreaterThan(Math.min(first, second));
+        expect(await dao.getEvaluations('skill', 'test-skill')).toHaveLength(2);
     });
 });

@@ -5,7 +5,7 @@ rules:
   - id: coverage-gate
     description: "Per-file line coverage meets 70% threshold (read from lcov)"
     severity: error
-    enabled: false
+    enabled: true
     evaluator:
       type: coverage-gate
       config:
