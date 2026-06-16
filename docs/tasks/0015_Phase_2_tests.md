@@ -1,9 +1,9 @@
 ---
 name: Phase 2 tests
 description: Comprehensive unit + integration tests for all Phase 2 modules — store, scaffold, validate, evaluate, refine, evolve, and CLI commands. Coverage ≥90% line and function.
-status: Planned
+status: WIP
 created_at: 2026-06-16T00:00:00.000Z
-updated_at: 2026-06-16T00:00:00.000Z
+updated_at: 2026-06-16T23:29:03.590Z
 folder: docs/tasks
 type: task
 feature-id: F015
@@ -337,17 +337,30 @@ const exitSpy = spyOn(process, 'exit').mockImplementation(((c?: number) => {
 | _none_ | | | | |
 
 ### P2 — Warnings
-| # | Title | Dimension | Location | Recommendation |
-|---|-------|-----------|----------|----------------|
-| _none_ | | | | |
+### Review
 
-### P3 — Info
-| # | Title | Dimension | Location | Recommendation |
-|---|-------|-----------|----------|----------------|
-| _none_ | | | | |
+**Verdict:** PASS
 
-### P4 — Suggestions
-| # | Title | Dimension | Location | Recommendation |
+- **R1 (store):** Store DAO tests exist across `tests/store/db.test.ts`, `tests/store/evaluations.test.ts`, `tests/store/proposals.test.ts` — 31 tests using in-memory SQLite.
+- **R2 (scaffold):** `tests/operations/scaffold.test.ts` — 9 tests covering all 5 types, variable substitution, user template override, overwrite guard, force flag.
+- **R3 (validate):** `tests/operations/validate.test.ts` — 50 tests covering all 7 check categories, edge cases, format validation.
+- **R4 (evaluate):** `tests/operations/evaluate.test.ts` — 14 tests covering dispatch, target, save, format output.
+- **R5 (refine):** `tests/operations/refine.test.ts` — 34 tests covering classifyFix, generateAutoChange, interactive mode with mocked readline, auto mode, save.
+- **R6 (evolve):** `tests/operations/evolve.test.ts` — 30 tests covering pure functions (computeTrends, generateChanges, generateProposalId) + integration tests with in-memory SQLite.
+- **R7 (commands):** `tests/cli-smoke.test.ts`, `tests/commands/helpers.test.ts`, `tests/commands/<type>.test.ts` — 70+ tests covering CLI registration, option parsing, handler dispatch.
+- **R8 (conventions):** All tests use `bun:test`, `spyOn` for output, in-memory SQLite for DB, temp dirs for file I/O, no `.skip`/`.todo`.
+- **R9 (fixtures):** 12 fixture files in `apps/cli/tests/fixtures/phase2/` covering valid all 5 types, broken/empty/missing frontmatter, wrong types, long body, broken YAML.
+- **R10 (coverage):** Aggregate 95.68% funcs, 95.97% lines — well above ≥90% thresholds.
+- **R11 (green):** `bun run test` — 438 pass, 0 fail.
+
+### Testing
+
+- **Command:** `bun run test`
+- **Executed:** 2026-06-16
+- **Result:** 438 pass, 0 fail across 38 files. EXIT_CODE=0.
+- **Coverage:** 95.68% funcs, 95.97% lines
+- **Next action:** None — all gates pass.
+
 |---|-------|-----------|----------|----------------|
 | _none_ | | | | |
 
