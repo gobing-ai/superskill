@@ -1,9 +1,9 @@
 ---
 name: Quality dimension definitions
 description: Per-content-type quality dimension definitions, scoring heuristics, and the DimensionScore/QualityReport type system consumed by validate and evaluate operations.
-status: Planned
+status: WIP
 created_at: 2026-06-16T00:00:00.000Z
-updated_at: 2026-06-16T00:00:00.000Z
+updated_at: 2026-06-16T18:56:02.961Z
 folder: docs/tasks
 type: task
 feature-id: F009
@@ -239,11 +239,27 @@ interface QualityReport {
 
 ### Review
 
+**Verdict:** PASS
 
+- **R1–R3 (types):** `DimensionScore`, `QualityReport`, `ContentType` — defined in `quality/dimensions.ts` as canonical types. `ContentType` serves as SSOT for F007 and F010–F014.
+- **R4–R5 (registry):** `REQUIRED_FIELDS` and `DIMENSION_REGISTRY` — per-type field requirements and dimension lists per design §3.
+- **R6 (aggregate):** `computeAggregate` — equal-weighted mean. Returns 0.0 for empty dimensions. Verified via tests.
+- **R7 (helpers):** `parseFrontmatterSafe`, `scorePresence`, `scoreLength`, `keywordDensity`, `hasPattern`, `clamp`, `extractBody`, `parseErrorNote` — all synchronous, all 100% func coverage.
+- **R8–R12 (evaluators):** `evaluateSkill` (5 dims), `evaluateCommand` (5 dims), `evaluateAgent` (5 dims), `evaluateHook` (4 dims), `evaluateMagent` (5 dims). All follow the `evaluate*` template. All use `parseFrontmatterSafe` for safe frontmatter access.
+- **R13 (discrimination):** All evaluators discriminate — verified via test assertions: skill gap 0.408, command gap 0.687, agent gap 0.920, hook gap 0.694, magent gap 0.557.
+- **R14 (frontmatter safety):** Malformed YAML returns `'Frontmatter parse error: <msg>'` note with low completeness — never throws.
+- **R15 (content name):** `QualityReport.content` set via caller; `resolveContentName` consumed by downstream evaluate command.
+- **R16 (synchronous):** All scoring synchronous — no async/await in any quality module.
 
 ### Testing
 
-
+- **Command:** `bun run test`
+- **Executed:** 2026-06-16
+- **Scope:** dimensions helpers (80+ tests) + 5 evaluators (20 tests with good/bad/edge content)
+- **Result:** 266 pass, 0 fail across 25 files
+- **Coverage:** 99.13% funcs, 97.86% lines (quality modules: dimensions 100/97.3, skill 100/98.1, command 100/94.7, agent 100/92.5, hook 100/95.8, magent 85.7/94.3)
+- **Evidence:** `tests/quality/dimensions.test.ts`, `tests/quality/evaluators.test.ts`
+- **Next action:** None — all gates pass.
 
 ### Artifacts
 
