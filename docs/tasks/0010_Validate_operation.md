@@ -1,9 +1,9 @@
 ---
 name: Validate operation
 description: Structural + schema validation for all 5 content types — frontmatter, required fields, field types, format compliance, link validity
-status: WIP
+status: Done
 created_at: 2026-06-16T00:00:00.000Z
-updated_at: 2026-06-16T21:11:10.743Z
+updated_at: 2026-06-16T21:15:58.799Z
 folder: docs/tasks
 type: task
 feature-id: F010
@@ -11,11 +11,11 @@ priority: high
 estimated_hours: 4
 tags: ["operations","quality","validation"]
 impl_progress:
-  planning: pending
-  design: pending
-  implementation: pending
-  review: pending
-  testing: pending
+  planning: done
+  design: done
+  implementation: done
+  review: done
+  testing: done
 ---
 
 ## 0010. Validate operation
@@ -220,6 +220,21 @@ export function formatValidationResult(result: ValidationResult, json?: boolean)
 
 **Verdict:** PASS
 
+#### Re-verification — 2026-06-16 (`/rd3:dev-verify 0010 --force --fix all`)
+
+**Verdict:** PASS — Phase 7 (SECU, all dimensions) + Phase 8 (R1–R13 traceability).
+
+- Gate: `bun run lint` clean (Biome + typecheck, 68 files). `bun test validate.test.ts` → 50 pass / 0 fail; validate.ts 100% funcs / 95.51% lines.
+- Phase 7: 0×P1, 0×P2, 0×P3, 1×P4 (cosmetic, see below). Pure read-only validation — no injection/secrets/auth surface; linear scans only; anchored regexes (no ReDoS).
+- Phase 8: 13/13 requirements MET, no scope drift, no untraced code.
+- Working-tree delta since recorded run: +5 tests covering file-access integration paths (directory/empty/real file) and two type-branch edge cases → validate.ts line coverage 87.27% → 95.51%.
+- Fix pass: no-op (verdict PASS; the lone P4 is cosmetic — left unchanged to avoid risk on green code).
+
+**P4 — Suggestions (re-verification)**
+| # | Title | Dimension | Location | Recommendation |
+|---|-------|-----------|----------|----------------|
+| 1 | Generic "YAML parse error:" prefix for non-YAML frontmatter failures | Usability | apps/cli/src/operations/validate.ts:160 | Optionally branch on `FrontmatterError` subtype to surface "Missing frontmatter" vs "YAML parse error" distinctly. Cosmetic. |
+
 - **R1–R4 (API):** `validate(type, nameOrPath, opts?)`, `_validateContent(type, content, opts?)`, `formatValidationResult(result, json?)`, `ValidateOptions`, `Finding`, `ValidationResult` — all exported.
 - **R5 (Frontmatter):** Uses `parseFrontmatter` from F007. `FrontmatterError` becomes `error` finding on `field: 'frontmatter'` — never throws.
 - **R6 (Required fields):** Imports `REQUIRED_FIELDS` from F009. Each missing required field → `error` finding.
@@ -234,10 +249,10 @@ export function formatValidationResult(result: ValidationResult, json?: boolean)
 ### Testing
 
 - **Command:** `bun run test`
-- **Executed:** 2026-06-16
-- **Scope:** 45 tests covering all 7 check categories, edge cases, content type coverage, format validation
-- **Result:** 313 pass, 0 fail across 26 files
-- **Coverage:** 99.66% funcs, 97.70% lines (validate.ts 100% funcs, 87.27% lines — file-I/O paths uncovered, testable only via integration)
+- **Executed:** 2026-06-16 (re-verified)
+- **Scope:** 50 tests in validate.test.ts covering all 7 check categories, edge cases, content type coverage, format validation, and file-access integration paths (directory / empty file / real file)
+- **Result:** 318 pass, 0 fail across 26 files (full suite); validate.test.ts → 50 pass, 0 fail
+- **Coverage:** 99.66% funcs, 97.98% lines aggregate (validate.ts 100% funcs, 95.51% lines — remaining uncovered lines are defensive filesystem catch branches)
 - **Evidence:** `apps/cli/tests/operations/validate.test.ts`
 - **Next action:** None — all gates pass.
 
@@ -256,10 +271,6 @@ export function formatValidationResult(result: ValidationResult, json?: boolean)
 | # | Title | Dimension | Location | Recommendation |
 |---|-------|-----------|----------|----------------|
 | _none_ | | | | |
-
-
-### Testing
-
 
 
 ### Artifacts

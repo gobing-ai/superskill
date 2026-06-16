@@ -301,4 +301,63 @@ describe('validate — file access', () => {
         expect(result.findings[0]?.field).toBe('_file');
         expect(result.findings[0]?.message).toContain('File not found');
     });
+
+    it('returns sentinel for directory path', async () => {
+        const { mkdtempSync, rmSync } = await import('node:fs');
+        const { tmpdir } = await import('node:os');
+        const dir = mkdtempSync(`${tmpdir()}/superskill-validate-`);
+        try {
+            const result = await validate('skill', dir);
+            expect(result.valid).toBe(false);
+            expect(result.findings[0]?.field).toBe('_file');
+            expect(result.findings[0]?.message).toContain('directory');
+        } finally {
+            rmSync(dir, { recursive: true, force: true });
+        }
+    });
+
+    it('reports error for empty file', async () => {
+        const { mkdtempSync, rmSync, writeFileSync } = await import('node:fs');
+        const { tmpdir } = await import('node:os');
+        const dir = mkdtempSync(`${tmpdir()}/superskill-validate-`);
+        try {
+            const file = `${dir}/empty.md`;
+            writeFileSync(file, '');
+            const result = await validate('skill', file);
+            expect(result.valid).toBe(false);
+            expect(result.findings[0]?.field).toBe('frontmatter');
+            expect(result.findings[0]?.message).toContain('empty');
+        } finally {
+            rmSync(dir, { recursive: true, force: true });
+        }
+    });
+
+    it('successfully validates a real file', async () => {
+        const { mkdtempSync, rmSync, writeFileSync } = await import('node:fs');
+        const { tmpdir } = await import('node:os');
+        const dir = mkdtempSync(`${tmpdir()}/superskill-validate-`);
+        try {
+            const file = `${dir}/valid.md`;
+            writeFileSync(file, '---\nname: test\ndescription: A valid test skill\n---\n\nBody content.');
+            const result = await validate('skill', file);
+            expect(result.valid).toBe(true);
+            expect(result.findings).toHaveLength(0);
+        } finally {
+            rmSync(dir, { recursive: true, force: true });
+        }
+    });
+});
+
+describe('_validateContent — Additional type branches', () => {
+    it('reports error when string field has non-string value', () => {
+        // Parse YAML where name is an integer
+        const result = _validateContent('skill', '---\nname: 123\ndescription: d\n---\n\nBody.');
+        expect(result.findings.some((f) => f.field === 'name' && f.severity === 'error')).toBe(true);
+    });
+
+    it('reports error when enum field has non-string value', () => {
+        // model as integer
+        const result = _validateContent('agent', '---\nname: x\ndescription: d\nmodel: 42\n---\n\nBody.');
+        expect(result.findings.some((f) => f.field === 'model' && f.message.includes('must be a string'))).toBe(true);
+    });
 });

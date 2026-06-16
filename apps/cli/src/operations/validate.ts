@@ -7,6 +7,7 @@ import type { Target } from '../targets';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
+/** Options controlling validation strictness and target-aware checks. */
 export interface ValidateOptions {
     /** Enable optional/warning-level checks (min lengths, best-practice patterns). */
     strict?: boolean;
@@ -14,6 +15,7 @@ export interface ValidateOptions {
     target?: Target;
 }
 
+/** A single validation finding with severity, affected field, and human-readable message. */
 export interface Finding {
     severity: 'error' | 'warning';
     /** Frontmatter key, 'frontmatter' for parse failures, or '_file' for filesystem errors. */
@@ -22,6 +24,7 @@ export interface Finding {
     message: string;
 }
 
+/** Result of a validate() call: validity flag and list of findings. */
 export interface ValidationResult {
     /** `false` when any finding has severity `'error'`. */
     valid: boolean;
