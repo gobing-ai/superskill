@@ -121,6 +121,14 @@ function scoreSlashSyntax(body: string, data: Record<string, unknown>): Dimensio
 
 // ── Public API ─────────────────────────────────────────────────────────────────
 
+/**
+ * Evaluate command content against 5 quality dimensions: completeness, clarity,
+ * argument-hints, tool-references, and slash-syntax.
+ *
+ * @param content  Markdown content string with YAML frontmatter.
+ * @param target   Identifier for the content being evaluated.
+ * @returns        QualityReport with per-dimension scores and aggregate.
+ */
 export function evaluateCommand(content: string, target: string): QualityReport {
     const data = parseFrontmatterSafe(content) ?? {};
     const body = extractBody(content);

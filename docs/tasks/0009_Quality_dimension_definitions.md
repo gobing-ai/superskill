@@ -1,9 +1,9 @@
 ---
 name: Quality dimension definitions
 description: Per-content-type quality dimension definitions, scoring heuristics, and the DimensionScore/QualityReport type system consumed by validate and evaluate operations.
-status: WIP
+status: Done
 created_at: 2026-06-16T00:00:00.000Z
-updated_at: 2026-06-16T18:56:02.961Z
+updated_at: 2026-06-16T21:09:18.674Z
 folder: docs/tasks
 type: task
 feature-id: F009
@@ -11,11 +11,11 @@ priority: high
 estimated_hours: 5
 tags: ["foundation","quality","dimensions","evaluate"]
 impl_progress:
-    planning: pending
-    design: pending
-    implementation: pending
-    review: pending
-    testing: pending
+    planning: done
+    design: done
+    implementation: done
+    review: done
+    testing: done
 ---
 
 ## 0009. Quality dimension definitions
@@ -32,22 +32,25 @@ Design references: design doc §3 (quality dimensions by content type), design d
 
 ### Requirements
 
-- [ ] **R1** — `quality/dimensions.ts`: Export `DimensionScore` type: `{ score: number; note: string }` with score 0.0–1.0.
-- [ ] **R2** — `quality/dimensions.ts`: Export `QualityReport` type: `{ content: string; type: ContentType; target: Target; aggregate: number; dimensions: Record<string, DimensionScore> }`.
-- [ ] **R3** — `quality/dimensions.ts`: Export `ContentType` type: `'skill' | 'command' | 'agent' | 'hook' | 'magent'` — the canonical definition consumed by F007 `content/*` and F010–F014.
-- [ ] **R4** — `quality/dimensions.ts`: Export `REQUIRED_FIELDS: Record<ContentType, string[]>` — type-specific required frontmatter fields (e.g. `agent: ['name', 'description', 'model']`, `hook: ['name', 'description', 'event']`). Consumed by `validate` (F010); lives here so the field list has one owner.
-- [ ] **R5** — `quality/dimensions.ts`: Export `DIMENSION_REGISTRY: Record<ContentType, string[]>` mapping each content type to its dimension names per design §3.
-- [ ] **R6** — `quality/dimensions.ts`: Export `computeAggregate(dimensions: Record<string, DimensionScore>): number` — equal-weighted mean of all dimension scores. Returns 0.0 if no dimensions.
-- [ ] **R7** — `quality/dimensions.ts`: Export common heuristic helpers: `parseFrontmatterSafe(content)` (catches `FrontmatterError`, returns null on failure), `scorePresence(fields, required)` (0.0–1.0 based on fraction of required fields present), `scoreLength(text, min, max)` (0.0–1.0 based on character count within a sweet spot), `keywordDensity(text, keywords)` (0.0–1.0 based on fraction of keywords found), `hasPattern(text, regexes)` (0.0–1.0 based on fraction of patterns matched).
-- [ ] **R8** — `quality/skill.ts`: `evaluateSkill(content, target)` scores on completeness, clarity, trigger-accuracy, anti-hallucination, conciseness. Returns `QualityReport`.
-- [ ] **R9** — `quality/command.ts`: `evaluateCommand(content, target)` scores on completeness, clarity, argument-hints, tool-references, slash-syntax. Returns `QualityReport`.
-- [ ] **R10** — `quality/agent.ts`: `evaluateAgent(content, target)` scores on completeness, role-clarity, tool-selection, skill-linkage, model-fit. Returns `QualityReport`.
-- [ ] **R11** — `quality/hook.ts`: `evaluateHook(content, target)` scores on correctness, event-coverage, safety, pattern-match-quality (4 dimensions). Returns `QualityReport`.
-- [ ] **R12** — `quality/magent.ts`: `evaluateMagent(content, target)` scores on completeness, platform-coverage, conciseness, tone-consistency, safety. Returns `QualityReport`.
-- [ ] **R13** — Each dimension produces a meaningful score and note — scores must discriminate quality differences. Not all 1.0; not all 0.0. The heuristic MUST produce different scores for different content.
-- [ ] **R14** — All evaluate functions read frontmatter via F007's `parseFrontmatter`. Frontmatter that fails to parse yields a low `completeness` score with `'Frontmatter parse error: <message>'` as the note, rather than throwing.
-- [ ] **R15** — `QualityReport.content` is set via F007's `resolveContentName` when a path is available, else the caller-supplied name or empty string.
-- [ ] **R16** — All dimension scoring is synchronous. No async needed for heuristic checks.
+- [x] **R1** — `DimensionScore` type `{ score, note }` → **MET** | `quality/dimensions.ts:30`
+- [x] **R2** — `QualityReport` type → **MET** | `quality/dimensions.ts:36`
+- [x] **R3** — `ContentType` canonical union → **MET** | `quality/dimensions.ts:6`
+- [x] **R4** — `REQUIRED_FIELDS` per-type → **MET** | `quality/dimensions.ts:59`
+- [x] **R5** — `DIMENSION_REGISTRY` per §3 → **MET** | `quality/dimensions.ts:50`
+- [x] **R6** — `computeAggregate` equal-weighted mean, 0.0 when empty → **MET** | `quality/dimensions.ts:70`
+- [x] **R7** — heuristic helpers (`parseFrontmatterSafe`, `scorePresence`, `scoreLength`, `keywordDensity`, `hasPattern`) → **MET** | `quality/dimensions.ts:82-163`
+- [x] **R8** — `evaluateSkill` 5 dims → **MET** | `quality/skill.ts:26`
+- [x] **R9** — `evaluateCommand` 5 dims → **MET** | `quality/command.ts:132`
+- [x] **R10** — `evaluateAgent` 5 dims → **MET** | `quality/agent.ts:147`
+- [x] **R11** — `evaluateHook` 4 dims → **MET** | `quality/hook.ts:121`
+- [x] **R12** — `evaluateMagent` 5 dims → **MET** | `quality/magent.ts:88`
+- [x] **R13** — scores discriminate quality → **MET** | `evaluators.test.ts:35` + per-type `good.aggregate > bad.aggregate`
+- [x] **R14** — frontmatter parse failure → low completeness + error note, never throws → **MET** | `skill.ts:51`, `hook.ts:130`, `magent.ts:102`
+- [x] **R15** — `QualityReport.content` set via caller (`resolveContentName` when path available, else name/empty) → **MET** | evaluators emit `''`; caller (F014 evaluate) fills via `resolveContentName`
+- [x] **R16** — all scoring synchronous → **MET** | no `async`/`await` in `quality/`
+
+**Traceability:** 16/16 MET · 0 unmet · 0 partial · no scope drift. 6 new files all map to requirements; no untraced code.
+
 
 ### Q&A
 
@@ -239,38 +242,14 @@ interface QualityReport {
 
 ### Review
 
+## Review — 2026-06-16 (dev-verify --force --fix all)
+
+**Status:** 3 findings (1 P3 fixed, 2 P4 accepted)
+**Scope:** quality/{dimensions,skill,command,agent,hook,magent}.ts
+**Mode:** verify (Phase 7 SECU + Phase 8 traceability)
+**Channel:** current (inline)
+**Gate:** `bun run lint` → pass · `bun run test` → 268 pass / 0 fail (all quality modules 100% funcs)
 **Verdict:** PASS
-
-- **R1–R3 (types):** `DimensionScore`, `QualityReport`, `ContentType` — defined in `quality/dimensions.ts` as canonical types. `ContentType` serves as SSOT for F007 and F010–F014.
-- **R4–R5 (registry):** `REQUIRED_FIELDS` and `DIMENSION_REGISTRY` — per-type field requirements and dimension lists per design §3.
-- **R6 (aggregate):** `computeAggregate` — equal-weighted mean. Returns 0.0 for empty dimensions. Verified via tests.
-- **R7 (helpers):** `parseFrontmatterSafe`, `scorePresence`, `scoreLength`, `keywordDensity`, `hasPattern`, `clamp`, `extractBody`, `parseErrorNote` — all synchronous, all 100% func coverage.
-- **R8–R12 (evaluators):** `evaluateSkill` (5 dims), `evaluateCommand` (5 dims), `evaluateAgent` (5 dims), `evaluateHook` (4 dims), `evaluateMagent` (5 dims). All follow the `evaluate*` template. All use `parseFrontmatterSafe` for safe frontmatter access.
-- **R13 (discrimination):** All evaluators discriminate — verified via test assertions: skill gap 0.408, command gap 0.687, agent gap 0.920, hook gap 0.694, magent gap 0.557.
-- **R14 (frontmatter safety):** Malformed YAML returns `'Frontmatter parse error: <msg>'` note with low completeness — never throws.
-- **R15 (content name):** `QualityReport.content` set via caller; `resolveContentName` consumed by downstream evaluate command.
-- **R16 (synchronous):** All scoring synchronous — no async/await in any quality module.
-
-### Testing
-
-- **Command:** `bun run test`
-- **Executed:** 2026-06-16
-- **Scope:** dimensions helpers (80+ tests) + 5 evaluators (20 tests with good/bad/edge content)
-- **Result:** 266 pass, 0 fail across 25 files
-- **Coverage:** 99.13% funcs, 97.86% lines (quality modules: dimensions 100/97.3, skill 100/98.1, command 100/94.7, agent 100/92.5, hook 100/95.8, magent 85.7/94.3)
-- **Evidence:** `tests/quality/dimensions.test.ts`, `tests/quality/evaluators.test.ts`
-- **Next action:** None — all gates pass.
-
-### Artifacts
-
-| Type | Path | Agent | Date |
-| ---- | ---- | ----- | ---- |
-
-### References
-
-- Design doc: `docs/design/design-doc-phase2.md` §3 (quality dimensions by content type), §2.3 (evaluate operation)
-- Feature file: `docs/features/F009-quality-dimensions.md`
-- F007: `content/frontmatter.ts` (parseFrontmatter consumed by evaluate functions), `content/identity.ts` (resolveContentName)
 
 ### P1 — Blockers
 | # | Title | Dimension | Location | Recommendation |
@@ -283,7 +262,35 @@ interface QualityReport {
 ### P3 — Info
 | # | Title | Dimension | Location | Recommendation |
 |---|-------|-----------|----------|----------------|
+| 1 | `extractBody` dropped first 4 chars of frontmatter-less content (sliced past a non-existent opener) | Correctness | dimensions.ts:168 | FIXED — guard `startsWith('---\n')` returns whole string when no opener; closer now matches a bare `---` line (aligns with F007's hardened parser). Regression test added for the no-frontmatter case |
 
 ### P4 — Suggestions
 | # | Title | Dimension | Location | Recommendation |
 |---|-------|-----------|----------|----------------|
+| 2 | `parseFrontmatterSafe` called twice in `evaluateMagent` (data + fmNote derivation) | Efficiency | magent.ts:89-90 | ACCEPTED — micro-redundancy on a sub-ms heuristic; collapsing it adds branching without measurable benefit |
+| 3 | Coverage-recorded `magent` 85.7% funcs is stale (now 100%) | Maintainability | Testing section | NOTED — Testing section refreshed: 268 pass, all quality modules 100% funcs |
+
+**Fix-pass 2026-06-16:** 1 fixed (+1 regression test), 0 failed, 2 accepted-as-designed. Gate + full suite green after fix.
+
+
+### Testing
+
+- **Command:** `bun run test`
+- **Executed:** 2026-06-16 (re-confirmed during dev-verify; +1 regression test for extractBody)
+- **Scope:** dimensions helpers + 5 evaluators (good/bad/edge content, discrimination assertions)
+- **Result:** 268 pass, 0 fail across 26 files (full suite)
+- **Coverage:** all quality modules 100% funcs (dimensions 97.3% lines, skill 98.1, command 94.7, agent 92.5, hook 95.8, magent 100/100)
+- **Evidence:** `tests/quality/dimensions.test.ts` (helpers + extractBody incl. no-frontmatter regression), `tests/quality/evaluators.test.ts` (per-type good>bad aggregate)
+- **Next action:** None — all gates pass.
+
+
+### Artifacts
+
+| Type | Path | Agent | Date |
+| ---- | ---- | ----- | ---- |
+
+### References
+
+- Design doc: `docs/design/design-doc-phase2.md` §3 (quality dimensions by content type), §2.3 (evaluate operation)
+- Feature file: `docs/features/F009-quality-dimensions.md`
+- F007: `content/frontmatter.ts` (parseFrontmatter consumed by evaluate functions), `content/identity.ts` (resolveContentName)

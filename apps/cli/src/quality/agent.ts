@@ -136,6 +136,14 @@ function scoreModelFit(data: Record<string, unknown>): DimensionScore {
 
 // ── Public API ─────────────────────────────────────────────────────────────────
 
+/**
+ * Evaluate agent content against 5 quality dimensions: completeness, role-clarity,
+ * tool-selection, skill-linkage, and model-fit.
+ *
+ * @param content  Markdown content string with YAML frontmatter.
+ * @param target   Identifier for the content being evaluated.
+ * @returns        QualityReport with per-dimension scores and aggregate.
+ */
 export function evaluateAgent(content: string, target: string): QualityReport {
     const data = parseFrontmatterSafe(content) ?? {};
     const body = extractBody(content);

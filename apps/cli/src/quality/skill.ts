@@ -15,6 +15,14 @@ import {
 
 // ── Public API ─────────────────────────────────────────────────────────────────
 
+/**
+ * Evaluate skill content against 5 quality dimensions: completeness, clarity,
+ * trigger-accuracy, anti-hallucination, and conciseness.
+ *
+ * @param content  Markdown content string with YAML frontmatter.
+ * @param target   Identifier for the content being evaluated.
+ * @returns        QualityReport with per-dimension scores and aggregate.
+ */
 export function evaluateSkill(content: string, target: string): QualityReport {
     const data = parseFrontmatterSafe(content);
     const body = extractBody(content);

@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, it, spyOn } from 'bun:test';
 import {
     copyFileSync,
     existsSync,
@@ -32,6 +32,10 @@ function copyDirSync(src: string, dest: string): void {
 
 describe('executeInstall', () => {
     let tmpDir: string;
+
+    beforeEach(() => {
+        spyOn(process.stdout, 'write').mockImplementation(() => true);
+    });
 
     afterEach(() => {
         if (tmpDir) rmSync(tmpDir, { recursive: true, force: true });

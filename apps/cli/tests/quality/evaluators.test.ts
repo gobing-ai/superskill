@@ -354,4 +354,16 @@ describe('evaluateMagent', () => {
         expect(result.type).toBe('magent');
         expect(result.aggregate).toBeLessThanOrEqual(good.aggregate);
     });
+
+    it('handles platforms as comma-separated string', () => {
+        const content = makeSample(
+            `name: multi-platform
+description: Agent targeting multiple platforms
+platforms: claude, codex, pi`,
+            `## IDENTITY\nMulti-platform dev agent.\n\n## SOUL\nDirect and technical.\n\n## AGENTS\nOperations manual.\n\n## USER\nOperator profile.`,
+        );
+        const report = evaluateMagent(content, 'magent/multi.md');
+        expect(report.dimensions['platform-coverage']?.score).toBeGreaterThan(0.3);
+        expect(report.dimensions['platform-coverage']?.note).toContain('platforms covered');
+    });
 });

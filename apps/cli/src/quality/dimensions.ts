@@ -164,11 +164,17 @@ export function hasPattern(text: string, patterns: RegExp[]): number {
 
 /**
  * Extract the body text from content (everything after the closing `---`).
+ *
+ * Content without a leading `---` opener has no frontmatter — the whole string
+ * is the body. With an opener but no bare-`---` closer, returns everything after
+ * the opener line. The closer must be a bare `---` line (matching F007's parser),
+ * so `---` inside body text is not mistaken for the delimiter.
  */
 export function extractBody(content: string): string {
-    const closerIdx = content.indexOf('\n---', 4);
-    if (closerIdx === -1) return content.slice(4); // no closer, return after opener
-    return content.slice(closerIdx + 4);
+    if (!content.startsWith('---\n')) return content;
+    const closerMatch = content.slice(4).match(/\n---(?=\n|$)/);
+    if (closerMatch?.index === undefined) return content.slice(4); // opener but no closer
+    return content.slice(closerMatch.index + 4 + 4);
 }
 
 /** Clamp a number to [0, 1]. */

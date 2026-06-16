@@ -77,6 +77,14 @@ function scoreSafety(body: string): DimensionScore {
 
 // ── Public API ────────────────────────────────────────────────────────────────
 
+/**
+ * Evaluate magent content against 5 quality dimensions: completeness,
+ * platform-coverage, conciseness, tone-consistency, and safety.
+ *
+ * @param content  Markdown content string with YAML frontmatter.
+ * @param target   Identifier for the content being evaluated.
+ * @returns        QualityReport with per-dimension scores and aggregate.
+ */
 export function evaluateMagent(content: string, target: string): QualityReport {
     const data = parseFrontmatterSafe(content) ?? {};
     const fmNote = parseFrontmatterSafe(content) === null ? parseErrorNote(content, 'unknown parse error') : null;

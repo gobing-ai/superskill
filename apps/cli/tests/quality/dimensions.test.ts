@@ -354,6 +354,12 @@ describe('extractBody', () => {
         expect(extractBody('---\n')).toBe('');
     });
 
+    it('returns the whole string unchanged when there is no frontmatter opener', () => {
+        // Regression: previously sliced off the first 4 chars even with no `---\n` opener,
+        // corrupting the body for frontmatter-less content.
+        expect(extractBody(noFrontmatter)).toBe(noFrontmatter);
+    });
+
     it('does not treat --- within body text as a closer', () => {
         // The closer is only detected as `\n---` followed by end-of-string or newline,
         // and the search starts at index 4 (after the opener), so the first `\n---`
