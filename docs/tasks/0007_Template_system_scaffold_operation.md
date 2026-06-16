@@ -1,9 +1,9 @@
 ---
 name: Template system + scaffold operation + content-IO foundation
 description: Built-in templates, template resolution, scaffold operation, and the shared content-IO primitives (frontmatter parse/edit, content-name resolution, file hashing, change-apply) consumed by F009–F013.
-status: Planned
+status: WIP
 created_at: 2026-06-16T00:00:00.000Z
-updated_at: 2026-06-16T00:00:00.000Z
+updated_at: 2026-06-16T18:06:39.789Z
 folder: docs/tasks
 type: task
 feature-id: F007
@@ -210,10 +210,32 @@ interface ScaffoldOptions {
 
 ### Review
 
+**Verdict:** PASS
+
+- **SECU review:** All 16 requirements (R1–R16) implemented.
+- **R1–R8 (content/ modules):** `parseFrontmatter`, `applyFrontmatterChange`, `resolveContentName`, `resolveContentPath`, `hashContent`, `Change` type, `applyChange`, `getDataRoot`, `getDBPath`, `getProposalsDir` — all exported and functional.
+- **R9–R12 (templates + scaffold):** 5 templates created at `apps/cli/src/templates/<type>/default.md` with valid YAML frontmatter and `<!-- VARIABLE -->` placeholders. `scaffold()` resolves templates, substitutes variables, and writes output.
+- **R13 (Output):** `scaffold()` writes to `opts.output ?? cwd()` + `name.md`, returns created path.
+- **R14 (Overwrite guard):** Throws with `already exists — pass --force` message when target exists and `opts.force` not set.
+- **R15 (Deps + shipping):** `yaml@^2.9.0` added to `apps/cli/package.json` dependencies. `"templates"` added to `"files"` array.
+- **R16 (Output convention):** Phase 2 commands will use `process.stdout.write` — library modules (content/, operations/) are output-agnostic.
+- **Edge cases covered:** Empty frontmatter detection, array-as-mapping rejection, non-existent file hashing, text change match-not-found, overwrite guard, unknown type rejection, user template override.
 
 
 ### Testing
 
+- **Command:** `bun run test`
+- **Scope:** All new content/ modules (frontmatter, identity, hash, edit, paths) + operations/scaffold + template verification
+- **Result:** 162 pass, 0 fail across 20 files
+- **Coverage:** 99.44% funcs, 98.49% lines (all new modules at 100% funcs; scaffold 95.83% lines — production path `resolveTemplate` fallback unreachable in test env)
+- **Evidence:** 6 new test files created:
+  - `apps/cli/tests/content/frontmatter.test.ts` — 14 tests covering parse/apply/error
+  - `apps/cli/tests/content/identity.test.ts` — 10 tests covering name/path resolution
+  - `apps/cli/tests/content/hash.test.ts` — 4 tests covering hashing and error
+  - `apps/cli/tests/content/edit.test.ts` — 7 tests covering frontmatter+text changes
+  - `apps/cli/tests/content/paths.test.ts` — 4 tests covering data root resolution
+  - `apps/cli/tests/operations/scaffold.test.ts` — 9 tests covering all 5 types, substitution, overwrite guard, user override
+- **Next action:** None — all gates pass.
 
 
 ### Artifacts

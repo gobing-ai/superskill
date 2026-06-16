@@ -1,0 +1,106 @@
+import { describe, expect, it } from 'bun:test';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { resolveContentName, resolveContentPath } from '../../src/content/identity';
+
+describe('resolveContentName', () => {
+    it('strips directory and .md extension', () => {
+        expect(resolveContentName('/a/b/foo.md')).toBe('foo');
+    });
+
+    it('returns parent dir name for SKILL.md', () => {
+        expect(resolveContentName('/a/b/SKILL.md')).toBe('b');
+    });
+
+    it('returns parent dir name for SKILL.md at root-like path', () => {
+        expect(resolveContentName('/skills/my-skill/SKILL.md')).toBe('my-skill');
+    });
+
+    it('strips directory when file has no .md extension', () => {
+        expect(resolveContentName('/a/b/foo')).toBe('foo');
+    });
+
+    it('handles bare filename', () => {
+        expect(resolveContentName('foo.md')).toBe('foo');
+    });
+
+    it('handles bare SKILL.md', () => {
+        // basename(dirname('SKILL.md')) → '.'
+        expect(resolveContentName('SKILL.md')).toBe('.');
+    });
+});
+
+describe('resolveContentPath', () => {
+    let tmpDir: string;
+
+    function setup() {
+        tmpDir = mkdtempSync(join(tmpdir(), 'superskill-identity-test-'));
+    }
+
+    function teardown() {
+        if (tmpDir) rmSync(tmpDir, { recursive: true, force: true });
+    }
+
+    it('returns path when name is already an existing file path', () => {
+        setup();
+        try {
+            const filePath = join(tmpDir, 'existing.md');
+            writeFileSync(filePath, '---\nname: test\n---\n');
+            const result = resolveContentPath('skill', filePath, { baseDir: tmpDir });
+            expect(result).toBe(filePath);
+        } finally {
+            teardown();
+        }
+    });
+
+    it('finds file directly in baseDir', () => {
+        setup();
+        try {
+            const filePath = join(tmpDir, 'my-skill.md');
+            writeFileSync(filePath, '---\nname: test\n---\n');
+            const result = resolveContentPath('skill', 'my-skill', { baseDir: tmpDir });
+            expect(result).toBe(filePath);
+        } finally {
+            teardown();
+        }
+    });
+
+    it('finds skill in skills/ subdirectory', () => {
+        setup();
+        try {
+            const skillsDir = join(tmpDir, 'skills');
+            mkdirSync(skillsDir, { recursive: true });
+            const filePath = join(skillsDir, 'my-skill.md');
+            writeFileSync(filePath, '---\nname: test\n---\n');
+            const result = resolveContentPath('skill', 'my-skill', { baseDir: tmpDir });
+            expect(result).toBe(filePath);
+        } finally {
+            teardown();
+        }
+    });
+
+    it('finds command in commands/ subdirectory', () => {
+        setup();
+        try {
+            const cmdsDir = join(tmpDir, 'commands');
+            mkdirSync(cmdsDir, { recursive: true });
+            const filePath = join(cmdsDir, 'deploy.md');
+            writeFileSync(filePath, '---\nname: test\n---\n');
+            const result = resolveContentPath('command', 'deploy', { baseDir: tmpDir });
+            expect(result).toBe(filePath);
+        } finally {
+            teardown();
+        }
+    });
+
+    it('returns null when file not found', () => {
+        setup();
+        try {
+            const result = resolveContentPath('skill', 'nonexistent', { baseDir: tmpDir });
+            expect(result).toBeNull();
+        } finally {
+            teardown();
+        }
+    });
+});

@@ -1,0 +1,144 @@
+import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { homedir, tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { scaffold } from '../../src/operations/scaffold';
+
+describe('scaffold', () => {
+    let tmpDir: string;
+
+    beforeEach(() => {
+        tmpDir = mkdtempSync(join(tmpdir(), 'superskill-scaffold-test-'));
+    });
+
+    afterEach(() => {
+        if (tmpDir) rmSync(tmpDir, { recursive: true, force: true });
+    });
+
+    it('creates a skill file with substituted variables', async () => {
+        const filePath = await scaffold('skill', 'my-skill', {
+            description: 'A test skill',
+            output: tmpDir,
+        });
+
+        expect(filePath).toBe(join(tmpDir, 'my-skill.md'));
+        expect(existsSync(filePath)).toBe(true);
+
+        const content = readFileSync(filePath, 'utf-8');
+        expect(content).toContain('name: my-skill');
+        expect(content).toContain('description: A test skill');
+        expect(content).toContain('# my-skill');
+        expect(content).toContain('<!-- TODO: skill body -->');
+        // Verify <!-- NAME --> was replaced
+        expect(content).not.toContain('<!-- NAME -->');
+    });
+
+    it('creates a command file with target substitution', async () => {
+        const filePath = await scaffold('command', 'deploy', {
+            description: 'Deploy command',
+            target: 'codex',
+            output: tmpDir,
+        });
+
+        const content = readFileSync(filePath, 'utf-8');
+        expect(content).toContain('target: codex');
+        expect(content).toContain('```text\n/deploy\n```');
+    });
+
+    it('creates an agent file with model alias', async () => {
+        const filePath = await scaffold('agent', 'reviewer', {
+            description: 'Code reviewer',
+            output: tmpDir,
+        });
+
+        const content = readFileSync(filePath, 'utf-8');
+        expect(content).toContain('model: sonnet');
+        expect(content).toContain('agentType: task');
+    });
+
+    it('creates a hook file', async () => {
+        const filePath = await scaffold('hook', 'pre-commit', {
+            description: 'Pre-commit hook',
+            output: tmpDir,
+        });
+
+        const content = readFileSync(filePath, 'utf-8');
+        expect(content).toContain('event: PreToolUse');
+        expect(content).toContain('enabled: true');
+    });
+
+    it('creates a magent file with four sections', async () => {
+        const filePath = await scaffold('magent', 'my-agent', {
+            description: 'My agent',
+            output: tmpDir,
+        });
+
+        const content = readFileSync(filePath, 'utf-8');
+        expect(content).toContain('## IDENTITY');
+        expect(content).toContain('## SOUL');
+        expect(content).toContain('## AGENTS');
+        expect(content).toContain('## USER');
+        expect(content).toContain('platforms:');
+        expect(content).toContain('claude');
+    });
+
+    it('throws when file exists without force', async () => {
+        const filePath = join(tmpDir, 'my-skill.md');
+        writeFileSync(filePath, 'existing content');
+
+        await expect(scaffold('skill', 'my-skill', { output: tmpDir })).rejects.toThrow('already exists');
+    });
+
+    it('overwrites when force is true', async () => {
+        const filePath = join(tmpDir, 'my-skill.md');
+        writeFileSync(filePath, 'existing content');
+
+        const result = await scaffold('skill', 'my-skill', {
+            output: tmpDir,
+            force: true,
+        });
+
+        const content = readFileSync(result, 'utf-8');
+        expect(content).toContain('name: my-skill');
+    });
+
+    it('throws on unknown content type', async () => {
+        await expect(scaffold('unknown' as 'skill', 'test', { output: tmpDir })).rejects.toThrow(
+            'Unknown content type',
+        );
+    });
+
+    it('uses user template override when it exists', async () => {
+        // Create a user template that overrides the built-in
+        const userTemplateDir = join(homedir(), '.superskill', 'templates', 'skill');
+        try {
+            const { mkdirSync } = await import('node:fs');
+            mkdirSync(userTemplateDir, { recursive: true });
+            writeFileSync(
+                join(userTemplateDir, 'default.md'),
+                '---\nname: <!-- NAME -->\ndescription: <!-- DESCRIPTION -->\ncustom: true\n---\n\n# Custom <!-- NAME -->\n\nUser template body',
+            );
+
+            const filePath = await scaffold('skill', 'custom-skill', {
+                output: tmpDir,
+            });
+
+            const content = readFileSync(filePath, 'utf-8');
+            expect(content).toContain('custom: true');
+            expect(content).toContain('User template body');
+        } finally {
+            // Clean up user template
+            rmSync(join(homedir(), '.superskill', 'templates'), { recursive: true, force: true });
+        }
+    });
+
+    it('uses cwd as default output when no output specified', async () => {
+        const filePath = await scaffold('skill', 'cwd-test', {
+            output: tmpDir,
+        });
+
+        // File should be created in tmpDir (our explicit output)
+        expect(existsSync(filePath)).toBe(true);
+        expect(readFileSync(filePath, 'utf-8')).toContain('name: cwd-test');
+    });
+});
