@@ -3,7 +3,7 @@ name: Conversion pipeline + rulesync integration
 description: Conversion pipeline + rulesync integration
 status: Todo
 created_at: 2026-06-16T05:43:14.543Z
-updated_at: 2026-06-16T06:44:49.767Z
+updated_at: 2026-06-16T06:54:12.048Z
 folder: docs/tasks
 type: task
 feature-id: F003
