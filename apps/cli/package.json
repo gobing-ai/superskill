@@ -22,10 +22,14 @@
     },
     "dependencies": {
         "@gobing-ai/ts-ai-runner": "^0.3.19",
+        "@gobing-ai/ts-db": "^0.3.19",
         "@gobing-ai/ts-utils": "^0.3.19",
         "commander": "^14.0.0",
+        "drizzle-orm": "^0.44.0",
+        "drizzle-zod": "^0.7.0",
         "rulesync": "^8.28.1",
-        "yaml": "^2.9.0"
+        "yaml": "^2.9.0",
+        "zod": "^3.25.0"
     },
     "devDependencies": {
         "@types/bun": "1.3.14"
