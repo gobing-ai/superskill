@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'bun:test';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { listResolvablePlugins, resolvePlugin } from '../src/marketplace';
 
 describe('resolvePlugin', () => {
@@ -20,13 +20,38 @@ describe('resolvePlugin', () => {
         writeFileSync(
             join(claudePluginDir, 'marketplace.json'),
             JSON.stringify({
+                name: 'demo-marketplace',
+                owner: { name: 'Demo Team', email: 'demo@example.com' },
+                description: 'extra top-level field should be accepted',
                 plugins: [{ name: 'demo', source: './plugins/demo' }],
             }),
         );
 
         const result = resolvePlugin(join(claudePluginDir, 'marketplace.json'), 'demo');
         expect(result).not.toBeNull();
+        expect(result?.pluginRoot).toBe(resolve(pluginDir));
         expect(result?.source).toBe('./plugins/demo');
+    });
+
+    it('honors metadata.pluginRoot prefixing', () => {
+        tmpDir = mkdtempSync('superskill-mp-');
+        const claudePluginDir = join(tmpDir, '.claude-plugin');
+        mkdirSync(claudePluginDir, { recursive: true });
+        const pluginDir = join(tmpDir, 'plugins', 'demo');
+        mkdirSync(pluginDir, { recursive: true });
+        writeFileSync(join(pluginDir, 'plugin.json'), '{"name":"demo"}');
+        writeFileSync(
+            join(claudePluginDir, 'marketplace.json'),
+            JSON.stringify({
+                metadata: { pluginRoot: './plugins' },
+                plugins: [{ name: 'demo', source: './demo' }],
+            }),
+        );
+
+        const result = resolvePlugin(join(claudePluginDir, 'marketplace.json'), 'demo');
+
+        expect(result?.pluginRoot).toBe(resolve(pluginDir));
+        expect(result?.marketplaceRoot).toBe(resolve(tmpDir));
     });
 
     it('returns null when no marketplace found', () => {
@@ -54,6 +79,22 @@ describe('resolvePlugin', () => {
         writeFileSync(
             join(claudePluginDir, 'marketplace.json'),
             JSON.stringify({ plugins: [{ name: 'demo', source: 'github:user/repo' }] }),
+        );
+
+        expect(() => resolvePlugin(join(claudePluginDir, 'marketplace.json'), 'demo')).toThrow(
+            'Remote sources not yet supported',
+        );
+    });
+
+    it('throws on object source with the remote-source message', () => {
+        tmpDir = mkdtempSync('superskill-mp-');
+        const claudePluginDir = join(tmpDir, '.claude-plugin');
+        mkdirSync(claudePluginDir, { recursive: true });
+        writeFileSync(
+            join(claudePluginDir, 'marketplace.json'),
+            JSON.stringify({
+                plugins: [{ name: 'demo', source: { source: 'github', repo: 'owner/repo' } }],
+            }),
         );
 
         expect(() => resolvePlugin(join(claudePluginDir, 'marketplace.json'), 'demo')).toThrow(

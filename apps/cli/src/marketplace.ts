@@ -3,23 +3,33 @@ import { join, resolve } from 'node:path';
 import { z } from 'zod';
 
 /** A single plugin entry in a marketplace manifest. */
-const pluginEntrySchema = z.object({
-    name: z.string().min(1),
-    source: z.string().min(1),
-});
+const pluginEntrySchema = z
+    .object({
+        name: z.string().min(1),
+        source: z.union([z.string().min(1), z.object({ source: z.string().min(1) }).passthrough()]),
+    })
+    .passthrough();
 
 /** Marketplace manifest schema — passthrough for forward compat. */
-const marketplaceSchema = z.object({
-    name: z.string().optional(),
-    owner: z.string().optional(),
-    metadata: z
-        .object({
-            pluginRoot: z.string().optional(),
-        })
-        .passthrough()
-        .optional(),
-    plugins: z.array(pluginEntrySchema),
-});
+const marketplaceSchema = z
+    .object({
+        name: z.string().optional(),
+        owner: z
+            .object({
+                name: z.string().optional(),
+                email: z.string().optional(),
+            })
+            .passthrough()
+            .optional(),
+        metadata: z
+            .object({
+                pluginRoot: z.string().optional(),
+            })
+            .passthrough()
+            .optional(),
+        plugins: z.array(pluginEntrySchema),
+    })
+    .passthrough();
 /** Parsed marketplace manifest. */
 export type MarketplaceManifest = z.infer<typeof marketplaceSchema>;
 
@@ -84,8 +94,14 @@ export function resolvePlugin(marketplacePath: string | undefined, pluginName: s
 
     const source = entry.source;
 
+    if (typeof source !== 'string') {
+        throw new Error(
+            `Remote sources not yet supported for plugin '${pluginName}'. Phase 1 only supports relative-path sources (starting with './').`,
+        );
+    }
+
     // Reject remote sources (Phase 1: only relative paths)
-    if (typeof source !== 'string' || (!source.startsWith('./') && !source.startsWith('../'))) {
+    if (!source.startsWith('./') && !source.startsWith('../')) {
         throw new Error(
             `Remote sources not yet supported for plugin '${pluginName}'. Phase 1 only supports relative-path sources (starting with './').`,
         );
