@@ -1,9 +1,9 @@
 ---
 name: Five type command files
 description: Wire all 5 content types (agent, skill, command, hook, magent) into Commander subcommands — each with scaffold, validate, evaluate, refine, and evolve operations. Plus shared option helpers and cli.ts registration.
-status: WIP
+status: Done
 created_at: 2026-06-16T00:00:00.000Z
-updated_at: 2026-06-16T22:43:43.250Z
+updated_at: 2026-06-16T23:27:06.000Z
 folder: docs/tasks
 type: task
 feature-id: F014
@@ -211,6 +211,23 @@ The variable name `cmd` (instead of `command`) avoids shadowing the Commander me
 - Errors → `process.stderr.write` (reserved for errors only)
 - `--save` → silent persistence behind normal output; errors surfaced
 
+### Requirements Traceability — 2026-06-16
+
+- [x] **R1**: All five command modules export the required `register<Type>(program)` functions and register 5 subcommands → **MET** | Evidence: `apps/cli/src/commands/agent.ts:155 registerAgent()`, `apps/cli/src/commands/skill.ts:141 registerSkill()`, `apps/cli/src/commands/command.ts:155 registerCommand()`, `apps/cli/src/commands/hook.ts:133 registerHook()`, `apps/cli/src/commands/magent.ts:155 registerMagent()`, `apps/cli/tests/commands/content-command-modules.test.ts:43`
+- [x] **R2**: `agent` scaffold/validate/evaluate/refine/evolve wire to operations with type `'agent'` → **MET** | Evidence: `apps/cli/src/commands/agent.ts:21`, `apps/cli/src/commands/agent.ts:39`, `apps/cli/src/commands/agent.ts:53`, `apps/cli/src/commands/agent.ts:66`, `apps/cli/src/commands/agent.ts:77`
+- [x] **R3**: `skill` scaffold/validate/evaluate/refine/evolve wire to operations with type `'skill'` → **MET** | Evidence: `apps/cli/src/commands/skill.ts:20`, `apps/cli/src/commands/skill.ts:38`, `apps/cli/src/commands/skill.ts:52`, `apps/cli/src/commands/skill.ts:65`, `apps/cli/src/commands/skill.ts:76`
+- [x] **R4**: `command` scaffold/validate/evaluate/refine/evolve wire to operations with type `'command'` → **MET** | Evidence: `apps/cli/src/commands/command.ts:21`, `apps/cli/src/commands/command.ts:39`, `apps/cli/src/commands/command.ts:53`, `apps/cli/src/commands/command.ts:66`, `apps/cli/src/commands/command.ts:77`
+- [x] **R5**: `hook` scaffold/validate/evaluate/refine/evolve wire to operations with type `'hook'` → **MET** | Evidence: `apps/cli/src/commands/hook.ts:66`, `apps/cli/src/commands/hook.ts:78`, `apps/cli/src/commands/hook.ts:91`, `apps/cli/src/commands/hook.ts:103`, `apps/cli/src/commands/hook.ts:113`
+- [x] **R6**: `magent` scaffold/validate/evaluate/refine/evolve wire to operations with type `'magent'` → **MET** | Evidence: `apps/cli/src/commands/magent.ts:21`, `apps/cli/src/commands/magent.ts:39`, `apps/cli/src/commands/magent.ts:53`, `apps/cli/src/commands/magent.ts:66`, `apps/cli/src/commands/magent.ts:77`
+- [x] **R7**: Operation options match scaffold/validate/evaluate/refine/evolve requirements → **MET** | Evidence: `apps/cli/src/commands/helpers.ts:6 addTargetOption()`, `apps/cli/src/commands/helpers.ts:12 addScaffoldOptions()`, `apps/cli/src/commands/helpers.ts:21 addEvolveOptions()`, `apps/cli/src/commands/helpers.ts:31`, `apps/cli/src/commands/helpers.ts:36`, `apps/cli/src/commands/helpers.ts:41`, `apps/cli/src/commands/helpers.ts:46`
+- [x] **R8**: Shared helper deliverable exists for options, target resolution, run operation, and validation exit mapping → **MET** | Evidence: `apps/cli/src/commands/helpers.ts:1`
+- [x] **R9**: `cli.ts` imports and calls all five registration functions after `registerInstall()` → **MET** | Evidence: `apps/cli/src/cli.ts:2`, `apps/cli/src/cli.ts:16`
+- [x] **R10**: Help output exposes all operations and operation-specific options → **MET** | Evidence: manual `bun apps/cli/src/index.ts command --help`, manual `bun apps/cli/src/index.ts command scaffold --help`
+- [x] **R11**: Action handlers use `runOperation` for each operation subcommand → **MET** | Evidence: `apps/cli/src/commands/agent.ts:96`, `apps/cli/src/commands/skill.ts:101`, `apps/cli/src/commands/command.ts:101`, `apps/cli/src/commands/hook.ts:137`, `apps/cli/src/commands/magent.ts:96`
+- [x] **R12**: Error handling maps file-not-found to exit 2 and validation errors to exit 1 → **MET** | Evidence: `apps/cli/src/commands/helpers.ts:57`, `apps/cli/src/commands/helpers.ts:72`, manual `bun apps/cli/src/index.ts hook validate does-not-exist` → exit `2`
+- [x] **R13**: `command` content type uses idiomatic Commander `cmd` variable and no runtime name collision → **MET** | Evidence: `apps/cli/src/commands/command.ts:155`
+- [x] **R14**: Output is captured through stdout/stderr write helpers, with no `console.*` usage in command modules → **MET** | Evidence: `apps/cli/src/commands/command.ts:1`, `bun run spur-check` no-console rule passed
+
 ### Q&A
 
 
@@ -356,6 +373,23 @@ export function createProgram(): Command {
 
 
 
+### Review — 2026-06-16
+
+**Status:** 0 active findings after fix-pass  
+**Scope:** `apps/cli/src/commands/*.ts`, `apps/cli/src/cli.ts`, command tests  
+**Mode:** verify  
+**Channel:** current  
+**Gate:** `bun run autofix && bun run spur-check` → pass
+
+**Fix-pass 2026-06-16:** 2 fixed, 0 failed, 0 skipped.
+
+Fixed findings:
+
+| # | Title | Dimension | Location | Resolution |
+|---|-------|-----------|----------|------------|
+| 1 | `skill` and `hook` actions bypassed `runOperation` | Correctness | `apps/cli/src/commands/skill.ts:101`, `apps/cli/src/commands/hook.ts:137` | Wrapped CLI action handlers in `runOperation` so returned exit codes are applied consistently. |
+| 2 | `command` help text and handler names referenced agent definitions | Usability | `apps/cli/src/commands/command.ts:101`, `apps/cli/src/commands/command.ts:155` | Renamed command handlers and corrected user-facing descriptions to command-specific text. |
+
 ### P1 — Blockers
 | # | Title | Dimension | Location | Recommendation |
 |---|-------|-----------|----------|----------------|
@@ -381,12 +415,12 @@ export function createProgram(): Command {
 
 - **Command:** `bun run test`
 - **Executed:** 2026-06-16
-- **Scope:** helpers.test.ts (resolveTarget 5 tests, exitFor 5 tests) + cli-smoke.test.ts (2 tests) + 5 type command stub tests
-- **Result:** 412 pass, 0 fail across 36 files
-- **Evidence:** `tests/commands/helpers.test.ts`, `tests/cli-smoke.test.ts`, `tests/commands/<type>.test.ts`
+- **Scope:** full Bun test suite with coverage
+- **Result:** 438 pass, 0 fail across 37 files
+- **Evidence:** `apps/cli/tests/commands/helpers.test.ts`, `apps/cli/tests/cli-smoke.test.ts`, `apps/cli/tests/commands/content-command-modules.test.ts`, `apps/cli/tests/commands/command.test.ts`
 - **Next action:** None — all gates pass.
 
-### Review
+### Previous Review
 
 **Verdict:** PASS
 

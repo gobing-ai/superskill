@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { homedir, tmpdir } from 'node:os';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { scaffold } from '../../src/operations/scaffold';
 
@@ -109,8 +109,9 @@ describe('scaffold', () => {
     });
 
     it('uses user template override when it exists', async () => {
-        // Create a user template that overrides the built-in
-        const userTemplateDir = join(homedir(), '.superskill', 'templates', 'skill');
+        const originalHome = process.env.HOME;
+        process.env.HOME = tmpDir;
+        const userTemplateDir = join(tmpDir, '.superskill', 'templates', 'skill');
         try {
             const { mkdirSync } = await import('node:fs');
             mkdirSync(userTemplateDir, { recursive: true });
@@ -127,8 +128,12 @@ describe('scaffold', () => {
             expect(content).toContain('custom: true');
             expect(content).toContain('User template body');
         } finally {
-            // Clean up user template
-            rmSync(join(homedir(), '.superskill', 'templates'), { recursive: true, force: true });
+            rmSync(join(tmpDir, '.superskill', 'templates'), { recursive: true, force: true });
+            if (originalHome === undefined) {
+                delete process.env.HOME;
+            } else {
+                process.env.HOME = originalHome;
+            }
         }
     });
 

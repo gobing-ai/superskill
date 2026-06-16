@@ -60,7 +60,7 @@ export function resolveTarget(opts: { target?: string }): Target {
  * Run an async operation and map its outcome to a process exit code.
  * Thrown errors with ENOENT → exit 2, others → exit 1.
  */
-export async function runOperation(fn: () => Promise<number | undefined> | Promise<void>): Promise<void> {
+export async function runOperation(fn: () => Promise<number | undefined>): Promise<void> {
     try {
         const code = ((await fn()) as number | undefined) ?? 0;
         process.exit(code);

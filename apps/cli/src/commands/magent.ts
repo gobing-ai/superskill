@@ -18,64 +18,169 @@ import {
     runOperation,
 } from './helpers';
 
+/** Scaffold a magent definition and print the created path. */
+export async function magentScaffold(opts: {
+    name: string;
+    description?: string;
+    target?: string;
+    output?: string;
+    force?: boolean;
+}): Promise<number | undefined> {
+    const target = resolveTarget(opts);
+    const createdPath = await scaffold('magent', opts.name, {
+        description: opts.description,
+        target,
+        output: opts.output,
+        force: opts.force,
+    });
+    echo(`Created: ${createdPath}`);
+    return undefined;
+}
+
+/** Validate a magent definition and return the mapped exit code. */
+export async function magentValidate(opts: {
+    nameOrPath: string;
+    target?: string;
+    strict?: boolean;
+    json?: boolean;
+}): Promise<number | undefined> {
+    const target = resolveTarget(opts);
+    const result = await validate('magent', opts.nameOrPath, { target, strict: opts.strict });
+    const output = formatValidationResult(result, opts.json);
+    if (output !== 'Valid') echoError(`${output}`);
+    else echo(`${output}`);
+    return exitFor(result);
+}
+
+/** Evaluate a magent definition and print the report. */
+export async function magentEvaluate(opts: {
+    nameOrPath: string;
+    target?: string;
+    json?: boolean;
+    save?: boolean;
+}): Promise<number | undefined> {
+    const target = resolveTarget(opts);
+    const report = await evaluate('magent', opts.nameOrPath, { target, save: opts.save });
+    const output = formatEvaluationReport(report, opts.json);
+    echo(`${output}`);
+    return undefined;
+}
+
+/** Refine a magent definition with optional automatic fixes. */
+export async function magentRefine(opts: {
+    nameOrPath: string;
+    target?: string;
+    auto?: boolean;
+    save?: boolean;
+}): Promise<number | undefined> {
+    const target = resolveTarget(opts);
+    await refine('magent', opts.nameOrPath, { target, auto: opts.auto, save: opts.save });
+    return undefined;
+}
+
+/** Evolve a magent definition from saved evaluation history. */
+export async function magentEvolve(opts: {
+    name: string;
+    target?: string;
+    from?: string;
+    proposeOnly?: boolean;
+    accept?: string;
+    reject?: string;
+}): Promise<number | undefined> {
+    const target = resolveTarget(opts);
+    await evolve('magent', opts.name, {
+        target,
+        from: opts.from,
+        proposeOnly: opts.proposeOnly,
+        acceptId: opts.accept,
+        rejectId: opts.reject,
+    });
+    return undefined;
+}
+
+/** Run magent scaffold as a CLI action. */
+export async function handleMagentScaffold(opts: {
+    name: string;
+    description?: string;
+    target?: string;
+    output?: string;
+    force?: boolean;
+}): Promise<void> {
+    await runOperation(() => magentScaffold(opts));
+}
+
+/** Run magent validate as a CLI action. */
+export async function handleMagentValidate(opts: {
+    nameOrPath: string;
+    target?: string;
+    strict?: boolean;
+    json?: boolean;
+}): Promise<void> {
+    await runOperation(() => magentValidate(opts));
+}
+
+/** Run magent evaluate as a CLI action. */
+export async function handleMagentEvaluate(opts: {
+    nameOrPath: string;
+    target?: string;
+    json?: boolean;
+    save?: boolean;
+}): Promise<void> {
+    await runOperation(() => magentEvaluate(opts));
+}
+
+/** Run magent refine as a CLI action. */
+export async function handleMagentRefine(opts: {
+    nameOrPath: string;
+    target?: string;
+    auto?: boolean;
+    save?: boolean;
+}): Promise<void> {
+    await runOperation(() => magentRefine(opts));
+}
+
+/** Run magent evolve as a CLI action. */
+export async function handleMagentEvolve(opts: {
+    name: string;
+    target?: string;
+    from?: string;
+    proposeOnly?: boolean;
+    accept?: string;
+    reject?: string;
+}): Promise<void> {
+    await runOperation(() => magentEvolve(opts));
+}
+
+/** Register the magent command group. */
 export function registerMagent(program: Command): void {
     const cmd = program.command('magent').description('Manage magent definitions');
 
-    // scaffold
     addScaffoldOptions(cmd.command('scaffold <name>').description('Create a new magent from template')).action(
         async (name: string, opts: { description?: string; target?: string; output?: string; force?: boolean }) => {
-            await runOperation(async () => {
-                const target = resolveTarget(opts);
-                const createdPath = await scaffold('magent', name, {
-                    description: opts.description,
-                    target,
-                    output: opts.output,
-                    force: opts.force,
-                });
-                echo(`Created: ${createdPath}`);
-            });
+            await handleMagentScaffold({ name, ...opts });
         },
     );
 
-    // validate
     addStrictOption(
         addTargetOption(addJsonOption(cmd.command('validate <nameOrPath>').description('Validate a magent file'))),
     ).action(async (nameOrPath: string, opts: { target?: string; strict?: boolean; json?: boolean }) => {
-        await runOperation(async () => {
-            const target = resolveTarget(opts);
-            const result = await validate('magent', nameOrPath, { target, strict: opts.strict });
-            const output = formatValidationResult(result, opts.json);
-            if (output !== 'Valid') echoError(`${output}`);
-            else echo(`${output}`);
-            return exitFor(result);
-        });
+        await handleMagentValidate({ nameOrPath, ...opts });
     });
 
-    // evaluate
     addSaveOption(
         addTargetOption(addJsonOption(cmd.command('evaluate <nameOrPath>').description('Evaluate magent quality'))),
     ).action(async (nameOrPath: string, opts: { target?: string; json?: boolean; save?: boolean }) => {
-        await runOperation(async () => {
-            const target = resolveTarget(opts);
-            const report = await evaluate('magent', nameOrPath, { target, save: opts.save });
-            const output = formatEvaluationReport(report, opts.json);
-            echo(`${output}`);
-        });
+        await handleMagentEvaluate({ nameOrPath, ...opts });
     });
 
-    // refine
     addSaveOption(
         addTargetOption(
             addAutoOption(cmd.command('refine <nameOrPath>').description('Evaluate and auto-fix a magent')),
         ),
     ).action(async (nameOrPath: string, opts: { target?: string; auto?: boolean; save?: boolean }) => {
-        await runOperation(async () => {
-            const target = resolveTarget(opts);
-            await refine('magent', nameOrPath, { target, auto: opts.auto, save: opts.save });
-        });
+        await handleMagentRefine({ nameOrPath, ...opts });
     });
 
-    // evolve
     addEvolveOptions(
         cmd.command('evolve <name>').description('Longitudinal improvement from evaluation history'),
     ).action(
@@ -83,16 +188,7 @@ export function registerMagent(program: Command): void {
             name: string,
             opts: { target?: string; from?: string; proposeOnly?: boolean; accept?: string; reject?: string },
         ) => {
-            await runOperation(async () => {
-                const target = resolveTarget(opts);
-                await evolve('magent', name, {
-                    target,
-                    from: opts.from,
-                    proposeOnly: opts.proposeOnly,
-                    acceptId: opts.accept,
-                    rejectId: opts.reject,
-                });
-            });
+            await handleMagentEvolve({ name, ...opts });
         },
     );
 }

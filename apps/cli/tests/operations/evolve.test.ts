@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, spyOn } from 'bun:test';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { chdir, cwd } from 'node:process';
@@ -269,6 +269,7 @@ describe('evolve — orchestrator', () => {
         await seedHistory(adapter, [0.9, 0.5]); // declining clarity
         const r = await evolve('skill', 'widget', { adapter, proposeOnly: true });
         expect(r.proposalPath).not.toBe('');
+        expect(readFileSync(r.proposalPath, 'utf-8')).toContain('Fix clarity');
         expect(r.changesApplied).toBe(0);
         // Proposal persisted as draft.
         const props = await new ProposalDao(adapter).getProposals('skill', 'widget');
@@ -333,6 +334,39 @@ describe('evolve — orchestrator', () => {
         const r = await evolve('skill', 'widget', { adapter, acceptId: String(draft?.id) });
         // Should apply 0 changes because the text change current doesn't exist in the file
         expect(r.changesApplied).toBeGreaterThanOrEqual(0);
+    });
+
+    it('--accept applies stored frontmatter and text changes', async () => {
+        await seedHistory(adapter, [0.9, 0.5]);
+        const proposalId = await new ProposalDao(adapter).insertProposal({
+            content_type: 'skill',
+            content_name: 'widget',
+            baseline_id: 1,
+            proposal_json: {
+                changes: [
+                    {
+                        dimension: 'description',
+                        location: 'frontmatter.description',
+                        current: 'A widget skill that does widget things well',
+                        proposed: 'A sharper widget skill',
+                        reason: 'frontmatter update',
+                    },
+                    {
+                        dimension: 'body',
+                        location: 'body',
+                        current: 'Body content here',
+                        proposed: 'Improved body content here',
+                        reason: 'text update',
+                    },
+                ],
+            },
+        });
+
+        const r = await evolve('skill', 'widget', { adapter, acceptId: String(proposalId) });
+        const content = readFileSync(join(dir, 'widget.md'), 'utf-8');
+        expect(r.changesApplied).toBe(2);
+        expect(content).toContain('description: A sharper widget skill');
+        expect(content).toContain('Improved body content here for the widget skill.');
     });
 
     it('opens DB without adapter (dynamic import path)', async () => {

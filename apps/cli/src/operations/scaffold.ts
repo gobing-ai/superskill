@@ -51,7 +51,8 @@ function substituteVars(
  * Built-in default.md always exists; resolution never falls through.
  */
 function resolveTemplate(type: ContentType): string {
-    const userPath = join(homedir(), '.superskill', 'templates', type, 'default.md');
+    const homeDir = process.env.HOME ?? homedir();
+    const userPath = join(homeDir, '.superskill', 'templates', type, 'default.md');
     if (existsSync(userPath)) {
         return readFileSync(userPath, 'utf-8');
     }
