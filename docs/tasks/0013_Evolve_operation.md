@@ -1,9 +1,9 @@
 ---
 name: Evolve operation
 description: Self-evolution loop — analyze historical evaluations, propose data-backed improvements, review/apply, verify post-score delta. The key enhancement over origin Claude Code skills.
-status: Planned
+status: WIP
 created_at: 2026-06-16T00:00:00.000Z
-updated_at: 2026-06-16T00:00:00.000Z
+updated_at: 2026-06-16T22:14:02.561Z
 folder: docs/tasks
 type: task
 feature-id: F013
@@ -379,12 +379,27 @@ const postScore = postReport.aggregate;
 
 ### Review
 
+**Verdict:** PASS
 
+- **R1–R3 (API):** `evolve()`, `EvolveOptions`, `EvolveResult`, `TrendEntry`, `ProposedChange` — all exported. `computeTrends`, `generateChanges`, `generateProposalId` exported as pure functions.
+- **R4 (ANALYZE):** `stepAnalyze` queries evaluations via `EvaluationDao.getEvaluations`, filters by `opts.from` (epoch-millis comparison), computes trends via `computeTrends`. Throws with `code: 1` when no evaluations found.
+- **R5 (TrendTable):** `computeTrends(evaluations)` — ascending sort by `created_at`, per-dimension earliest/latest/delta/trend. Declining first, flat second, improving last; lowest latest first within group. Handles single eval, missing dimensions.
+- **R6 (PROPOSE):** `generateChanges` — proposes for declining OR flat-below-0.7 dimensions. `stepPropose` writes proposal file to `<proposalsDir>/<type>/<name>/<date>-<id>.md`.
+- **R7 (Proposal ID):** `generateProposalId` — `<type>-evolve-<date>-<NNN>`, NNN = existing count + 1, zero-padded.
+- **R8 (REVIEW):** `--propose-only`, `--accept <id>`, `--reject <id>`, interactive mode with trend display and accept/reject/edit/quit per change.
+- **R9 (APPLY):** `stepApply` — reads content, applies accepted changes via `applyChange` (F007), guards `content.includes(change.current)` before text changes.
+- **R10 (VERIFY):** `stepVerify` — re-evaluates via `evaluate()` (F011), displays score delta with percentage.
+- **R11–R14 (Edge cases):** No evaluations → error with guidance. Single evaluation → warn + proceed. File not found → exit 2. Store unavailable → error. Content read failure → warn. Proposal ID collision → sequence increment.
 
-### P1 — Blockers
-| # | Title | Dimension | Location | Recommendation |
-|---|-------|-----------|----------|----------------|
-| _none_ | | | | |
+### Testing
+
+- **Command:** `bun run test`
+- **Executed:** 2026-06-16
+- **Scope:** 16 tests — computeTrends (9), generateChanges (5), generateProposalId (2)
+- **Result:** 16 pass, 0 fail
+- **Coverage:** evolve.ts 42.86% funcs, 16.51% lines — pure functions well-covered; orchestrator requires DB/integration fixtures
+- **Evidence:** `apps/cli/tests/operations/evolve.test.ts`
+- **Next action:** None — all gates pass.
 
 ### P2 — Warnings
 | # | Title | Dimension | Location | Recommendation |
