@@ -55,7 +55,7 @@ export class ProposalDao extends EntityDao<typeof proposals.table, typeof propos
         await this.update(id, data);
     }
 
-    /** Get all proposals for a given content type and name. */
+    /** Get all proposals for a given content type and name, newest first. */
     async getProposals(contentType: string, contentName: string): Promise<Proposal[]> {
         const rows = await this.list({
             where: {
@@ -64,14 +64,16 @@ export class ProposalDao extends EntityDao<typeof proposals.table, typeof propos
                     { col: proposals.table.content_name, op: 'eq' as const, value: contentName },
                 ],
             },
+            orderBy: [{ col: proposals.table.createdAt, dir: 'desc' as const }],
         });
         return rows.map((r) => deserializeProposal(r as unknown as Record<string, unknown>));
     }
 
-    /** Get all proposals with status `'draft'` across all content types. */
+    /** Get all proposals with status `'draft'` across all content types, newest first. */
     async getPendingProposals(): Promise<Proposal[]> {
         const rows = await this.list({
             where: { col: proposals.table.status, op: 'eq' as const, value: 'draft' },
+            orderBy: [{ col: proposals.table.createdAt, dir: 'desc' as const }],
         });
         return rows.map((r) => deserializeProposal(r as unknown as Record<string, unknown>));
     }

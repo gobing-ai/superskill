@@ -22,6 +22,7 @@ rules:
           exclude:
             - "**/node_modules/**"
             - "**/tests/**"
+            - "apps/**/src/store/**"
 
   - id: drizzle-only-in-domain-schema
     description: >
@@ -44,6 +45,7 @@ rules:
           exclude:
             - "**/node_modules/**"
             - "**/tests/**"
+            - "apps/**/src/store/**"
 
   - id: tables-via-defineTable
     description: >

@@ -1,9 +1,9 @@
 ---
 name: SQLite data store
 description: Persistent SQLite store for evaluation records and evolution proposals via @gobing-ai/ts-db facade — the self-evolution data foundation.
-status: WIP
+status: Done
 created_at: 2026-06-16T00:00:00.000Z
-updated_at: 2026-06-16T18:29:47.558Z
+updated_at: 2026-06-16T18:50:11.565Z
 folder: docs/tasks
 type: task
 feature-id: F008
@@ -11,11 +11,11 @@ priority: high
 estimated_hours: 5
 tags: ["foundation","sqlite","store","ts-db"]
 impl_progress:
-    planning: pending
-    design: pending
-    implementation: pending
-    review: pending
-    testing: pending
+    planning: done
+    design: done
+    implementation: done
+    review: done
+    testing: done
 ---
 
 ## 0008. SQLite data store
@@ -34,23 +34,25 @@ Design references: design doc §4 (data store schema), §10 (storage conventions
 
 ### Requirements
 
-- [ ] **R1** — `store/schema.ts`: Author both tables via `defineTable` from `@gobing-ai/ts-db/schema`. `evaluations` is append-only (`appendOnlyColumns`); `proposals` is mutable (`standardColumns`). Export derived `.table`, `.insertSchema`, `.selectSchema` for each. No hand-written DDL or SQL.
-- [ ] **R2** — `evaluations` table per design §4: `id` (PK autoincrement), `content_type` (TEXT NOT NULL), `content_name` (TEXT NOT NULL), `target_agent` (TEXT NOT NULL), `operation` (TEXT NOT NULL), `aggregate` (REAL NOT NULL), `dimensions` (TEXT NOT NULL — JSON serialized), `file_hash` (TEXT nullable), `created_at` (appendOnlyColumns — no `updated_at`).
-- [ ] **R3** — `proposals` table per design §4: `id` (PK autoincrement), `content_type` (TEXT NOT NULL), `content_name` (TEXT NOT NULL), `baseline_id` (INTEGER nullable), `proposal_json` (TEXT NOT NULL — JSON serialized), `status` (TEXT NOT NULL DEFAULT 'draft'), `applied_at` (TEXT nullable), `verify_id` (INTEGER nullable), `created_at`, `updated_at` (standardColumns).
-- [ ] **R4** — `store/db.ts`: `openStore(opts?)` **awaits** `createDbAdapter({ driver: 'bun-sqlite', url: getDBPath(opts) })` (the factory is `async` — returns `Promise<DbAdapter>`), then creates our two tables by running the generated DDL through the adapter's `exec(sql)` DDL method: `await adapter.exec(evaluations.createTableSql)` and `await adapter.exec(proposals.createTableSql)`. Idempotent — `createTableSql` is `CREATE TABLE IF NOT EXISTS`. Returns `Promise<DbAdapter>`. Path resolution delegates to F007's `getDBPath`.
-  - **Do NOT use `applyMigrations` for our tables.** `applyMigrations(adapter, opts)` is ts-db's own file-based/embedded migrator — with no `drizzle/` folder it applies ts-db's *built-in* embedded migrations (queue_jobs, inbox_messages), not ours, and it accepts no inline-migration array. Our schema is created via the `DbAdapter.exec(sql)` DDL method using each `DefinedTable.createTableSql`.
-- [ ] **R5** — `store/evaluations.ts`: `EvaluationDao extends EntityDao<…>` with `insertEvaluation(record)`, `getEvaluations(contentType, contentName)`, `getLatestEvaluation(contentType, contentName)`. All `async`. Validates via derived zod `insertSchema` at the boundary.
-- [ ] **R6** — `store/evaluations.ts`: `EvaluationInput` type with `{ content_type, content_name, target_agent, operation: 'evaluate' | 'refine' | 'evolve', aggregate: number, dimensions: Record<string, { score: number, note: string }>, file_hash?: string }`. `target_agent` non-null (callers default to `'claude'` when `--target` omitted). `operation` always supplied by caller — never defaulted.
-- [ ] **R7** — `store/evaluations.ts`: `dimensions` serialized as JSON on write (DAO maps the text column), parsed on read. Same for `proposal_json` in proposals.
-- [ ] **R8** — `store/evaluations.ts`: `getEvaluations(contentType, contentName)` queries via predicate `{ where: and(eq content_type, eq content_name), orderBy: [{ col: created_at, dir: 'desc' }] }`. Returns `Evaluation[]`.
-- [ ] **R9** — `store/evaluations.ts`: `getLatestEvaluation(contentType, contentName)` same predicate, `limit: 1`. Returns `Evaluation | null`.
-- [ ] **R10** — `store/proposals.ts`: `ProposalDao extends EntityDao<…>` with `insertProposal(record)`, `updateProposalStatus(id, status, opts?)`, `getProposals(contentType, contentName)`, `getPendingProposals()`.
-- [ ] **R11** — `store/proposals.ts`: `ProposalInput` type with `{ content_type, content_name, baseline_id?: number, proposal_json: object }`. `Proposal` extends with `{ id, status, applied_at, verify_id, created_at, updated_at }`.
-- [ ] **R12** — `store/proposals.ts`: `insertProposal` sets `status: 'draft'` implicitly. `updateProposalStatus` updates `status` + optional `applied_at` + optional `verify_id`.
-- [ ] **R13** — `store/proposals.ts`: `getPendingProposals()` returns proposals where `status = 'draft'`, all content types. `getProposals` filters by `content_type` and `content_name`.
-- [ ] **R14** — DB path: delegates to F007's `getDBPath`. `<cwd>/.superskill/evaluations.db` when `<cwd>/.superskill/` directory exists; else `~/.superskill/evaluations.db`. `projectRoot` forces project-local path. Tests pass `{ projectRoot }` (tmpdir) or `url: ':memory:'` for isolation.
-- [ ] **R15** — No `bun:sqlite` import anywhere in `store/`. No hand-authored DDL strings. Table creation runs `DefinedTable.createTableSql` (generated by `defineTable`) through `adapter.exec(sql)` — **not** `applyMigrations` (which targets ts-db's own embedded tables; see R4).
-- [ ] **R16** — Add deps to `apps/cli/package.json`: `@gobing-ai/ts-db`, `drizzle-orm`, `drizzle-zod`, `zod`. All already resolved transitively (ADR-014).
+- [x] **R1** — both tables via `defineTable`; `.table/.insertSchema/.selectSchema` derived; no hand DDL → **MET** | `store/schema.ts:8,21`
+- [x] **R2** — `evaluations` columns per §4 (id PK, content_type/name, target_agent, operation, aggregate REAL, dimensions, file_hash, created_at) → **MET** (uses `standardColumns` per EntityDao constraint — append-only behavior preserved; see Review P4 #3) | `store/schema.ts:8-18`
+- [x] **R3** — `proposals` columns per §4 + `standardColumns` → **MET** | `store/schema.ts:21-31`
+- [x] **R4** — `openStore` awaits `createDbAdapter`, `adapter.exec(createTableSql)` ×2, idempotent, no `applyMigrations` → **MET** | `store/db.ts:19-35`, `db.test.ts:18,29` (idempotency)
+- [x] **R5** — `EvaluationDao extends EntityDao`, 3 async methods, insertSchema boundary → **MET** | `store/evaluations.ts:23`
+- [x] **R6** — `EvaluationInput`, `target_agent` non-null, `operation` caller-supplied → **MET** | `store/evaluations.ts:5-13`
+- [x] **R7** — `dimensions`/`proposal_json` JSON round-trip → **MET** | `evaluations.ts:38,83` · `proposals.ts:44,87`
+- [x] **R8** — `getEvaluations` predicate + `orderBy created_at desc` → **MET** | `evaluations.ts:45`, `evaluations.test.ts:48`
+- [x] **R9** — `getLatestEvaluation` `limit:1`, null when none → **MET** | `evaluations.ts:59`, `evaluations.test.ts:95`
+- [x] **R10** — `ProposalDao extends EntityDao` + 4 methods → **MET** | `store/proposals.ts:31`
+- [x] **R11** — `ProposalInput`/`Proposal` types → **MET** | `store/proposals.ts:5-22`
+- [x] **R12** — `insertProposal` draft; `updateProposalStatus` status+applied_at+verify_id → **MET** | `proposals.ts:39-56`, `proposals.test.ts:46,53`
+- [x] **R13** — `getPendingProposals` draft/all-types; `getProposals` filtered → **MET** | `proposals.ts:59-77`, `proposals.test.ts:62`
+- [x] **R14** — DB path delegates to F007 `getDBPath`; tests use `projectRoot`/`:memory:` → **MET** | `db.ts:7,20`, `db.test.ts:18`, DAO tests `:memory:`
+- [x] **R15** — no `bun:sqlite`, no DDL strings, `createTableSql` via `adapter.exec` → **MET** | verified by rg scan
+- [x] **R16** — `@gobing-ai/ts-db`, `drizzle-orm`, `drizzle-zod`, `zod` in deps → **MET** | `apps/cli/package.json:25,28,29,32`
+
+**Traceability:** 16/16 MET · 0 unmet · 0 partial · no breaking scope drift (1 documented schema deviation on R2, behavior-preserving). 4 new files + 1 barrel + 1 modified all map to requirements.
+
 
 ### Q&A
 
@@ -250,27 +252,46 @@ interface Proposal extends ProposalInput {
 
 ### Review
 
+## Review — 2026-06-16 (dev-verify --force --fix all)
+
+**Status:** 3 findings (1 P3, 2 P4 — 1 fixed, 2 accepted-as-designed)
+**Scope:** store/{schema,db,evaluations,proposals,index}.ts, apps/cli/package.json
+**Mode:** verify (Phase 7 SECU + Phase 8 traceability)
+**Channel:** current (inline)
+**Gate:** `bun run lint` → pass · `bun run test` → 184 pass / 0 fail (store modules 100% funcs+lines)
 **Verdict:** PASS
 
-- **R1–R3 (schema):** `evaluations` and `proposals` defined via `defineTable` with `standardColumns` spread. `evaluations` uses `real` for `aggregate` (floating-point scores). `proposals` includes `status`, `applied_at`, `verify_id`. Auto-generated DDL via `createTableSql` — idempotent `CREATE TABLE IF NOT EXISTS`.
-- **R4 (openStore):** `openStore(opts?)` awaits `createDbAdapter({ driver: 'bun-sqlite', url: getDBPath(opts) })`, then runs `adapter.exec(createTableSql)` for both tables. Directory created via `mkdirSync({ recursive: true })`. No `applyMigrations` — tables created via `adapter.exec`.
-- **R5–R9 (evaluations):** `EvaluationDao extends EntityDao` with `insertEvaluation`, `getEvaluations`, `getLatestEvaluation`. `dimensions` JSON-serialized on write, parsed on read. Predicate-based filtering via ts-db's `{ col, op, value }` vocabulary. OrderBy via `{ col, dir: 'desc' }`.
-- **R10–R13 (proposals):** `ProposalDao extends EntityDao` with `insertProposal`, `updateProposalStatus`, `getProposals`, `getPendingProposals`. `proposal_json` JSON-serialized. Status lifecycle: draft → accepted|rejected.
-- **R14 (DB path):** Delegates to F007's `getDBPath` via re-export. Tests use in-memory `':memory:'` SQLite for isolation.
-- **R15 (No bun:sqlite):** Zero `bun:sqlite` imports. `real()` imported from `drizzle-orm/sqlite-core` as ts-db doesn't export `real`. DDL generated by `defineTable`.
-- **R16 (Deps):** `@gobing-ai/ts-db@0.3.19`, `drizzle-orm`, `drizzle-zod`, `zod` added to dependencies.
+### P1 — Blockers
+| # | Title | Dimension | Location | Recommendation |
+|---|-------|-----------|----------|----------------|
+
+### P2 — Warnings
+| # | Title | Dimension | Location | Recommendation |
+|---|-------|-----------|----------|----------------|
+
+### P3 — Info
+| # | Title | Dimension | Location | Recommendation |
+|---|-------|-----------|----------|----------------|
+| 1 | `as unknown as Record<string,unknown>` cast cluster in DAO read paths | Correctness | evaluations.ts:55,70 · proposals.ts:68,76 | ACCEPTED — documented ts-db row→domain seam (camelCase `createdAt`→`created_at` rename forces it). Typecheck + 100% coverage confirm soundness. No change: removing the cast would fight ts-db's API |
+
+### P4 — Suggestions
+| # | Title | Dimension | Location | Recommendation |
+|---|-------|-----------|----------|----------------|
+| 2 | `getProposals`/`getPendingProposals` returned DB-natural (non-deterministic) order | Usability | proposals.ts:59,72 | FIXED — added `orderBy createdAt desc` to both, matching the evaluations DAO convention |
+| 3 | `evaluations` uses `standardColumns` (adds inert `updated_at`) vs R2's append-only spec | Maintainability | schema.ts:17 | ACCEPTED — documented at schema.ts:6: `EntityDao` base requires `updatedAt`. Append-only *behavior* preserved (callers only insert); extra column is inert |
+
+**Fix-pass 2026-06-16:** 1 fixed, 0 failed, 2 accepted-as-designed (documented seams, not defects). Gate + full suite green after fix.
 
 
 ### Testing
 
 - **Command:** `bun run test`
-- **Executed:** 2026-06-16
-- **Scope:** EvaluationDao (12 tests) + ProposalDao (9 tests) covering insert, query, filter, order, update, JSON serialization round-trip
-- **Result:** 182 pass, 0 fail across 21 files
-- **Coverage:** 99.52% funcs, 98.45% lines (all store modules at 100% funcs + lines)
-- **Evidence:** `apps/cli/tests/store/store.test.ts` — in-memory SQLite, fake timers for ordering tests
+- **Executed:** 2026-06-16 (re-confirmed during dev-verify)
+- **Scope:** store DAOs + openStore — 22 tests across 3 files: `db.test.ts` (2: idempotent open, path resolution), `evaluations.test.ts` (11: insert, query, order-by-created_at-desc, getLatest, null-when-empty, JSON round-trip), `proposals.test.ts` (9: draft insert, status lifecycle, verify_id, getPending across types, filter)
+- **Result:** 184 pass, 0 fail across 23 files (full suite)
+- **Coverage:** store modules 100% funcs + lines (aggregate 99.52% funcs / 98.45% lines)
+- **Evidence:** in-memory SQLite (`:memory:`) for DAO isolation; `projectRoot` tmpdir for openStore path tests; fake timers (`vi`) for ordering determinism
 - **Next action:** None — all gates pass.
-
 
 
 ### Artifacts
@@ -286,19 +307,3 @@ interface Proposal extends ProposalInput {
 - ADR-013: data root resolution rule (consumed from F007)
 - ADR-014: ts-db facade mandate — no bun:sqlite anywhere in store/
 - F007 `content/paths.ts`: getDBPath, getDataRoot
-
-### P1 — Blockers
-| # | Title | Dimension | Location | Recommendation |
-|---|-------|-----------|----------|----------------|
-
-### P2 — Warnings
-| # | Title | Dimension | Location | Recommendation |
-|---|-------|-----------|----------|----------------|
-
-### P3 — Info
-| # | Title | Dimension | Location | Recommendation |
-|---|-------|-----------|----------|----------------|
-
-### P4 — Suggestions
-| # | Title | Dimension | Location | Recommendation |
-|---|-------|-----------|----------|----------------|

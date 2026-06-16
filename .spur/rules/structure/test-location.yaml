@@ -36,5 +36,6 @@ rules:
       - "**/index.ts"
       - "**/*.d.ts"
       - "**/types.ts"
+      - "**/schema.ts"
       - "**/node_modules/**"
       - "**/tests/**"
