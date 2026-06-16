@@ -2,7 +2,7 @@
 doc: 00_ADR
 owns: WHY — which cross-cutting decision was made, and the one-line reason
 authority: authoritative
-version: 1.2.0
+version: 1.4.0
 owner: Robin Min
 updated_at: 2026-06-16
 read_before: any structural change; add a dated entry before diverging from a decision
@@ -148,3 +148,39 @@ Reversals = new entries naming what they supersede. Burned numbers get a `Skippe
 **Why.** The marketplace manifest is Claude Code's own plugin-root locator; resolving through it makes superskill consistent with upstream instead of inventing a parallel `plugins/<name>/` convention.
 
 **Detail:** see 03 §Source of truth and §Plugin resolution; 04 via design-doc-phase1 §0. Schema verified against Claude Code docs (code.claude.com/docs/en/plugin-marketplaces) and `/Users/robin/projects/cc-agents/.claude-plugin/marketplace.json`: top-level `{ name, owner:{name,email?}, metadata?:{pluginRoot?}, plugins:[{name, source, …}] }`; relative `source` must start `./` and resolves from the marketplace root.
+
+---
+
+## ADR-012: `yaml` as the frontmatter parse/edit engine (Phase 2)
+
+**Status:** Accepted (design) · **Date:** 2026-06-16
+
+**Decision.** Phase 2 quality operations (`validate`, `evaluate`, `refine`, `evolve`) parse and edit YAML frontmatter through the `yaml` package (`^2.9.0`), declared as a direct dependency of `apps/cli`. A single shared module `apps/cli/src/content/frontmatter.ts` exports `parseFrontmatter(content): { data, body, raw }` and `applyFrontmatterChange(...)`; no Phase 2 module parses `---` blocks by hand. The existing regex injector `pipeline/frontmatter.ts` (`normalizeFrontmatter`) is Phase 1 distribution-only and is **not** reused for structured parsing.
+
+**Why.** Phase 1's `normalizeFrontmatter` only injects a `name` line via regex — it cannot read frontmatter as a typed object, which `validate` (field-type checks) and `refine`/`evolve` (parse → mutate → serialize) require. `yaml` is the only round-tripping parser (`parseDocument` preserves comments and key order on re-serialize), satisfying F012's comment-preservation requirement; `js-yaml` and `gray-matter` discard comments. `yaml@2.9.0` is already present transitively (via `rulesync`), so declaring it directly adds **no new package** to the resolved tree — it only fixes the design-doc §7 "no new external packages" claim, which was wrong for Phase 2.
+
+**Detail:** see design-doc-phase2 §7 and §9 (Shared foundation); 04 Phase 2. Round-trip editing uses `parseDocument` + `Document.set`/`toString`; plain reads use `parse`. Supersedes the design-doc-phase2 §7 claim that Phase 2 needs no external packages.
+
+---
+
+## ADR-013: Phase 2 evaluation store location + identity conventions
+
+**Status:** Accepted (design) · **Date:** 2026-06-16
+
+**Decision.** The Phase 2 SQLite store and evolution proposals live under a single `.superskill/` data root resolved by one rule: **use `<cwd>/.superskill/` when that directory already exists, otherwise `~/.superskill/`** (an explicit `--project`/`projectRoot` overrides to force project-local; `getDataRoot()` owns this). Within it: DB at `<root>/.superskill/evaluations.db`, proposals at `<root>/.superskill/proposals/<type>/<name>/YYYY-MM-DD-<seq>.md`. Content identity is canonical: `resolveContentName(path)` strips directory and the `.md` extension (and treats `SKILL.md` as its parent dir name), and every store row, query, and proposal path uses that exact string. `target_agent` is **never null** — it defaults to `'claude'` when `--target` is omitted. `file_hash` is SHA-256 of the file bytes at evaluation time, computed by one shared `hashContent()`.
+
+**Why.** `evaluate --save` and `evolve` must read/write the same DB and agree on `content_name`, or the longitudinal join silently returns zero rows. Centralizing data-root resolution, name derivation, the default target, and the hash algorithm in named utilities (not per-operation footnotes) removes the four-way drift risk of implementing F009–F013 in parallel.
+
+**Detail:** see design-doc-phase2 §4, §9; 04 Phase 2. The data-root rule mirrors the global-vs-local precedence common to dev CLIs (project config shadows home). Proposal path always carries the `<type>/` segment (reconciles the design-doc-phase2 §2.5 path with the F013 acceptance example, which had dropped it).
+
+---
+
+## ADR-014: `@gobing-ai/ts-db` as the Phase 2 data-access layer
+
+**Status:** Accepted (design) · **Date:** 2026-06-16
+
+**Decision.** The Phase 2 evaluation store accesses SQLite **only** through the `@gobing-ai/ts-db` facade — never `bun:sqlite` directly. `store/db.ts` creates a `DbAdapter` via `createDbAdapter({ driver: 'bun-sqlite', url })` and runs `applyMigrations`. Tables are authored once with `defineTable` (single source of truth for the drizzle table, zod insert/select schemas, and `CREATE TABLE` DDL): `evaluations` (append-only — `appendOnlyColumns`, `created_at` only) and `proposals` (`standardColumns` — `created_at` + `updated_at`, since status transitions mutate it). `store/evaluations.ts` and `store/proposals.ts` are thin `EntityDao` subclasses; ordered reads use `EntityListSpec.orderBy` + the predicate query spec, not hand-written SQL. No superskill file writes raw `CREATE TABLE` DDL or `INSERT`/`SELECT` strings.
+
+**Why.** ADR-007 mandates preferring `@gobing-ai/ts-*` over external/raw approaches when a ts-lib equivalent exists; ts-db is exactly that equivalent (typed DAOs, predicate spec, migrations, drizzle-internal). The original Phase 2 plan (F008) hand-rolled `bun:sqlite` with literal DDL and string SQL — a direct ADR-007 violation that also forfeits boundary validation (drizzle-zod), the migration tracking table, and the D1 portability the facade already provides. `@gobing-ai/ts-db@0.3.19`, `drizzle-orm@0.45.2`, and `zod@3.25.76` are already resolved in the tree (via the `@gobing-ai/ts-*` chain), so adoption adds no new top-level package surface — only direct declarations.
+
+**Detail:** see design-doc-phase2 §4 and §6; 04 Phase 2. ts-db peer deps: `drizzle-orm` (required), `drizzle-zod`/`zod` (optional — required here because `defineTable` derives DDL + validation). `apps/cli/package.json` declares `@gobing-ai/ts-db`, `drizzle-orm`, `drizzle-zod`, and `zod` directly. This **supersedes** the design-doc-phase2 §4/§7 and F008 statements that the store uses `bun:sqlite` directly; `bun:sqlite` remains an internal detail of the ts-db `bun-sqlite` adapter only. The `yaml` decision (ADR-012) is unaffected.
