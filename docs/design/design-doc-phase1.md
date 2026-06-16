@@ -47,10 +47,10 @@ export type Target = (typeof TARGETS)[number];
 export const TARGET_TO_RULESYNC: Partial<Record<Target, string>> = {
   codex: 'codexcli',
   pi: 'pi',
-  omp: 'pi',              // omp uses pi's format
   opencode: 'opencode',
   'antigravity-cli': 'antigravity-cli',
   'antigravity-ide': 'antigravity-ide',
+  // omp: not in rulesync yet — copy generated Pi-format content afterward
   // hermes: not in rulesync yet — custom handling
 };
 ```

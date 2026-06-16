@@ -16,11 +16,10 @@ export const TARGETS = [
 /** Union type of all supported target agents. */
 export type Target = (typeof TARGETS)[number];
 
-/** Map superskill targets to rulesync `ToolTarget` strings. Claude Code and hermes are not in rulesync. */
+/** Map superskill targets to rulesync `ToolTarget` strings. Claude Code, omp, and hermes are not in rulesync. */
 export const TARGET_TO_RULESYNC: Partial<Record<Target, ToolTarget>> = {
     codex: 'codexcli',
     pi: 'pi',
-    omp: 'pi', // omp uses pi's format
     opencode: 'opencode',
     'antigravity-cli': 'antigravity-cli',
     'antigravity-ide': 'antigravity-ide',

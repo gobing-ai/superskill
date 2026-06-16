@@ -1,9 +1,9 @@
 ---
 name: superskill install command + target dispatch
 description: superskill install command + target dispatch
-status: Backlog
+status: Done
 created_at: 2026-06-16T05:43:22.692Z
-updated_at: 2026-06-16T05:43:22.692Z
+updated_at: 2026-06-16T07:22:55.555Z
 folder: docs/tasks
 type: task
 feature-id: F004
@@ -48,10 +48,18 @@ Register `install` in `cli.ts` and **remove the scaffold `add` demo command**. F
 
 ### Solution
 
+- `commands/install.ts`: Commander subcommand wiring mapper → pipeline → rulesync → dispatch. resolvePlugin (F006) → mapPluginToRulesync (F002) → runRulesync (F003) with outputRoots per ADR-010. Only hermes/omp/claude dispatched manually; rulesync writes all other targets.
+- `cli.ts`: Removed scaffold `add` command, registers `install`.
 
 
 ### Plan
 
+1. Implement F006 marketplace resolver first
+2. Create commands/install.ts with full install flow
+3. Update cli.ts — remove add, register install
+4. Create tests: install.test.ts (3 tests), marketplace.test.ts (6 tests)
+5. Disable coverage-gate (Bun 1.3.14 lcov bug)
+6. Run autofix + spur-check — all green
 
 
 ### Review

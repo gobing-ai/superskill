@@ -1,9 +1,9 @@
 ---
 name: Marketplace manifest resolver
 description: Marketplace manifest resolver
-status: Backlog
+status: Done
 created_at: 2026-06-16T06:20:41.483Z
-updated_at: 2026-06-16T06:20:41.483Z
+updated_at: 2026-06-16T07:22:55.427Z
 folder: docs/tasks
 type: task
 feature-id: F006
@@ -42,10 +42,14 @@ Resolution order: `--marketplace <path>` (file or its dir) → `.claude-plugin/m
 
 ### Solution
 
+- `marketplace.ts`: zod schema for marketplace.json, `resolvePlugin()` with 3-tier resolution (--marketplace → CWD .claude-plugin/ → null for fallback), `listResolvablePlugins()`. Phase 1 rejects remote sources and ../-escapes.
 
 
 ### Plan
 
+1. Create marketplace.ts with zod schema + resolvePlugin + listResolvablePlugins
+2. Create marketplace.test.ts (6 tests)
+3. Export types and functions
 
 
 ### Review

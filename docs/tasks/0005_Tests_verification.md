@@ -1,9 +1,9 @@
 ---
 name: Tests + verification
 description: Tests + verification
-status: Backlog
+status: Todo
 created_at: 2026-06-16T05:43:29.877Z
-updated_at: 2026-06-16T05:43:29.877Z
+updated_at: 2026-06-16T07:22:55.590Z
 folder: docs/tasks
 type: task
 feature-id: F005

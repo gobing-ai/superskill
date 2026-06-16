@@ -14,17 +14,17 @@ describe('targets', () => {
         expect(TARGETS).toContain('hermes');
     });
 
-    it('TARGET_TO_RULESYNC maps non-Claude targets to rulesync ToolTarget strings', () => {
+    it('TARGET_TO_RULESYNC maps rulesync-supported targets to ToolTarget strings', () => {
         expect(TARGET_TO_RULESYNC.codex).toBe('codexcli');
         expect(TARGET_TO_RULESYNC.pi).toBe('pi');
-        expect(TARGET_TO_RULESYNC.omp).toBe('pi');
         expect(TARGET_TO_RULESYNC.opencode).toBe('opencode');
         expect(TARGET_TO_RULESYNC['antigravity-cli']).toBe('antigravity-cli');
         expect(TARGET_TO_RULESYNC['antigravity-ide']).toBe('antigravity-ide');
     });
 
-    it('TARGET_TO_RULESYNC excludes Claude (plugin marketplace) and hermes (custom)', () => {
+    it('TARGET_TO_RULESYNC excludes targets handled outside rulesync', () => {
         expect(TARGET_TO_RULESYNC).not.toHaveProperty('claude');
+        expect(TARGET_TO_RULESYNC).not.toHaveProperty('omp');
         expect(TARGET_TO_RULESYNC).not.toHaveProperty('hermes');
     });
 
