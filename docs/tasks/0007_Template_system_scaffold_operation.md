@@ -225,8 +225,8 @@ interface ScaffoldOptions {
 ### Testing
 
 - **Command:** `bun run test`
+- **Executed:** 2026-06-16
 - **Scope:** All new content/ modules (frontmatter, identity, hash, edit, paths) + operations/scaffold + template verification
-- **Result:** 162 pass, 0 fail across 20 files
 - **Coverage:** 99.44% funcs, 98.49% lines (all new modules at 100% funcs; scaffold 95.83% lines — production path `resolveTemplate` fallback unreachable in test env)
 - **Evidence:** 6 new test files created:
   - `apps/cli/tests/content/frontmatter.test.ts` — 14 tests covering parse/apply/error
