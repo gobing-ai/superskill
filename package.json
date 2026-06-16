@@ -9,8 +9,10 @@
     ],
     "scripts": {
         "prepare": "lefthook install",
+        "clean": "rm -rf dist && mkdir -p dist/cli",
+        "build": "bun run clean && bun run --filter '@gobing-ai/superskill' build",
         "dev": "bun run --filter './apps/*' --filter './packages/*' dev",
-        "test": "NODE_ENV=test bun test --coverage --coverage-dir=.coverage --reporter=dots",
+        "test": "NODE_ENV=test bun test --coverage --coverage-reporter=lcov --coverage-dir=.coverage",
         "test:full": "bun test --coverage --coverage-reporter=lcov --coverage-dir=.coverage --update-snapshots",
         "test-pre-check": "spur rule run --preset recommended-pre-check --fail-on warning --verbose",
         "test-post-check": "spur rule run --preset recommended-post-check --fail-on warning --verbose",

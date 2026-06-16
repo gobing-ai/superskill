@@ -219,7 +219,7 @@ This is not a rulesync operation — Claude Code reads directly from the plugin 
 
 ```
 apps/cli/src/
-├── cli.ts                    # Commander entry: install, list, doctor, init
+├── cli.ts                    # Commander entry: install
 ├── index.ts                  # #!/usr/bin/env bun entry
 ├── install.ts                # install command implementation
 ├── list.ts                   # list command — targets, features, plugins
@@ -256,49 +256,8 @@ superskill install rd3 --targets pi,codex   # second run
 # Error handling
 superskill install nonexistent --targets pi
 # → "Plugin 'nonexistent' not found" → exit 1
-
-superskill install rd3 --targets pi --dry-run
-# → Verbose output → exit 0 (no files written)
 ```
-
-## 3. Supporting commands
-
-### `superskill list`
-
-```
-superskill list [options]
-
-Options:
-  --targets             List supported targets with install status
-  --features            List features per target
-  --plugins             List configured plugins
-```
-
-Reads `superskill.jsonc` and reports what's configured. `--targets` shows each target with whether the agent is detected locally.
-
-### `superskill doctor`
-
-```
-superskill doctor [options]
-
-Options:
-  --target <name>       Check a specific agent (default: all configured)
-```
-
-For each target: checks the agent binary is installed, the skill/subagent/config directories exist and are writable, and any version compatibility issues. Exits non-zero if any target fails.
-
-### `superskill init`
-
-```
-superskill init [options]
-
-Options:
-  --force               Overwrite existing superskill.jsonc
-```
-
-Scaffolds a `superskill.jsonc` with sensible defaults detected from the current directory (plugin directories found under `plugins/`).
-
-## 4. Dependencies to add
+## 3. Dependencies to add
 
 ```jsonc
 // apps/cli/package.json dependencies to add:

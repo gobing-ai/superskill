@@ -25,7 +25,7 @@ Design: [design-doc-phase1.md](design/design-doc-phase1.md)
 |---------|--------|------------|
 | Project scaffold | ✅ | `bun run autofix && bun run spur-check` exits 0 |
 | Biome + TypeScript gates | ✅ | `biome check .` clean; `tsc --noEmit` clean |
-| bun:test suite | ✅ | 6 tests, 100% coverage |
+| bun:test suite | ✅ | 2 tests, 100% coverage |
 | Spur rule catalog | ✅ | 21 rules pass (19 pre-check + 2 post-check) |
 | Remove ts-base artifacts | ✅ | No `ts-base` in configs, lockfile, commands |
 | Documentation 00–05 | ✅ | All docs per constitution §4 |
@@ -36,7 +36,7 @@ Design: [design-doc-phase1.md](design/design-doc-phase1.md)
 |---------|--------|------------|
 | Target taxonomy | ⏳ | `Target` enum covers 8 agents; maps to rulesync and ai-runner |
 | Config schema | ⏳ | `superskill.jsonc` parsed with zod |
-| Commander entry | ⏳ | `install`, `list`, `doctor`, `init` subcommands parse correctly |
+| Commander entry | ⏳ | `install` subcommand parses correctly |
 
 ### Core install pipeline
 
@@ -63,13 +63,6 @@ Design: [design-doc-phase1.md](design/design-doc-phase1.md)
 | Gemini CLI | 💤 | Removed — Google retiring June 2026 |
 | Old Antigravity | 💤 | Replaced by antigravity-cli + antigravity-ide |
 
-### Supporting commands
-
-| Feature | Status | Acceptance |
-|---------|--------|------------|
-| `superskill list` | ⏳ | Targets with install status, features, plugins |
-| `superskill doctor` | ⏳ | Agent detection + path/permission validation |
-| `superskill init` | ⏳ | Scaffolds `superskill.jsonc` |
 
 ### Verification
 

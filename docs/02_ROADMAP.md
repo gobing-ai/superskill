@@ -2,7 +2,7 @@
 doc: 02_ROADMAP
 owns: WHEN — phases, current vs deferred, sequencing
 authority: derived
-version: 3.1.0
+version: 3.2.0
 derived_from: [00_ADR, 01_PRD]
 owner: Robin Min
 updated_at: 2026-06-16
@@ -25,7 +25,6 @@ sync: [T5]
 - [ ] Conversion pipeline: slash dialect, colon→hyphen, frontmatter normalization
 - [ ] Feature dispatch: skills, commands, subagents, hooks, MCP, Claude Code marketplace
 - [ ] Target agents: Claude Code, Codex, Pi, omp, OpenCode, antigravity-cli, antigravity-ide, Hermes
-- [ ] Supporting commands: `list`, `doctor`, `init`
 - [ ] Verify: idempotent, dry-run, error handling, ≥90% test coverage
 
 **Exit:** `superskill install rd3 --targets all` produces correct output for every target from a fresh checkout.

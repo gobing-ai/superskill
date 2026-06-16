@@ -29,19 +29,12 @@ sync: [T1]
 
 ```
 apps/cli/src/
-├── cli.ts                        # Commander entry — registers all subcommands
-├── index.ts                      # #!/usr/bin/env bun — import.meta.main guard
+├── commands/                     # ── Phase 1 ──
+│   └── install.ts                # superskill install
 │
-├── targets.ts                    # Target enum + path resolution table
 ├── config.ts                     # superskill.jsonc zod schema + loader
 ├── mapper.ts                     # Plugin → .rulesync/ canonical layout
 ├── rulesync.ts                   # Thin wrapper around rulesync.generate()
-│
-├── commands/                     # ── Phase 1 ──
-│   ├── install.ts                # superskill install
-│   ├── list.ts                   # superskill list
-│   ├── doctor.ts                 # superskill doctor
-│   └── init.ts                   # superskill init
 │
 ├── pipeline/                     # ── Phase 1 ──
 │   ├── convert.ts                # ConversionPipeline — named stages per target

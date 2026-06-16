@@ -85,9 +85,6 @@ Each command supports five operations:
 
 | Item | Description |
 |------|-------------|
-| `superskill list` | List supported targets, installed plugins, feature status |
-| `superskill doctor` | Agent detection + health checks |
-| `superskill init` | Scaffold a `superskill.jsonc` config file |
 | Claude Code marketplace | Direct `claude` CLI plugin marketplace update for install |
 
 ### Deprecated / removed
@@ -104,6 +101,7 @@ Each command supports five operations:
 | Import from non-Claude formats (Codex, Pi) | After Phase 1 install is stable; needs custom import mapper |
 | `rulesync` upstream contribution (Hermes, omp) | When Hermes/omp adoption warrants it; local targets sufficient initially |
 | Cross-platform adaptation (adapt command) | After Phase 2 authoring commands stabilize; generate Codex/Pi/etc. variants from a single abstract definition |
+| `superskill list`, `doctor`, `init` | After Phase 1 install is stable; thin commands that read config + check paths |
 | GUI / TUI | When target-user workflow demands it |
 
 ### Out of scope
