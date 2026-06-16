@@ -1,4 +1,4 @@
-import { applyFrontmatterChange } from './frontmatter';
+import { applyFrontmatterChange, parseFrontmatter } from './frontmatter';
 
 /**
  * A structured mutation to apply to a content file.
@@ -27,10 +27,20 @@ export function applyChange(content: string, change: Change): string {
         });
     }
 
-    // kind: 'text' — locate exact match of `current` and replace with `proposed`
-    const idx = content.indexOf(change.current);
-    if (idx === -1) {
+    // kind: 'text' — locate exact match of `current` in the body (never the frontmatter)
+    // and replace with `proposed`. Falls back to whole-content search if no frontmatter.
+    let bodyStart = 0;
+    try {
+        const { body } = parseFrontmatter(content);
+        bodyStart = content.length - body.length;
+    } catch {
+        bodyStart = 0;
+    }
+
+    const relIdx = content.slice(bodyStart).indexOf(change.current);
+    if (relIdx === -1) {
         throw new Error(`Text change target not found in content: "${change.current.slice(0, 80)}"`);
     }
+    const idx = bodyStart + relIdx;
     return content.slice(0, idx) + change.proposed + content.slice(idx + change.current.length);
 }

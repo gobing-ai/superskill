@@ -32,10 +32,13 @@ export function parseFrontmatter(content: string): ParsedFrontmatter {
         throw new FrontmatterError('Missing frontmatter: content must start with ---');
     }
 
-    const closerIdx = content.indexOf('\n---', 4);
-    if (closerIdx === -1) {
+    // Closer must be a bare `---` line: `\n---` followed by end-of-string or newline,
+    // so body lines like `---draft` are not mistaken for the delimiter.
+    const closerMatch = content.slice(4).match(/\n---(?=\n|$)/);
+    if (closerMatch?.index === undefined) {
         throw new FrontmatterError('Missing frontmatter closing delimiter (---)');
     }
+    const closerIdx = closerMatch.index + 4;
 
     const raw = content.slice(4, closerIdx);
     if (raw.trim() === '') {

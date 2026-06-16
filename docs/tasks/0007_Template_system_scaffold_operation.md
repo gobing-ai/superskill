@@ -1,9 +1,9 @@
 ---
 name: Template system + scaffold operation + content-IO foundation
 description: Built-in templates, template resolution, scaffold operation, and the shared content-IO primitives (frontmatter parse/edit, content-name resolution, file hashing, change-apply) consumed by F009–F013.
-status: WIP
+status: Done
 created_at: 2026-06-16T00:00:00.000Z
-updated_at: 2026-06-16T18:06:39.789Z
+updated_at: 2026-06-16T18:17:37.988Z
 folder: docs/tasks
 type: task
 feature-id: F007
@@ -30,22 +30,25 @@ Design references: design doc §5 (template system), §9 (shared foundation).
 
 ### Requirements
 
-- [ ] **R1** — `content/frontmatter.ts`: `parseFrontmatter(content)` splits `---`-delimited YAML block and returns `{ data: Record<string, unknown>, body: string, raw: string }`. Throws `FrontmatterError` on missing/malformed frontmatter.
-- [ ] **R2** — `content/frontmatter.ts`: `applyFrontmatterChange(content, mutate)` round-trips via `yaml.parseDocument` so comments and key order survive serialization.
-- [ ] **R3** — `content/identity.ts`: `resolveContentName(path)` strips directory and `.md`; special-case `SKILL.md` → parent directory name. Returns the canonical `content_name` used by store, queries, and proposal paths.
-- [ ] **R4** — `content/identity.ts`: `resolveContentPath(type, name, opts?)` converts name→file path. Looks in cwd, then target-specific locations. If `name` is already a path to an existing file, returns it unchanged.
-- [ ] **R5** — `content/hash.ts`: `hashContent(filePath)` returns SHA-256 hex digest of file bytes using `Bun.CryptoHasher`. Single source of `file_hash` for evaluation records.
-- [ ] **R6** — `content/edit.ts`: `type Change = { kind: 'frontmatter', key, value } | { kind: 'text', current: string, proposed: string }`. `applyChange(content, change)` — the one mutation primitive shared by refine (F012) and evolve (F013). Frontmatter changes route through `applyFrontmatterChange`; text changes locate the nearest match of `current` and replace with `proposed`.
-- [ ] **R7** — `content/paths.ts`: `getDataRoot(opts?)` returns `<projectRoot>` when given; else `<cwd>` if `<cwd>/.superskill/` exists; else `os.homedir()`. Single store/proposals location rule per ADR-013.
-- [ ] **R8** — `content/paths.ts`: `getDBPath(opts?)` → `<dataRoot>/.superskill/evaluations.db`, `getProposalsDir(opts?)` → `<dataRoot>/.superskill/proposals/`.
-- [ ] **R9** — 5 default templates exist at `apps/cli/src/templates/<type>/default.md`: skill, command, agent, hook, magent. Each has valid YAML frontmatter with `<!-- NAME -->` and `<!-- DESCRIPTION -->` placeholders, plus a body with `<!-- BODY -->` (or type-specific placeholder like `<!-- TODO: skill body -->`).
-- [ ] **R10** — `operations/scaffold.ts`: `scaffold(type, name, opts)` creates new content files from resolved templates. Returns `Promise<string>` (created file path).
-- [ ] **R11** — Template resolution: `~/.superskill/templates/<type>/default.md` → `<pkg>/templates/<type>/default.md`. Built-in default.md always exists; resolution never falls through.
-- [ ] **R12** — Variable substitution: replaces `<!-- NAME -->`, `<!-- DESCRIPTION -->`, `<!-- TARGET -->`, `<!-- BODY -->` with provided values or sensible defaults (name→`<!-- NAME -->`, description→`<!-- DESCRIPTION -->`, target→`<!-- TARGET -->`, body→`<!-- BODY -->`; if no explicit body_var, `<!-- BODY -->` stays as-is).
-- [ ] **R13** — Output: writes to `path.join(opts.output ?? process.cwd(), name + '.md')`. Returns the resolved created path.
-- [ ] **R14** — Overwrite guard: if target file exists and `opts.force` is not true, throws error with message `<path> already exists — pass --force to overwrite` for the CLI to handle as exit 2.
-- [ ] **R15** — Add `"yaml": "^2.9.0"` to `apps/cli/package.json` dependencies. Add `"templates"` to `apps/cli/package.json` `"files"` array so templates ship with the npm package.
-- [ ] **R16** — All Phase 2 commands write user output through `process.stdout.write` (directly or via the `echo` helper from Phase 1), never `console.log`, matching the Phase 1 testing convention.
+- [x] **R1** — `parseFrontmatter` splits `---` block, returns `{data,body,raw}`, throws `FrontmatterError` → **MET** | `content/frontmatter.ts:30`, `tests/content/frontmatter.test.ts`
+- [x] **R2** — `applyFrontmatterChange` round-trips via `yaml.parseDocument`, preserves comments + key order → **MET** | `content/frontmatter.ts:67`, `frontmatter.test.ts:52,72`
+- [x] **R3** — `resolveContentName` strips dir/`.md`; `SKILL.md` → parent dir → **MET** | `content/identity.ts:22`, `identity.test.ts`
+- [x] **R4** — `resolveContentPath` name→path; existing path returned unchanged → **MET** | `content/identity.ts:47`, `identity.test.ts`
+- [x] **R5** — `hashContent` SHA-256 hex via `Bun.CryptoHasher` → **MET** | `content/hash.ts:10`, `hash.test.ts`
+- [x] **R6** — `Change` type + `applyChange` (frontmatter round-trip / body text replace) → **MET** | `content/edit.ts:23`, `edit.test.ts` (body-scoping hardened this pass)
+- [x] **R7** — `getDataRoot` per ADR-013 (projectRoot → cwd/.superskill → homedir) → **MET** | `content/paths.ts:20`, `paths.test.ts`
+- [x] **R8** — `getDBPath`, `getProposalsDir` → **MET** | `content/paths.ts:35,44`, `paths.test.ts`
+- [x] **R9** — 5 default templates with valid YAML frontmatter + placeholders → **MET** | `src/templates/<type>/default.md`
+- [x] **R10** — `scaffold(type,name,opts)` returns `Promise<string>` → **MET** | `operations/scaffold.ts:76`
+- [x] **R11** — resolution user → built-in, never falls through → **MET** | `scaffold.ts:53`, `scaffold.test.ts:111` (user-override test)
+- [x] **R12** — substitutes NAME/DESCRIPTION/TARGET/BODY → **MET** | `scaffold.ts:33`
+- [x] **R13** — writes `output ?? cwd()` + `name.md`, returns path → **MET** | `scaffold.ts:90`
+- [x] **R14** — overwrite guard throws `already exists — pass --force` → **MET** | `scaffold.ts:94`, `scaffold.test.ts:85`
+- [x] **R15** — `yaml@^2.9.0` dep + `"templates"` in `files` → **MET** | `apps/cli/package.json:28,10`
+- [x] **R16** — Phase 2 commands use `process.stdout.write` → **MET (N/A to this task)** | library modules are output-agnostic; convention binds the command layer (F009+)
+
+**Traceability:** 16/16 MET · 0 unmet · 0 partial · no scope drift (all 11 new + 1 modified files map to requirements).
+
 
 ### Q&A
 
@@ -210,16 +213,34 @@ interface ScaffoldOptions {
 
 ### Review
 
+## Review — 2026-06-16 (dev-verify --force --fix all)
+
+**Status:** 2 findings (both P3, both fixed)
+**Scope:** content/{frontmatter,identity,hash,edit,paths,types}.ts, operations/scaffold.ts, 5 templates, package.json
+**Mode:** verify (Phase 7 SECU + Phase 8 traceability)
+**Channel:** current (inline)
+**Gate:** `bun run lint` → pass · `bun run test` → 162 pass / 0 fail (99.44% funcs, 98.49% lines)
 **Verdict:** PASS
 
-- **SECU review:** All 16 requirements (R1–R16) implemented.
-- **R1–R8 (content/ modules):** `parseFrontmatter`, `applyFrontmatterChange`, `resolveContentName`, `resolveContentPath`, `hashContent`, `Change` type, `applyChange`, `getDataRoot`, `getDBPath`, `getProposalsDir` — all exported and functional.
-- **R9–R12 (templates + scaffold):** 5 templates created at `apps/cli/src/templates/<type>/default.md` with valid YAML frontmatter and `<!-- VARIABLE -->` placeholders. `scaffold()` resolves templates, substitutes variables, and writes output.
-- **R13 (Output):** `scaffold()` writes to `opts.output ?? cwd()` + `name.md`, returns created path.
-- **R14 (Overwrite guard):** Throws with `already exists — pass --force` message when target exists and `opts.force` not set.
-- **R15 (Deps + shipping):** `yaml@^2.9.0` added to `apps/cli/package.json` dependencies. `"templates"` added to `"files"` array.
-- **R16 (Output convention):** Phase 2 commands will use `process.stdout.write` — library modules (content/, operations/) are output-agnostic.
-- **Edge cases covered:** Empty frontmatter detection, array-as-mapping rejection, non-existent file hashing, text change match-not-found, overwrite guard, unknown type rejection, user template override.
+### P1 — Blockers
+| # | Title | Dimension | Location | Recommendation |
+|---|-------|-----------|----------|----------------|
+
+### P2 — Warnings
+| # | Title | Dimension | Location | Recommendation |
+|---|-------|-----------|----------|----------------|
+
+### P3 — Info
+| # | Title | Dimension | Location | Recommendation |
+|---|-------|-----------|----------|----------------|
+| 1 | Frontmatter closer matched any `\n---` prefix, not a bare delimiter line | Correctness | content/frontmatter.ts:35 | FIXED — closer now requires `\n---` followed by newline or EOS, so body lines like `---draft` are not mistaken for the delimiter |
+| 2 | `applyChange` text search scanned full content incl. frontmatter, contradicting R6/JSDoc ("body") | Correctness | content/edit.ts:31 | FIXED — text match now scoped to body via `parseFrontmatter`; falls back to whole-content when no frontmatter |
+
+### P4 — Suggestions
+| # | Title | Dimension | Location | Recommendation |
+|---|-------|-----------|----------|----------------|
+
+**Fix-pass 2026-06-16:** 2 fixed, 0 failed, 0 skipped. Gate + full suite green after both fixes.
 
 
 ### Testing
@@ -250,19 +271,3 @@ interface ScaffoldOptions {
 - ADR-012: yaml package for frontmatter round-tripping
 - ADR-013: data root resolution rule
 - Phase 1 output convention: `process.stdout.write` over `console.log`
-
-### P1 — Blockers
-| # | Title | Dimension | Location | Recommendation |
-|---|-------|-----------|----------|----------------|
-
-### P2 — Warnings
-| # | Title | Dimension | Location | Recommendation |
-|---|-------|-----------|----------|----------------|
-
-### P3 — Info
-| # | Title | Dimension | Location | Recommendation |
-|---|-------|-----------|----------|----------------|
-
-### P4 — Suggestions
-| # | Title | Dimension | Location | Recommendation |
-|---|-------|-----------|----------|----------------|
