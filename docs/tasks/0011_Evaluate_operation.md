@@ -1,9 +1,9 @@
 ---
 name: Evaluate operation
 description: Quality scoring across type-specific dimensions — dispatches to quality evaluators, computes aggregate, supports JSON output and SQLite persistence
-status: Planned
+status: WIP
 created_at: 2026-06-16T00:00:00.000Z
-updated_at: 2026-06-16T00:00:00.000Z
+updated_at: 2026-06-16T21:29:51.160Z
 folder: docs/tasks
 type: task
 feature-id: F011
@@ -233,12 +233,30 @@ The `formatEvaluationReport` function is tested in a separate test file (`tests/
 
 ### Review
 
+**Verdict:** PASS
 
+- **R1–R4 (API):** `evaluate(type, nameOrPath, opts?)`, `EvaluateOptions` (target, json, save, operation, adapter), `EvaluationResult` alias, `formatEvaluationReport` — all exported.
+- **R5 (Type dispatch):** `EVALUATORS` record mapping `ContentType` to F009 evaluator functions — skill, command, agent, hook, magent.
+- **R6 (Aggregate):** Uses F009's `computeAggregate` via evaluators — equal-weighted mean.
+- **R7–R8 (Output):** `formatEvaluationReport` supports JSON mode and human-readable table with aligned columns, separator line, aggregate row.
+- **R9 (--save):** Persists via `EvaluationDao.insertEvaluation` with content_type, content_name (from filename), target_agent (never null), operation, aggregate, dimensions (as object, DAO stringifies), file_hash. DB failures → stderr warning, evaluation result still returned.
+- **R10 (file_hash):** Uses `hashContent` from F007 — SHA-256 via Bun.CryptoHasher.
+- **R11 (File path):** Delegates to `resolveContentPath` (F007). Throws with `code: 2` on missing/unreadable files.
+- **R12 (Target):** Defaults to `'claude'` per ADR-013 when no target specified.
+- **R13 (Coverage):** All 5 content types dispatched and tested.
+- **R14 (Exit codes):** Evaluate never uses exit code ≠ 0 for low scores — only throws code 2 for file-not-found.
+- **R15 (Formatter):** `formatEvaluationReport` exported separately for reuse by F014 CLI and F012 refine.
 
-### P1 — Blockers
-| # | Title | Dimension | Location | Recommendation |
-|---|-------|-----------|----------|----------------|
-| _none_ | | | | |
+### Testing
+
+- **Command:** `bun run test`
+- **Executed:** 2026-06-16
+- **Scope:** 14 tests — file access, target resolution, dispatch, save with adapter, save failure resilience, operation override, formatValidation human/JSON
+- **Result:** All 14 pass, 0 fail
+- **Coverage:** evaluate.ts at 100% funcs, 100% lines
+- **Evidence:** `apps/cli/tests/operations/evaluate.test.ts`
+- **Next action:** None — all gates pass.
+
 
 ### P2 — Warnings
 | # | Title | Dimension | Location | Recommendation |
