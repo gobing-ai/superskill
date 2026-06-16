@@ -86,3 +86,39 @@ Reversals = new entries naming what they supersede. Burned numbers get a `Skippe
 **Why.** The existing plugin corpus is in this format; converting it is the immediate deliverable.
 
 **Detail:** see 03 §Source of truth; 04 §Plugin format.
+
+---
+
+## ADR-007: @gobing-ai/ts-* as preferred library source
+
+**Status:** Accepted · **Date:** 2026-06-16
+
+**Decision.** Prefer `@gobing-ai/ts-*` packages from `~/xprojects/ts-libs` for shared utilities, runtime abstractions, AI-runner integration, and infrastructure. Add external npm dependencies only when ts-libs has no equivalent.
+
+**Why.** Single owner, consistent patterns across sibling projects, local modifiability via `bun link` for enhancements during development.
+
+**Detail:** see 03 §Stack. When a ts-libs package needs enhancement during superskill development, use `bun link` to connect the local ts-libs checkout and iterate directly — the workflow is bidirectional: superskill drives ts-libs improvements and consumes them immediately.
+
+---
+
+## ADR-008: Vendor source references for design input
+
+**Status:** Accepted · **Date:** 2026-06-16
+
+**Decision.** `vendors/rulesync` and `vendors/skills` are the canonical reference copies consulted during design and planning, in addition to the read-only rule (ADR-004). Design decisions about format conversion or distribution MUST be checked against their source code.
+
+**Why.** These upstream projects are the foundation of the conversion and distribution pipeline. Decisions that contradict their architecture or miss features they already provide create integration debt and rework.
+
+**Detail:** see 03 §Module boundaries. Extends ADR-004 with the active vendor inventory and their design role. Additional vendor copies may be added to this entry as the project evolves.
+
+---
+
+## ADR-009: @gobing-ai/ts-ai-runner AgentShim as agent abstraction layer
+
+**Status:** Accepted · **Date:** 2026-06-16
+
+**Decision.** superskill uses `@gobing-ai/ts-ai-runner`'s `AgentShim` interface (see `shims.ts`) as the single abstraction for per-agent differences: CLI invocation, slash-command dialect translation, output mode handling, and agent detection. No superskill module hardcodes agent-specific behavior outside this layer.
+
+**Why.** The `AgentShim` contract already handles the 7-agent matrix (Claude, Codex, Gemini, Pi, OpenCode, Antigravity, OpenClaw). Enriching it for new targets (`antigravity-cli`, `antigravity-ide`, `hermes`, `omp`) in ts-libs benefits all consumers; reimplementing agent knowledge in superskill duplicates it.
+
+**Detail:** see `~/xprojects/ts-libs/packages/ai-runner/src/agents/shims.ts`. New coding agents and enhanced shim capabilities (e.g., new aspect types) are added to ts-libs via `bun link` during superskill development and flow back to the published package. superskill imports `AgentName`, `AgentShim`, `getAgentShim`, `translateSlashCommand`, and `AgentDetector` — never reimplements them.

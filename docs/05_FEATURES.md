@@ -2,7 +2,7 @@
 doc: 05_FEATURES
 owns: STATUS — feature decomposition + state (✅ done / 🔶 partial / ⏳ planned / 💤 deferred)
 authority: derived
-version: 3.0.0
+version: 4.0.0
 derived_from: [01_PRD, 02_ROADMAP]
 owner: Robin Min
 updated_at: 2026-06-16
@@ -19,60 +19,53 @@ Status legend: ✅ done · 🔶 partial · ⏳ planned · 💤 deferred
 
 Design: [design-doc-phase1.md](design/design-doc-phase1.md)
 
-### Foundation
+### Feature list
 
-| Feature | Status | Acceptance |
-|---------|--------|------------|
-| Project scaffold | ✅ | `bun run autofix && bun run spur-check` exits 0 |
-| Biome + TypeScript gates | ✅ | `biome check .` clean; `tsc --noEmit` clean |
-| bun:test suite | ✅ | 2 tests, 100% coverage |
-| Spur rule catalog | ✅ | 21 rules pass (19 pre-check + 2 post-check) |
-| Remove ts-base artifacts | ✅ | No `ts-base` in configs, lockfile, commands |
-| Documentation 00–05 | ✅ | All docs per constitution §4 |
+| ID | Feature | Deps | Status | Files |
+|----|---------|------|--------|-------|
+| F001 | [Target taxonomy + config schema](features/F001-target-taxonomy-config.md) | — | ⏳ | `targets.ts`, `config.ts` |
+| F002 | [Plugin → .rulesync/ mapper](features/F002-plugin-mapper.md) | — | ⏳ | `mapper.ts` |
+| F003 | [Conversion pipeline + rulesync integration](features/F003-conversion-pipeline.md) | F001 | ⏳ | `pipeline/*`, `rulesync.ts` |
+| F004 | [superskill install command + target dispatch](features/F004-install-command.md) | F001, F002, F003 | ⏳ | `commands/install.ts` |
+| F005 | [Tests + verification](features/F005-tests-verification.md) | F001–F004 | ⏳ | `tests/*` |
 
-### CLI & config
+### Foundation (already done)
 
-| Feature | Status | Acceptance |
-|---------|--------|------------|
-| Target taxonomy | ⏳ | `Target` enum covers 8 agents; maps to rulesync and ai-runner |
-| Config schema | ⏳ | `superskill.jsonc` parsed with zod |
-| Commander entry | ⏳ | `install` subcommand parses correctly |
+| Item | Status |
+|------|--------|
+| Project scaffold | ✅ |
+| Biome + TypeScript gates | ✅ |
+| bun:test suite (2 tests, 100%) | ✅ |
+| Spur rule catalog (21 rules) | ✅ |
+| Remove ts-base artifacts | ✅ |
+| Documentation 00–05 | ✅ |
 
-### Core install pipeline
+### Dependency graph
 
-| Feature | Status | Acceptance |
-|---------|--------|------------|
-| Plugin mapper | ⏳ | `plugins/<name>/` → `.rulesync/` canonical layout |
-| rulesync integration | ⏳ | `rulesync.generate()` via programmatic API |
-| Conversion pipeline | ⏳ | Colon refs, slash dialect, frontmatter normalization |
-| Feature dispatch | ⏳ | Skills, commands, subagents, hooks, MCP all dispatched |
-| Claude Code marketplace | ⏳ | `claude plugin install` for `claude` target |
+```
+F001 ──┐
+       ├──► F003 ──┐
+       │           ├──► F004 ──► F005
+F002 ──┘           │
+                   │
+     (no deps)     │
+```
 
-### Target agents
+## Task creation plan
 
-| Feature | Status | Acceptance |
-|---------|--------|------------|
-| Claude Code | ⏳ | Plugin marketplace (not rulesync) |
-| Codex | ⏳ | `$plugin-command` dialect; shared `~/.agents/skills/` |
-| Pi | ⏳ | `/skill:plugin-command` dialect; Pi native subagent format |
-| omp | ⏳ | Same format as Pi; `~/.omp/` paths |
-| OpenCode | ⏳ | `~/.agents/skills/` |
-| antigravity-cli | ⏳ | `~/.gemini/antigravity-cli/skills/` |
-| antigravity-ide | ⏳ | `~/.gemini/config/skills/` |
-| Hermes | ⏳ | `~/.hermes/skills/` |
-| Gemini CLI | 💤 | Removed — Google retiring June 2026 |
-| Old Antigravity | 💤 | Replaced by antigravity-cli + antigravity-ide |
+Each feature becomes one task file. Recommended order and granularity:
 
+| Order | Feature | Task | Size | Rationale |
+|-------|---------|------|------|-----------|
+| 1 | F001 | `F001-target-taxonomy-config` | S (1 file + tests) | Foundation — unblocks F003. Smallest possible increment. |
+| 2 | F002 | `F002-plugin-mapper` | S (1 file + tests) | Independent of F001. Can run in parallel. |
+| 3 | F003 | `F003-conversion-pipeline` | M (3–4 files + tests) | Depends on F001. Pipeline stages + rulesync wrapper. |
+| 4 | F004 | `F004-install-command` | M (1–2 files + tests) | Depends on F001–F003. Integration point. |
+| 5 | F005 | `F005-tests-verification` | S (test files) | Depends on F004. Covers everything. |
 
-### Verification
+**Parallelization**: F001 and F002 have no shared dependencies — they can be implemented concurrently in separate sessions. F003 must wait for F001. F004 gates on F001+F002+F003. F005 runs last.
 
-| Feature | Status | Acceptance |
-|---------|--------|------------|
-| E2E install | ⏳ | `superskill install rd3 --targets all` produces correct output |
-| Dry-run | ⏳ | `--dry-run` previews without writing |
-| Idempotency | ⏳ | Second run produces identical output |
-| Error handling | ⏳ | Missing plugin → exit 1 with message |
-| Test coverage | ⏳ | ≥90% line + function |
+**Size key**: S = ≤2 files + tests, completable in one session. M = 3–5 files + tests, may span sessions.
 
 ---
 
@@ -80,31 +73,12 @@ Design: [design-doc-phase1.md](design/design-doc-phase1.md)
 
 Design: [design-doc-phase2.md](design/design-doc-phase2.md)
 
-### Commands
+| Feature | Origin | Status |
+|---------|--------|--------|
+| `superskill agent` | `cc-agents` | 💤 |
+| `superskill skill` | `cc-skills` | 💤 |
+| `superskill command` | `cc-commands` | 💤 |
+| `superskill hook` | `cc-hooks` | 💤 |
+| `superskill magent` | `cc-magents` | 💤 |
 
-| Feature | Origin skill | Status | Acceptance |
-|---------|-------------|--------|------------|
-| `superskill agent` | `cc-agents` | ⏳ | scaffold, validate, evaluate, refine, evolve subagents |
-| `superskill skill` | `cc-skills` | ⏳ | scaffold, validate, evaluate, refine, evolve skills |
-| `superskill command` | `cc-commands` | ⏳ | scaffold, validate, evaluate, refine, evolve slash commands |
-| `superskill hook` | `cc-hooks` | ⏳ | scaffold, validate, evaluate, refine, evolve hooks |
-| `superskill magent` | `cc-magents` | ⏳ | scaffold, validate, evaluate, refine, evolve magents |
-
-### Operations (shared across all five commands)
-
-| Feature | Status | Acceptance |
-|---------|--------|------------|
-| `scaffold` | ⏳ | Generates from template; user templates override built-in |
-| `validate` | ⏳ | Structural + schema check; JSON findings output |
-| `evaluate` | ⏳ | Quality scoring across type-specific dimensions; `--save` persists |
-| `refine` | ⏳ | Evaluate → fix (auto-apply or interactive); score delta shown |
-| `evolve` | ⏳ | Analyze history → draft proposal → accept/reject → apply → verify |
-
-### Infrastructure
-
-| Feature | Status | Acceptance |
-|---------|--------|------------|
-| Data store | ⏳ | SQLite `evaluations` + `proposals` tables at `~/.superskill/` |
-| Quality dimensions | ⏳ | 5 dimensions per content type (25 total) |
-| Template system | ⏳ | Shipped with npm package; overridable at `~/.superskill/templates/` |
-| Closed evolve loop | ⏳ | Accepted proposal → verification evaluation → score delta recorded |
+Phase 2 features will be decomposed when Phase 1 exits.
