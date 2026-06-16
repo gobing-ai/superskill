@@ -3,7 +3,7 @@ name: Plugin to rulesync mapper
 description: Plugin to rulesync mapper
 status: Todo
 created_at: 2026-06-16T05:43:07.021Z
-updated_at: 2026-06-16T05:43:44.474Z
+updated_at: 2026-06-16T06:44:44.337Z
 folder: docs/tasks
 type: task
 feature-id: F002

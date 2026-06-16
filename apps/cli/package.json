@@ -20,8 +20,9 @@
         "typecheck": "tsc --noEmit"
     },
     "dependencies": {
-        "@gobing-ai/ts-utils": "^0.3.19",
+        "@gobing-ai/ts-ai-runner": "^0.3.19",
         "commander": "^14.0.0",
+        "@gobing-ai/ts-utils": "^0.3.19",
         "rulesync": "^8.28.1"
     },
     "devDependencies": {
