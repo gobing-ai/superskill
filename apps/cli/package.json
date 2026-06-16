@@ -12,7 +12,7 @@
         "typecheck": "tsc --noEmit"
     },
     "dependencies": {
-        "@superskill/utils": "workspace:*",
+        "@gobing-ai/ts-utils": "^0.3.19",
         "commander": "^14.0.0"
     },
     "devDependencies": {

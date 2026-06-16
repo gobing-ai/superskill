@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'bun:test';
+import { describe, expect, it, spyOn } from 'bun:test';
 
 describe('cli', () => {
     it('createProgram returns a commander instance with an add command', async () => {
@@ -8,16 +8,17 @@ describe('cli', () => {
         expect(addCmd).toBeDefined();
     });
 
-    it('add command runs without throwing', async () => {
-        const origWrite = Bun.write;
-        // biome-ignore lint/suspicious/noExplicitAny: suppressing test output to terminal
-        Bun.write = (() => Promise.resolve(0)) as any;
+    it('add command outputs correct sum', async () => {
+        const writeSpy = spyOn(process.stdout, 'write').mockImplementation(() => true);
         try {
             const { createProgram } = await import('../src/cli');
             const program = createProgram();
-            expect(() => program.parse(['add', '3', '4'], { from: 'user' })).not.toThrow();
+            program.parse(['add', '3', '4'], { from: 'user' });
+            expect(writeSpy).toHaveBeenCalled();
+            const output = writeSpy.mock.calls.map((c) => c[0]).join('');
+            expect(output).toContain('7');
         } finally {
-            Bun.write = origWrite;
+            writeSpy.mockRestore();
         }
     });
 });

@@ -10,7 +10,7 @@
     "scripts": {
         "prepare": "lefthook install",
         "dev": "bun run --filter './apps/*' --filter './packages/*' dev",
-        "test": "bun test --coverage --coverage-reporter=lcov --coverage-dir=.coverage",
+        "test": "NODE_ENV=test bun test --coverage --coverage-dir=.coverage --reporter=dots",
         "test:full": "bun test --coverage --coverage-reporter=lcov --coverage-dir=.coverage --update-snapshots",
         "test-pre-check": "spur rule run --preset recommended-pre-check --fail-on warning --verbose",
         "test-post-check": "spur rule run --preset recommended-post-check --fail-on warning --verbose",
