@@ -1,9 +1,9 @@
 ---
 name: Refine operation
 description: Evaluate → fix pipeline — classifies findings into auto-apply/suggest/flag strategies, applies structural fixes automatically or interactively, re-evaluates and shows score delta
-status: WIP
+status: Done
 created_at: 2026-06-16T00:00:00.000Z
-updated_at: 2026-06-16T21:42:42.503Z
+updated_at: 2026-06-16T21:46:16.506Z
 folder: docs/tasks
 type: task
 feature-id: F012
@@ -11,11 +11,11 @@ priority: high
 estimated_hours: 5
 tags: ["operations","quality","refinement","fix-strategy"]
 impl_progress:
-  planning: pending
-  design: pending
-  implementation: pending
-  review: pending
-  testing: pending
+  planning: done
+  design: done
+  implementation: done
+  review: done
+  testing: done
 ---
 
 ## 0012. Refine operation
@@ -524,6 +524,22 @@ export async function refine(
 
 **Verdict:** PASS
 
+#### Re-verification — 2026-06-16 (`/rd3:dev-verify 0012 --force --fix all`)
+
+**Verdict:** PASS (after fix pass — initial verdict PARTIAL on R12).
+
+- Gate: `bun run lint` clean (Biome + typecheck, 72 files). `bun test refine.test.ts` → 34 pass / 0 fail; refine.ts 100% funcs / 90.51% lines. Full suite: 366 pass / 0 fail across 28 files.
+- Phase 7: 0×P1, 0×P2, 1×P3 (R12 backup-not-deleted — **fixed**), 1×P4 (by-design placeholder). No injection/secrets/auth surface; all frontmatter edits route through `applyChange` → `doc.set` (no string concat / YAML injection).
+- Phase 8 (initial): 17 MET / 1 PARTIAL. R12 said rollback must restore **and delete** the backup; `restoreFromBackup` restored but never deleted (the original design comment wrongly claimed "Bun does not have a direct unlink").
+- **Fix applied (P3 / R12):** `restoreFromBackup` now calls `rmSync(backupPath, { force: true })` after restore. Quit test strengthened to assert both content restoration and backup removal. Success-path backup is intentionally retained per R11 (recovery safety net) — R12 only mandates deletion on quit/rollback.
+- Working-tree delta vs recorded run: refine.ts gained an injectable `_createRl` factory making `runInteractive` testable; refine.test.ts grew 21→34 tests → refine.ts coverage 54% → 90.51% lines. The recorded "runInteractive inherently untestable" note is superseded.
+- Post-fix Phase 8: **18/18 MET**, no unmet, no partial, no scope drift.
+
+**P4 — Suggestions (re-verification)**
+| # | Title | Dimension | Location | Recommendation |
+|---|-------|-----------|----------|----------------|
+| 1 | Auto-added `model: 'default'` is not a valid model alias | Usability | apps/cli/src/operations/refine.ts:81-86 (`getDefaultForField`) | Intentional TODO-marker placeholder; a real default is a product decision. Left as-is. |
+
 - **R1–R4 (API):** `refine()`, `classifyFix()`, `generateAutoChange()`, `RefineOptions`, `FixRecord`, `RefineResult`, `RefineAbortedError` — all exported.
 - **R5 (Classification):** `classifyFix` — error→auto-apply, content quality→suggest, architecture→flag. 10 classification tests pass.
 - **R6 (Auto-apply):** `generateAutoChange` generates frontmatter changes for missing fields, array conversion, and string conversion via `applyChange` from F007.
@@ -543,10 +559,10 @@ export async function refine(
 ### Testing
 
 - **Command:** `bun run test`
-- **Executed:** 2026-06-16
-- **Scope:** 21 tests — classifyFix (10), generateAutoChange (5), refine auto mode (2), file not found (1), RefineAbortedError (3)
-- **Result:** 21 pass, 0 fail
-- **Coverage:** refine.ts 80% funcs, 54% lines — `runInteractive` (80 lines) inherently untestable without stdin mocking; core logic well-covered
+- **Executed:** 2026-06-16 (re-verified)
+- **Scope:** 34 tests — classifyFix (10), generateAutoChange (8), runInteractive (7, via injectable `_createRl`), refine auto mode (6), file not found (1), RefineAbortedError (3)
+- **Result:** 34 pass, 0 fail in refine.test.ts; 366 pass, 0 fail across 28 files (full suite)
+- **Coverage:** refine.ts 100% funcs, 90.51% lines (meets the ≥90% line target); 99.68% funcs / 97.83% lines aggregate. `runInteractive` is now tested via the injectable readline factory.
 - **Evidence:** `apps/cli/tests/operations/refine.test.ts`
 - **Next action:** None — all gates pass.
 
@@ -565,10 +581,6 @@ export async function refine(
 | # | Title | Dimension | Location | Recommendation |
 |---|-------|-----------|----------|----------------|
 | _none_ | | | | |
-
-
-### Testing
-
 
 
 ### Artifacts

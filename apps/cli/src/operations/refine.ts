@@ -1,3 +1,4 @@
+import { rmSync } from 'node:fs';
 import { createInterface } from 'node:readline';
 import { echo, echoError } from '@gobing-ai/ts-utils';
 import { applyChange, type Change } from '../content/edit';
@@ -145,23 +146,35 @@ async function backupFile(filePath: string): Promise<string> {
 
 async function restoreFromBackup(backupPath: string, originalPath: string): Promise<void> {
     await Bun.write(originalPath, Bun.file(backupPath));
+    // R12: delete the backup after a successful restore so quit leaves no residue.
+    rmSync(backupPath, { force: true });
 }
 
 // ── Interactive Mode ─────────────────────────────────────────────────────────
 
-async function runInteractive(
+/**
+ * Present each classified finding to the user for accept/reject/skip/quit
+ * via a readline interface. Flag findings are shown but skipped automatically.
+ *
+ * @param findings  Classified findings to process.
+ * @param content   Current file content string.
+ * @param filePath  Path to the original file (written back on completion).
+ * @param backupPath  Path to the backup file (restored on quit).
+ * @param _createRl  Injectable readline factory for testing.
+ * @returns  Updated content and fix records.
+ */
+export async function runInteractive(
     findings: { finding: Finding; strategy: FixStrategy }[],
     content: string,
     filePath: string,
     backupPath: string,
+    _createRl: typeof createInterface = createInterface,
 ): Promise<{ newContent: string; fixesApplied: FixRecord[]; fixesSkipped: FixRecord[] }> {
-    const rl = createInterface({ input: process.stdin, output: process.stdout });
+    const rl = _createRl({ input: process.stdin, output: process.stdout });
     const question = (prompt: string): Promise<string> => new Promise((resolve) => rl.question(prompt, resolve));
-
     const fixesApplied: FixRecord[] = [];
     const fixesSkipped: FixRecord[] = [];
     let currentContent = content;
-
     for (let i = 0; i < findings.length; i++) {
         const item = findings[i];
         if (!item) continue;
