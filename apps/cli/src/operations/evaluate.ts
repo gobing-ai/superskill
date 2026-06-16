@@ -1,4 +1,4 @@
-import type { DbAdapter } from '@gobing-ai/ts-db';
+import { echoError } from '@gobing-ai/ts-utils';
 import { hashContent } from '../content/hash';
 import { resolveContentName, resolveContentPath } from '../content/identity';
 import { evaluateAgent } from '../quality/agent';
@@ -7,6 +7,7 @@ import type { ContentType, QualityReport } from '../quality/dimensions';
 import { evaluateHook } from '../quality/hook';
 import { evaluateMagent } from '../quality/magent';
 import { evaluateSkill } from '../quality/skill';
+import type { DbAdapter } from '../store';
 import type { Target } from '../targets';
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -110,7 +111,7 @@ async function persistEvaluation(
         });
     } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
-        process.stderr.write(`Warning: failed to save evaluation: ${msg}\n`);
+        echoError(`Warning: failed to save evaluation: ${msg}`);
     }
 }
 
