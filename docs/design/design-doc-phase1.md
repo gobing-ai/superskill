@@ -76,6 +76,30 @@ export const configSchema = z.object({
 export type SuperskillConfig = z.infer<typeof configSchema>;
 ```
 
+The `features` set is a verified subset of rulesync's `ALL_FEATURES` (`rules, ignore, mcp, subagents, commands, skills, hooks, permissions`).
+
+### 1.5 Target → agent-name bridge (for slash translation)
+
+`translateSlashCommand` from `@gobing-ai/ts-ai-runner` takes an `AgentName`, whose set is **disjoint** from superskill's `Target` on the four Phase 1 additions (ADR-009 amendment). Bridge them:
+
+```typescript
+// src/targets.ts
+import type { AgentName } from '@gobing-ai/ts-ai-runner';
+
+export const TARGET_TO_AGENT_NAME: Record<Target, AgentName> = {
+  claude: 'claude',
+  codex: 'codex',
+  pi: 'pi',
+  omp: 'pi',                  // omp speaks Pi's slash dialect
+  opencode: 'opencode',
+  'antigravity-cli': 'antigravity',   // default branch → /plugin-command
+  'antigravity-ide': 'antigravity',
+  hermes: 'opencode',         // any non-claude/codex/pi → default /plugin-command
+};
+```
+
+`translateSlashCommand`'s `default` branch already yields `/plugin-command` for non-claude/codex/pi agents, so the exact `AgentName` chosen for the four "other" targets is irrelevant as long as it is not `claude`/`codex`/`pi`.
+
 Example:
 ```jsonc
 {
@@ -88,6 +112,36 @@ Example:
 }
 ```
 
+### 1.6 Marketplace manifest resolver (ADR-011)
+
+Plugin roots are resolved from a Claude Code `.claude-plugin/marketplace.json`. Schema (verified against Claude Code docs + `cc-agents/.claude-plugin/marketplace.json`):
+
+```typescript
+// src/marketplace.ts
+import { z } from 'zod';
+
+const pluginEntrySchema = z.object({
+  name: z.string(),
+  // Phase 1: string relative-path source only. Object sources rejected at resolve time.
+  source: z.union([z.string(), z.object({ source: z.string() }).passthrough()]),
+}).passthrough();
+
+export const marketplaceSchema = z.object({
+  name: z.string(),
+  owner: z.object({ name: z.string(), email: z.string().optional() }).optional(),
+  metadata: z.object({ pluginRoot: z.string().optional() }).passthrough().optional(),
+  plugins: z.array(pluginEntrySchema),
+}).passthrough();
+
+// resolvePlugin(marketplacePath | undefined, pluginName)
+//   → { pluginRoot: string }  (absolute), or throws with a precise message
+```
+
+Resolution rules (mirror 03 §Plugin resolution + invariant 7):
+- Marketplace root = `dirname(dirname(marketplacePath))` when the path ends in `.claude-plugin/marketplace.json`; if a directory is passed, append `.claude-plugin/marketplace.json`.
+- `pluginRoot = join(marketplaceRoot, metadata.pluginRoot ?? '', source)`; relative `source` must start `./`.
+- Reject object `source`, `../`-escapes, and unknown plugin names with distinct exit-1 messages.
+
 ## 2. `superskill install` command
 
 ### 2.1 CLI interface
@@ -96,10 +150,12 @@ Example:
 superskill install <plugin> [options]
 
 Arguments:
-  plugin                Plugin name (required) — looks up in plugins/ directory
-                        or in superskill.jsonc plugins list
+  plugin                Plugin name (required) — resolved via marketplace manifest (§0)
 
 Options:
+  --marketplace <path>  Path to a .claude-plugin/marketplace.json (or its dir).
+                        Default: .claude-plugin/marketplace.json in CWD, else
+                        fall back to plugins/<name>/ scan. (ADR-011)
   --targets <list>      Comma-separated target agents (default: all configured)
   --global              Install to user-level global directories (default: true)
   --dry-run             Preview what would be written without touching filesystem
@@ -108,8 +164,9 @@ Options:
 
 Examples:
 ```bash
-superskill install rd3                                          # all configured targets
+superskill install rd3                                          # marketplace in CWD, all configured targets
 superskill install rd3 --targets pi,codex                       # specific targets
+superskill install rd3 --marketplace ~/projects/cc-agents       # resolve from another repo's marketplace
 superskill install rd3 --targets all --dry-run                  # preview
 superskill install wt --global false                            # project-level install
 ```
@@ -145,10 +202,15 @@ plugins/rd3/                       .rulesync/skills/                      ~/.age
 superskill install rd3 --targets pi,codex
 ```
 
-**Step 0 — Resolve plugin**
-- If `rd3` is in `superskill.jsonc` plugins list, use its path
-- Otherwise, look in `plugins/rd3/`
-- Validate `plugins/rd3/plugin.json` exists
+**Step 0 — Resolve plugin via marketplace manifest (ADR-011)**
+- Locate the manifest: `--marketplace <path>` → else `.claude-plugin/marketplace.json` in CWD → else fall back to the `plugins/rd3/` scan.
+- Parse `marketplace.json`; find the entry where `plugins[].name === 'rd3'`.
+- Plugin root = `source` (prefixed by `metadata.pluginRoot` if `source` is bare), resolved **relative to the marketplace root** = the dir containing `.claude-plugin/` (NOT `.claude-plugin/` itself). E.g. `cc-agents/.claude-plugin/marketplace.json` + `"source": "./plugins/rd3"` → `cc-agents/plugins/rd3`.
+- **Phase 1: string relative-path `source` only.** An object `source` (`github`/`url`/`git-subdir`/`npm`) → exit 1 "remote sources not yet supported" (deferred, 01). A `source` with `../` escaping the marketplace root → exit 1.
+- Validate `<pluginRoot>/plugin.json` exists.
+- If `rd3` is also listed in `superskill.jsonc` `plugins`, that path takes precedence over the marketplace scan (explicit local override).
+
+See §0.1 for the resolver shape.
 
 **Step 1 — Map plugin → `.rulesync/` canonical layout**
 - Copy each `skills/*.md` → `.rulesync/skills/rd3-<name>/SKILL.md`
@@ -170,34 +232,45 @@ rulesync dependencies → apps/cli/package.json: {"rulesync": "^8.28.1"}
 ```
 ```typescript
 import { generate } from 'rulesync';
+import os from 'node:os';
 
 await generate({
   targets: ['codexcli', 'pi'],    // mapped from --targets codex,pi
   features: ['skills', 'commands', 'subagents', 'hooks', 'mcp'],
-  inputRoot: '.rulesync',
+  inputRoot: '.rulesync',         // where the canonical source lives
+  outputRoots: [global ? os.homedir() : process.cwd()],  // REQUIRED — see ADR-010
+  global,                         // swaps the relative subdir per target
   delete: false,                  // keep canonical source after generation
+  dryRun,
+  verbose,
 });
 ```
 
-**Step 4 — Post-process per-target**
-- For Pi subagents: convert from Skills 2.0 → Pi native agent YAML format
-- For Hermes: copy generated skills to `~/.hermes/skills/` (rulesync doesn't have hermes target)
-- For omp: copy to `~/.omp/agent/skills/` (same format as Pi)
+**ADR-010 — output root is superskill's job.** rulesync writes to `<outputRoot>/<relativeDirPath>` and **never resolves `~`**. Its `global` flag only changes the relative subdir (e.g. Pi `.pi/skills` → `.pi/agent/skills`). Omitting `outputRoots` writes to `process.cwd()`, so a "global" install would land in the current directory. Always pass `outputRoots: [os.homedir()]` for global installs.
 
-**Step 5 — Copy to target directories**
+**Step 4 — Post-process the two targets rulesync can't write (ADR-010)**
 
-For each target, resolve the install path:
+rulesync resolves and writes every supported target's path itself in Step 3. Only two targets need superskill to write them, because they are absent from rulesync's `ToolTarget` set:
 
-| Target | Global path | Project path | Note |
-|--------|------------|--------------|------|
-| `claude` | N/A | plugin marketplace | Handled separately — not rulesync |
-| `codex` | `~/.agents/skills/` | `.codex/skills/` | Global uses shared agents dir |
-| `pi` | `~/.agents/skills/` | `.pi/agent/skills/` | Global uses shared agents dir; subagents → `~/.pi/agent/agents/` |
-| `omp` | `~/.agents/skills/` | `.omp/agent/skills/` | Same format as Pi |
-| `opencode` | `~/.agents/skills/` | `.opencode/skills/` | Global uses shared agents dir |
-| `antigravity-cli` | `~/.gemini/antigravity-cli/skills/` | `.gemini/antigravity-cli/skills/` | Native path |
-| `antigravity-ide` | `~/.gemini/config/skills/` | `.gemini/config/skills/` | Native path |
-| `hermes` | `~/.hermes/skills/` | `.hermes/skills/` | Custom target |
+- **omp** — copy generated Pi output to omp's tree (`~/.omp/agent/skills/` global, `.omp/agent/skills/` project). omp shares Pi's format.
+- **hermes** — copy generated skills to `~/.hermes/skills/` (global) or `.hermes/skills/` (project).
+
+Pi subagent conversion (Skills 2.0 → Pi native agent YAML) runs as a ConversionPipeline stage in Step 2/F003, not here.
+
+**Step 5 — Resolved paths (reference only — rulesync owns supported targets)**
+
+The table below shows where content lands. For every rulesync-supported target these paths are produced by `generate()` given `outputRoots=[~]`; superskill does **not** reimplement them (ADR-010). Verified against `rulesync@8.28.1` constants.
+
+| Target | Global path (rulesync-resolved) | Project path | Owner |
+|--------|---------------------------------|--------------|-------|
+| `claude` | plugin marketplace | plugin marketplace | superskill (`claude plugin install`) |
+| `codex` | `~/.agents/skills/` (`$CODEX_HOME`) | `.agents/skills/` | rulesync |
+| `pi` | `~/.pi/agent/skills/` | `.pi/skills/` | rulesync |
+| `omp` | `~/.omp/agent/skills/` | `.omp/agent/skills/` | **superskill copy** |
+| `opencode` | `~/.agents/skills/` | `.agents/skills/` | rulesync |
+| `antigravity-cli` | `~/.gemini/antigravity-cli/skills/` | `.agents/skills/` | rulesync |
+| `antigravity-ide` | `~/.gemini/config/skills/` | `.agents/skills/` | rulesync |
+| `hermes` | `~/.hermes/skills/` | `.hermes/skills/` | **superskill copy** |
 
 **Claude Code special case**: When `claude` is in targets, call the Claude Code CLI to update the plugin marketplace:
 ```
@@ -209,7 +282,7 @@ This is not a rulesync operation — Claude Code reads directly from the plugin 
 
 | Rule | Applies to | Source → Result |
 |------|-----------|-----------------|
-| Slash dialect | commands | `/rd3:dev-run` → `$rd3-dev-run` (Codex), `/skill:rd3-dev-run` (Pi/omp), `/rd3-dev-run` (others) |
+| Slash dialect | commands | `/rd3:dev-run` → `$rd3-dev-run` (Codex), `/skill:rd3-dev-run` (Pi/omp), `/rd3-dev-run` (others). Via `translateSlashCommand(TARGET_TO_AGENT_NAME[target], …)` — omp bridges to `pi` (§1.5). Verified against ts-ai-runner@0.3.19. |
 | Colon→hyphen | all prose | `rd3:dev-run` → `rd3-dev-run` |
 | @-file stripping | Codex only | `@AGENTS.md` → removed (Codex doesn't support @-file imports) |
 | Frontmatter name inject | commands, subagents | Commands/subagents without `name:` in frontmatter get it injected |
@@ -219,14 +292,13 @@ This is not a rulesync operation — Claude Code reads directly from the plugin 
 
 ```
 apps/cli/src/
-├── cli.ts                    # Commander entry: install
+├── cli.ts                    # Commander entry: registers `install` (remove the scaffold `add`)
 ├── index.ts                  # #!/usr/bin/env bun entry
-├── install.ts                # install command implementation
-├── list.ts                   # list command — targets, features, plugins
-├── doctor.ts                 # doctor command — agent detection + health checks
-├── init.ts                   # init command — scaffold superskill.jsonc
-├── targets.ts                # Target enum + path resolution table
+├── commands/
+│   └── install.ts            # install command implementation
+├── targets.ts                # Target enum, TARGET_TO_RULESYNC, TARGET_TO_AGENT_NAME
 ├── config.ts                 # superskill.jsonc zod schema + loader
+├── marketplace.ts            # .claude-plugin/marketplace.json parser + resolvePlugin (ADR-011)
 ├── mapper.ts                 # Plugin → .rulesync/ canonical layout
 ├── pipeline/
 │   ├── convert.ts            # ConversionPipeline
@@ -235,6 +307,8 @@ apps/cli/src/
 └── rulesync.ts               # Thin wrapper around rulesync.generate()
 ```
 
+`list.ts`, `doctor.ts`, `init.ts` are **deferred** (PRD §Deferred — "after Phase 1 install is stable"); they are not part of Phase 1 and must not be scaffolded yet. The existing `cli.ts` still registers a demo `add` command from the scaffold — F004 replaces it with `install`. The `commands/` directory placement matches 03 §Module boundaries.
+
 ### 2.6 Acceptance criteria
 
 ```
@@ -242,12 +316,12 @@ apps/cli/src/
 superskill install rd3 --targets pi,codex --dry-run
 # → Lists files that would be written without touching disk
 
-superskill install rd3 --targets pi,codex
-# → Skills land in:
-#   ~/.agents/skills/rd3-code-review-common/SKILL.md
-#   ~/.agents/skills/rd3-tdd-workflow/SKILL.md
-#   ~/.pi/agent/agents/rd3-super-coder.md  (Pi native format)
-# → exit 0
+superskill install rd3 --targets pi,codex --global
+# → Pi skills land in:    ~/.pi/agent/skills/rd3-code-review-common/SKILL.md
+#                         ~/.pi/agent/skills/rd3-tdd-workflow/SKILL.md
+# → Codex skills land in: ~/.agents/skills/rd3-*/SKILL.md  (under $CODEX_HOME)
+# → Pi subagents in Pi native agent format (per ConversionPipeline)
+# → all paths resolved by rulesync given outputRoots=[~] (ADR-010); exit 0
 
 # Idempotency
 superskill install rd3 --targets pi,codex   # second run
@@ -260,9 +334,11 @@ superskill install nonexistent --targets pi
 ## 3. Dependencies to add
 
 ```jsonc
-// apps/cli/package.json dependencies to add:
+// apps/cli/package.json
 {
-  "rulesync": "^8.28.1",
-  "@gobing-ai/ts-ai-runner": "workspace:*"  // from ts-libs
+  "rulesync": "^8.28.1",            // already present
+  "@gobing-ai/ts-ai-runner": "^0.3.19"  // NOT yet a dependency — add it
 }
 ```
+
+`rulesync@^8.28.1` is already declared. `@gobing-ai/ts-ai-runner` is **not** in `apps/cli/package.json` yet (only `@gobing-ai/ts-utils` is) — F003 must add it. Use the published version `^0.3.19` (ts-libs is a sibling repo consumed via the registry / `bun link` per ADR-007/009, not a superskill workspace member — `workspace:*` would not resolve).

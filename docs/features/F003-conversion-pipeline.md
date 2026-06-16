@@ -21,7 +21,7 @@ Two concerns: (1) a ConversionPipeline of named stages that transform content pe
 
 ## Why
 
-The bash scripts in cc-agents/scripts do these transformations by hand with regex. rulesync handles the heavy format conversion (41 targets × 8 features), but cc-agents-specific transforms (colon→hyphen, Pi subagent format, slash dialect) must still run. The pipeline is the home for those.
+The bash scripts in cc-agents/scripts do these transformations by hand with regex. rulesync handles the heavy format conversion (30+ targets × 8 features), but cc-agents-specific transforms (colon→hyphen, Pi subagent format, slash dialect) must still run. The pipeline is the home for those.
 
 ## Change
 
@@ -45,6 +45,12 @@ The bash scripts in cc-agents/scripts do these transformations by hand with rege
 - Frontmatter transformation: `tools:` → CSV, `model: inherit` → removed, `skill:` field remapped
 - References `@gobing-ai/ts-ai-runner` for tool name normalization
 
+### Target → AgentName bridge (for slash translation)
+
+- `translateSlashCommand` takes a ts-ai-runner `AgentName`, **not** a superskill `Target`; the sets are disjoint on `antigravity-cli`/`antigravity-ide`/`hermes`/`omp` (ADR-009 amendment, verified against ts-ai-runner@0.3.19)
+- Bridge via `TARGET_TO_AGENT_NAME` (F001/`targets.ts`): `omp→pi`; the antigravity/hermes targets fall to the function's `default` branch (`/plugin-command`)
+- `@gobing-ai/ts-ai-runner` is **not yet a dependency** — add `"@gobing-ai/ts-ai-runner": "^0.3.19"` to `apps/cli/package.json` (published version, not `workspace:*`)
+
 ### `rulesync.ts`
 
 - `runRulesync(targets: Target[], features: Feature[], inputRoot: string, options: { global, dryRun, verbose }): Promise<GenerateResult>`
@@ -52,18 +58,22 @@ The bash scripts in cc-agents/scripts do these transformations by hand with rege
 - Calls `generate()` from `rulesync` npm package — **not** the CLI, **not** a shell command:
   ```typescript
   import { generate } from 'rulesync';
+  import os from 'node:os';
 
   await generate({
     targets: mappedTargets,        // ToolTarget[]
     features: requestedFeatures,   // Feature[]
     inputRoot: '.rulesync',        // canonical source dir
-    global: true,                  // user-level installs
-    dryRun: false,                 // from --dry-run flag
-    verbose: false,                // from --verbose flag
+    outputRoots: [global ? os.homedir() : process.cwd()],  // REQUIRED — ADR-010
+    global,                        // swaps relative subdir per target
+    delete: false,
+    dryRun,
+    verbose,
   });
   ```
-- Rulesync writes output directly to target directories — no post-generation copy step needed
-- Handles targets not in rulesync (hermes, claude — skip, handled separately)
+- **`outputRoots` is mandatory (ADR-010).** rulesync writes to `<outputRoot>/<relativeDirPath>` and never resolves `~`; its `global` flag only swaps the relative subdir. Omitting `outputRoots` writes to `process.cwd()`, so a global install would land in the wrong place. Verified against rulesync@8.28.1 (`Config.getOutputRoots()` defaults to cwd; no `os.homedir()` in src).
+- For every rulesync-supported target, `generate()` does the write — no copy step. Only `hermes` and `omp` (absent from rulesync's `ToolTarget`) are copied by superskill afterward.
+- Handles targets not in rulesync (hermes, omp, claude — skip in `generate()`, handled separately)
 
 ## Acceptance
 
@@ -76,6 +86,6 @@ rewriteColonRefs('use rd3:dev-run to start')
 # rulesync programmatic API
 import { runRulesync } from './rulesync';
 await runRulesync(['codex', 'pi'], ['skills', 'commands', 'subagents'], '.rulesync', { global: true, dryRun: false, verbose: false });
-// → generate() called with targets: ['codexcli', 'pi']
+// → generate() called with targets: ['codexcli', 'pi'], outputRoots: [os.homedir()]
 // → exit 0
 ```

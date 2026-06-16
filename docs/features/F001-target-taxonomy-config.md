@@ -29,7 +29,8 @@ Every other module depends on knowing what agents exist, how they map to rulesyn
 - Export `TARGETS` const array (8 agents: claude, codex, pi, omp, opencode, antigravity-cli, antigravity-ide, hermes)
 - Export `Target` type from `typeof TARGETS[number]`
 - Export `TARGET_TO_RULESYNC: Partial<Record<Target, string>>` — maps superskill targets to rulesync `ToolTarget` strings
-- Export `getSkillPath(target: Target, global: boolean): string` — resolves install path per target per mode
+- Export `TARGET_TO_AGENT_NAME: Record<Target, AgentName>` — bridges to ts-ai-runner's `AgentName` for `translateSlashCommand` (the two sets are disjoint on the four new targets; ADR-009 amendment). `omp→pi`; antigravity/hermes → any non-claude/codex/pi name (default `/plugin-command` dialect).
+- `getSkillPath` is **not** a superskill responsibility for rulesync-supported targets (ADR-010 — rulesync resolves paths from `outputRoots`). Only `hermes`/`omp` need a superskill-owned path helper.
 
 ### `config.ts`
 
@@ -46,11 +47,13 @@ Every other module depends on knowing what agents exist, how they map to rulesyn
 
 ```
 # Targets
-import { TARGETS, TARGET_TO_RULESYNC, getSkillPath } from './targets';
+import { TARGETS, TARGET_TO_RULESYNC, TARGET_TO_AGENT_NAME } from './targets';
 // TARGETS.length === 8
 // TARGET_TO_RULESYNC.codex === 'codexcli'
-// getSkillPath('pi', true) === '~/.agents/skills/'
-// getSkillPath('antigravity-cli', true) === '~/.gemini/antigravity-cli/skills/'
+// TARGET_TO_RULESYNC['antigravity-cli'] === 'antigravity-cli'
+// TARGET_TO_AGENT_NAME.omp === 'pi'           // omp speaks Pi's slash dialect
+// TARGET_TO_AGENT_NAME.codex === 'codex'
+// (paths for rulesync-supported targets are NOT in targets.ts — rulesync owns them, ADR-010)
 
 # Config
 import { loadConfig } from './config';

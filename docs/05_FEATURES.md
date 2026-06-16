@@ -2,7 +2,7 @@
 doc: 05_FEATURES
 owns: STATUS — feature decomposition + state (✅ done / 🔶 partial / ⏳ planned / 💤 deferred)
 authority: derived
-version: 4.0.0
+version: 4.1.0
 derived_from: [01_PRD, 02_ROADMAP]
 owner: Robin Min
 updated_at: 2026-06-16
@@ -26,8 +26,9 @@ Design: [design-doc-phase1.md](design/design-doc-phase1.md)
 | F001 | [Target taxonomy + config schema](features/F001-target-taxonomy-config.md) | — | ⏳ | `targets.ts`, `config.ts` |
 | F002 | [Plugin → .rulesync/ mapper](features/F002-plugin-mapper.md) | — | ⏳ | `mapper.ts` |
 | F003 | [Conversion pipeline + rulesync integration](features/F003-conversion-pipeline.md) | F001 | ⏳ | `pipeline/*`, `rulesync.ts` |
-| F004 | [superskill install command + target dispatch](features/F004-install-command.md) | F001, F002, F003 | ⏳ | `commands/install.ts` |
-| F005 | [Tests + verification](features/F005-tests-verification.md) | F001–F004 | ⏳ | `tests/*` |
+| F004 | [superskill install command + target dispatch](features/F004-install-command.md) | F001, F002, F003, F006 | ⏳ | `commands/install.ts` |
+| F005 | [Tests + verification](features/F005-tests-verification.md) | F001–F004, F006 | ⏳ | `tests/*` |
+| F006 | [Marketplace manifest resolver](features/F006-marketplace-resolver.md) | — | ⏳ | `marketplace.ts` |
 
 ### Foundation (already done)
 
@@ -45,10 +46,9 @@ Design: [design-doc-phase1.md](design/design-doc-phase1.md)
 ```
 F001 ──┐
        ├──► F003 ──┐
-       │           ├──► F004 ──► F005
-F002 ──┘           │
-                   │
-     (no deps)     │
+F002 ──┘           ├──► F004 ──► F005
+F006 ──────────────┘
+(F001, F002, F006 have no deps — parallelizable)
 ```
 
 ## Task creation plan
@@ -59,11 +59,12 @@ Each feature becomes one task file. Recommended order and granularity:
 |-------|---------|------|------|-----------|
 | 1 | F001 | `F001-target-taxonomy-config` | S (1 file + tests) | Foundation — unblocks F003. Smallest possible increment. |
 | 2 | F002 | `F002-plugin-mapper` | S (1 file + tests) | Independent of F001. Can run in parallel. |
-| 3 | F003 | `F003-conversion-pipeline` | M (3–4 files + tests) | Depends on F001. Pipeline stages + rulesync wrapper. |
-| 4 | F004 | `F004-install-command` | M (1–2 files + tests) | Depends on F001–F003. Integration point. |
-| 5 | F005 | `F005-tests-verification` | S (test files) | Depends on F004. Covers everything. |
+| 3 | F006 | `F006-marketplace-resolver` | S (1 file + tests) | Independent. Resolves plugin roots; unblocks F004. |
+| 4 | F003 | `F003-conversion-pipeline` | M (3–4 files + tests) | Depends on F001. Pipeline stages + rulesync wrapper. |
+| 5 | F004 | `F004-install-command` | M (1–2 files + tests) | Depends on F001–F003 + F006. Integration point. |
+| 6 | F005 | `F005-tests-verification` | S (test files) | Depends on F004. Covers everything. |
 
-**Parallelization**: F001 and F002 have no shared dependencies — they can be implemented concurrently in separate sessions. F003 must wait for F001. F004 gates on F001+F002+F003. F005 runs last.
+**Parallelization**: F001, F002, and F006 have no shared dependencies — they can be implemented concurrently in separate sessions. F003 must wait for F001. F004 gates on F001+F002+F003+F006. F005 runs last.
 
 **Size key**: S = ≤2 files + tests, completable in one session. M = 3–5 files + tests, may span sessions.
 

@@ -2,7 +2,7 @@
 doc: 01_PRD
 owns: WHAT — product vision, users, scope (in / out / deferred)
 authority: authoritative-on-scope
-version: 3.0.0
+version: 3.2.0
 derived_from: [00_ADR]
 owner: Robin Min
 updated_at: 2026-06-16
@@ -18,7 +18,7 @@ sync: [T1, T4, T6]
 The `cc-agents/scripts` toolchain synchronizes Claude Code plugin-format skills, slash commands, subagents, hooks, and MCP config to multiple coding agents. It works, but has structural issues:
 
 1. **Plugin-locked.** Hardcoded to `rd3` and `wt` namespaces. Adding a third plugin requires editing bash internals.
-2. **Bash sprawl.** ~1,500 lines of bash reimplement platform knowledge that `rulesync` already provides for 41 targets. Only one subcommand actually calls `rulesync`, and even then as a pass-through.
+2. **Bash sprawl.** ~1,500 lines of bash reimplement platform knowledge that `rulesync` already provides for 30+ targets. Only one subcommand actually calls `rulesync`, and even then as a pass-through.
 3. **Format adaptation is hand-rolled.** Slash dialect, colon→hyphen, @-file stripping, Pi subagent conversion — all in bash regex.
 4. **Agent coverage is stale.** No Hermes, omp, antigravity-cli, or antigravity-ide. Gemini CLI and old antigravity are deprecated.
 5. **No quality loop.** The meta-agent skills that create/validate/evaluate skills, commands, subagents, hooks, and main-agent configs live as Claude Code plugin skills in `cc-agents/plugins/rd3/skills/cc-agents` — usable only inside Claude Code. They have no self-evolution capability.
@@ -27,7 +27,7 @@ The `cc-agents/scripts` toolchain synchronizes Claude Code plugin-format skills,
 
 **superskill** — a TypeScript CLI with two layers:
 
-**Layer 1 — Distribution.** `superskill install` replicates what `cc-agents/scripts/setup-all.sh` does: take a Claude Code plugin and install its skills, commands, subagents, hooks, and MCP config to any target coding agent. Uses `rulesync` as the conversion engine via its programmatic API.
+**Layer 1 — Distribution.** `superskill install` replicates what `cc-agents/scripts/setup-all.sh` does: take a Claude Code plugin and install its skills, commands, subagents, hooks, and MCP config to any target coding agent. Uses `rulesync`'s programmatic `generate()` API as the conversion engine; superskill owns the output root (project vs `~`) and the two targets rulesync lacks (`hermes`, `omp`). See ADR-010.
 
 **Layer 2 — Authoring + quality.** Five subcommands (`agent`, `skill`, `command`, `hook`, `magent`) that migrate the meta-agent skills out of the Claude Code plugin and into first-class CLI operations — each with create, validate, evaluate, refine, and evolve capabilities. These commands work locally (no Claude Code required) and improve themselves over time through structured evolution workflows.
 
@@ -55,6 +55,7 @@ The `cc-agents/scripts` toolchain synchronizes Claude Code plugin-format skills,
 | rulesync programmatic API | `rulesync.generate()` called from TypeScript | 005 |
 | Conversion pipeline | Slash dialect, colon→hyphen, @-file stripping, Pi subagent format | 006 |
 | Target agents | Claude Code, Codex, Pi, omp, OpenCode, antigravity-cli, antigravity-ide, Hermes | 005 |
+| Plugin resolution via marketplace | `--marketplace <path>` resolves `<plugin>` from a Claude Code `.claude-plugin/marketplace.json` (local relative-path sources); defaults to CWD's marketplace, falls back to `plugins/<name>/` scan | 011 |
 | `--dry-run` / `--verbose` | Preview and diagnostics | — |
 
 ### Phase 2 — Authoring + quality: migrate and enhance meta-agent skills
@@ -98,6 +99,7 @@ Each command supports five operations:
 
 | Item | Condition to reactivate |
 |------|------------------------|
+| Remote marketplace sources (`github`, `url`, `git-subdir`, `npm`) | After local relative-path resolution ships; needs fetch + cache layer. Phase 1 supports local relative-path `source` only |
 | Import from non-Claude formats (Codex, Pi) | After Phase 1 install is stable; needs custom import mapper |
 | `rulesync` upstream contribution (Hermes, omp) | When Hermes/omp adoption warrants it; local targets sufficient initially |
 | Cross-platform adaptation (adapt command) | After Phase 2 authoring commands stabilize; generate Codex/Pi/etc. variants from a single abstract definition |

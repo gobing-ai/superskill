@@ -2,7 +2,7 @@
 doc: 00_ADR
 owns: WHY — which cross-cutting decision was made, and the one-line reason
 authority: authoritative
-version: 1.0.0
+version: 1.2.0
 owner: Robin Min
 updated_at: 2026-06-16
 read_before: any structural change; add a dated entry before diverging from a decision
@@ -71,7 +71,7 @@ Reversals = new entries naming what they supersede. Burned numbers get a `Skippe
 
 **Decision.** Use `rulesync` (npm package) as the format conversion engine for dispatching skills, commands, subagents, hooks, MCP config, and ignore rules to target coding agents.
 
-**Why.** rulesync already maintains 41 target backends; superskill adds format adaptation and distribution, not backend maintenance.
+**Why.** rulesync already maintains 30+ target backends; superskill adds format adaptation and distribution, not backend maintenance.
 
 **Detail:** see 03 §Conversion pipeline; plans for full design.
 
@@ -119,6 +119,32 @@ Reversals = new entries naming what they supersede. Burned numbers get a `Skippe
 
 **Decision.** superskill uses `@gobing-ai/ts-ai-runner`'s `AgentShim` interface (see `shims.ts`) as the single abstraction for per-agent differences: CLI invocation, slash-command dialect translation, output mode handling, and agent detection. No superskill module hardcodes agent-specific behavior outside this layer.
 
-**Why.** The `AgentShim` contract already handles the 7-agent matrix (Claude, Codex, Gemini, Pi, OpenCode, Antigravity, OpenClaw). Enriching it for new targets (`antigravity-cli`, `antigravity-ide`, `hermes`, `omp`) in ts-libs benefits all consumers; reimplementing agent knowledge in superskill duplicates it.
+**Why.** The `AgentShim` contract already handles a multi-agent matrix. Enriching it for new targets (`antigravity-cli`, `antigravity-ide`, `hermes`, `omp`) in ts-libs benefits all consumers; reimplementing agent knowledge in superskill duplicates it.
 
 **Detail:** see `~/xprojects/ts-libs/packages/ai-runner/src/agents/shims.ts`. New coding agents and enhanced shim capabilities (e.g., new aspect types) are added to ts-libs via `bun link` during superskill development and flow back to the published package. superskill imports `AgentName`, `AgentShim`, `getAgentShim`, `translateSlashCommand`, and `AgentDetector` — never reimplements them.
+
+**Amendment (2026-06-16, ADR-009).** The original entry stated the shim "already handles the 7-agent matrix (Claude, Codex, Gemini, Pi, OpenCode, Antigravity, OpenClaw)." Verified against `@gobing-ai/ts-ai-runner@0.3.19`: `AgentName = 'claude' | 'codex' | 'gemini' | 'pi' | 'opencode' | 'antigravity' | 'openclaw'`. This matrix **includes** `gemini`/`openclaw` (which superskill does not target) and **excludes** all four Phase 1 additions (`antigravity-cli`, `antigravity-ide`, `hermes`, `omp`). The decision (delegate agent knowledge to the shim) stands; the coverage claim was overstated. Until the shim's `AgentName` is enriched in ts-libs, superskill bridges its own `Target` to the shim via a `TARGET_TO_AGENT_NAME` map (`omp→pi`; `antigravity-cli`/`antigravity-ide`→default dialect; `hermes` handled outside the shim). `translateSlashCommand`'s `default` branch already yields the correct `/plugin-command` form for unmapped agents, so the bridge is sufficient for Phase 1. See 03 §Conversion pipeline, 04 §Target taxonomy.
+
+---
+
+## ADR-010: superskill owns the output root; rulesync owns relative paths
+
+**Status:** Accepted (design) · **Date:** 2026-06-16
+
+**Decision.** `superskill install` sets `rulesync.generate({ outputRoots })` explicitly — `[os.homedir()]` for `--global`, `[process.cwd()]` otherwise — and lets rulesync resolve every per-target relative path. superskill does **not** maintain its own per-target install-path table for any target rulesync supports. Only the two targets rulesync lacks (`hermes`, `omp`) get a superskill-owned copy step.
+
+**Why.** rulesync writes to `<outputRoot>/<relativeDirPath>` and never resolves `~` itself; the `global` flag only swaps the *relative* subdir. Duplicating its path table in superskill would violate "rulesync owns format knowledge" (03 invariant 4) and drift the moment upstream paths change.
+
+**Detail:** see 03 §Target taxonomy and §Data flow; 04 §Target taxonomy. Verified against `rulesync@8.28.1`: `Config.getOutputRoots()` defaults to `process.cwd()`; zero `os.homedir()` references in `src/`; `PiSkill`/`AntigravitySharedSkill`/`CodexCliSkill` `getSettablePaths({ global })` return relative subdirs only (e.g. Pi global → `.pi/agent/skills`, antigravity-cli global → `.gemini/antigravity-cli/skills`). Supersedes the hand-authored global-path tables previously in design-doc-phase1 and 04.
+
+---
+
+## ADR-011: plugin resolution via Claude Code marketplace manifest
+
+**Status:** Accepted (design) · **Date:** 2026-06-16
+
+**Decision.** `superskill install <plugin>` resolves the plugin root through a Claude Code `.claude-plugin/marketplace.json` manifest. Resolution order: (1) `--marketplace <path>` if given; (2) `.claude-plugin/marketplace.json` in CWD; (3) fall back to the `plugins/<name>/` directory scan. The plugin root is `plugins[].source` (matched on `name`), prefixed by `metadata.pluginRoot` when present, resolved relative to the **marketplace root** (the directory containing `.claude-plugin/`, not `.claude-plugin/` itself). Phase 1 supports **local relative-path `source`** only; object sources (`github`, `url`, `git-subdir`, `npm`) are rejected with a "remote sources not yet supported" error (deferred, see 01).
+
+**Why.** The marketplace manifest is Claude Code's own plugin-root locator; resolving through it makes superskill consistent with upstream instead of inventing a parallel `plugins/<name>/` convention.
+
+**Detail:** see 03 §Source of truth and §Plugin resolution; 04 via design-doc-phase1 §0. Schema verified against Claude Code docs (code.claude.com/docs/en/plugin-marketplaces) and `/Users/robin/projects/cc-agents/.claude-plugin/marketplace.json`: top-level `{ name, owner:{name,email?}, metadata?:{pluginRoot?}, plugins:[{name, source, …}] }`; relative `source` must start `./` and resolves from the marketplace root.

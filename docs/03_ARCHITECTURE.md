@@ -2,7 +2,7 @@
 doc: 03_ARCHITECTURE
 owns: HOW — module boundaries, data flow, runtime model, invariants
 authority: derived
-version: 2.0.0
+version: 2.2.0
 derived_from: [00_ADR, 01_PRD]
 owner: Robin Min
 updated_at: 2026-06-16
@@ -32,7 +32,9 @@ apps/cli/src/
 ├── commands/                     # ── Phase 1 ──
 │   └── install.ts                # superskill install
 │
+├── targets.ts                    # Target enum, TARGET_TO_RULESYNC, TARGET_TO_AGENT_NAME
 ├── config.ts                     # superskill.jsonc zod schema + loader
+├── marketplace.ts                # marketplace.json parser + resolvePlugin (ADR-011)
 ├── mapper.ts                     # Plugin → .rulesync/ canonical layout
 ├── rulesync.ts                   # Thin wrapper around rulesync.generate()
 │
@@ -97,12 +99,15 @@ plugins/<name>/                  .rulesync/             ~/.agents/skills/
   hooks.json      ──mapper──►     hooks.json             ...
   mcp.json        ──mapper──►     mcp.json
                         │
-                  rulesync.generate()
+                  ConversionPipeline (per-target, pure stages)
                         │
-                 ConversionPipeline
+                  rulesync.generate({ outputRoots, global, ... })
+                        │   writes <outputRoot>/<relativeDirPath> per rulesync
                         │
-                 Copy to target dirs
+                  Copy step — hermes & omp only (not in rulesync)
 ```
+
+`outputRoots = global ? [os.homedir()] : [process.cwd()]` (ADR-010). For every rulesync-supported target the write is done by `generate()`; superskill copies only the two targets rulesync lacks.
 
 **Invariant:** `.rulesync/` is the canonical intermediate representation. No feature module writes directly from plugin source to target output.
 
@@ -136,6 +141,27 @@ plugins/<name>/
 └── plugin.json              # Plugin manifest
 ```
 
+## Plugin resolution
+
+`superskill install <plugin>` locates the plugin root via a Claude Code marketplace manifest (ADR-011). Resolution order, first match wins:
+
+1. `--marketplace <path>` — explicit path to a `.claude-plugin/marketplace.json` (or its containing dir).
+2. `.claude-plugin/marketplace.json` in CWD.
+3. Fallback: the `plugins/<name>/` directory scan (legacy convention).
+
+**Manifest shape** (verified against Claude Code docs + `cc-agents/.claude-plugin/marketplace.json`):
+
+```jsonc
+{
+  "name": "cc-agents",
+  "owner": { "name": "…", "email": "…" },
+  "metadata": { "pluginRoot": "./plugins" },   // optional; prefixes relative sources
+  "plugins": [ { "name": "rd3", "source": "./plugins/rd3", "version": "…" } ]
+}
+```
+
+**Resolution rule (invariant 7):** match `<plugin>` against `plugins[].name`; the plugin root is `source` (prefixed by `metadata.pluginRoot` if `source` is bare) resolved relative to the **marketplace root** — the directory containing `.claude-plugin/`, *not* `.claude-plugin/` itself. Phase 1 accepts only **string relative-path** `source` values (must start `./`); object sources (`github`, `url`, `git-subdir`, `npm`) are rejected with "remote sources not yet supported" (deferred, 01).
+
 ## Conversion rules
 
 Carried from cc-agents/scripts. Pipeline stages are pure functions per invariant 5.
@@ -143,24 +169,30 @@ Carried from cc-agents/scripts. Pipeline stages are pure functions per invariant
 | Stage | Applies to | Effect |
 |-------|-----------|--------|
 | `rewriteColonRefs` | all prose | `plugin:command` → `plugin-command` |
-| `translateSlashCommand` | commands | `/plugin:cmd` → per-agent dialect (delegates to `@gobing-ai/ts-ai-runner`) |
+| `translateSlashCommand` | commands | `/plugin:cmd` → per-agent dialect (delegates to `@gobing-ai/ts-ai-runner`); superskill `Target` is bridged to `AgentName` via `TARGET_TO_AGENT_NAME` (ADR-009 amendment) |
 | `normalizeFrontmatter` | commands, subagents | Inject `name:`, normalize `allowed-tools:` |
 | `convertToPiSubagent` | Pi subagents | Skills 2.0 → Pi native agent YAML |
 
+`translateSlashCommand` accepts a ts-ai-runner `AgentName`, not a superskill `Target`; the two sets are disjoint on `antigravity-cli`/`antigravity-ide`/`hermes`/`omp`. `TARGET_TO_AGENT_NAME` (in `config.ts`/`targets.ts`) bridges them: `omp→pi`, the antigravity/hermes targets fall to the function's `default` branch (`/plugin-command`).
+
 ## Target taxonomy
 
-| Target | rulesync target | Global skill path | Note |
-|--------|----------------|-------------------|------|
-| `claude` | — | plugin marketplace | Not rulesync — direct `claude plugin install` |
-| `codex` | `codexcli` | `~/.agents/skills/` | Shared agents dir for global installs |
-| `pi` | `pi` | `~/.agents/skills/` | Shared agents dir; subagents → `~/.pi/agent/agents/` |
-| `omp` | — | `~/.omp/agent/skills/` | Pi variant — same format, different paths |
-| `opencode` | `opencode` | `~/.agents/skills/` | Shared agents dir for global installs |
-| `antigravity-cli` | `antigravity-cli` | `~/.gemini/antigravity-cli/skills/` | |
-| `antigravity-ide` | `antigravity-ide` | `~/.gemini/config/skills/` | |
-| `hermes` | — | `~/.hermes/skills/` | Custom — not in rulesync yet |
+superskill maps each `Target` to a rulesync `ToolTarget` (`TARGET_TO_RULESYNC`) and to a ts-ai-runner `AgentName` for slash-dialect translation (`TARGET_TO_AGENT_NAME`, ADR-009 amendment). **superskill does not own per-target install paths** — rulesync resolves them from `<outputRoot>/<relativeDirPath>` (ADR-010). The global skill paths below are rulesync's resolved output *given* `outputRoot = ~`; they are documented for reference, not reimplemented in superskill.
+
+| Target | rulesync target | AgentName (slash) | Global skill path (rulesync-resolved, `outputRoot=~`) | Note |
+|--------|----------------|-------------------|-------------------------------------------------------|------|
+| `claude` | — | `claude` | plugin marketplace | Not rulesync — direct `claude plugin install` |
+| `codex` | `codexcli` | `codex` | `~/.agents/skills/` (under `$CODEX_HOME`) | |
+| `pi` | `pi` | `pi` | `~/.pi/agent/skills/` | subagents → Pi native agent format |
+| `omp` | — | `pi` | `~/.omp/agent/skills/` | Pi variant — copied by superskill, not rulesync |
+| `opencode` | `opencode` | `opencode` | `~/.agents/skills/` | |
+| `antigravity-cli` | `antigravity-cli` | default (`/plugin-command`) | `~/.gemini/antigravity-cli/skills/` | |
+| `antigravity-ide` | `antigravity-ide` | default (`/plugin-command`) | `~/.gemini/config/skills/` | |
+| `hermes` | — | default (`/plugin-command`) | `~/.hermes/skills/` | Custom — copied by superskill, not rulesync |
 
 **Deprecated:** `gemini` (Gemini CLI), `antigravity` (old unified target).
+
+**Output root (ADR-010).** rulesync writes to `<outputRoot>/<relativeDirPath>` and never resolves `~`. `runRulesync` sets `outputRoots: [os.homedir()]` for `--global`, `[process.cwd()]` otherwise; rulesync's `global` flag only swaps the relative subdir (e.g. Pi `.pi/skills` → `.pi/agent/skills`). The `hermes` and `omp` targets are absent from rulesync's `ToolTarget` set, so superskill copies their generated content to the paths above after `generate()`.
 
 ## Invariants
 
@@ -170,3 +202,4 @@ Carried from cc-agents/scripts. Pipeline stages are pure functions per invariant
 4. **rulesync owns format knowledge.** superskill never hardcodes a target's file format — it delegates to `rulesync.generate()`.
 5. **Pipeline stages are pure functions.** `(content: string, target: Target, options?: ConvertOptions) => string` — no side effects, no filesystem access.
 6. **Closed evolve loop.** Every accepted evolution proposal triggers a verification evaluation — every change has a measured outcome.
+7. **Marketplace-relative resolution.** A relative plugin `source` resolves against the marketplace root (the dir containing `.claude-plugin/`), never against `.claude-plugin/` or CWD. A `source` escaping the marketplace root (`../`) or using an object form is rejected, not silently resolved.

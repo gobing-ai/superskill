@@ -37,16 +37,26 @@ rulesync expects content in `.rulesync/{skills,commands,subagents,hooks,mcp}` la
 
 ### Tests
 
-- `mapper.test.ts`: maps real plugin directory → `.rulesync/`, verifies file count and naming, handles missing optional dirs, handles empty directories
+- `mapper.test.ts`: maps the hermetic fixture `apps/cli/tests/fixtures/plugin-min/` → `.rulesync/`, verifies file count and naming, handles missing optional dirs, handles empty directories. No dependency on a real plugin corpus (decision 2026-06-16).
+
+### Test fixture (create as part of this feature)
+
+```
+apps/cli/tests/fixtures/plugin-min/
+├── plugin.json
+├── skills/{a,b}.md          # 2 skills
+├── commands/run.md          # 1 command
+└── agents/coder.md          # 1 subagent
+```
 
 ## Acceptance
 
 ```
-# Given plugins/rd3/ with 2 skills, 1 command, 1 subagent
-mapPluginToRulesync('plugins/rd3', 'rd3', '.rulesync')
-# → .rulesync/skills/rd3-code-review-common/SKILL.md
-# → .rulesync/skills/rd3-tdd-workflow/SKILL.md
-# → .rulesync/commands/rd3-dev-run.md
-# → .rulesync/subagents/rd3-super-coder.md
+# Given the plugin-min fixture (2 skills, 1 command, 1 subagent), plugin name "demo"
+mapPluginToRulesync('apps/cli/tests/fixtures/plugin-min', 'demo', '.rulesync')
+# → .rulesync/skills/demo-a/SKILL.md
+# → .rulesync/skills/demo-b/SKILL.md
+# → .rulesync/commands/demo-run.md
+# → .rulesync/subagents/demo-coder.md
 # → returns { skills: 2, commands: 1, subagents: 1, hooks: 0, mcp: 0 }
 ```

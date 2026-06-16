@@ -2,7 +2,7 @@
 doc: 02_ROADMAP
 owns: WHEN — phases, current vs deferred, sequencing
 authority: derived
-version: 3.2.0
+version: 3.3.0
 derived_from: [00_ADR, 01_PRD]
 owner: Robin Min
 updated_at: 2026-06-16
@@ -21,6 +21,7 @@ sync: [T5]
 
 - [x] Foundation: scaffold, gates green, ts-base artifacts removed, docs 00–05 ready
 - [ ] Target taxonomy + `superskill.jsonc` config schema
+- [ ] Marketplace manifest resolver — `--marketplace`, local relative-path sources (ADR-011)
 - [ ] `superskill install <plugin>` — plugin → `.rulesync/` → `rulesync.generate()` → targets
 - [ ] Conversion pipeline: slash dialect, colon→hyphen, frontmatter normalization
 - [ ] Feature dispatch: skills, commands, subagents, hooks, MCP, Claude Code marketplace
