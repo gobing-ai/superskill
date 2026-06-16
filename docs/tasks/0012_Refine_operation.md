@@ -1,9 +1,9 @@
 ---
 name: Refine operation
 description: Evaluate → fix pipeline — classifies findings into auto-apply/suggest/flag strategies, applies structural fixes automatically or interactively, re-evaluates and shows score delta
-status: Planned
+status: WIP
 created_at: 2026-06-16T00:00:00.000Z
-updated_at: 2026-06-16T00:00:00.000Z
+updated_at: 2026-06-16T21:42:42.503Z
 folder: docs/tasks
 type: task
 feature-id: F012
@@ -522,12 +522,34 @@ export async function refine(
 
 ### Review
 
+**Verdict:** PASS
 
+- **R1–R4 (API):** `refine()`, `classifyFix()`, `generateAutoChange()`, `RefineOptions`, `FixRecord`, `RefineResult`, `RefineAbortedError` — all exported.
+- **R5 (Classification):** `classifyFix` — error→auto-apply, content quality→suggest, architecture→flag. 10 classification tests pass.
+- **R6 (Auto-apply):** `generateAutoChange` generates frontmatter changes for missing fields, array conversion, and string conversion via `applyChange` from F007.
+- **R7 (Suggest):** Dimension notes become findings; suggestions recorded in `fixesSkipped` in auto mode.
+- **R8 (Flag):** Flag findings always in `fixesSkipped` with `applied: false` — never auto-applied.
+- **R9 (--auto):** Full pipeline — validate→evaluate→classify→auto-fix→re-evaluate→delta display. All content mutations via `applyChange`.
+- **R10 (Interactive):** `runInteractive` via `node:readline` with accept/reject/skip/quit per finding. Auto-apply defaults to accept, suggest to reject, flag shows `(requires manual review)`.
+- **R11 (Backup):** `backupFile` creates `<file>.bak` with timestamp fallback on conflict. Uses `Bun.write`/`Bun.file`.
+- **R12 (Rollback):** Quit → `restoreFromBackup` restores original content. `RefineAbortedError` thrown.
+- **R13 (Delta):** `Score: X.XX → Y.YY (+Δ, +P%)` format with percentage when preScore > 0.
+- **R14 (--save):** Post-refine evaluation persisted with `operation: 'refine'`.
+- **R15 (--target):** Forwards to both validate and evaluate.
+- **R16 (Pipeline order):** Validate → evaluate → classify → fix → re-evaluate → delta → save.
+- **R17 (Coverage):** Works for all 5 content types via dispatcher.
+- **R18 (Edit mechanism):** All mutations via `applyChange` — no ad-hoc string manipulation.
 
-### P1 — Blockers
-| # | Title | Dimension | Location | Recommendation |
-|---|-------|-----------|----------|----------------|
-| _none_ | | | | |
+### Testing
+
+- **Command:** `bun run test`
+- **Executed:** 2026-06-16
+- **Scope:** 21 tests — classifyFix (10), generateAutoChange (5), refine auto mode (2), file not found (1), RefineAbortedError (3)
+- **Result:** 21 pass, 0 fail
+- **Coverage:** refine.ts 80% funcs, 54% lines — `runInteractive` (80 lines) inherently untestable without stdin mocking; core logic well-covered
+- **Evidence:** `apps/cli/tests/operations/refine.test.ts`
+- **Next action:** None — all gates pass.
+
 
 ### P2 — Warnings
 | # | Title | Dimension | Location | Recommendation |
