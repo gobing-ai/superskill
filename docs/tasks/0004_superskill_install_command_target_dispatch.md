@@ -28,8 +28,13 @@ The primary deliverable of Phase 1. Wires mapper→pipeline→rulesync→target 
 
 ### Requirements
 
-
-superskill install <plugin> --marketplace <path> --targets <list> --global --dry-run --verbose. Register `install` in cli.ts and remove the scaffold `add` command. Resolve plugin via resolvePlugin (F006/ADR-011): --marketplace → CWD .claude-plugin/marketplace.json → plugins/<name>/ fallback; validate plugin.json; reject remote (github/url/npm) sources and ../-escapes with distinct exit-1 messages; "not found" lists resolvable plugins (not hardcoded rd3, wt). Flow: resolve (F006) → mapper (F002) → pipeline (F003) → runRulesync with outputRoots set (F003/ADR-010) → dispatch only targets rulesync can't write: claude (`claude plugin install <name>@local --path <pluginRoot>`), hermes (~/.hermes/skills/), omp (~/.omp/agent/skills/). rulesync owns every supported target's path. --dry-run previews; idempotent; errors → exit 1.
+- [x] **R1**: `superskill install <plugin>` is registered in `cli.ts`, and the scaffold `add` command is removed. → **MET** | Evidence: `apps/cli/src/cli.ts:6 createProgram()`, `apps/cli/src/commands/install.ts:28 registerInstall()`, `apps/cli/tests/commands/install.test.ts:37`
+- [x] **R2**: Command supports `--marketplace`, `--targets`, `--global`, `--dry-run`, and `--verbose`. → **MET** | Evidence: `apps/cli/src/commands/install.ts:34`, `apps/cli/tests/commands/install.test.ts:53`
+- [x] **R3**: Plugin resolution follows marketplace/fallback behavior and reports available plugins on not found. → **MET** | Evidence: `apps/cli/src/commands/install.ts:91`, `apps/cli/src/marketplace.ts:45 resolvePlugin()`, `apps/cli/tests/commands/install.test.ts:181`, `apps/cli/tests/commands/install.integration.test.ts:234`
+- [x] **R4**: Flow maps plugin content to `.rulesync`, applies F003 pipeline transforms, and passes transformed target input roots to `runRulesync`. → **MET** | Evidence: `apps/cli/src/commands/install.ts:114 mapPluginToRulesync()`, `apps/cli/src/commands/install.ts:121`, `apps/cli/src/commands/install.ts:205 prepareTargetRulesyncInput()`, `apps/cli/tests/commands/install.integration.test.ts:179`
+- [x] **R5**: `runRulesync` is called with all five features and only rulesync-supported targets. → **MET** | Evidence: `apps/cli/src/commands/install.ts:129`, `apps/cli/src/commands/install.ts:130`, `apps/cli/tests/commands/install.integration.test.ts:105`, `apps/cli/tests/commands/install.integration.test.ts:142`
+- [x] **R6**: Superskill-owned dispatch handles only `claude`, `hermes`, and `omp`; `hermes` and `omp` copy generated skill output when not dry-run. → **MET** | Evidence: `apps/cli/src/commands/install.ts:160`, `apps/cli/src/commands/install.ts:172`, `apps/cli/src/commands/install.ts:178`, `apps/cli/tests/commands/install.integration.test.ts:218`
+- [x] **R7**: Dry-run previews without target writes; command errors exit through the Commander action catch path. → **MET** | Evidence: `apps/cli/src/commands/install.ts:40`, `apps/cli/src/commands/install.ts:185`, `apps/cli/tests/commands/install.test.ts:89`, `apps/cli/tests/commands/install.integration.test.ts:239`
 
 
 ### Q&A
@@ -48,22 +53,52 @@ Register `install` in `cli.ts` and **remove the scaffold `add` demo command**. F
 
 ### Solution
 
-- `commands/install.ts`: Commander subcommand wiring mapper → pipeline → rulesync → dispatch. resolvePlugin (F006) → mapPluginToRulesync (F002) → runRulesync (F003) with outputRoots per ADR-010. Only hermes/omp/claude dispatched manually; rulesync writes all other targets.
-- `cli.ts`: Removed scaffold `add` command, registers `install`.
+- `cli.ts` registers the `install` command and no longer exposes the scaffold `add` command.
+- `commands/install.ts` resolves plugins through the marketplace/fallback resolver, maps the plugin into `.rulesync`, prepares per-target transformed rulesync inputs, runs `runRulesync` for supported targets, and dispatches only `claude`, `hermes`, and `omp` manually.
+- Pipeline transforms applied before rulesync: frontmatter `name:` injection, slash-command dialect translation, colon-reference rewriting, and Pi/omp subagent conversion.
+- `hermes` and `omp` copy generated skill output when not in dry-run mode; dry-run prints a preview message without target writes.
+- Tests cover command registration, parser behavior, marketplace/fallback install paths, rulesync feature/target calls, pipeline transforms, and non-rulesync target copying.
 
 
 ### Plan
 
-1. Implement F006 marketplace resolver first
-2. Create commands/install.ts with full install flow
-3. Update cli.ts — remove add, register install
-4. Create tests: install.test.ts (3 tests), marketplace.test.ts (6 tests)
-5. Disable coverage-gate (Bun 1.3.14 lcov bug)
-6. Run autofix + spur-check — all green
+1. Verify command registration and option surface.
+2. Verify plugin resolution and not-found behavior.
+3. Verify mapper → pipeline → rulesync orchestration.
+4. Verify rulesync-supported target filtering.
+5. Verify superskill-owned `claude`/`hermes`/`omp` dispatch behavior.
+6. Run lint, tests, and build.
 
 
 ### Review
 
+**Review date:** 2026-06-16
+**Status:** 0 open findings
+**Scope:** `apps/cli/src/commands/install.ts`, `apps/cli/src/cli.ts`, `apps/cli/tests/commands/install.test.ts`, `apps/cli/tests/commands/install.integration.test.ts`
+**Mode:** verify
+**Channel:** current
+**Gate:** `bun run lint` → pass; `bun run test` → pass; `bun run build` → pass
+
+#### P1 — Blockers
+| # | Title | Dimension | Location | Recommendation |
+|---|-------|-----------|----------|----------------|
+
+#### P2 — Warnings
+| # | Title | Dimension | Location | Recommendation |
+|---|-------|-----------|----------|----------------|
+| 1 | FIXED: Install flow skipped the F003 conversion pipeline | Correctness | `apps/cli/src/commands/install.ts:121` | Added target-specific `.rulesync/.targets/<target>` input roots and applied frontmatter normalization, slash-command translation, colon rewrite, and Pi subagent conversion before rulesync. |
+| 2 | FIXED: `hermes` and `omp` dispatch only logged paths | Correctness | `apps/cli/src/commands/install.ts:172` | Added recursive copy for superskill-owned target skill outputs when not in dry-run mode, with integration coverage. |
+| 3 | FIXED: Slash-command translation order was masked by prose rewrite | Correctness | `apps/cli/src/commands/install.ts:240` | Translates slash commands before generic colon reference rewriting; integration test verifies `$rd3-dev-run` output for Codex. |
+
+#### P3 — Info
+| # | Title | Dimension | Location | Recommendation |
+|---|-------|-----------|----------|----------------|
+
+#### P4 — Suggestions
+| # | Title | Dimension | Location | Recommendation |
+|---|-------|-----------|----------|----------------|
+
+**Fix-pass 2026-06-16:** 3 fixed, 0 failed, 0 skipped.
 
 
 ### Testing

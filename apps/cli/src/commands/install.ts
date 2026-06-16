@@ -1,10 +1,23 @@
-import { existsSync } from 'node:fs';
+import {
+    copyFileSync,
+    existsSync,
+    mkdirSync,
+    readdirSync,
+    readFileSync,
+    rmSync,
+    statSync,
+    writeFileSync,
+} from 'node:fs';
 import { homedir } from 'node:os';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import { echo } from '@gobing-ai/ts-utils';
 import type { Command } from 'commander';
 import { mapPluginToRulesync } from '../mapper';
 import { listResolvablePlugins, resolvePlugin } from '../marketplace';
+import { normalizeFrontmatter } from '../pipeline/frontmatter';
+import { convertToPiSubagent } from '../pipeline/pi-subagent';
+import { rewriteColonRefs } from '../pipeline/rewrite-colons';
+import { translateSlashCommands } from '../pipeline/slash-command';
 import { runRulesync } from '../rulesync';
 import type { Target } from '../targets';
 import { TARGETS } from '../targets';
@@ -49,10 +62,17 @@ interface InstallOptions {
     global: boolean;
     dryRun: boolean;
     verbose: boolean;
+    outputRoot?: string;
 }
 
 interface InstallDependencies {
     runRulesync?: typeof runRulesync;
+}
+
+interface InstallResultCounts {
+    skillsCount: number;
+    commandsCount: number;
+    subagentsCount: number;
 }
 
 /** Execute the full install flow: resolve → map → pipeline → rulesync → dispatch. */
@@ -98,26 +118,44 @@ export async function executeInstall(
         );
     }
 
+    // Step 3: Build target-specific rulesync inputs through the conversion pipeline.
+    const targetInputRoots = new Map<Target, string>();
+    for (const target of targets) {
+        const targetInputRoot = prepareTargetRulesyncInput(outputDir, target);
+        targetInputRoots.set(target, targetInputRoot);
+    }
+
     // Step 3: Run rulesync for supported targets
     const rulesyncFeatures = ['skills', 'commands', 'subagents', 'hooks', 'mcp'] as const;
     const rulesyncTargets = targets.filter((t) => t !== 'claude' && t !== 'hermes' && t !== 'omp');
+    const resultCounts: InstallResultCounts = { skillsCount: 0, commandsCount: 0, subagentsCount: 0 };
 
     if (rulesyncTargets.length > 0) {
         if (options.verbose) echo(`Running rulesync for ${rulesyncTargets.join(', ')}...`);
-        const result = await runRulesyncImpl(rulesyncTargets, [...rulesyncFeatures], outputDir, {
-            global: options.global,
-            dryRun: options.dryRun,
-            verbose: options.verbose,
-        });
+        for (const target of rulesyncTargets) {
+            const result = await runRulesyncImpl(
+                [target],
+                [...rulesyncFeatures],
+                targetInputRoots.get(target) ?? outputDir,
+                {
+                    global: options.global,
+                    dryRun: options.dryRun,
+                    verbose: options.verbose,
+                },
+            );
+            resultCounts.skillsCount += result.skillsCount;
+            resultCounts.commandsCount += result.commandsCount;
+            resultCounts.subagentsCount += result.subagentsCount;
+        }
         if (options.verbose) {
             echo(
-                `  Skills written: ${result.skillsCount}, Commands: ${result.commandsCount}, Subagents: ${result.subagentsCount}`,
+                `  Skills written: ${resultCounts.skillsCount}, Commands: ${resultCounts.commandsCount}, Subagents: ${resultCounts.subagentsCount}`,
             );
         }
     }
 
     // Step 4: Dispatch non-rulesync targets
-    const outputRoot = options.global ? homedir() : process.cwd();
+    const outputRoot = options.outputRoot ?? (options.global ? homedir() : process.cwd());
 
     for (const target of targets) {
         if (target === 'claude') {
@@ -132,11 +170,17 @@ export async function executeInstall(
         }
 
         if (target === 'hermes') {
-            if (options.verbose) echo(`Copying to Hermes: ${join(outputRoot, '.hermes', 'skills')}...`);
+            const dest = join(outputRoot, '.hermes', 'skills');
+            if (options.verbose) echo(`Copying to Hermes: ${dest}...`);
+            if (!options.dryRun)
+                copyDirectory(join(rulesyncSourceRoot(targetInputRoots.get(target), outputDir), 'skills'), dest);
         }
 
         if (target === 'omp') {
-            if (options.verbose) echo(`Copying to omp: ${join(outputRoot, '.omp', 'agent', 'skills')}...`);
+            const dest = join(outputRoot, '.omp', 'agent', 'skills');
+            if (options.verbose) echo(`Copying to omp: ${dest}...`);
+            if (!options.dryRun)
+                copyDirectory(join(rulesyncSourceRoot(targetInputRoots.get(target), outputDir), 'skills'), dest);
         }
     }
 
@@ -158,4 +202,70 @@ export function parseTargets(raw: string | undefined): Target[] {
         }
     }
     return requested as Target[];
+}
+
+function prepareTargetRulesyncInput(sourceRoot: string, target: Target): string {
+    const targetRoot = join(sourceRoot, '.targets', target);
+    const targetRulesyncRoot = join(targetRoot, '.rulesync');
+    rmSync(targetRoot, { recursive: true, force: true });
+    copyDirectory(sourceRoot, targetRulesyncRoot, { skipDirectoryNames: new Set(['.targets']) });
+    transformRulesyncMarkdown(targetRulesyncRoot, target);
+    return targetRoot;
+}
+
+function rulesyncSourceRoot(inputRoot: string | undefined, fallbackRoot: string): string {
+    if (!inputRoot) return fallbackRoot;
+    return join(inputRoot, '.rulesync');
+}
+
+function transformRulesyncMarkdown(root: string, target: Target): void {
+    transformMarkdownDirectory(join(root, 'skills'), target);
+    transformMarkdownDirectory(join(root, 'commands'), target, { normalizeName: true, translateSlash: true });
+    transformMarkdownDirectory(join(root, 'subagents'), target, {
+        normalizeName: true,
+        piSubagent: target === 'pi' || target === 'omp',
+    });
+}
+
+function transformMarkdownDirectory(
+    dir: string,
+    target: Target,
+    options: { normalizeName?: boolean; translateSlash?: boolean; piSubagent?: boolean } = {},
+): void {
+    if (!existsSync(dir)) return;
+
+    for (const entry of readdirSync(dir)) {
+        const path = join(dir, entry);
+        const stats = statSync(path);
+        if (stats.isDirectory()) {
+            transformMarkdownDirectory(path, target, options);
+            continue;
+        }
+        if (!entry.endsWith('.md')) continue;
+
+        const name = entry === 'SKILL.md' ? basename(dir) : entry.replace(/\.md$/, '');
+        let content = readFileSync(path, 'utf-8');
+        if (options.normalizeName) content = normalizeFrontmatter(content, name);
+        if (options.translateSlash) content = translateSlashCommands(content, target);
+        content = rewriteColonRefs(content);
+        if (options.piSubagent) content = convertToPiSubagent(content);
+        writeFileSync(path, content);
+    }
+}
+
+function copyDirectory(source: string, destination: string, options: { skipDirectoryNames?: Set<string> } = {}): void {
+    if (!existsSync(source)) return;
+
+    mkdirSync(destination, { recursive: true });
+    for (const entry of readdirSync(source)) {
+        if (options.skipDirectoryNames?.has(entry)) continue;
+
+        const sourcePath = join(source, entry);
+        const destinationPath = join(destination, entry);
+        if (statSync(sourcePath).isDirectory()) {
+            copyDirectory(sourcePath, destinationPath, options);
+        } else {
+            copyFileSync(sourcePath, destinationPath);
+        }
+    }
 }

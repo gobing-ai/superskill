@@ -141,3 +141,4 @@ dist
 # Turbo cache
 .turbo
 /.spur/spur.*
+/.rulesync
