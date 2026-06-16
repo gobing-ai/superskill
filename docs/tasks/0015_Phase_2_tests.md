@@ -329,44 +329,26 @@ const exitSpy = spyOn(process, 'exit').mockImplementation(((c?: number) => {
 
 ### Review
 
-
-
-### P1 — Blockers
-| # | Title | Dimension | Location | Recommendation |
-|---|-------|-----------|----------|----------------|
-| _none_ | | | | |
-
-### P2 — Warnings
-### Review
-
 **Verdict:** PASS
 
-- **R1 (store):** Store DAO tests exist across `tests/store/db.test.ts`, `tests/store/evaluations.test.ts`, `tests/store/proposals.test.ts` — 31 tests using in-memory SQLite.
-- **R2 (scaffold):** `tests/operations/scaffold.test.ts` — 9 tests covering all 5 types, variable substitution, user template override, overwrite guard, force flag.
-- **R3 (validate):** `tests/operations/validate.test.ts` — 50 tests covering all 7 check categories, edge cases, format validation.
-- **R4 (evaluate):** `tests/operations/evaluate.test.ts` — 14 tests covering dispatch, target, save, format output.
-- **R5 (refine):** `tests/operations/refine.test.ts` — 34 tests covering classifyFix, generateAutoChange, interactive mode with mocked readline, auto mode, save.
-- **R6 (evolve):** `tests/operations/evolve.test.ts` — 30 tests covering pure functions (computeTrends, generateChanges, generateProposalId) + integration tests with in-memory SQLite.
-- **R7 (commands):** `tests/cli-smoke.test.ts`, `tests/commands/helpers.test.ts`, `tests/commands/<type>.test.ts` — 70+ tests covering CLI registration, option parsing, handler dispatch.
-- **R8 (conventions):** All tests use `bun:test`, `spyOn` for output, in-memory SQLite for DB, temp dirs for file I/O, no `.skip`/`.todo`.
-- **R9 (fixtures):** 12 fixture files in `apps/cli/tests/fixtures/phase2/` covering valid all 5 types, broken/empty/missing frontmatter, wrong types, long body, broken YAML.
-- **R10 (coverage):** Aggregate 95.68% funcs, 95.97% lines — well above ≥90% thresholds.
-- **R11 (green):** `bun run test` — 438 pass, 0 fail.
+- **R1 (store):** 31 tests across db/evaluations/proposals — in-memory SQLite.
+- **R2 (scaffold):** 9 tests — all 5 types, variable substitution, user override, overwrite guard.
+- **R3 (validate):** 50 tests — all 7 check categories, edge cases, format validation.
+- **R4 (evaluate):** 14 tests — dispatch, target, save, format output.
+- **R5 (refine):** 34 tests — classifyFix, generateAutoChange, interactive mode, auto mode.
+- **R6 (evolve):** 30 tests — pure functions + integration with in-memory SQLite.
+- **R7 (commands):** 70+ tests — CLI registration, option parsing, handler dispatch.
+- **R8 (conventions):** bun:test, spyOn, in-memory SQLite, temp dirs, no .skip/.todo.
+- **R9 (fixtures):** 12 fixture files in tests/fixtures/phase2/.
+- **R10 (coverage):** Aggregate 95.68% funcs, 95.97% lines ≥90%.
+- **R11 (green):** 438 pass, 0 fail, EXIT_CODE=0.
 
 ### Testing
 
 - **Command:** `bun run test`
 - **Executed:** 2026-06-16
-- **Result:** 438 pass, 0 fail across 38 files. EXIT_CODE=0.
+- **Result:** 438 pass, 0 fail across 38 files
 - **Coverage:** 95.68% funcs, 95.97% lines
-- **Next action:** None — all gates pass.
-
-|---|-------|-----------|----------|----------------|
-| _none_ | | | | |
-
-
-### Testing
-
 
 
 ### Artifacts
