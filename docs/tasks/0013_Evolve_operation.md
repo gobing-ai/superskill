@@ -1,9 +1,9 @@
 ---
 name: Evolve operation
 description: Self-evolution loop — analyze historical evaluations, propose data-backed improvements, review/apply, verify post-score delta. The key enhancement over origin Claude Code skills.
-status: WIP
+status: Done
 created_at: 2026-06-16T00:00:00.000Z
-updated_at: 2026-06-16T22:14:02.561Z
+updated_at: 2026-06-16T22:19:17.043Z
 folder: docs/tasks
 type: task
 feature-id: F013
