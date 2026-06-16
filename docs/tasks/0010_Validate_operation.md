@@ -1,9 +1,9 @@
 ---
 name: Validate operation
 description: Structural + schema validation for all 5 content types — frontmatter, required fields, field types, format compliance, link validity
-status: Planned
+status: WIP
 created_at: 2026-06-16T00:00:00.000Z
-updated_at: 2026-06-16T00:00:00.000Z
+updated_at: 2026-06-16T21:11:10.743Z
 folder: docs/tasks
 type: task
 feature-id: F010
@@ -218,12 +218,29 @@ export function formatValidationResult(result: ValidationResult, json?: boolean)
 
 ### Review
 
+**Verdict:** PASS
 
+- **R1–R4 (API):** `validate(type, nameOrPath, opts?)`, `_validateContent(type, content, opts?)`, `formatValidationResult(result, json?)`, `ValidateOptions`, `Finding`, `ValidationResult` — all exported.
+- **R5 (Frontmatter):** Uses `parseFrontmatter` from F007. `FrontmatterError` becomes `error` finding on `field: 'frontmatter'` — never throws.
+- **R6 (Required fields):** Imports `REQUIRED_FIELDS` from F009. Each missing required field → `error` finding.
+- **R7 (Field types):** `FIELD_TYPES` map + `validateFieldType()` checks string/array/enum/boolean with meaningful error messages. Model accepts aliases + claude-* full ids.
+- **R8 (Format compliance):** Pi target warns on `tools:` (plural vs singular). Codex target warns on leading `/` in command names.
+- **R9 (Link validity):** `KNOWN_HOOK_EVENTS` validate hook events. Model alias validation. Reference format check (lowercase alphanumeric + dashes).
+- **R10 (Strict mode):** Description < 40 chars, body < 20 chars, deprecated field detection — all `warning` severity only.
+- **R11 (File path):** Delegates to `resolveContentPath` (F007). Returns sentinel `{ valid: false, field: '_file' }` on missing/unreadable files.
+- **R12 (Content types):** All 5 types validated. `REQUIRED_FIELDS` is SSOT.
+- **R13 (Output):** `formatValidationResult` — text mode (`[SEVERITY] field: message`) or JSON mode.
 
-### P1 — Blockers
-| # | Title | Dimension | Location | Recommendation |
-|---|-------|-----------|----------|----------------|
-| _none_ | | | | |
+### Testing
+
+- **Command:** `bun run test`
+- **Executed:** 2026-06-16
+- **Scope:** 45 tests covering all 7 check categories, edge cases, content type coverage, format validation
+- **Result:** 313 pass, 0 fail across 26 files
+- **Coverage:** 99.66% funcs, 97.70% lines (validate.ts 100% funcs, 87.27% lines — file-I/O paths uncovered, testable only via integration)
+- **Evidence:** `apps/cli/tests/operations/validate.test.ts`
+- **Next action:** None — all gates pass.
+
 
 ### P2 — Warnings
 | # | Title | Dimension | Location | Recommendation |
