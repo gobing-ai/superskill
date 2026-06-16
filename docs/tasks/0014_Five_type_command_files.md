@@ -354,8 +354,6 @@ export function createProgram(): Command {
 9. Run `bun run lint` and verify typecheck passes
 
 
-### Review
-
 
 
 ### P1 — Blockers
