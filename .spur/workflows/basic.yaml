@@ -1,0 +1,58 @@
+# Canonical basic workflow: implement -> check -> fix until the check passes or the
+# iteration bound is exhausted. Authored for the @gobing-ai/ts-dual-workflow-engine
+# state-machine schema (initialState / states[].id / onEnter / top-level transitions).
+# See Architecture Section 5 and Design Section 3.3.
+name: basic
+kind: state-machine
+description: The canonical implement-check-fix-until-pass loop
+iterationBound: 2
+initialState: implement
+terminalStates:
+  - done
+  - failed
+states:
+  - id: implement
+    description: Implement the requested task
+    onEnter:
+      - kind: note
+        options:
+          message: 'Implementing task: ${task}'
+
+  - id: check
+    description: Verify the implementation passes all checks
+    onEnter:
+      - kind: shell
+        options:
+          command: bun run check
+
+  - id: fix
+    description: Address failures from the check pass
+    onEnter:
+      - kind: note
+        options:
+          message: 'Please fix the issues found'
+
+  - id: done
+    description: Terminal — workflow completed successfully
+  - id: failed
+    description: Terminal — workflow failed
+
+transitions:
+  - from: implement
+    to: check
+    description: Hand the implemented task to the check pass
+
+  # Check passed -> done; otherwise loop back to fix. Declaration order matters:
+  # the action-ok guard is tried first, so a passing check short-circuits to done.
+  - from: check
+    to: done
+    description: Check passed — finish successfully
+    guard:
+      kind: action-ok
+  - from: check
+    to: fix
+    description: Check failed — route to a fix attempt
+
+  - from: fix
+    to: check
+    description: Re-run the check after fixing

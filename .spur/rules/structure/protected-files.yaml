@@ -1,0 +1,47 @@
+# Protected-file rules — secret detection and git/repo safety.
+# Adapted from ts-libs, re-scoped to Bun workspaces layout.
+# Mirrors the AGENTS.md safety boundaries (no secrets, no .env, no unreviewed
+# workflows, no destructive git).
+rules:
+  - id: no-hardcoded-secrets
+    description: "Hardcoded secrets detected; read secrets from environment/config boundaries instead."
+    severity: error
+    evaluator:
+      type: secrets-scanner
+      config:
+        categories: [api-key, token, private-key, password, connection-string]
+        scope:
+          include:
+            - "apps/"
+            - "packages/"
+          exclude:
+            - "/tests/"
+            - ".test.ts"
+            - "/node_modules/"
+            - "/dist/"
+
+  - id: no-unsafe-git-commands
+    description: "Unsafe git commands (force-push, hard reset) can overwrite history or cause data loss (AGENTS.md CRITICAL safety)."
+    severity: error
+    evaluator:
+      type: rg
+      config:
+        pattern: "git\\s+.*(push\\s+.*--force|push\\s+.*--force-with-lease\\b)|git\\s+.*reset\\s+--hard\\b"
+    include:
+      - "**/*.sh"
+      - "**/*.bash"
+      - "package.json"
+
+  - id: no-env-files
+    description: ".env files must not be committed; use checked-in examples only (AGENTS.md: never commit .env*)."
+    severity: error
+    evaluator:
+      type: path
+      config:
+        must: absent
+    include:
+      - "**/.env"
+      - "**/.env.*"
+    exclude:
+      - "**/.env.example"
+      - "**/node_modules/**"

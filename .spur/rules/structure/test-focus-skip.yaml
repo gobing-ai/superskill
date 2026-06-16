@@ -1,0 +1,22 @@
+# No focused or skipped tests committed to the suite.
+# Part of the recommended-pre-check preset — caught BEFORE the suite runs so a
+# narrowed or disabled test never lands on a branch and silently shrinks
+# coverage.
+#
+# Scope: all test files in the workspaces.
+include:
+  - "apps/**/tests/**/*.test.ts"
+  - "packages/**/tests/**/*.test.ts"
+exclude:
+  - "**/node_modules/**"
+rules:
+  - id: no-focused-or-skipped-tests
+    description: >
+      Do not commit focused (.only) or skipped (.skip) tests. They narrow or
+      disable the suite, masking failures and coverage gaps. Remove the modifier
+      before committing; quarantine flaky tests with a tracked issue instead.
+    severity: error
+    evaluator:
+      type: rg
+      config:
+        pattern: "\\b(describe|it|test|bench)\\.(only|skip)\\(|\\b(fdescribe|fit|xdescribe|xit)\\("

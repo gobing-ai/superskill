@@ -1,0 +1,46 @@
+# [STRICT — opt-in] Runtime boundaries. Adapted from ts-libs, re-scoped to
+# Bun workspaces layout. NOT in recommended-pre-check.
+# Opt in via: spur rule run --preset strict-check.
+
+rules:
+  - id: no-direct-process-spawn
+    description: "Agent/process execution should go through a ProcessExecutor seam. Direct spawn is narrowly allowlisted."
+    severity: warning
+    evaluator:
+      type: forbidden-import
+      config:
+        forbidden:
+          - specifier: "node:child_process"
+          - specifier: "child_process"
+          - pattern: "Bun\\.(spawn|spawnSync)\\s*\\("
+            matchMode: usage
+          - specifier: "execa"
+          - specifier: "zx"
+        scope:
+          include:
+            - "apps/**/src/**/*.ts"
+            - "packages/**/src/**/*.ts"
+          exclude:
+            - "**/tests/**"
+            - "**/*.test.ts"
+            - "**/dist/**"
+
+  - id: no-direct-fs-io
+    description: "Prefer a FileSystem seam for fs IO. Light direct fs at app edges is allowlisted."
+    severity: warning
+    evaluator:
+      type: forbidden-import
+      config:
+        forbidden:
+          - pattern: "from\\s+['\"]node:fs(?:/promises)?['\"]|require\\(['\"]node:fs"
+            matchMode: usage
+          - pattern: "\\bBun\\.(?:write)\\("
+            matchMode: usage
+        scope:
+          include:
+            - "apps/**/src/**/*.ts"
+            - "packages/**/src/**/*.ts"
+          exclude:
+            - "**/tests/**"
+            - "**/*.test.ts"
+            - "**/dist/**"

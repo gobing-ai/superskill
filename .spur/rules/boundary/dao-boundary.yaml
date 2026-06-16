@@ -1,0 +1,110 @@
+# DAO / database boundary rules — keep DB access centralized.
+# Adapted from a monorepo layout and re-scoped to Bun workspaces layout.
+rules:
+  - id: ts-db-only-in-domain
+    description: >
+      @gobing-ai/ts-db may only be imported inside a domain layer. Apps and
+      other packages must consume persistence through DAOs, never the raw
+      adapter.
+    severity: error
+    evaluator:
+      type: forbidden-import
+      config:
+        forbidden:
+          - specifier: "@gobing-ai/ts-db"
+          - specifier: "@gobing-ai/ts-db/schema"
+          - specifier: "@gobing-ai/ts-db/bun-sqlite"
+          - specifier: "@gobing-ai/ts-db/d1"
+        scope:
+          include:
+            - "apps/**/src/**/*.ts"
+            - "packages/**/src/**/*.ts"
+          exclude:
+            - "**/node_modules/**"
+            - "**/tests/**"
+
+  - id: drizzle-only-in-domain-schema
+    description: >
+      drizzle-orm is an internal detail of the DB facade. It may be imported
+      ONLY in a domain schema layer.
+    severity: error
+    evaluator:
+      type: forbidden-import
+      config:
+        forbidden:
+          - specifier: "drizzle-orm"
+          - specifier: "drizzle-orm/sqlite-core"
+          - specifier: "drizzle-orm/bun-sqlite"
+          - specifier: "drizzle-orm/d1"
+          - specifier: "drizzle-zod"
+        scope:
+          include:
+            - "apps/**/src/**/*.ts"
+            - "packages/**/src/**/*.ts"
+          exclude:
+            - "**/node_modules/**"
+            - "**/tests/**"
+
+  - id: tables-via-defineTable
+    description: >
+      Tables must be defined with defineTable(), not bare sqliteTable().
+    severity: error
+    evaluator:
+      type: rg
+      config:
+        pattern: "sqliteTable\\("
+    include:
+      - "apps/**/src/**/*.ts"
+      - "packages/**/src/**/*.ts"
+    exclude:
+      - "**/node_modules/**"
+      - "**/tests/**"
+
+  - id: no-hand-written-ddl-for-drizzle-tables
+    description: >
+      Domain tables derive their CREATE TABLE via createTableSql — do not
+      hand-write DDL.
+    severity: error
+    evaluator:
+      type: rg
+      config:
+        pattern: "(?i)(CREATE|ALTER|DROP)\\s+TABLE\\s+(IF\\s+(NOT\\s+)?EXISTS\\s+)?[\"'`]?[A-Za-z_][A-Za-z0-9_]*[\"'`]?\\s*[(;]"
+    include:
+      - "apps/**/src/**/*.ts"
+      - "packages/**/src/**/*.ts"
+    exclude:
+      - "**/node_modules/**"
+      - "**/tests/**"
+
+  - id: raw-sql-only-in-domain
+    description: >
+      Raw SQL string literals (SELECT/INSERT/UPDATE/DELETE) must stay inside
+      the DAO/migration layer. Db packages are the intended DAO home.
+    severity: error
+    evaluator:
+      type: rg
+      config:
+        pattern: "(SELECT |INSERT INTO|UPDATE |DELETE FROM)"
+    include:
+      - "apps/**/src/**/*.ts"
+      - "packages/**/src/**/*.ts"
+    exclude:
+      - "**/node_modules/**"
+      - "**/tests/**"
+      - "**/db/**"
+
+  - id: no-sql-text-imports
+    description: >
+      .sql text-imports are non-portable through build/publish and are
+      forbidden.
+    severity: error
+    evaluator:
+      type: rg
+      config:
+        pattern: "from\\s+['\"][^'\"]*\\.sql['\"]"
+    include:
+      - "apps/**/src/**/*.ts"
+      - "packages/**/src/**/*.ts"
+    exclude:
+      - "**/node_modules/**"
+      - "**/tests/**"

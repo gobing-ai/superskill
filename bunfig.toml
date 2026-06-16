@@ -1,0 +1,17 @@
+telemetry = false
+
+[install]
+exact = true
+
+[test]
+coverage = true
+coverageDir = ".coverage"
+coverageReporter = ["text", "lcov"]
+coverageThreshold = { lines = 0.9, functions = 0.9 }
+# Template ships with no enforced threshold — promoted projects should pick
+# one that fits their domain (90/90 is a reasonable starting point).
+coverageSkipTestFiles = true
+# Scaffolds rely on @SCOPE/* workspace aliases that resolve through their own
+# node_modules — `pretest` runs scripts/ensure-scaffold-installs.ts to set
+# those up on first run.
+pathIgnorePatterns = ["vendors/**", "build/**", "dist/**", "node_modules/**"]

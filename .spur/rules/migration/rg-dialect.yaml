@@ -1,0 +1,44 @@
+# One-off migration guard for the `regex` → `rg` (ripgrep) evaluator move.
+#
+# NOT part of recommended-pre-check — it is a transitional check, run on demand:
+#   spur rule run --preset rg-migration
+#
+# It flags `rg`-typed rules whose patterns use ripgrep-incompatible constructs
+# (lookbehind, backreferences) so they stay on `type: regex`. Once a project's
+# rule files are migrated and clean, this preset rarely needs to run again.
+rules:
+  - id: rg-evaluator-patterns-are-ripgrep-dialect
+    description: "Patterns on the `rg` evaluator run under ripgrep's Rust regex engine, which has no lookbehind or backreferences. Such JS-only constructs belong on the `regex` (JS RegExp) evaluator. Keeps `rg` rules from failing to compile at scan time."
+    severity: error
+    evaluator:
+      type: exit-code
+      config:
+        command: sh
+        args:
+          - -c
+          - |
+            errors=0
+            for f in $(rg --files .spur/rules -g '*.yaml'); do
+              yq -e '.rules != null' "$f" >/dev/null 2>&1 || continue
+              count="$(yq '.rules | length' "$f")"
+              i=0
+              while [ "$i" -lt "$count" ]; do
+                rtype="$(yq ".rules[$i].evaluator.type // \"\"" "$f")"
+                if [ "$rtype" = "rg" ]; then
+                  pat="$(yq ".rules[$i].evaluator.config.pattern // \"\"" "$f")"
+                  # ripgrep's regex crate rejects lookbehind and backreferences.
+                  if printf '%s' "$pat" | rg -q '\(\?<[=!]'; then
+                    echo "INVALID: $f: rules[$i] rg pattern uses lookbehind (unsupported by ripgrep) — use type: regex"
+                    errors=$((errors + 1))
+                  fi
+                  if printf '%s' "$pat" | rg -q '\\[1-9]'; then
+                    echo "INVALID: $f: rules[$i] rg pattern uses a backreference (unsupported by ripgrep) — use type: regex"
+                    errors=$((errors + 1))
+                  fi
+                fi
+                i=$((i + 1))
+              done
+            done
+            [ "$errors" -eq 0 ] || exit 1
+    include:
+      - ".spur/rules/**/*.yaml"

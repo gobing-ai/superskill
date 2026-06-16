@@ -1,0 +1,49 @@
+# Bun/tooling rules — superskill standardizes on Bun + bun:test (AGENTS.md "Stack").
+# Adapted from ts-libs, re-scoped to Bun workspaces layout.
+include:
+  - "package.json"
+  - "apps/**/src/**/*.ts"
+  - "packages/**/src/**/*.ts"
+  - ".spur/**/*.yaml"
+exclude:
+  - "**/node_modules/**"
+  - "**/dist/**"
+
+rules:
+  - id: no-npm-pnpm-yarn-scripts
+    description: "Use bun scripts instead of npm, pnpm, or yarn commands (AGENTS.md: no npm/pnpm/yarn)."
+    severity: error
+    evaluator:
+      type: rg
+      config:
+        pattern: "\\b(npm run|pnpm|yarn)\\b"
+    include:
+      - "package.json"
+      - "apps/*/package.json"
+      - "packages/*/package.json"
+      - "**/*.yml"
+      - "**/*.yaml"
+    exclude:
+      - ".spur/rules/**"
+
+  - id: enforce-bun-test
+    description: "Unit/integration tests must use bun:test, not Jest or Mocha."
+    severity: error
+    evaluator:
+      type: rg
+      config:
+        pattern: "from ['\"](jest|mocha|@jest)"
+    include:
+      - "apps/**/tests/**/*.test.ts"
+      - "packages/**/tests/**/*.test.ts"
+
+  - id: no-vitest-imports-or-apis
+    description: "Use bun:test APIs instead of vitest."
+    severity: error
+    evaluator:
+      type: rg
+      config:
+        pattern: "from ['\"]vitest['\"]|vi\\.(fn|spyOn|mock|stub)\\b"
+    include:
+      - "apps/**/src/**/*.ts"
+      - "packages/**/src/**/*.ts"

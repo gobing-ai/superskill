@@ -1,0 +1,40 @@
+# Test-location rules — adapted to Bun workspaces layout.
+#
+# no-tests-dir: forbids __tests__/ directories and src/-adjacent tests.
+# require-corresponding-test: error severity — each source file needs a test.
+rules:
+  - id: no-tests-dir
+    description: "Tests must live in tests/ directories at the same level as src/, not in __tests__."
+    severity: error
+    evaluator:
+      type: test-location
+      config:
+        expected: "**/*.test.*"
+        forbid:
+          - "**/__tests__/**"
+          - "**/src/**/*.test.ts"
+          - "**/src/**/*.test.tsx"
+        requireCorrespondingTest: false
+    include:
+      - "apps/**/tests/**/*.test.ts"
+      - "packages/**/tests/**/*.test.ts"
+    exclude:
+      - "**/node_modules/**"
+
+  - id: require-corresponding-test
+    description: "Every source file must have a corresponding test."
+    severity: error
+    evaluator:
+      type: test-location
+      config:
+        expected: "**/*.test.*"
+        requireCorrespondingTest: true
+    include:
+      - "apps/**/src/**/*.ts"
+      - "packages/**/src/**/*.ts"
+    exclude:
+      - "**/index.ts"
+      - "**/*.d.ts"
+      - "**/types.ts"
+      - "**/node_modules/**"
+      - "**/tests/**"

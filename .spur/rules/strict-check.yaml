@@ -1,0 +1,15 @@
+# Strict-check preset — opt-in hygiene rules absorbed from ts-libs but kept OUT
+# of the default recommended-pre-check gate (they need project-specific tuning
+# or are redundant with engine-level validation). Run explicitly:
+#   spur rule run --preset strict-check
+# or cherry-pick a single rule:
+#   spur rule run --rule no-third-party-http-clients
+#
+# `extends: [strict]` references the strict/ category directory (the preset file
+# is named differently to avoid a name↔category collision).
+name: strict-check
+description: >
+  Opt-in boundary hygiene: HTTP-client centralization, runtime fs/spawn seams,
+  and local rule-file structural validation. Not part of recommended-pre-check.
+extends:
+  - strict

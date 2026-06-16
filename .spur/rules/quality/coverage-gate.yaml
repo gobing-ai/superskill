@@ -1,0 +1,24 @@
+# Coverage gate — per-file line coverage meets threshold from Bun's lcov output.
+# Adapted from ts-libs, re-scoped to Bun workspaces layout:
+#   - lcovPath kept at .coverage/lcov.info (bun test --coverage writes
+#     per-workspace coverage there via --coverage-dir=.coverage)
+#   - include covers apps/ and packages/ source
+#   - threshold kept at 90 matching bunfig.toml coverageThreshold
+rules:
+  - id: coverage-gate
+    description: "Per-file line coverage meets 90% threshold (read from lcov)"
+    severity: error
+    evaluator:
+      type: coverage-gate
+      config:
+        lcovPath: .coverage/lcov.info
+        threshold: 90
+        include:
+          - "apps/**/src/**"
+          - "packages/**/src/**"
+        exclude:
+          - "**/node_modules/**"
+          - "**/vendors/**"
+          - "**/dist/**"
+          - "**/tests/**"
+          - "**/stubs/**"

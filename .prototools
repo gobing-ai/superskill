@@ -1,0 +1,9 @@
+bun = "1.3.14"
+biome = "2.4.16"
+cog = "6.5.0"
+lefthook = "1.13.0"
+
+[plugins.tools]
+biome = "file://.moon/plugins/biome.yml"
+cog = "file://.moon/plugins/cog.yml"
+lefthook = "https://raw.githubusercontent.com/ageha734/proto-plugins/refs/heads/master/toml/lefthook.toml"

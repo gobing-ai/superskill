@@ -1,0 +1,55 @@
+# [STRICT — opt-in] Meta-validation for local .spur/rules YAML. Absorbed from
+# ts-libs/.spur/rules/meta/rule-files-structural.yaml. The engine already
+# validates rule files on load, so this is a redundant pre-commit self-check;
+# it also requires `yq` + `rg` on PATH. Opt-in only.
+rules:
+  - id: rule-yaml-files-valid-structure
+    description: "Local .spur/rules YAML files must parse and expose either rule entries or a preset (name + extends)."
+    severity: error
+    evaluator:
+      type: exit-code
+      config:
+        command: sh
+        args:
+          - -c
+          - |
+            command -v yq >/dev/null 2>&1 || { echo "SKIP: yq not on PATH"; exit 0; }
+            command -v rg >/dev/null 2>&1 || { echo "SKIP: rg not on PATH"; exit 0; }
+            errors=0
+            for f in $(rg --files .spur/rules -g '*.yaml'); do
+              if ! yq -e '.' "$f" >/dev/null 2>&1; then
+                echo "INVALID: $f is not valid YAML"
+                errors=$((errors + 1))
+                continue
+              fi
+
+              if yq -e '.rules != null' "$f" >/dev/null 2>&1; then
+                if ! yq -e '.rules | type == "!!seq"' "$f" >/dev/null 2>&1; then
+                  echo "INVALID: $f: .rules must be an array"
+                  errors=$((errors + 1))
+                  continue
+                fi
+                count="$(yq '.rules | length' "$f")"
+                i=0
+                while [ "$i" -lt "$count" ]; do
+                  rid="$(yq ".rules[$i].id // \"\"" "$f")"
+                  rdesc="$(yq ".rules[$i].description // \"\"" "$f")"
+                  rtype="$(yq ".rules[$i].evaluator.type // \"\"" "$f")"
+                  [ -n "$rid" ] && [ "$rid" != "null" ] || { echo "INVALID: $f: rules[$i] missing id"; errors=$((errors + 1)); }
+                  [ -n "$rdesc" ] && [ "$rdesc" != "null" ] || { echo "INVALID: $f: rules[$i] missing description"; errors=$((errors + 1)); }
+                  [ -n "$rtype" ] && [ "$rtype" != "null" ] || { echo "INVALID: $f: rules[$i] missing evaluator.type"; errors=$((errors + 1)); }
+                  i=$((i + 1))
+                done
+              elif yq -e '.name != null' "$f" >/dev/null 2>&1; then
+                if ! yq -e '.extends | type == "!!seq"' "$f" >/dev/null 2>&1; then
+                  echo "INVALID: $f: presets must define an extends array"
+                  errors=$((errors + 1))
+                fi
+              else
+                echo "INVALID: $f: expected .rules or .name"
+                errors=$((errors + 1))
+              fi
+            done
+            [ "$errors" -eq 0 ] || exit 1
+    include:
+      - ".spur/rules/**/*.yaml"

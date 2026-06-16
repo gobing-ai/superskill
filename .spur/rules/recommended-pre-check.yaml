@@ -1,0 +1,12 @@
+# Recommended pre-check preset — portable rule categories from global install.
+# Use with: spur rule run --preset recommended-pre-check
+#
+# Runs BEFORE tests (test-pre-check). TypeScript quality, structural, DB
+# boundary, and CLI surface consistency rules. TSDoc exports run in post-check
+# alongside coverage-gate.
+name: recommended-pre-check
+extends:
+  - typescript
+  - structure
+  - boundary
+  - surface

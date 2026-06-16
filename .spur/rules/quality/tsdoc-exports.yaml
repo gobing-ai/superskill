@@ -1,0 +1,19 @@
+# TSDoc-on-exports — enforced by Spur's post-check gate.
+# Adapted from ts-libs and re-scoped to Bun workspaces layout.
+# Severity: info — TSDoc is aspirational for this project; bump to error
+# once exports are documented.
+include:
+  - "apps/**/src/**/*.ts"
+  - "packages/**/src/**/*.ts"
+exclude:
+  - "**/node_modules/**"
+  - "**/dist/**"
+  - "**/tests/**"
+rules:
+  - id: every-export-has-tsdoc
+    description: >
+      Exported declarations should have a preceding TSDoc comment (info — aspirational).
+    severity: error
+    enabled: true
+    evaluator:
+      type: tsdoc-export

@@ -1,0 +1,31 @@
+# CLI surface consistency — structural checks for Commander-based CLI command
+# files. DISABLED: this project uses a direct script entrypoint
+# rather than the Commander registerXxxCommand convention
+# these rules enforce. Re-enable if/when a Commander CLI is introduced.
+#
+# Part of the surface category (not in recommended-pre-check).
+
+rules:
+  - id: cli-register-pattern
+    description: >
+      Every CLI command file must export a registerXxxCommand(program, context)
+      function matching the standard Commander.js wiring pattern.
+      DISABLED: superskill does not use the Commander registerXxxCommand convention.
+    enabled: false
+    evaluator:
+      type: rg
+      config:
+        pattern: "export function register\\w+Command\\("
+        mode: require
+
+  - id: cli-json-output
+    description: >
+      Command files that register --json options must call toJson() or
+      JSON.stringify() to produce machine-readable output.
+      DISABLED: superskill does not use the Commander registerXxxCommand convention.
+    enabled: false
+    evaluator:
+      type: rg
+      config:
+        pattern: "toJson\\b|JSON\\.stringify\\b"
+        mode: require

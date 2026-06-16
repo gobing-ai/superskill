@@ -1,0 +1,10 @@
+# Recommended post-check preset — coverage gate and exported-symbol docs.
+# Use with: spur rule run --preset recommended-post-check --fail-on warning
+#
+# Runs AFTER tests (test-post-check). Enforces the coverage gate on
+# fresh .coverage/lcov.info output from bun test --coverage, checks exported
+# declarations for TSDoc comments. All other rules (typescript, structure,
+# boundary, surface) run in pre-check.
+name: recommended-post-check
+extends:
+  - quality

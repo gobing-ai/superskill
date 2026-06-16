@@ -1,0 +1,18 @@
+commit-msg:
+  commands:
+    cog:
+      run: cog verify --file {1}
+
+pre-commit:
+  parallel: true
+  commands:
+    format:
+      glob: "*.{js,ts,tsx,jsx,json}"
+      run: bun run format
+
+pre-push:
+  commands:
+    cog:
+      run: cog check
+    lint:
+      run: bun run lint

@@ -1,0 +1,116 @@
+"$schema": "@gobing-ai/ts-dual-workflow-engine/schemas/state-machine-workflow.schema.json"
+kind: state-machine
+name: feature-dev
+description: >
+  End-to-end feature-development loop: brainstorm → new-task → refine → implement →
+  check (autofix+spur-check) → fix (until clean) → verify. Agent-driven steps use
+  agent.run; the check gate uses rule.check for deterministic constraint gating.
+  The session latch (Q8) auto-continues agent sessions across steps — no per-step
+  `continue` wiring needed.
+iterationBound: 20
+initialState: brainstorm
+terminalStates:
+  - done
+  - failed
+vars:
+  taskId: TASK-ID
+
+states:
+  - id: brainstorm
+    description: Turn vague intent into a structured feature list via /rd3:dev-brainstorm
+    onEnter:
+      - kind: agent.run
+        options:
+          input: /rd3:dev-brainstorm
+
+  - id: new-task
+    description: Convert the feature list into a task file via /rd3:dev-new-task
+    onEnter:
+      - kind: agent.run
+        options:
+          input: /rd3:dev-new-task
+
+  - id: refine
+    description: Auto-refine the task definition via /rd3:dev-refine
+    onEnter:
+      - kind: agent.run
+        options:
+          input: /rd3:dev-refine ${vars.taskId} --focus all --auto
+
+  - id: implement
+    description: Implement + verify the task via /rd3:dev-run
+    onEnter:
+      - kind: agent.run
+        options:
+          input: /rd3:dev-run ${vars.taskId} --auto --verify
+
+  - id: check
+    description: >
+      Deterministic constraint gate via rule.check (recommended-pre-check preset).
+      Catches formatting, type, and structural issues before verification.
+    onEnter:
+      - kind: rule.check
+        options:
+          preset: recommended-pre-check
+          failOn: warning
+
+  - id: fix
+    description: >
+      Fix failures from the check gate. The latched agent session carries context
+      from the previous steps so the fixer knows what went wrong.
+    onEnter:
+      - kind: agent.run
+        options:
+          input: "Fix the failures from the previous check pass for task ${vars.taskId}; run /rd3:dev-fixall or /rd3:dev-unit as appropriate."
+
+  - id: verify
+    description: Cross-agent verification via /rd3:dev-verify
+    onEnter:
+      - kind: agent.run
+        options:
+          input: /rd3:dev-verify ${vars.taskId} --auto --fix all --force --channel codex/auto
+
+  - id: done
+    description: Terminal — feature implemented, checked, and verified successfully.
+
+  - id: failed
+    description: Terminal — check loop exhausted iterationBound without passing.
+
+transitions:
+  # Linear prefix: brainstorm → new-task → refine → implement → check
+  - from: brainstorm
+    to: new-task
+    description: Feature list captured; create the task file
+
+  - from: new-task
+    to: refine
+    description: Task file created; refine it
+
+  - from: refine
+    to: implement
+    description: Task refined; implement it
+
+  - from: implement
+    to: check
+    description: Implementation done; run the gate
+
+  # Check gate: action-ok guard FIRST so a passing check short-circuits to verify.
+  - from: check
+    to: verify
+    description: Check passed — advance to cross-agent verification
+    guard:
+      kind: action-ok
+
+  - from: check
+    to: fix
+    description: Check failed — route to a fix attempt
+
+  # Fix loop: always return to check after a fix attempt
+  - from: fix
+    to: check
+    description: Fix applied; re-run the gate
+
+  # Verify → done
+  - from: verify
+    to: done
+    description: Verification passed — workflow complete

@@ -1,0 +1,14 @@
+# rg-migration preset — on-demand guard for the regex → rg (ripgrep) evaluator move.
+#
+# Run explicitly when migrating rule files onto the `rg` evaluator:
+#   spur rule run --preset rg-migration --fail-on warning
+#
+# Deliberately NOT included in recommended-pre-check / recommended-post-check:
+# it is a transitional check, not a standing quality gate. See the rule-engine
+# README "Rules Migration" section.
+name: rg-migration
+description: >
+  Flags rg-typed rule patterns that use ripgrep-incompatible constructs
+  (lookbehind, backreferences). Run on demand during the regex → rg migration.
+extends:
+  - migration

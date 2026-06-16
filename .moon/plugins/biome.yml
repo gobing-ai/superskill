@@ -1,0 +1,32 @@
+# A YAML plugin for proto:
+# https://moonrepo.dev/docs/proto/non-wasm-plugin
+#
+# Biome 2.x changed its release tags from `cli/vX.Y.Z` to
+# `@biomejs/biome@X.Y.Z`, which the abandoned community plugin
+# (Phault/proto-toml-plugins) never updated for. This local plugin
+# matches the current tag scheme so `~2` / 2.x versions resolve.
+
+name: Biome
+type: cli
+
+resolve:
+  git-url: https://github.com/biomejs/biome
+  version-pattern: "^@biomejs/biome@((?<major>[0-9]+)\\.(?<minor>[0-9]+)\\.(?<patch>[0-9]+)(?<pre>-[^+]+)?)"
+
+platform:
+  linux:
+    download-file: biome-linux-{arch}{libc}
+  macos:
+    download-file: biome-darwin-{arch}
+  windows:
+    download-file: biome-win32-{arch}.exe
+
+install:
+  download-url: "https://github.com/biomejs/biome/releases/download/@biomejs/biome@{version}/{download_file}"
+  unpack: false
+  arch:
+    aarch64: arm64
+    x86_64: x64
+  libc:
+    gnu: ""
+    musl: "-musl"

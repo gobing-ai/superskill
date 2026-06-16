@@ -1,0 +1,19 @@
+# No `debugger` statements in production source.
+# Part of the recommended-pre-check preset.
+include:
+  - "apps/**/src/**/*.ts"
+  - "packages/**/src/**/*.ts"
+exclude:
+  - "**/node_modules/**"
+  - "**/dist/**"
+  - "**/tests/**"
+rules:
+  - id: no-debugger-statement
+    description: >
+      Do not commit `debugger` statements in production source. They pause
+      execution under an attached inspector and have no place in shipped code.
+    severity: error
+    evaluator:
+      type: rg
+      config:
+        pattern: "\\bdebugger\\b\\s*;?"

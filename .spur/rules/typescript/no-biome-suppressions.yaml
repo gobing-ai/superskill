@@ -1,0 +1,19 @@
+# No Biome suppression comments in production source.
+# Adapted from ts-libs, re-scoped to Bun workspaces layout.
+include:
+  - "apps/**/src/**/*.ts"
+  - "packages/**/src/**/*.ts"
+exclude:
+  - "**/node_modules/**"
+  - "**/dist/**"
+  - "**/tests/**"
+rules:
+  - id: no-biome-suppressions
+    description: >
+      Do not use biome-ignore or biome-ignore-all comments to suppress lint
+      rules.  Fix the underlying issue instead.
+    severity: error
+    evaluator:
+      type: rg
+      config:
+        pattern: "biome-ignore"
