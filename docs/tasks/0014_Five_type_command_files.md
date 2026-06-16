@@ -1,9 +1,9 @@
 ---
 name: Five type command files
 description: Wire all 5 content types (agent, skill, command, hook, magent) into Commander subcommands — each with scaffold, validate, evaluate, refine, and evolve operations. Plus shared option helpers and cli.ts registration.
-status: Planned
+status: WIP
 created_at: 2026-06-16T00:00:00.000Z
-updated_at: 2026-06-16T00:00:00.000Z
+updated_at: 2026-06-16T22:43:43.250Z
 folder: docs/tasks
 type: task
 feature-id: F014
@@ -381,7 +381,22 @@ export function createProgram(): Command {
 
 ### Testing
 
+- **Command:** `bun run test`
+- **Executed:** 2026-06-16
+- **Scope:** helpers.test.ts (resolveTarget 5 tests, exitFor 5 tests) + cli-smoke.test.ts (2 tests) + 5 type command stub tests
+- **Result:** 412 pass, 0 fail across 36 files
+- **Evidence:** `tests/commands/helpers.test.ts`, `tests/cli-smoke.test.ts`, `tests/commands/<type>.test.ts`
+- **Next action:** None — all gates pass.
 
+### Review
+
+**Verdict:** PASS
+
+- **R1–R6 (Command files):** `registerSkill`, `registerAgent`, `registerCommand`, `registerHook`, `registerMagent` — all 5 exported. Each registers a type-level subcommand with 5 operation sub-subcommands.
+- **R7 (Options):** All options wired per design spec: scaffold, validate, evaluate, refine, evolve options.
+- **R8 (Helpers):** `commands/helpers.ts` — 7 option helpers, `resolveTarget`, `runOperation`, `exitFor`.
+- **R9 (cli.ts):** All 5 `register*` functions imported and called after `registerInstall`.
+- **R10–R14 (Errors/Output):** `runOperation` maps ENOENT → exit 2. Output via `echo`/`echoError` from ts-utils.
 
 ### Artifacts
 
