@@ -532,6 +532,8 @@ export async function evolve(type: ContentType, name: string, opts?: EvolveOptio
         if (target) {
             await proposalDao.updateProposalStatus(target.id, 'rejected');
             echo(`Proposal ${opts.rejectId} rejected.`);
+        } else {
+            echoError(`Proposal ${opts.rejectId} not found for ${type}/${contentName}.`);
         }
         return { baselineScore, postScore: baselineScore, delta: 0, changesApplied: 0, proposalPath: '' };
     }

@@ -292,9 +292,9 @@ export async function refine(type: ContentType, nameOrPath: string, opts?: Refin
         findings.push({ finding: f, strategy: classifyFix(f) });
     }
 
-    // From evaluate: dimension notes (informational only, never auto-fixable)
+    // From evaluate: dimension notes for low-scoring dimensions (informational only, never auto-fixable)
     for (const [dimName, dimScore] of Object.entries(preDimensions)) {
-        if (dimScore.note?.trim()) {
+        if (dimScore.score < 0.7 && dimScore.note?.trim()) {
             const finding: Finding = {
                 severity: 'warning',
                 field: dimName,
@@ -328,9 +328,9 @@ export async function refine(type: ContentType, nameOrPath: string, opts?: Refin
 
     try {
         if (opts?.auto) {
-            // Auto mode: record all findings as skipped (dimension notes and validation
-            // warnings are suggestions, not machine-applicable). Validation errors cause
-            // early return above (L274), so auto-apply is unreachable by design.
+            // Auto mode: record all findings as skipped. Dimension notes are suggestions;
+            // validation warnings may carry any strategy but are not applied automatically.
+            // Validation errors cause early return above (L274).
             for (const { finding, strategy } of findings) {
                 fixesSkipped.push({
                     severity: finding.severity,

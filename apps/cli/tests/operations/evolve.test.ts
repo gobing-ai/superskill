@@ -346,6 +346,12 @@ describe('evolve — orchestrator', () => {
         expect(r.changesApplied).toBe(0);
     });
 
+    it('--reject returns zero result when the proposal id is not found', async () => {
+        await seedHistory(adapter, [0.9, 0.5]);
+        const r = await evolve('skill', 'widget', { adapter, rejectId: 'nonexistent-id' });
+        expect(r.changesApplied).toBe(0);
+    });
+
     it('applies auto-generated changes to content (generateChanges → stepApply end-to-end)', async () => {
         await seedHistory(adapter, [0.9, 0.5]); // declining clarity
         await evolve('skill', 'widget', { adapter, proposeOnly: true });
@@ -374,8 +380,8 @@ describe('evolve — orchestrator', () => {
         const draft = (await new ProposalDao(adapter).getProposals('skill', 'widget'))[0];
         const pid = ((draft?.proposal_json as Record<string, unknown>)?.proposal_id as string) ?? '';
         const r = await evolve('skill', 'widget', { adapter, acceptId: pid });
-        // Should apply 0 changes because the text change current doesn't exist in the file
-        expect(r.changesApplied).toBeGreaterThanOrEqual(0);
+        // Auto-generated change targets frontmatter.description — must apply exactly once
+        expect(r.changesApplied).toBe(1);
     });
 
     it('--accept applies stored frontmatter and text changes', async () => {
