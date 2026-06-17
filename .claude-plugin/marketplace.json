@@ -1,0 +1,15 @@
+{
+    "name": "superskill",
+    "owner": {
+        "name": "Robin Min",
+        "email": "minlongbing@gmail.com"
+    },
+    "plugins": [
+        {
+            "version": "0.1.1",
+            "name": "cc",
+            "source": "./plugins/cc",
+            "description": "superskill - a manager for multi-agent skill, slash command, subagent, hook, MCP and etc"
+        }
+    ]
+}
