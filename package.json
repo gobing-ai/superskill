@@ -9,7 +9,8 @@
     ],
     "scripts": {
         "prepare": "lefthook install",
-        "clean": "rm -rf dist && mkdir -p dist/cli",
+        "bump-ver": "bun scripts/bump.ts bump-ver",
+        "clean": "rm -rf dist",
         "build": "bun run clean && bun run --filter '@gobing-ai/superskill' build",
         "dev": "bun run --filter './apps/*' --filter './packages/*' dev",
         "test": "NODE_ENV=test bun test --coverage --coverage-dir=.coverage --reporter=dots",

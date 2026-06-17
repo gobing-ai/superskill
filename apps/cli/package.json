@@ -1,13 +1,28 @@
 {
     "name": "@gobing-ai/superskill",
-    "type": "module",
-    "private": true,
+    "version": "0.1.0",
+    "description": "A manager for multi-agent skill, slash command, subagent, hook, MCP and etc.",
+    "keywords": [
+        "cli",
+        "claude-code",
+        "skills",
+        "agents",
+        "codex",
+        "pi",
+        "superskill"
+    ],
+    "repository": {
+        "type": "git",
+        "url": "git+https://github.com/gobing-ai/superskill.git"
+    },
+    "author": "Robin Min <minlongbing@gmail.com>",
+    "license": "Apache-2.0",
     "bin": {
-        "superskill": "src/index.ts"
+        "superskill": "dist/index.js"
     },
     "files": [
-        "superskill",
-        "templates",
+        "dist/",
+        "templates/",
         "README.md"
     ],
     "engines": {
@@ -15,8 +30,8 @@
     },
     "scripts": {
         "start": "bun run src/index.ts",
-        "build": "bun build src/index.ts --compile --outfile ../../dist/cli/superskill",
-        "prepublishOnly": "bun run build",
+        "build": "bun build src/index.ts --outfile ../../dist/cli/index.js --target bun && bun run ../../scripts/postbuild.ts ../../dist/cli/index.js",
+        "prepublishOnly": "bun run build && mkdir -p dist && cp ../../dist/cli/index.js dist/index.js",
         "test": "NODE_ENV=test bun test --reporter=dots",
         "typecheck": "tsc --noEmit"
     },

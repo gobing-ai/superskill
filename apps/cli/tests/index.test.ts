@@ -20,12 +20,12 @@ describe('cli', () => {
         expect(optionNames).toContain('--dry-run');
     });
 
-    it('package.json bin points to src/index.ts (M4 regression)', async () => {
+    it('package.json bin points to built dist/index.js', async () => {
         const { readFileSync } = await import('node:fs');
         const { resolve } = await import('node:path');
         const thisDir = resolve(import.meta.path, '..');
         const pkgPath = resolve(thisDir, '../package.json');
         const pkg = JSON.parse(readFileSync(pkgPath, 'utf-8'));
-        expect(pkg.bin?.superskill).toBe('src/index.ts');
+        expect(pkg.bin?.superskill).toBe('dist/index.js');
     });
 });
