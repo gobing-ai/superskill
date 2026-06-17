@@ -1,5 +1,5 @@
 // Dynamic import used throughout — required by mock.module pattern in Bun tests.
-import { afterEach, beforeEach, describe, expect, it, mock, spyOn } from 'bun:test';
+import { afterAll, afterEach, beforeEach, describe, expect, it, mock, spyOn } from 'bun:test';
 import { Command } from 'commander';
 
 // --- mock module registrations (before dynamic import per Bun pattern) ---
@@ -24,6 +24,10 @@ mock.module('../../src/operations/refine', () => ({
 mock.module('../../src/operations/evolve', () => ({
     evolve: mock().mockResolvedValue({ baselineScore: 0.7, postScore: 0.85, delta: 0.15, changesApplied: [] }),
 }));
+
+afterAll(() => {
+    mock.restore();
+});
 
 // --- spies ---
 let stdoutWrite: ReturnType<typeof spyOn<typeof process.stdout, 'write'>>;

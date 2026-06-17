@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, mock, spyOn } from 'bun:test';
+import { afterAll, beforeEach, describe, expect, it, mock, spyOn } from 'bun:test';
 import { Command } from 'commander';
 
 mock.module('../../src/operations/scaffold', () => ({
@@ -23,6 +23,9 @@ mock.module('../../src/operations/evolve', () => ({
     evolve: mock().mockResolvedValue({ baselineScore: 0.7, postScore: 0.85, delta: 0.15, changesApplied: [] }),
 }));
 
+afterAll(() => {
+    mock.restore();
+});
 beforeEach(() => {
     spyOn(process.stdout, 'write').mockImplementation(() => true);
     spyOn(process.stderr, 'write').mockImplementation(() => true);
