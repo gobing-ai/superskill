@@ -1,55 +1,55 @@
 {
-  "name": "@gobing-ai/superskill",
-  "version": "0.1.1",
-  "description": "A manager for multi-agent skill, slash command, subagent, hook, MCP and etc.",
-  "keywords": [
-    "cli",
-    "claude-code",
-    "skills",
-    "agents",
-    "codex",
-    "pi",
-    "superskill"
-  ],
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/gobing-ai/superskill.git"
-  },
-  "author": "Robin Min <minlongbing@gmail.com>",
-  "license": "Apache-2.0",
-  "bin": {
-    "superskill": "dist/index.js"
-  },
-  "files": [
-    "dist/",
-    "templates/",
-    "README.md"
-  ],
-  "engines": {
-    "bun": ">=1.3.0"
-  },
-  "scripts": {
-    "start": "bun run src/index.ts",
-    "build": "bun build src/index.ts --outfile ../../dist/cli/index.js --target bun && bun run ../../scripts/postbuild.ts ../../dist/cli/index.js",
-    "prepublishOnly": "bun run build && mkdir -p dist && cp ../../dist/cli/index.js dist/index.js",
-    "test": "NODE_ENV=test bun test --reporter=dots",
-    "typecheck": "tsc --noEmit"
-  },
-  "dependencies": {
-    "@gobing-ai/ts-ai-runner": "^0.3.19",
-    "@gobing-ai/ts-db": "^0.3.19",
-    "@gobing-ai/ts-utils": "^0.3.19",
-    "commander": "^14.0.0",
-    "drizzle-orm": "^0.44.0",
-    "drizzle-zod": "^0.7.0",
-    "rulesync": "^8.28.1",
-    "yaml": "^2.9.0",
-    "zod": "^3.25.0"
-  },
-  "devDependencies": {
-    "@types/bun": "1.3.14"
-  },
-  "publishConfig": {
-    "access": "public"
-  }
+    "name": "@gobing-ai/superskill",
+    "version": "0.1.1",
+    "description": "A manager for multi-agent skill, slash command, subagent, hook, MCP and etc.",
+    "keywords": [
+        "cli",
+        "claude-code",
+        "skills",
+        "agents",
+        "codex",
+        "pi",
+        "superskill"
+    ],
+    "repository": {
+        "type": "git",
+        "url": "git+https://github.com/gobing-ai/superskill.git"
+    },
+    "author": "Robin Min <minlongbing@gmail.com>",
+    "license": "Apache-2.0",
+    "bin": {
+        "superskill": "dist/index.js"
+    },
+    "files": [
+        "dist/",
+        "templates/",
+        "README.md"
+    ],
+    "engines": {
+        "bun": ">=1.3.0"
+    },
+    "scripts": {
+        "start": "bun run src/index.ts",
+        "build": "bun build src/index.ts --outfile ../../dist/cli/index.js --target bun && bun run ../../scripts/postbuild.ts ../../dist/cli/index.js",
+        "prepublishOnly": "bun run build && mkdir -p dist && cp ../../dist/cli/index.js dist/index.js",
+        "test": "NODE_ENV=test bun test --reporter=dots",
+        "typecheck": "tsc --noEmit"
+    },
+    "dependencies": {
+        "@gobing-ai/ts-ai-runner": "^0.3.19",
+        "@gobing-ai/ts-db": "^0.3.19",
+        "@gobing-ai/ts-utils": "^0.3.19",
+        "commander": "^14.0.0",
+        "drizzle-orm": "^0.44.0",
+        "drizzle-zod": "^0.7.0",
+        "rulesync": "^8.28.1",
+        "yaml": "^2.9.0",
+        "zod": "^3.25.0"
+    },
+    "devDependencies": {
+        "@types/bun": "1.3.14"
+    },
+    "publishConfig": {
+        "access": "public"
+    }
 }

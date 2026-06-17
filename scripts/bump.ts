@@ -37,7 +37,8 @@ async function bumpVersion(ver: string) {
     const oldVer = pkg.version;
 
     pkg.version = ver;
-    writeFileSync(PKG_PATH, `${JSON.stringify(pkg, null, 2)}\n`);
+    // 4-space indent to match biome.json (indentWidth 4); 2 spaces fails `bun run lint`.
+    writeFileSync(PKG_PATH, `${JSON.stringify(pkg, null, 4)}\n`);
 
     const tag = `${PKG_NAME}-v${ver}`;
 
@@ -46,13 +47,16 @@ async function bumpVersion(ver: string) {
     await $`git commit -m ${`chore: release ${PKG_NAME} v${ver}`}`;
     await $`git tag -a ${tag} -m ${`${PKG_NAME} v${ver}`}`;
 
+    console.log(`\nTag: ${tag}`);
+
     if (shouldPush) {
         console.log('Pushing commit and tag…');
         await $`git push origin main`;
         await $`git push origin ${tag}`;
+        console.log('Pushed main and tag. Publish workflow will trigger on the tag push.');
+        return;
     }
 
-    console.log(`\nTag: ${tag}`);
     console.log('Publish workflow will trigger on tag push. To push now:');
     console.log(`  git push origin main && git push origin ${tag}`);
 }
