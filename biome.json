@@ -6,7 +6,16 @@
     },
     "files": {
         "ignoreUnknown": true,
-        "includes": ["**", "!**/.claude", "!**/dist", "!**/.turbo", "!**/.coverage", "!**/node_modules", "!**/vendors"]
+        "includes": [
+            "**",
+            "!**/.wolf/hooks",
+            "!**/.claude",
+            "!**/dist",
+            "!**/.turbo",
+            "!**/.coverage",
+            "!**/node_modules",
+            "!**/vendors"
+        ]
     },
     "formatter": {
         "enabled": true,

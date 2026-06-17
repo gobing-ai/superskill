@@ -1,14 +1,15 @@
-import * as fs from "node:fs";
-import * as path from "node:path";
-import { getWolfDir, ensureWolfDir, readJSON, writeJSON, appendMarkdown, timeShort } from "./shared.js";
+import * as fs from 'node:fs';
+import * as path from 'node:path';
+import { appendMarkdown, ensureWolfDir, getWolfDir, readJSON, timeShort, writeJSON } from './shared.js';
+
 async function main() {
     ensureWolfDir();
     const wolfDir = getWolfDir();
-    const hooksDir = path.join(wolfDir, "hooks");
-    const sessionFile = path.join(hooksDir, "_session.json");
+    const hooksDir = path.join(wolfDir, 'hooks');
+    const sessionFile = path.join(hooksDir, '_session.json');
     const session = readJSON(sessionFile, {
-        session_id: "",
-        started: "",
+        session_id: '',
+        started: '',
         files_read: {},
         files_written: [],
         edit_counts: {},
@@ -61,10 +62,10 @@ async function main() {
         },
     };
     // Update token-ledger.json
-    const ledgerPath = path.join(wolfDir, "token-ledger.json");
+    const ledgerPath = path.join(wolfDir, 'token-ledger.json');
     const ledger = readJSON(ledgerPath, {
         version: 1,
-        created_at: "",
+        created_at: '',
         lifetime: {
             total_tokens_estimated: 0,
             total_reads: 0,
@@ -97,12 +98,14 @@ async function main() {
     // Write a session summary line to memory.md if there was meaningful activity
     if (writeCount > 0) {
         try {
-            const uniqueFiles = new Set(session.files_written.map(w => path.basename(w.file)));
-            const fileList = [...uniqueFiles].slice(0, 5).join(", ");
-            const memoryPath = path.join(wolfDir, "memory.md");
-            appendMarkdown(memoryPath, `| ${timeShort()} | Session end: ${writeCount} writes across ${uniqueFiles.size} files (${fileList}) | ${readCount} reads | ~${inputTokens + outputTokens} tok |\n`);
-        }
-        catch { }
+            const uniqueFiles = new Set(session.files_written.map((w) => path.basename(w.file)));
+            const fileList = [...uniqueFiles].slice(0, 5).join(', ');
+            const memoryPath = path.join(wolfDir, 'memory.md');
+            appendMarkdown(
+                memoryPath,
+                `| ${timeShort()} | Session end: ${writeCount} writes across ${uniqueFiles.size} files (${fileList}) | ${readCount} reads | ~${inputTokens + outputTokens} tok |\n`,
+            );
+        } catch {}
     }
     writeJSON(sessionFile, session);
     process.exit(0);
@@ -112,17 +115,17 @@ async function main() {
  * Emit a stderr reminder so Claude sees it in the next turn.
  */
 function checkForMissingBugLogs(wolfDir, session) {
-    if (!session.edit_counts)
-        return;
+    if (!session.edit_counts) return;
     const multiEditFiles = Object.entries(session.edit_counts)
         .filter(([, count]) => count >= 3)
         .map(([file]) => path.basename(file));
-    if (multiEditFiles.length === 0)
-        return;
+    if (multiEditFiles.length === 0) return;
     // Check if buglog was written to this session
-    const buglogWritten = session.files_written.some(w => w.file.includes("buglog.json"));
+    const buglogWritten = session.files_written.some((w) => w.file.includes('buglog.json'));
     if (!buglogWritten) {
-        process.stderr.write(`⚠️ OpenWolf: Files edited 3+ times this session (${multiEditFiles.join(", ")}) but buglog.json was not updated. If you fixed bugs, please log them.\n`);
+        process.stderr.write(
+            `⚠️ OpenWolf: Files edited 3+ times this session (${multiEditFiles.join(', ')}) but buglog.json was not updated. If you fixed bugs, please log them.\n`,
+        );
     }
 }
 /**
@@ -130,16 +133,17 @@ function checkForMissingBugLogs(wolfDir, session) {
  * a while and there was significant activity, emit a gentle reminder.
  */
 function checkCerebrumFreshness(wolfDir, session) {
-    const cerebrumPath = path.join(wolfDir, "cerebrum.md");
+    const cerebrumPath = path.join(wolfDir, 'cerebrum.md');
     try {
         const stat = fs.statSync(cerebrumPath);
         const hoursSinceUpdate = (Date.now() - stat.mtimeMs) / (1000 * 60 * 60);
         // If cerebrum hasn't been updated in 24h+ and there were significant writes
         if (hoursSinceUpdate > 24 && session.files_written.length >= 3) {
-            process.stderr.write(`💡 OpenWolf: cerebrum.md hasn't been updated in ${Math.floor(hoursSinceUpdate)}h. Did you learn any user preferences, conventions, or gotchas this session? Consider updating .wolf/cerebrum.md.\n`);
+            process.stderr.write(
+                `💡 OpenWolf: cerebrum.md hasn't been updated in ${Math.floor(hoursSinceUpdate)}h. Did you learn any user preferences, conventions, or gotchas this session? Consider updating .wolf/cerebrum.md.\n`,
+            );
         }
-    }
-    catch {
+    } catch {
         // cerebrum.md doesn't exist, that's ok
     }
 }
