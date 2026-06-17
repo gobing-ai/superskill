@@ -1,33 +1,15 @@
-// Dynamic import used throughout — required by mock.module pattern in Bun tests.
-import { afterAll, afterEach, beforeEach, describe, expect, it, mock, spyOn } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, it, mock, spyOn } from 'bun:test';
 import { Command } from 'commander';
-
-// --- mock module registrations (before dynamic import per Bun pattern) ---
-mock.module('../../src/operations/scaffold', () => ({
-    scaffold: mock().mockResolvedValue('/test/output/my-command.md'),
-}));
-
-mock.module('../../src/operations/validate', () => ({
-    validate: mock().mockResolvedValue({ valid: true, findings: [] }),
-    formatValidationResult: mock().mockReturnValue('Valid'),
-}));
-
-mock.module('../../src/operations/evaluate', () => ({
-    evaluate: mock().mockResolvedValue({ aggregate: { score: 0.95 }, dimensions: [] }),
-    formatEvaluationReport: mock().mockReturnValue('Score: 0.95'),
-}));
-
-mock.module('../../src/operations/refine', () => ({
-    refine: mock().mockResolvedValue({ fixesApplied: [] }),
-}));
-
-mock.module('../../src/operations/evolve', () => ({
-    evolve: mock().mockResolvedValue({ baselineScore: 0.7, postScore: 0.85, delta: 0.15, changesApplied: [] }),
-}));
-
-afterAll(() => {
-    mock.restore();
-});
+// Spy on the real operation exports rather than mock.module(): Bun's
+// mock.module() is process-global and cannot be reverted (mock.restore() does
+// not undo it), so it leaks into later test files and shadows the real modules,
+// failing them in CI under a different file-discovery order. spyOn() on the live
+// ESM namespace bindings is fully reverted by mock.restore() in afterEach.
+import * as evaluateOp from '../../src/operations/evaluate';
+import * as evolveOp from '../../src/operations/evolve';
+import * as refineOp from '../../src/operations/refine';
+import * as scaffoldOp from '../../src/operations/scaffold';
+import * as validateOp from '../../src/operations/validate';
 
 // --- spies ---
 let stdoutWrite: ReturnType<typeof spyOn<typeof process.stdout, 'write'>>;
@@ -36,11 +18,37 @@ let stderrWrite: ReturnType<typeof spyOn<typeof process.stderr, 'write'>>;
 beforeEach(() => {
     stdoutWrite = spyOn(process.stdout, 'write').mockImplementation(() => true);
     stderrWrite = spyOn(process.stderr, 'write').mockImplementation(() => true);
+
+    spyOn(scaffoldOp, 'scaffold').mockResolvedValue('/test/output/my-command.md');
+    spyOn(validateOp, 'validate').mockResolvedValue({ valid: true, findings: [] });
+    spyOn(validateOp, 'formatValidationResult').mockReturnValue('Valid');
+    spyOn(evaluateOp, 'evaluate').mockResolvedValue({
+        content: 'my-command',
+        type: 'command',
+        target: 'claude',
+        aggregate: 0.95,
+        dimensions: {},
+    });
+    spyOn(evaluateOp, 'formatEvaluationReport').mockReturnValue('Score: 0.95');
+    spyOn(refineOp, 'refine').mockResolvedValue({
+        preScore: 0.7,
+        postScore: 0.85,
+        delta: 0.15,
+        fixesApplied: [],
+        fixesSkipped: [],
+    });
+    spyOn(evolveOp, 'evolve').mockResolvedValue({
+        baselineScore: 0.7,
+        postScore: 0.85,
+        delta: 0.15,
+        changesApplied: 0,
+        proposalPath: '',
+    });
 });
 
 afterEach(() => {
-    stdoutWrite.mockRestore();
-    stderrWrite.mockRestore();
+    // mock.restore() reverts spyOn overrides (it does NOT revert mock.module()).
+    mock.restore();
 });
 
 describe('commandScaffold', () => {
@@ -73,13 +81,11 @@ describe('commandValidate', () => {
     });
 
     it('returns exit code 1 for invalid', async () => {
-        mock.module('../../src/operations/validate', () => ({
-            validate: mock().mockResolvedValue({
-                valid: false,
-                findings: [{ field: 'description', severity: 'error', message: 'Missing' }],
-            }),
-            formatValidationResult: mock().mockReturnValue('[ERROR] description: Missing'),
-        }));
+        spyOn(validateOp, 'validate').mockResolvedValue({
+            valid: false,
+            findings: [{ field: 'description', severity: 'error', message: 'Missing' }],
+        });
+        spyOn(validateOp, 'formatValidationResult').mockReturnValue('[ERROR] description: Missing');
         const { commandValidate } = await import('../../src/commands/command');
         const result = await commandValidate({ nameOrPath: 'bad-command', strict: true });
         expect(result).toBe(1);
@@ -87,13 +93,11 @@ describe('commandValidate', () => {
     });
 
     it('returns exit code 2 for file-not-found', async () => {
-        mock.module('../../src/operations/validate', () => ({
-            validate: mock().mockResolvedValue({
-                valid: false,
-                findings: [{ field: '_file', severity: 'error', message: 'File not found' }],
-            }),
-            formatValidationResult: mock().mockReturnValue('[ERROR] _file: File not found'),
-        }));
+        spyOn(validateOp, 'validate').mockResolvedValue({
+            valid: false,
+            findings: [{ field: '_file', severity: 'error', message: 'File not found' }],
+        });
+        spyOn(validateOp, 'formatValidationResult').mockReturnValue('[ERROR] _file: File not found');
         const { commandValidate } = await import('../../src/commands/command');
         const result = await commandValidate({ nameOrPath: 'nope' });
         expect(result).toBe(2);

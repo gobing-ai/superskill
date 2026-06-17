@@ -1,34 +1,50 @@
-import { afterAll, beforeEach, describe, expect, it, mock, spyOn } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, it, mock, spyOn } from 'bun:test';
 import { Command } from 'commander';
+// Spy on the real operation exports rather than mock.module(): Bun's
+// mock.module() is process-global and cannot be reverted (mock.restore() does
+// not undo it), so it leaks into later test files and shadows the real modules,
+// failing them in CI under a different file-discovery order. spyOn() on the live
+// ESM namespace bindings is fully reverted by mock.restore() in afterEach.
+import * as evaluateOp from '../../src/operations/evaluate';
+import * as evolveOp from '../../src/operations/evolve';
+import * as refineOp from '../../src/operations/refine';
+import * as scaffoldOp from '../../src/operations/scaffold';
+import * as validateOp from '../../src/operations/validate';
 
-mock.module('../../src/operations/scaffold', () => ({
-    scaffold: mock().mockResolvedValue('/test/output/item.md'),
-}));
-
-mock.module('../../src/operations/validate', () => ({
-    validate: mock().mockResolvedValue({ valid: true, findings: [] }),
-    formatValidationResult: mock().mockReturnValue('Valid'),
-}));
-
-mock.module('../../src/operations/evaluate', () => ({
-    evaluate: mock().mockResolvedValue({ aggregate: { score: 0.95 }, dimensions: [] }),
-    formatEvaluationReport: mock().mockReturnValue('Score: 0.95'),
-}));
-
-mock.module('../../src/operations/refine', () => ({
-    refine: mock().mockResolvedValue({ fixesApplied: [] }),
-}));
-
-mock.module('../../src/operations/evolve', () => ({
-    evolve: mock().mockResolvedValue({ baselineScore: 0.7, postScore: 0.85, delta: 0.15, changesApplied: [] }),
-}));
-
-afterAll(() => {
-    mock.restore();
-});
 beforeEach(() => {
     spyOn(process.stdout, 'write').mockImplementation(() => true);
     spyOn(process.stderr, 'write').mockImplementation(() => true);
+
+    spyOn(scaffoldOp, 'scaffold').mockResolvedValue('/test/output/item.md');
+    spyOn(validateOp, 'validate').mockResolvedValue({ valid: true, findings: [] });
+    spyOn(validateOp, 'formatValidationResult').mockReturnValue('Valid');
+    spyOn(evaluateOp, 'evaluate').mockResolvedValue({
+        content: 'item',
+        type: 'command',
+        target: 'claude',
+        aggregate: 0.95,
+        dimensions: {},
+    });
+    spyOn(evaluateOp, 'formatEvaluationReport').mockReturnValue('Score: 0.95');
+    spyOn(refineOp, 'refine').mockResolvedValue({
+        preScore: 0.7,
+        postScore: 0.85,
+        delta: 0.15,
+        fixesApplied: [],
+        fixesSkipped: [],
+    });
+    spyOn(evolveOp, 'evolve').mockResolvedValue({
+        baselineScore: 0.7,
+        postScore: 0.85,
+        delta: 0.15,
+        changesApplied: 0,
+        proposalPath: '',
+    });
+});
+
+afterEach(() => {
+    // mock.restore() reverts spyOn overrides (it does NOT revert mock.module()).
+    mock.restore();
 });
 
 describe('agent command module', () => {
