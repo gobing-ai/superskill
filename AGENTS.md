@@ -2,6 +2,11 @@
 
 Guidance for AI coding agents working in this repository. `CLAUDE.md` and `GEMINI.md` symlink here.
 
+## OpenWolf
+@.wolf/OPENWOLF.md
+
+This project uses OpenWolf for context management. Read and follow .wolf/OPENWOLF.md every session. Check .wolf/cerebrum.md before generating code. Check .wolf/anatomy.md before reading files.
+
 ## Project
 
 Bun + TypeScript + Biome CLI built on Commander, with shared workspace packages. Turborepo + Bun-workspaces layout:
