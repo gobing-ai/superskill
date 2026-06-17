@@ -9,7 +9,7 @@ Coding agents (Claude Code, Codex, Pi, OpenCode, Antigravity, Hermes, …) each 
 **superskill** solves this with two layers:
 
 1. **Distribution** — `superskill install` takes a Claude Code plugin as the single source of truth and distributes it to any target agent, using [rulesync](https://www.npmjs.com/package/rulesync) as the format-conversion engine.
-2. **Authoring + quality** — Five type commands (`agent`, `skill`, `command`, `hook`, `magent`) provide scaffold → validate → evaluate → refine → evolve workflows with persistent quality data, replacing what was previously locked inside Claude Code plugin skills.
+2. **Authoring + quality** — Five type commands (`agent`, `skill`, `command`, `hook`, `magent`) provide scaffold → validate → evaluate → refine → evolve workflows with persistent quality data.
 
 ## Supported targets
 
@@ -18,11 +18,11 @@ Coding agents (Claude Code, Codex, Pi, OpenCode, Antigravity, Hermes, …) each 
 | `claude` | Direct marketplace install | Source of truth |
 | `codex` | rulesync | `~/.agents/skills/` |
 | `pi` | rulesync | Subagents → Pi native agent format |
-| `omp` | superskill (copy) | Pi variant with custom root and binary |
+| `omp` | superskill (copy) | Pi variant with custom root and binary (uses `pi` rulesync surrogate) |
 | `opencode` | rulesync | `~/.agents/skills/` |
 | `antigravity-cli` | rulesync | `~/.gemini/antigravity-cli/skills/` |
 | `antigravity-ide` | rulesync | `~/.gemini/config/skills/` |
-| `hermes` | superskill (copy) | `~/.hermes/skills/` |
+| `hermes` | superskill (copy) | `~/.hermes/skills/` (uses `opencode` rulesync surrogate) |
 
 **Deprecated:** Gemini CLI, old unified Antigravity.
 
@@ -73,7 +73,7 @@ superskill install [options] <plugin>
 | `<plugin>` | Plugin name to install (required) | — |
 | `--marketplace <path>` | Path to `.claude-plugin/marketplace.json` or its containing directory | CWD's `.claude-plugin/` |
 | `--targets <list>` | Comma-separated target agents, or `all` | all configured |
-| `--global` | Install to user-level global directories | `true` |
+| `--no-global` | Install to project-level instead of user-level global directories | `false` |
 | `--dry-run` | Preview without writing files | `false` |
 | `--verbose` | Print each step and file copy | `false` |
 
@@ -88,27 +88,73 @@ superskill install rd3 --targets codex,pi,antigravity-cli
 
 # Preview what would be written without touching the filesystem
 superskill install rd3 --targets all --dry-run
-
-# Use an explicit marketplace manifest
-superskill install rd3 --marketplace /path/to/.claude-plugin
-
-# Verbose output for debugging
-superskill install rd3 --targets codex --verbose
 ```
 
-### Planned commands (Phase 2 — not yet registered)
+---
 
-The following type commands are designed and have supporting infrastructure in the codebase (`content/`, `operations/`, `quality/`, `store/`, `templates/`) but are **not yet wired** to the CLI:
+### Type Commands — `agent`, `skill`, `command`, `hook`, `magent`
+
+Five type commands manage agent-facing resources:
 
 | Command | Description |
 |---------|-------------|
-| `superskill agent <op>` | Create, validate, evaluate, refine, evolve subagent definitions |
-| `superskill skill <op>` | Create, validate, evaluate, refine, evolve skill definitions |
-| `superskill command <op>` | Create, validate, evaluate, refine, evolve slash command definitions |
-| `superskill hook <op>` | Create, validate, evaluate, refine, evolve hook definitions |
-| `superskill magent <op>` | Create, validate, evaluate, refine, evolve main-agent configs |
+| `superskill agent` | Manage subagent definitions |
+| `superskill skill` | Manage skill definitions |
+| `superskill command` | Manage slash command definitions |
+| `superskill hook` | Manage hook definitions |
+| `superskill magent` | Manage main-agent configurations |
 
-Each will support five operations: `scaffold`, `validate`, `evaluate`, `refine`, `evolve`.
+Each type command supports the following five operations:
+
+#### 1. `scaffold` — Create a new file from templates
+```bash
+superskill <type> scaffold <name> [options]
+```
+* **Options:**
+  * `--description <text>`: Set description frontmatter.
+  * `--target <agent>`: Target agent format.
+  * `--output <dir>`: Target directory for the output file.
+  * `--force`: Overwrite existing files.
+
+#### 2. `validate` — Run schema and compliance check
+```bash
+superskill <type> validate <nameOrPath> [options]
+```
+* **Options:**
+  * `--target <agent>`: Target agent to validate format compliance.
+  * `--strict`: Enable optional/warning-level checks.
+  * `--json`: Output findings in JSON format.
+
+#### 3. `evaluate` — Score content against 5 quality dimensions
+```bash
+superskill <type> evaluate <nameOrPath> [options]
+```
+* **Options:**
+  * `--target <agent>`: Target agent formatting rules.
+  * `--save`: Save report to SQLite database.
+  * `--json`: Output report in JSON format.
+
+#### 4. `refine` — Run automated fixes and suggestions
+```bash
+superskill <type> refine <nameOrPath> [options]
+```
+* **Options:**
+  * `--target <agent>`: Target agent formatting rules.
+  * `--auto`: Apply automatic fixes without confirmation.
+  * `--save`: Save post-remediation report to SQLite database.
+
+#### 5. `evolve` — Apply longitudinal improvements from evaluation history
+```bash
+superskill <type> evolve <name> [options]
+```
+* **Options:**
+  * `--target <agent>`: Target agent formatting rules.
+  * `--from <timestamp>`: Baseline evaluation window.
+  * `--proposeOnly`: Propose modifications and save as draft without applying.
+  * `--accept <proposal_id>`: Accept and apply a specific draft proposal.
+  * `--reject <proposal_id>`: Reject a specific draft proposal.
+
+---
 
 ## Project structure
 
@@ -116,13 +162,13 @@ Each will support five operations: `scaffold`, `validate`, `evaluate`, `refine`,
 apps/
   cli/                 # Commander-based CLI (the binary)
     src/
-      commands/        # install.ts (Phase 1)
+      commands/        # CLI command registration (install, type commands)
       pipeline/        # Conversion stages (pure functions)
-      content/         # Frontmatter parse/edit, name resolution (Phase 2)
-      operations/      # scaffold, validate, evaluate, refine, evolve (Phase 2)
-      quality/         # Dimension definitions + per-type evaluators (Phase 2)
-      store/           # SQLite via @gobing-ai/ts-db (Phase 2)
-      templates/       # Default templates shipped with npm (Phase 2)
+      content/         # Frontmatter parse/edit, name resolution
+      operations/      # scaffold, validate, evaluate, refine, evolve logic
+      quality/         # Dimension definitions + per-type evaluators
+      store/           # SQLite via @gobing-ai/ts-db
+      templates/       # Default templates shipped with npm
       targets.ts       # Target enum + mapping tables
       config.ts        # superskill.jsonc schema + loader
       marketplace.ts   # Marketplace manifest parser + resolver
@@ -201,25 +247,7 @@ Enforced by [biome.json](biome.json):
 | [05_FEATURES](docs/05_FEATURES.md) | Feature status tracker |
 | [99_PROJECT_CONSTITUTION](docs/99_PROJECT_CONSTITUTION.md) | Process rules for maintaining docs |
 
-## Roadmap
-
-### Phase 1 — Distribution (`superskill install`) 🔶
-
-- [x] Foundation: scaffold, Biome + TypeScript gates, tests, docs
-- [ ] Target taxonomy + config schema
-- [ ] Marketplace manifest resolver
-- [ ] Plugin → `.rulesync/` mapper + `rulesync.generate()` integration
-- [ ] Conversion pipeline (slash dialect, colon→hyphen, frontmatter normalization)
-- [ ] Full install command with target dispatch
-
-### Phase 2 — Authoring + quality 🔲
-
-- [ ] Template + content-IO foundation + scaffold operation
-- [ ] SQLite data store (evaluations, proposals)
-- [ ] Quality dimension definitions (5 per content type)
-- [ ] validate, evaluate, refine, evolve operations
-- [ ] Five type commands (`agent`, `skill`, `command`, `hook`, `magent`)
-
 ## License
 
 [Apache 2.0](LICENSE)
+
