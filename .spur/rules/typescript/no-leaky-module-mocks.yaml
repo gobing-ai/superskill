@@ -1,0 +1,40 @@
+# Guard against process-global module-mock leakage in bun:test.
+#
+# WHY: Bun's `mock.module()` installs a process-wide override that
+# `mock.restore()` does NOT revert (per Bun docs). A `mock.module()` in one
+# test file therefore leaks into every later file in the same `bun test`
+# process. Because Bun discovers test files in filesystem order (sorted on
+# macOS, inode order on Linux/CI), this surfaces as tests that pass locally
+# but fail only in CI — exactly the 51-failure regression in
+# apps/cli/tests/commands/{command,content-command-modules}.test.ts.
+#
+# FIX: prefer `spyOn(namespaceImport, 'export')` over `mock.module()` — spyOn
+# IS reverted by `mock.restore()`/`mockRestore()` in afterEach, so it cannot
+# leak across files. Reserve `mock.module()` for cases that genuinely need it
+# (preventing import-time side effects), and only via `--preload`, where the
+# global scope is intentional. This rule is a `warning`, not an `error`:
+# treat a hit as "justify or convert," not an automatic block.
+include:
+  - "apps/**/tests/**/*.test.ts"
+  - "packages/**/tests/**/*.test.ts"
+exclude:
+  - "**/node_modules/**"
+  - "**/dist/**"
+
+rules:
+  - id: no-leaky-mock-module
+    description: >
+      Avoid `mock.module()` in bun:test files — it is process-global and is not
+      reverted by mock.restore(), so it leaks into other test files and causes
+      CI-only, file-order-dependent failures. Use spyOn() on a namespace import
+      instead (`import * as ns; spyOn(ns, 'fn')`), restored in afterEach. Only
+      use mock.module() for unavoidable import-time mocking, loaded via
+      --preload.
+    severity: warning
+    evaluator:
+      type: rg
+      config:
+        # Anchor to statement position (line start + optional indent) so prose
+        # mentions in comments ("// mock.module() leaks…") don't false-positive.
+        pattern: "^\\s*mock\\.module\\("
+        flags: "m"
