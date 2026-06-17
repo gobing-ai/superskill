@@ -2,10 +2,10 @@
 doc: 02_ROADMAP
 owns: WHEN — phases, current vs deferred, sequencing
 authority: derived
-version: 3.3.0
+version: 3.3.1
 derived_from: [00_ADR, 01_PRD]
 owner: Robin Min
-updated_at: 2026-06-16
+updated_at: 2026-06-17
 read_before: placing work in a phase; edit when phase status changes
 edit_rules: 99 §6.3
 sync: [T5]
@@ -96,15 +96,15 @@ sync: [T5]
 
 **Design:** [design-doc-phase5.md](file:///Users/robin/xprojects/superskill/docs/design/design-doc-phase5.md)
 
-> **Finding:** rulesync already ships a canonical hook schema, event taxonomy, per-tool support matrix, and `superskill install` already maps `hooks.json` into `.rulesync/`. The deleted `cc-hooks` bash emitters reinvented this. Phase 5 adopts rulesync's format rather than rebuilding one.
+> **Finding:** rulesync already ships a canonical hook schema, event taxonomy, per-tool support matrix, and `superskill install` already maps `hooks.json` into `.rulesync/` **and forwards `hooks` to `generate()`** — hooks already emit for the 4 rulesync-hook-supported targets. The deleted `cc-hooks` bash emitters reinvented this. Phase 5 adopts rulesync's format rather than rebuilding one.
 
-- [ ] Web-research **validation** pass: rulesync hook coverage × our 8 targets, event-mapping fidelity, gaps (Pi/omp/hermes); record table + sources.
-- [ ] Un-stub the install hook path — `rulesync.ts:51` hardcodes `hooksCount: 0`; wire mapped `hooks.json` through `runRulesync`.
+- [ ] Coverage from the vendor matrix (not a research pass): rulesync hooks × our 8 targets → 4 emit today (codex/opencode/antigravity-cli/ide), Pi/omp/hermes need a shim/copy. Validation checklist: event-mapping fidelity + rulesync API shape.
+- [ ] Surface hook counts in install — add `hooksCount` to `InstallResultCounts` and stop dropping `result.hooksCount` (`install.ts`). (`rulesync.ts:51` is the no-target early-return, not a stub — hooks already emit.)
 - [ ] Re-author `cc:cc-hooks` (+ expert-hook) against the rulesync-canonical `HookDefinitionSchema`; evaluate/evolve reuse the Phase 4 brain.
 - [ ] `superskill hook emit --target <agent>` wrapper; research + enable Pi/omp hook parity via an installable extension/shim (fallback: copy-step); hermes via copy-step.
 - [ ] Restore deleted verbs: `adapt` (confirm gap closed inside `install`), `skill package`, `skill migrate` (refinement via Phase 4).
 
-**Exit:** one `hooks.json` installs correct native hook config for every rulesync-supported target (uncovered targets shimmed or documented, no silent drop); `rulesync.ts` reports real hook counts; restored verbs pass the gate.
+**Exit:** one `hooks.json` installs correct native hook config for every rulesync-supported target (uncovered targets shimmed or documented, no silent drop); install reports real hook counts (`InstallResultCounts` carries `hooksCount`); restored verbs pass the gate.
 
 ---
 

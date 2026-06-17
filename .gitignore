@@ -145,6 +145,7 @@ dist
 /.opencode
 /.pi
 /.wolf
+/docs/.ftree
 
 # npm publish staging artifacts copied into apps/cli/ by prepublishOnly
 /apps/cli/README.md
