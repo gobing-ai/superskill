@@ -16,7 +16,16 @@ describe('cli', () => {
         // Verify key options exist
         const optionNames = installCmd?.options.map((o) => o.long);
         expect(optionNames).toContain('--targets');
-        expect(optionNames).toContain('--global');
+        expect(optionNames).toContain('--no-global');
         expect(optionNames).toContain('--dry-run');
+    });
+
+    it('package.json bin points to src/index.ts (M4 regression)', async () => {
+        const { readFileSync } = await import('node:fs');
+        const { resolve } = await import('node:path');
+        const thisDir = resolve(import.meta.path, '..');
+        const pkgPath = resolve(thisDir, '../package.json');
+        const pkg = JSON.parse(readFileSync(pkgPath, 'utf-8'));
+        expect(pkg.bin?.superskill).toBe('src/index.ts');
     });
 });

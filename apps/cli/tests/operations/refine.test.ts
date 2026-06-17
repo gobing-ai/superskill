@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, spyOn } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, it, mock, spyOn } from 'bun:test';
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -341,7 +341,7 @@ describe('refine — auto mode', () => {
         expect(r.preScore).toBeGreaterThan(0);
     });
 
-    it('applies auto-apply fixes for low-scoring dimensions', async () => {
+    it('captures low-scoring dimension notes as suggestions', async () => {
         const content = `---
 name: minimal
 description: ok
@@ -353,6 +353,9 @@ Short body.`;
         const r = await refine('skill', file, { auto: true });
         expect(r.preScore).toBeGreaterThan(0);
         expect(r.fixesApplied.length + r.fixesSkipped.length).toBeGreaterThan(0);
+        // Regression: no dimension-derived findings should be auto-apply
+        const autoApplySkipped = r.fixesSkipped.filter((f) => f.strategy === 'auto-apply');
+        expect(autoApplySkipped.length).toBe(0);
     });
 
     it('handles delta display when no change', async () => {
@@ -369,8 +372,31 @@ It uses clear, imperative language with must, should, never, and always keywords
         const r = await refine('skill', file, { auto: true });
         expect(r.preScore).toBeGreaterThanOrEqual(0);
     });
-});
 
+    it('handles backup collision when .bak exists', async () => {
+        const file = createTempFile(GOOD_SKILL, tmpDir);
+        // Pre-create a .bak file to trigger the collision path
+        writeFileSync(`${file}.bak`, 'stale backup');
+        const r = await refine('skill', file, { auto: true });
+        expect(r.preScore).toBeGreaterThan(0);
+    });
+
+    it('returns zero scores when evaluate throws after validation passes', async () => {
+        const file = createTempFile(GOOD_SKILL, tmpDir);
+        mock.module('../../src/operations/evaluate', () => ({
+            evaluate: () => {
+                throw new Error('simulated evaluate failure');
+            },
+            evaluateFile: () => {
+                throw new Error('simulated evaluate failure');
+            },
+        }));
+        const r = await refine('skill', file, { auto: true });
+        expect(r.preScore).toBe(0);
+        expect(r.postScore).toBe(0);
+        expect(r.delta).toBe(0);
+    });
+});
 // ── refine — file not found ──────────────────────────────────────────────────
 
 describe('refine — file not found', () => {

@@ -1,6 +1,6 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { z } from 'zod';
-import type { Target } from './targets';
+import { TARGETS } from './targets';
 
 const pluginSchema = z.object({
     name: z.string().min(1),
@@ -13,7 +13,7 @@ const featureSchema = z.enum(['skills', 'commands', 'subagents', 'hooks', 'mcp']
 export const configSchema = z.object({
     version: z.literal(1),
     plugins: z.array(pluginSchema).default([]),
-    targets: z.array(z.string() as z.ZodType<Target>).default([]),
+    targets: z.array(z.enum(TARGETS)).default([]),
     features: z.array(featureSchema).default(['skills', 'commands', 'subagents', 'hooks', 'mcp']),
 });
 

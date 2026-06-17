@@ -34,7 +34,7 @@ export function registerInstall(program: Command): void {
         .argument('<plugin>', 'Plugin name to install')
         .option('--marketplace <path>', 'Path to .claude-plugin/marketplace.json or its containing directory')
         .option('--targets <list>', 'Comma-separated target agents (default: all configured)')
-        .option('--global', 'Install to user-level global directories (default: true)', true)
+        .option('--no-global', 'Install to project-level instead of user-level global directories')
         .option('--dry-run', 'Preview without writing files', false)
         .option('--verbose', 'Print each step and file copy', false)
         .action(async (plugin, options) => {
@@ -125,9 +125,22 @@ export async function executeInstall(
         targetInputRoots.set(target, targetInputRoot);
     }
 
-    // Step 3: Run rulesync for supported targets
+    // Step 3: Run rulesync for supported targets. Include surrogate targets:
+    // omp reuses pi's rulesync output, hermes reuses opencode's (see ADR-010).
     const rulesyncFeatures = ['skills', 'commands', 'subagents', 'hooks', 'mcp'] as const;
     const rulesyncTargets = targets.filter((t) => t !== 'claude' && t !== 'hermes' && t !== 'omp');
+    if (targets.includes('omp') && !targets.includes('pi')) {
+        if (!targetInputRoots.has('pi')) {
+            targetInputRoots.set('pi', prepareTargetRulesyncInput(outputDir, 'pi'));
+        }
+        rulesyncTargets.push('pi');
+    }
+    if (targets.includes('hermes') && !targets.includes('opencode')) {
+        if (!targetInputRoots.has('opencode')) {
+            targetInputRoots.set('opencode', prepareTargetRulesyncInput(outputDir, 'opencode'));
+        }
+        rulesyncTargets.push('opencode');
+    }
     const resultCounts: InstallResultCounts = { skillsCount: 0, commandsCount: 0, subagentsCount: 0 };
 
     if (rulesyncTargets.length > 0) {
@@ -156,7 +169,6 @@ export async function executeInstall(
 
     // Step 4: Dispatch non-rulesync targets
     const outputRoot = options.outputRoot ?? (options.global ? homedir() : process.cwd());
-
     for (const target of targets) {
         if (target === 'claude') {
             if (options.verbose) echo('Claude Code: plugin marketplace update...');
@@ -170,17 +182,19 @@ export async function executeInstall(
         }
 
         if (target === 'hermes') {
+            const srcTarget = 'opencode';
             const dest = join(outputRoot, '.hermes', 'skills');
-            if (options.verbose) echo(`Copying to Hermes: ${dest}...`);
+            if (options.verbose) echo(`Copying to Hermes (via opencode rulesync): ${dest}...`);
             if (!options.dryRun)
-                copyDirectory(join(rulesyncSourceRoot(targetInputRoots.get(target), outputDir), 'skills'), dest);
+                copyDirectory(join(rulesyncSourceRoot(targetInputRoots.get(srcTarget), outputDir), 'skills'), dest);
         }
 
         if (target === 'omp') {
+            const srcTarget = 'pi';
             const dest = join(outputRoot, '.omp', 'agent', 'skills');
-            if (options.verbose) echo(`Copying to omp: ${dest}...`);
+            if (options.verbose) echo(`Copying to omp (via pi rulesync): ${dest}...`);
             if (!options.dryRun)
-                copyDirectory(join(rulesyncSourceRoot(targetInputRoots.get(target), outputDir), 'skills'), dest);
+                copyDirectory(join(rulesyncSourceRoot(targetInputRoots.get(srcTarget), outputDir), 'skills'), dest);
         }
     }
 

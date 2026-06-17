@@ -292,15 +292,15 @@ export async function refine(type: ContentType, nameOrPath: string, opts?: Refin
         findings.push({ finding: f, strategy: classifyFix(f) });
     }
 
-    // From evaluate: dimension notes
+    // From evaluate: dimension notes (informational only, never auto-fixable)
     for (const [dimName, dimScore] of Object.entries(preDimensions)) {
         if (dimScore.note?.trim()) {
             const finding: Finding = {
-                severity: dimScore.score < 0.7 ? 'error' : 'warning',
+                severity: 'warning',
                 field: dimName,
                 message: dimScore.note,
             };
-            findings.push({ finding, strategy: classifyFix(finding) });
+            findings.push({ finding, strategy: 'suggest' });
         }
     }
 
@@ -328,38 +328,18 @@ export async function refine(type: ContentType, nameOrPath: string, opts?: Refin
 
     try {
         if (opts?.auto) {
+            // Auto mode: record all findings as skipped (dimension notes and validation
+            // warnings are suggestions, not machine-applicable). Validation errors cause
+            // early return above (L274), so auto-apply is unreachable by design.
             for (const { finding, strategy } of findings) {
-                if (strategy === 'auto-apply') {
-                    const change = generateAutoChange(finding, content);
-                    if (change) {
-                        content = applyChange(content, change);
-                        fixesApplied.push({
-                            severity: finding.severity,
-                            field: finding.field,
-                            message: finding.message,
-                            strategy,
-                            applied: true,
-                        });
-                    } else {
-                        fixesSkipped.push({
-                            severity: finding.severity,
-                            field: finding.field,
-                            message: finding.message,
-                            strategy,
-                            applied: false,
-                        });
-                    }
-                } else {
-                    fixesSkipped.push({
-                        severity: finding.severity,
-                        field: finding.field,
-                        message: finding.message,
-                        strategy,
-                        applied: false,
-                    });
-                }
+                fixesSkipped.push({
+                    severity: finding.severity,
+                    field: finding.field,
+                    message: finding.message,
+                    strategy,
+                    applied: false,
+                });
             }
-            await Bun.write(resolvedPath ?? nameOrPath, content);
         } else {
             const result = await runInteractive(findings, content, resolvedPath ?? nameOrPath, backupPath);
             fixesApplied = result.fixesApplied;

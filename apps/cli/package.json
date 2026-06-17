@@ -3,7 +3,7 @@
     "type": "module",
     "private": true,
     "bin": {
-        "superskill": "./superskill"
+        "superskill": "src/index.ts"
     },
     "files": [
         "superskill",

@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import { createInterface } from 'node:readline';
 import { echo, echoError } from '@gobing-ai/ts-utils';
 import { applyChange, type Change } from '../content/edit';
+import { parseFrontmatter } from '../content/frontmatter';
 import { resolveContentName, resolveContentPath } from '../content/identity';
 import { getProposalsDir } from '../content/paths';
 import type { ContentType, QualityReport } from '../quality/dimensions';
@@ -122,14 +123,17 @@ export function generateChanges(report: QualityReport, trends: TrendEntry[]): Pr
         if (trend.trend === 'declining' || (trend.trend === 'flat' && trend.latest < 0.7)) {
             const dimData = dimMap.get(trend.dimension);
             const note = dimData?.note ?? '';
+            const suggestion = note
+                ? `[Improve ${trend.dimension}]: ${note}`
+                : `[Improve ${trend.dimension}]: review and enhance the description for better ${trend.dimension}.`;
             changes.push({
                 dimension: trend.dimension,
-                location: `dimension:${trend.dimension}`,
-                current: `Score: ${trend.latest.toFixed(2)}`,
-                proposed: `Improve ${trend.dimension} from ${trend.latest.toFixed(2)} toward 1.0`,
+                location: 'frontmatter.description',
+                current: `${trend.dimension} score: ${trend.latest.toFixed(2)}`,
+                proposed: suggestion,
                 reason: note
-                    ? `Latest evaluation note: "${note}". Trend: ${trend.trend} (Δ${trend.delta >= 0 ? '+' : ''}${trend.delta.toFixed(2)}).`
-                    : `Trend: ${trend.trend} (Δ${trend.delta >= 0 ? '+' : ''}${trend.delta.toFixed(2)}). Score below threshold.`,
+                    ? `Score: ${trend.latest.toFixed(2)} (trend: ${trend.trend}, Δ${trend.delta >= 0 ? '+' : ''}${trend.delta.toFixed(2)}). Note: "${note}".`
+                    : `Score: ${trend.latest.toFixed(2)} (trend: ${trend.trend}, Δ${trend.delta >= 0 ? '+' : ''}${trend.delta.toFixed(2)}). Score below threshold.`,
             });
         }
     }
@@ -219,13 +223,21 @@ async function stepPropose(
 
     const baselineId = evaluations[0]?.id ?? 0;
 
-    const proposalJson = { changes, trends, baselineScore, baselineDate, evaluationsCount: evaluations.length };
-    const id = await proposalDao.insertProposal({
+    const proposalJson = {
+        proposal_id: proposalId,
+        changes,
+        trends,
+        baselineScore,
+        baselineDate,
+        evaluationsCount: evaluations.length,
+    };
+    const proposalRecord = await proposalDao.insertProposal({
         content_type: type,
         content_name: name,
         baseline_id: baselineId,
         proposal_json: proposalJson,
     });
+    const id = proposalRecord.id;
 
     const proposalsRoot = getProposalsDir();
     const proposalDir = join(proposalsRoot, type, name);
@@ -244,20 +256,6 @@ async function stepPropose(
         changes,
         proposalId,
     });
-
-    const status = 'draft' as const;
-    const proposalRecord: Proposal = {
-        id,
-        content_type: type,
-        content_name: name,
-        baseline_id: baselineId,
-        proposal_json: proposalJson,
-        status,
-        applied_at: null,
-        verify_id: null,
-        created_at: evaluations[0]?.created_at ?? 0,
-        updated_at: 0,
-    };
 
     return { proposalId, proposalDbId: id, proposalPath, changes, proposalRecord };
 }
@@ -395,7 +393,16 @@ async function stepApply(
         let c: Change;
         if (change.location.startsWith('frontmatter.')) {
             const key = change.location.replace(/^frontmatter\./, '');
-            c = { kind: 'frontmatter', key, value: change.proposed };
+            let value: unknown = change.proposed;
+            if (key === 'description') {
+                // Prepend the evolve suggestion to the existing description instead of replacing it.
+                const parsed = parseFrontmatter(content);
+                const existing = parsed.data?.description;
+                if (existing && typeof existing === 'string' && existing.trim()) {
+                    value = `${change.proposed}\n\n${existing}`;
+                }
+            }
+            c = { kind: 'frontmatter', key, value };
         } else {
             if (!content.includes(change.current)) {
                 echoError(
@@ -518,7 +525,10 @@ export async function evolve(type: ContentType, name: string, opts?: EvolveOptio
     if (opts?.rejectId) {
         const proposalDao = new ProposalDao(db);
         const existing = await proposalDao.getProposals(type, contentName);
-        const target = existing.find((p) => String(p.id) === opts.rejectId);
+        const target = existing.find((p) => {
+            const json = typeof p.proposal_json === 'string' ? JSON.parse(p.proposal_json) : p.proposal_json;
+            return (json as Record<string, unknown>)?.proposal_id === opts.rejectId;
+        });
         if (target) {
             await proposalDao.updateProposalStatus(target.id, 'rejected');
             echo(`Proposal ${opts.rejectId} rejected.`);
@@ -530,7 +540,10 @@ export async function evolve(type: ContentType, name: string, opts?: EvolveOptio
     if (opts?.acceptId) {
         const proposalDao = new ProposalDao(db);
         const existing = await proposalDao.getProposals(type, contentName);
-        const target = existing.find((p) => String(p.id) === opts.acceptId);
+        const target = existing.find((p) => {
+            const json = typeof p.proposal_json === 'string' ? JSON.parse(p.proposal_json) : p.proposal_json;
+            return (json as Record<string, unknown>)?.proposal_id === opts.acceptId;
+        });
         if (!target) {
             echoError(`Proposal ${opts.acceptId} not found for ${type}/${contentName}.`);
             return { baselineScore, postScore: baselineScore, delta: 0, changesApplied: 0, proposalPath: '' };

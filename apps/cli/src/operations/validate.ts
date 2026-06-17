@@ -1,4 +1,5 @@
 import { existsSync, statSync } from 'node:fs';
+import { dirname } from 'node:path';
 import { parseFrontmatter } from '../content/frontmatter';
 import { resolveContentPath } from '../content/identity';
 import type { ContentType } from '../quality/dimensions';
@@ -13,6 +14,9 @@ export interface ValidateOptions {
     strict?: boolean;
     /** Validate against a specific agent's format requirements. */
     target?: Target;
+    /** Optional disk-resolver for reference links (skill:, agent:, command:).
+     *  Takes a reference content type and name; returns true when the file exists on disk. */
+    referenceChecker?: (refType: ContentType, refName: string) => boolean;
 }
 
 /** A single validation finding with severity, affected field, and human-readable message. */
@@ -138,7 +142,11 @@ export async function validate(
         return sentinelResult(`Cannot read file: ${resolvedPath}`);
     }
 
-    return _validateContent(type, content, opts);
+    const baseDir = dirname(resolvedPath);
+    return _validateContent(type, content, {
+        ...opts,
+        referenceChecker: (refType, refName) => resolveContentPath(refType, refName, { baseDir }) !== null,
+    });
 }
 
 /**
@@ -185,7 +193,7 @@ export function _validateContent(type: ContentType, content: string, opts?: Vali
     }
 
     // 6. Link validity
-    findings.push(...checkLinkValidity(type, data));
+    findings.push(...checkLinkValidity(type, data, opts?.referenceChecker));
 
     // 7. Strict checks
     if (opts?.strict) {
@@ -281,7 +289,11 @@ function checkFormatCompliance(type: ContentType, data: Record<string, unknown>,
 
 // ── Link Validity ────────────────────────────────────────────────────────────
 
-function checkLinkValidity(type: ContentType, data: Record<string, unknown>): Finding[] {
+function checkLinkValidity(
+    type: ContentType,
+    data: Record<string, unknown>,
+    referenceChecker?: (refType: ContentType, refName: string) => boolean,
+): Finding[] {
     const findings: Finding[] = [];
 
     // Check event field for hooks
@@ -307,17 +319,27 @@ function checkLinkValidity(type: ContentType, data: Record<string, unknown>): Fi
         }
     }
 
-    // Reference fields (skill:, agent:, command:) — warn if value doesn't look like a valid name
+    // Reference fields (skill:, agent:, command:) — format check + optional disk resolution
     for (const refField of ['skill', 'agent', 'command']) {
         const val = data[refField];
         if (typeof val === 'string' && val.length > 0) {
-            // Lightweight check: reference should be lowercase alphanumeric with dashes
+            // Format check: reference should be lowercase alphanumeric with dashes
             if (!/^[a-z][a-z0-9-]*$/.test(val)) {
                 findings.push({
                     severity: 'warning',
                     field: refField,
                     message: `'${val}' does not match expected reference format (lowercase alphanumeric with dashes)`,
                 });
+            } else if (referenceChecker) {
+                // Disk resolution: verify the referenced file exists
+                const refType = refField as ContentType;
+                if (!referenceChecker(refType, val)) {
+                    findings.push({
+                        severity: 'warning',
+                        field: refField,
+                        message: `'${val}' references a ${refField} file that was not found on disk`,
+                    });
+                }
             }
         }
     }

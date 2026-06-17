@@ -101,7 +101,7 @@ export function resolvePlugin(marketplacePath: string | undefined, pluginName: s
     }
 
     // Reject remote sources (Phase 1: only relative paths)
-    if (!source.startsWith('./') && !source.startsWith('../')) {
+    if (!source.startsWith('./')) {
         throw new Error(
             `Remote sources not yet supported for plugin '${pluginName}'. Phase 1 only supports relative-path sources (starting with './').`,
         );

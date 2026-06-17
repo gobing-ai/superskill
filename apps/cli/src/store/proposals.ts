@@ -36,7 +36,7 @@ export class ProposalDao extends EntityDao<typeof proposals.table, typeof propos
     }
 
     /** Insert a new proposal. `proposal_json` is JSON-serialized. Status set to `'draft'`. */
-    async insertProposal(record: ProposalInput): Promise<number> {
+    async insertProposal(record: ProposalInput): Promise<Proposal> {
         const row = await this.create({
             content_type: record.content_type,
             content_name: record.content_name,
@@ -44,7 +44,7 @@ export class ProposalDao extends EntityDao<typeof proposals.table, typeof propos
             proposal_json: JSON.stringify(record.proposal_json),
             status: 'draft',
         });
-        return row.id;
+        return deserializeProposal(row);
     }
 
     /** Update the status of a proposal by id, optionally setting `applied_at` and `verify_id`. */

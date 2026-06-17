@@ -59,7 +59,7 @@ export const DIMENSION_REGISTRY: Record<ContentType, string[]> = {
 export const REQUIRED_FIELDS: Record<ContentType, string[]> = {
     skill: ['name', 'description'],
     command: ['name', 'description'],
-    agent: ['name', 'description', 'model'],
+    agent: ['name', 'description', 'model', 'tools'],
     hook: ['name', 'description', 'event'],
     magent: ['name', 'description'],
 };

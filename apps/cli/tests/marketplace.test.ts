@@ -102,7 +102,7 @@ describe('resolvePlugin', () => {
         );
     });
 
-    it('throws on ../ path escape', () => {
+    it('rejects ../ path (now caught by remote-source guard instead of escape guard)', () => {
         tmpDir = mkdtempSync('superskill-mp-');
         const claudePluginDir = join(tmpDir, '.claude-plugin');
         mkdirSync(claudePluginDir, { recursive: true });
@@ -111,6 +111,22 @@ describe('resolvePlugin', () => {
             JSON.stringify({ plugins: [{ name: 'demo', source: '../escape' }] }),
         );
 
+        // ../escape does not start with './' so hits the remote-source guard (M3 fix)
+        expect(() => resolvePlugin(join(claudePluginDir, 'marketplace.json'), 'demo')).toThrow(
+            'Remote sources not yet supported',
+        );
+    });
+
+    it('catches path escape via ./ prefix with .. in the middle (M3 regression)', () => {
+        tmpDir = mkdtempSync('superskill-mp-');
+        const claudePluginDir = join(tmpDir, '.claude-plugin');
+        mkdirSync(claudePluginDir, { recursive: true });
+        writeFileSync(
+            join(claudePluginDir, 'marketplace.json'),
+            JSON.stringify({ plugins: [{ name: 'demo', source: './foo/../bar' }] }),
+        );
+
+        // ./foo/../bar starts with './' but contains '..' — still caught by escape guard
         expect(() => resolvePlugin(join(claudePluginDir, 'marketplace.json'), 'demo')).toThrow('escapes');
     });
 

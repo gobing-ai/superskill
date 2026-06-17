@@ -20,9 +20,7 @@ function createPlugin(root: string, pluginName = 'demo'): string {
     mkdirSync(join(pluginRoot, 'commands'), { recursive: true });
     mkdirSync(join(pluginRoot, 'agents'), { recursive: true });
     writeFileSync(join(pluginRoot, 'plugin.json'), JSON.stringify({ name: pluginName }));
-    writeFileSync(join(pluginRoot, 'skills', 'a.md'), '# skill a\n');
-    writeFileSync(join(pluginRoot, 'commands', 'run.md'), 'Run it.\n');
-    writeFileSync(join(pluginRoot, 'agents', 'coder.md'), 'Code it.\n');
+    writeFileSync(join(pluginRoot, 'skills', 'a.md'), '---\nname: a\ndescription: Skill a\n---\n# skill a\n');
     return pluginRoot;
 }
 
@@ -57,19 +55,35 @@ describe('registerInstall', () => {
         const optionNames = cmd?.options.map((o) => o.long) ?? [];
         expect(optionNames).toContain('--marketplace');
         expect(optionNames).toContain('--targets');
-        expect(optionNames).toContain('--global');
+        expect(optionNames).toContain('--no-global');
         expect(optionNames).toContain('--dry-run');
         expect(optionNames).toContain('--verbose');
     });
 
-    it('install command option --global defaults to true', () => {
+    it('install command option --no-global allows project-level install', () => {
         const program = new Command();
         registerInstall(program);
         const cmd = program.commands.find((c) => c.name() === 'install');
-        const globalOpt = cmd?.options.find((o) => o.long === '--global');
-        expect(globalOpt?.defaultValue).toBe(true);
+        const globalOpt = cmd?.options.find((o) => o.long === '--no-global');
+        expect(globalOpt).toBeDefined();
     });
 
+    it('parses --no-global to global=false', async () => {
+        const workspace = createTempWorkspace();
+        createPlugin(workspace);
+
+        const program = new Command();
+        program.exitOverride();
+        registerInstall(program);
+        const stdout = spyOn(process.stdout, 'write').mockImplementation(() => true);
+
+        await program.parseAsync(['node', 'superskill', 'install', 'demo', '--no-global', '--dry-run']);
+
+        const output = stdout.mock.calls.map((call) => String(call[0])).join('');
+        // --no-global means project-level install → dry-run still works
+        expect(output).toContain('[DRY-RUN] No files were written.');
+        stdout.mockRestore();
+    });
     it('install command option --dry-run defaults to false', () => {
         const program = new Command();
         registerInstall(program);
@@ -93,10 +107,18 @@ describe('registerInstall', () => {
         const program = new Command();
         program.exitOverride();
         registerInstall(program);
-
         const stdout = spyOn(process.stdout, 'write').mockImplementation(() => true);
 
-        await program.parseAsync(['node', 'superskill', 'install', 'demo', '--targets', 'hermes,omp', '--dry-run']);
+        await program.parseAsync([
+            'node',
+            'superskill',
+            'install',
+            'demo',
+            '--targets',
+            'hermes,omp',
+            '--no-global',
+            '--dry-run',
+        ]);
 
         expect(stdout).toHaveBeenCalled();
         expect(stdout.mock.calls.map((call) => String(call[0])).join('')).toContain('[DRY-RUN] No files were written.');
@@ -175,6 +197,102 @@ describe('executeInstall', () => {
         expect(output).toContain('Running rulesync for codex');
         expect(output).toContain('Skills written: 1, Commands: 1, Subagents: 1');
         expect(output).toContain('[DRY-RUN] No files were written.');
+        stdout.mockRestore();
+    });
+
+    it('runs rulesync for pi when omp is requested without pi (M2 regression)', async () => {
+        const workspace = createTempWorkspace();
+        createPlugin(workspace, 'm2');
+        const stdout = spyOn(process.stdout, 'write').mockImplementation(() => true);
+
+        let rulesyncTargets: string[] = [];
+        await executeInstall(
+            'm2',
+            ['omp'],
+            {
+                global: false,
+                dryRun: true,
+                verbose: true,
+            },
+            {
+                runRulesync: async (targets) => {
+                    rulesyncTargets = [...targets];
+                    return {
+                        rulesCount: 0,
+                        rulesPaths: [],
+                        ignoreCount: 0,
+                        ignorePaths: [],
+                        mcpCount: 0,
+                        mcpPaths: [],
+                        commandsCount: 0,
+                        commandsPaths: [],
+                        subagentsCount: 0,
+                        subagentsPaths: [],
+                        skillsCount: 1,
+                        skillsPaths: ['skills/m2-a/SKILL.md'],
+                        hooksCount: 0,
+                        hooksPaths: [],
+                        permissionsCount: 0,
+                        permissionsPaths: [],
+                        skills: [],
+                        hasDiff: false,
+                    };
+                },
+            },
+        );
+
+        // pi should be included in rulesync targets because omp was requested
+        expect(rulesyncTargets).toContain('pi');
+        // omp itself should NOT be passed to rulesync
+        expect(rulesyncTargets).not.toContain('omp');
+        stdout.mockRestore();
+    });
+
+    it('runs rulesync for opencode when hermes is requested without opencode (M2 regression)', async () => {
+        const workspace = createTempWorkspace();
+        createPlugin(workspace, 'm2b');
+        const stdout = spyOn(process.stdout, 'write').mockImplementation(() => true);
+
+        let rulesyncTargets: string[] = [];
+        await executeInstall(
+            'm2b',
+            ['hermes'],
+            {
+                global: false,
+                dryRun: true,
+                verbose: true,
+            },
+            {
+                runRulesync: async (targets) => {
+                    rulesyncTargets = [...targets];
+                    return {
+                        rulesCount: 0,
+                        rulesPaths: [],
+                        ignoreCount: 0,
+                        ignorePaths: [],
+                        mcpCount: 0,
+                        mcpPaths: [],
+                        commandsCount: 0,
+                        commandsPaths: [],
+                        subagentsCount: 0,
+                        subagentsPaths: [],
+                        skillsCount: 1,
+                        skillsPaths: ['skills/m2b-a/SKILL.md'],
+                        hooksCount: 0,
+                        hooksPaths: [],
+                        permissionsCount: 0,
+                        permissionsPaths: [],
+                        skills: [],
+                        hasDiff: false,
+                    };
+                },
+            },
+        );
+
+        // opencode should be included in rulesync targets because hermes was requested
+        expect(rulesyncTargets).toContain('opencode');
+        // hermes itself should NOT be passed to rulesync
+        expect(rulesyncTargets).not.toContain('hermes');
         stdout.mockRestore();
     });
 

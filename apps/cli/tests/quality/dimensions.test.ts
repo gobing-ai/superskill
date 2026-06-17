@@ -7,6 +7,7 @@ import {
     keywordDensity,
     parseErrorNote,
     parseFrontmatterSafe,
+    REQUIRED_FIELDS,
     scoreLength,
     scorePresence,
 } from '../../src/quality/dimensions';
@@ -393,5 +394,13 @@ describe('parseErrorNote', () => {
         const result = parseErrorNote(emptyFm, 'ok');
         expect(result).not.toBe('ok');
         expect(result).toContain('Frontmatter parse error');
+    });
+});
+
+describe('REQUIRED_FIELDS', () => {
+    it('agent requires name, description, model, and tools', () => {
+        // Regression: H2 — all three modules (REQUIRED_FIELDS, FIELD_TYPES, scoreCompleteness)
+        // MUST agree on the agent field set. agentType is NOT part of the agent definition.
+        expect(REQUIRED_FIELDS.agent).toEqual(['name', 'description', 'model', 'tools']);
     });
 });

@@ -69,8 +69,18 @@ describe('_validateContent — Required fields', () => {
     });
 
     it('passes agent with all required fields', () => {
-        const result = _validateContent('agent', fm('x', { description: 'd', model: 'sonnet' }));
+        const result = _validateContent(
+            'agent',
+            fm('x', { description: 'd', model: 'sonnet', tools: ['read', 'edit'] }),
+        );
         assertValid(result);
+    });
+
+    it('reports missing tools for agent', () => {
+        // Regression: H2 — tools is now in REQUIRED_FIELDS.agent
+        const result = _validateContent('agent', fm('x', { description: 'd', model: 'sonnet' }));
+        expect(result.valid).toBe(false);
+        expect(result.findings.some((f) => f.field === 'tools')).toBe(true);
     });
 
     it('passes hook with all required fields', () => {
@@ -101,13 +111,16 @@ describe('_validateContent — Field types', () => {
 
     it('accepts valid model alias', () => {
         for (const m of ['inherit', 'sonnet', 'opus', 'haiku']) {
-            const result = _validateContent('agent', fm('x', { description: 'd', model: m }));
+            const result = _validateContent('agent', fm('x', { description: 'd', model: m, tools: ['read'] }));
             assertValid(result);
         }
     });
 
     it('accepts full claude-* model id', () => {
-        const result = _validateContent('agent', fm('x', { description: 'd', model: 'claude-sonnet-4' }));
+        const result = _validateContent(
+            'agent',
+            fm('x', { description: 'd', model: 'claude-sonnet-4', tools: ['read'] }),
+        );
         assertValid(result);
     });
 
@@ -134,11 +147,6 @@ describe('_validateContent — Format compliance', () => {
         expect(result.findings.some((f) => f.field === 'tools' && f.severity === 'warning')).toBe(true);
     });
 
-    it('no tool warning for pi target without tools', () => {
-        const result = _validateContent('agent', fm('x', { description: 'd', model: 'sonnet' }), { target: 'pi' });
-        expect(result.findings.some((f) => f.field === 'tools')).toBe(false);
-    });
-
     it('warns on leading / in command name for codex', () => {
         const result = _validateContent('command', fm('/deploy', { description: 'd' }), { target: 'codex' });
         expect(result.findings.some((f) => f.field === 'name' && f.severity === 'warning')).toBe(true);
@@ -163,6 +171,30 @@ describe('_validateContent — Link validity', () => {
     });
 
     it('warns on invalid reference format', () => {
+        const result = _validateContent('skill', fm('x', { description: 'd', skill: 'INVALID Name!' }));
+        expect(result.findings.some((f) => f.field === 'skill' && f.severity === 'warning')).toBe(true);
+    });
+
+    it('warns when reference file not found on disk', () => {
+        const refNotFound = (_refType: string, _refName: string) => false;
+        const result = _validateContent('skill', fm('x', { description: 'd', skill: 'missing-ref' }), {
+            referenceChecker: refNotFound,
+        });
+        const warnings = result.findings.filter((f) => f.field === 'skill' && f.severity === 'warning');
+        expect(warnings.length).toBeGreaterThanOrEqual(1);
+        expect(warnings.some((f) => f.message.includes('not found on disk'))).toBe(true);
+    });
+
+    it('accepts reference when file found on disk', () => {
+        const refFound = (_refType: string, _refName: string) => true;
+        const result = _validateContent('skill', fm('x', { description: 'd', skill: 'existing-ref' }), {
+            referenceChecker: refFound,
+        });
+        const warnings = result.findings.filter((f) => f.field === 'skill');
+        expect(warnings).toHaveLength(0);
+    });
+
+    it('format check still applies without referenceChecker', () => {
         const result = _validateContent('skill', fm('x', { description: 'd', skill: 'INVALID Name!' }));
         expect(result.findings.some((f) => f.field === 'skill' && f.severity === 'warning')).toBe(true);
     });
@@ -234,7 +266,7 @@ describe('_validateContent — Content type coverage', () => {
         assertValid(_validateContent('command', fm('x', { description: 'd' })));
     });
     it('validates agent type', () => {
-        assertValid(_validateContent('agent', fm('x', { description: 'd', model: 'sonnet' })));
+        assertValid(_validateContent('agent', fm('x', { description: 'd', model: 'sonnet', tools: ['read'] })));
     });
     it('validates hook type', () => {
         assertValid(_validateContent('hook', fm('x', { description: 'd', event: 'PreToolUse' })));

@@ -31,7 +31,7 @@ describe('ProposalDao', () => {
     });
 
     it('inserts a proposal with draft status', async () => {
-        const id = await dao.insertProposal(sampleProposal);
+        const { id } = await dao.insertProposal(sampleProposal);
         expect(id).toBeGreaterThan(0);
 
         const results = await dao.getProposals('skill', 'test-skill');
@@ -46,7 +46,7 @@ describe('ProposalDao', () => {
     });
 
     it('updates proposal status', async () => {
-        const id = await dao.insertProposal(sampleProposal);
+        const { id } = await dao.insertProposal(sampleProposal);
         await dao.updateProposalStatus(id, 'accepted', { applied_at: '2026-06-16' });
 
         const results = await dao.getProposals('skill', 'test-skill');
@@ -60,7 +60,7 @@ describe('ProposalDao', () => {
 
     it('updateProposalStatus bumps updated_at', async () => {
         vi.useFakeTimers();
-        const id = await dao.insertProposal(sampleProposal);
+        const { id } = await dao.insertProposal(sampleProposal);
         const before = (await dao.getProposals('skill', 'test-skill'))[0]?.updated_at ?? 0;
         vi.advanceTimersByTime(10);
         const updated = await dao.updateProposalStatus(id, 'accepted');
@@ -69,7 +69,7 @@ describe('ProposalDao', () => {
     });
 
     it('updateProposalStatus sets optional verify_id', async () => {
-        const id = await dao.insertProposal(sampleProposal);
+        const { id } = await dao.insertProposal(sampleProposal);
         await dao.updateProposalStatus(id, 'rejected', { verify_id: 42 });
 
         const results = await dao.getProposals('skill', 'test-skill');
@@ -85,7 +85,7 @@ describe('ProposalDao', () => {
             proposal_json: { changes: [] },
         });
 
-        const acceptedId = await dao.insertProposal({
+        const { id: acceptedId } = await dao.insertProposal({
             content_type: 'agent',
             content_name: 'reviewer',
             proposal_json: {},
@@ -124,7 +124,7 @@ describe('ProposalDao', () => {
     });
 
     it('updates to rejected status', async () => {
-        const id = await dao.insertProposal(sampleProposal);
+        const { id } = await dao.insertProposal(sampleProposal);
         await dao.updateProposalStatus(id, 'rejected');
 
         const results = await dao.getProposals('skill', 'test-skill');

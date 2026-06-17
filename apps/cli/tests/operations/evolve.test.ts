@@ -177,6 +177,30 @@ describe('generateChanges', () => {
         const changes = generateChanges(emptyReport, trends);
         expect(changes[0]?.reason).toContain('Score below threshold');
     });
+
+    it('emits frontmatter.description location with meaningful proposed text', () => {
+        const trends: TrendEntry[] = [
+            { dimension: 'conciseness', earliest: 0.8, latest: 0.55, delta: -0.25, trend: 'declining' },
+        ];
+        const changes = generateChanges(report, trends);
+        expect(changes[0]?.location).toBe('frontmatter.description');
+        expect(changes[0]?.proposed).toContain('[Improve conciseness]');
+        expect(changes[0]?.proposed).toContain('Too verbose');
+        expect(changes[0]?.current).toBe('conciseness score: 0.55');
+    });
+
+    it('emits frontmatter.description even when no dimension note', () => {
+        const emptyReport = makeReport({
+            completeness: { score: 0.5, note: '' },
+        });
+        const trends: TrendEntry[] = [
+            { dimension: 'completeness', earliest: 0.5, latest: 0.5, delta: 0, trend: 'flat' },
+        ];
+        const changes = generateChanges(emptyReport, trends);
+        expect(changes[0]?.location).toBe('frontmatter.description');
+        expect(changes[0]?.proposed).toContain('[Improve completeness]');
+        expect(changes[0]?.proposed).toContain('review and enhance the description');
+    });
 });
 
 describe('generateProposalId', () => {
@@ -287,8 +311,9 @@ describe('evolve — orchestrator', () => {
         const draft = (await new ProposalDao(adapter).getProposals('skill', 'widget'))[0];
         expect(draft).toBeDefined();
 
-        // Accept it by numeric id (string form, as the CLI passes).
-        await evolve('skill', 'widget', { adapter, acceptId: String(draft?.id) });
+        // Accept it by proposal_id string (as users see in the proposal file).
+        const pid = ((draft?.proposal_json as Record<string, unknown>)?.proposal_id as string) ?? '';
+        await evolve('skill', 'widget', { adapter, acceptId: pid });
 
         // R9: proposal status updated to accepted with a real applied_at timestamp.
         const after = (await new ProposalDao(adapter).getProposals('skill', 'widget')).find((p) => p.id === draft?.id);
@@ -308,7 +333,8 @@ describe('evolve — orchestrator', () => {
         await evolve('skill', 'widget', { adapter, proposeOnly: true });
         const draft = (await new ProposalDao(adapter).getProposals('skill', 'widget'))[0];
 
-        const r = await evolve('skill', 'widget', { adapter, rejectId: String(draft?.id) });
+        const pid = ((draft?.proposal_json as Record<string, unknown>)?.proposal_id as string) ?? '';
+        const r = await evolve('skill', 'widget', { adapter, rejectId: pid });
         expect(r.changesApplied).toBe(0);
         const after = (await new ProposalDao(adapter).getProposals('skill', 'widget')).find((p) => p.id === draft?.id);
         expect(after?.status).toBe('rejected');
@@ -318,6 +344,21 @@ describe('evolve — orchestrator', () => {
         await seedHistory(adapter, [0.9, 0.5]);
         const r = await evolve('skill', 'widget', { adapter, acceptId: '9999' });
         expect(r.changesApplied).toBe(0);
+    });
+
+    it('applies auto-generated changes to content (generateChanges → stepApply end-to-end)', async () => {
+        await seedHistory(adapter, [0.9, 0.5]); // declining clarity
+        await evolve('skill', 'widget', { adapter, proposeOnly: true });
+        const draft = (await new ProposalDao(adapter).getProposals('skill', 'widget'))[0];
+        const pid = ((draft?.proposal_json as Record<string, unknown>)?.proposal_id as string) ?? '';
+        const r = await evolve('skill', 'widget', { adapter, acceptId: pid });
+        const content = readFileSync(join(dir, 'widget.md'), 'utf-8');
+        // C1 fix: auto-generated changes must actually modify the content (not skip silently)
+        expect(r.changesApplied).toBeGreaterThanOrEqual(1);
+        // The proposed improvement text is prepended to the existing description
+        expect(content).toContain('[Improve clarity]');
+        // The original description is preserved (prepended, not replaced)
+        expect(content).toContain('A widget skill that does widget things well');
     });
 
     it('applies --from filter that removes all evaluations', async () => {
@@ -331,21 +372,21 @@ describe('evolve — orchestrator', () => {
         await seedHistory(adapter, [0.9, 0.5]);
         await evolve('skill', 'widget', { adapter, proposeOnly: true });
         const draft = (await new ProposalDao(adapter).getProposals('skill', 'widget'))[0];
-        // Modify proposal_json to have a non-matching `current` string
-        // Create a new proposal with bad change data unable to be rewritten easily —
-        // Accept it — the text change should warn since "Score: 1.00" isn't in the content
-        const r = await evolve('skill', 'widget', { adapter, acceptId: String(draft?.id) });
+        const pid = ((draft?.proposal_json as Record<string, unknown>)?.proposal_id as string) ?? '';
+        const r = await evolve('skill', 'widget', { adapter, acceptId: pid });
         // Should apply 0 changes because the text change current doesn't exist in the file
         expect(r.changesApplied).toBeGreaterThanOrEqual(0);
     });
 
     it('--accept applies stored frontmatter and text changes', async () => {
         await seedHistory(adapter, [0.9, 0.5]);
-        const proposalId = await new ProposalDao(adapter).insertProposal({
+        const handPid = 'skill-evolve-2026-06-01-001';
+        await new ProposalDao(adapter).insertProposal({
             content_type: 'skill',
             content_name: 'widget',
             baseline_id: 1,
             proposal_json: {
+                proposal_id: handPid,
                 changes: [
                     {
                         dimension: 'description',
@@ -365,7 +406,7 @@ describe('evolve — orchestrator', () => {
             },
         });
 
-        const r = await evolve('skill', 'widget', { adapter, acceptId: String(proposalId) });
+        const r = await evolve('skill', 'widget', { adapter, acceptId: handPid });
         const content = readFileSync(join(dir, 'widget.md'), 'utf-8');
         expect(r.changesApplied).toBe(2);
         expect(content).toContain('description: A sharper widget skill');

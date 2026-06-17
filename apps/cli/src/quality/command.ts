@@ -97,7 +97,7 @@ function scoreToolReferences(body: string): DimensionScore {
     return { score, note };
 }
 
-function scoreSlashSyntax(body: string, data: Record<string, unknown>): DimensionScore {
+function scoreSlashSyntax(body: string, target: string): DimensionScore {
     const slashPattern = /\/[a-z][a-z-]*/g;
     const matches = body.match(slashPattern);
     const count = matches ? matches.length : 0;
@@ -108,7 +108,7 @@ function scoreSlashSyntax(body: string, data: Record<string, unknown>): Dimensio
     if (count >= 1) {
         score = 1.0;
         note = 'Valid slash syntax';
-    } else if (data.target) {
+    } else if (target) {
         score = 0.5;
         note = 'Missing slash syntax for target';
     } else {
@@ -138,7 +138,7 @@ export function evaluateCommand(content: string, target: string): QualityReport 
         clarity: scoreClarity(body),
         'argument-hints': scoreArgumentHints(data),
         'tool-references': scoreToolReferences(body),
-        'slash-syntax': scoreSlashSyntax(body, data),
+        'slash-syntax': scoreSlashSyntax(body, target),
     };
 
     return {

@@ -33,6 +33,17 @@ describe('configSchema', () => {
         const result = configSchema.safeParse({ version: 1, features: ['skills', 'bogus'] });
         expect(result.success).toBe(false);
     });
+
+    it('accepts valid target names', () => {
+        const result = configSchema.safeParse({ version: 1, targets: ['claude', 'codex', 'pi'] });
+        expect(result.success).toBe(true);
+        if (result.success) expect(result.data.targets).toEqual(['claude', 'codex', 'pi']);
+    });
+
+    it('rejects invalid target names', () => {
+        const result = configSchema.safeParse({ version: 1, targets: ['claude', 'invalid-target'] });
+        expect(result.success).toBe(false);
+    });
 });
 
 describe('loadConfig', () => {

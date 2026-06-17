@@ -53,7 +53,7 @@ describe('scaffold', () => {
 
         const content = readFileSync(filePath, 'utf-8');
         expect(content).toContain('model: sonnet');
-        expect(content).toContain('agentType: task');
+        expect(content).toContain('tools:');
     });
 
     it('creates a hook file', async () => {

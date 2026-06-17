@@ -13,18 +13,12 @@ import {
 
 function scoreCompleteness(data: Record<string, unknown>): DimensionScore {
     const fieldsPresent = Object.keys(data);
-    const base = scorePresence(fieldsPresent, REQUIRED_FIELDS.agent);
+    const required = REQUIRED_FIELDS.agent;
+    const score = scorePresence(fieldsPresent, required);
+    const missing = required.filter((f) => !fieldsPresent.includes(f));
+    const note = missing.length > 0 ? `Missing: ${missing.join(', ')}` : 'All required fields present';
 
-    const toolsFactor = Array.isArray(data.tools) ? 1 : 0.3;
-    const agentTypeFactor = data.agentType ? 1 : 0.3;
-    const adjusted = base * ((toolsFactor + agentTypeFactor) / 2);
-
-    const missing: string[] = [];
-    if (!Array.isArray(data.tools)) missing.push('tools');
-    if (!data.agentType) missing.push('agentType');
-    const note = missing.length > 0 ? `Missing: ${missing.join(', ')}` : 'All key fields present';
-
-    return { score: clamp(adjusted), note };
+    return { score: clamp(score), note };
 }
 
 function scoreRoleClarity(body: string): DimensionScore {

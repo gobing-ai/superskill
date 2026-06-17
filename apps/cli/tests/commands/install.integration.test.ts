@@ -147,9 +147,9 @@ describe('executeInstall', () => {
     it('filters out claude/hermes/omp from rulesync call', async () => {
         const { marketplacePath } = setupPluginDir();
 
-        let capturedTargets: Target[] = [];
+        const capturedTargets: Target[] = [];
         const mockRunRulesync = async (targets: Target[]) => {
-            capturedTargets = targets;
+            capturedTargets.push(...targets);
             return {
                 rulesCount: 0,
                 rulesPaths: [],
@@ -178,7 +178,7 @@ describe('executeInstall', () => {
             { marketplacePath, global: false, dryRun: true, verbose: false },
             { runRulesync: mockRunRulesync },
         );
-        expect(capturedTargets).toEqual(['codex']);
+        expect(capturedTargets).toEqual(['codex', 'pi', 'opencode']);
     });
 
     it('runs pipeline transforms before rulesync', async () => {

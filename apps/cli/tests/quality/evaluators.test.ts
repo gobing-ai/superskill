@@ -2,7 +2,7 @@ import { describe, expect, it } from 'bun:test';
 import { evaluateAgent } from '../../src/quality/agent';
 import { evaluateCommand } from '../../src/quality/command';
 import type { ContentType, QualityReport } from '../../src/quality/dimensions';
-import { computeAggregate, DIMENSION_REGISTRY } from '../../src/quality/dimensions';
+import { computeAggregate, DIMENSION_REGISTRY, REQUIRED_FIELDS, scorePresence } from '../../src/quality/dimensions';
 import { evaluateHook } from '../../src/quality/hook';
 import { evaluateMagent } from '../../src/quality/magent';
 import { evaluateSkill } from '../../src/quality/skill';
@@ -113,7 +113,6 @@ const AGENT_GOOD = makeSample(
     `name: code-reviewer
 description: Autonomous code review agent that checks PRs for quality and security
 model: claude-sonnet-4
-agentType: subagent
 tools:
   - read
   - edit
@@ -276,6 +275,27 @@ describe('evaluateCommand', () => {
         expect(result.type).toBe('command');
         expect(result.aggregate).toBeLessThanOrEqual(good.aggregate);
     });
+
+    it('slash-syntax dimension uses target parameter not data.target', () => {
+        // Body with no slash commands, but with a target parameter → score 0.5
+        const withTarget = evaluateCommand(
+            makeSample('name: cmd\ndescription: d\ntarget: bogus', 'run something'),
+            'commands/cmd.md',
+        );
+        const slashScore = withTarget.dimensions['slash-syntax'];
+        expect(slashScore).toBeDefined();
+        // target param is truthy → score 0.5 even though data.target exists
+        expect(slashScore?.score).toBe(0.5);
+        expect(slashScore?.note).toContain('Missing slash syntax for target');
+    });
+
+    it('slash-syntax dimension no target falls back to 0.1', () => {
+        // Body with no slash commands, target param is empty string → score 0.1
+        const noTarget = evaluateCommand(makeSample('name: cmd\ndescription: d', 'run something'), '');
+        const slashScore = noTarget.dimensions['slash-syntax'];
+        expect(slashScore?.score).toBe(0.1);
+        expect(slashScore?.note).toContain('Missing slash syntax');
+    });
 });
 
 describe('evaluateAgent', () => {
@@ -301,6 +321,25 @@ describe('evaluateAgent', () => {
         const result = evaluateAgent(MALFORMED_YAML, 'agents/broken.md');
         expect(result.type).toBe('agent');
         expect(result.aggregate).toBeLessThanOrEqual(good.aggregate);
+    });
+
+    it('scores completeness from REQUIRED_FIELDS.agent (no agentType)', () => {
+        // Regression: H2 — completeness scoring MUST align with REQUIRED_FIELDS.agent.
+        // scoreCompleteness delegates to scorePresence against REQUIRED_FIELDS.agent.
+        // Verify that a freshly-evaluated agent report's completeness dimension
+        // matches what scorePresence would compute for the same field set.
+        const report = evaluateAgent(AGENT_GOOD, 'agents/code-reviewer.md');
+        const completenessScore = report.dimensions.completeness?.score ?? 0;
+
+        // Recompute independently — same contract as scoreCompleteness
+        const data: Record<string, unknown> = {
+            name: 'code-reviewer',
+            description: 'Autonomous code review agent',
+            model: 'claude-sonnet-4',
+            tools: ['read', 'edit', 'search', 'bash'],
+        };
+        const expected = scorePresence(Object.keys(data), REQUIRED_FIELDS.agent);
+        expect(completenessScore).toBe(expected);
     });
 });
 

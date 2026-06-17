@@ -86,8 +86,9 @@ function scoreSafety(body: string): DimensionScore {
  * @returns        QualityReport with per-dimension scores and aggregate.
  */
 export function evaluateMagent(content: string, target: string): QualityReport {
-    const data = parseFrontmatterSafe(content) ?? {};
-    const fmNote = parseFrontmatterSafe(content) === null ? parseErrorNote(content, 'unknown parse error') : null;
+    const fmResult = parseFrontmatterSafe(content);
+    const data = fmResult ?? {};
+    const fmNote = fmResult === null ? parseErrorNote(content, 'unknown parse error') : null;
     const body = extractBody(content);
 
     const dimensions: Record<string, DimensionScore> = {
