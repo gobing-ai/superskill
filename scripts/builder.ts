@@ -1,13 +1,14 @@
 #!/usr/bin/env bun
 
 /**
- * Bump the CLI package version, commit, and optionally tag + push.
+ * Build/release helper for the superskill CLI.
  *
  * Usage:
- *   bun scripts/bump.ts <version>          bump to version, commit, tag locally
- *   bun scripts/bump.ts <version> --push   bump + push commit + tag
- *   bun scripts/bump.ts drop-tags <ver>    delete local tags for version
- *   bun scripts/bump.ts drop-tags <ver> --remote   delete local + remote tags
+ *   bun scripts/builder.ts bump-ver <version>            bump, commit, tag locally
+ *   bun scripts/builder.ts bump-ver <version> --push     bump + push commit + tag
+ *   bun scripts/builder.ts drop-tags <version>           delete local tag for version
+ *   bun scripts/builder.ts drop-tags <version> --remote  delete local + remote tag
+ *   bun scripts/builder.ts postbuild <outfile>           prepend bun shebang to a bundle
  */
 
 import { readFileSync, writeFileSync } from 'node:fs';
@@ -72,23 +73,36 @@ async function dropTags(ver: string) {
     }
 }
 
+/**
+ * Prepend `#!/usr/bin/env bun` to a bundle so the bin entry is directly
+ * executable. Bun build emits plain JS without a shebang.
+ */
+async function postbuild(outfile: string) {
+    const content = await Bun.file(outfile).text();
+    await Bun.write(outfile, `#!/usr/bin/env bun\n${content}`);
+}
+
 try {
     switch (command) {
         case 'bump-ver':
         case 'bump-version': {
-            if (!version) fail('Usage: bun scripts/bump.ts bump-ver <version> [--push]');
+            if (!version) fail('Usage: bun scripts/builder.ts bump-ver <version> [--push]');
             await bumpVersion(version);
             break;
         }
         case 'drop-tags': {
-            if (!version) fail('Usage: bun scripts/bump.ts drop-tags <version> [--remote]');
+            if (!version) fail('Usage: bun scripts/builder.ts drop-tags <version> [--remote]');
             await dropTags(version);
             break;
         }
+        case 'postbuild': {
+            const outfile = args[0];
+            if (!outfile) fail('Usage: bun scripts/builder.ts postbuild <outfile>');
+            await postbuild(outfile);
+            break;
+        }
         default:
-            fail(
-                `Unknown command: ${command}\nUsage: bun scripts/bump.ts <bump-ver|drop-tags> <version> [--push|--remote]`,
-            );
+            fail(`Unknown command: ${command}\nUsage: bun scripts/builder.ts <bump-ver|drop-tags|postbuild> [args]`);
     }
 } catch (err) {
     fail(err instanceof Error ? err.message : String(err));

@@ -9,7 +9,8 @@
     ],
     "scripts": {
         "prepare": "[ -z \"$CI\" ] && lefthook install || true",
-        "bump-ver": "bun scripts/bump.ts bump-ver",
+        "bump-ver": "bun scripts/builder.ts bump-ver",
+        "drop-tags": "bun scripts/builder.ts drop-tags",
         "clean": "rm -rf dist",
         "build": "bun run clean && bun run --filter '@gobing-ai/superskill' build",
         "dev": "bun run --filter './apps/*' --filter './packages/*' dev",
