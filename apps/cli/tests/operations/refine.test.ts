@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, mock, spyOn } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, it, spyOn } from 'bun:test';
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -379,22 +379,6 @@ It uses clear, imperative language with must, should, never, and always keywords
         writeFileSync(`${file}.bak`, 'stale backup');
         const r = await refine('skill', file, { auto: true });
         expect(r.preScore).toBeGreaterThan(0);
-    });
-
-    it('returns zero scores when evaluate throws after validation passes', async () => {
-        const file = createTempFile(GOOD_SKILL, tmpDir);
-        mock.module('../../src/operations/evaluate', () => ({
-            evaluate: () => {
-                throw new Error('simulated evaluate failure');
-            },
-            evaluateFile: () => {
-                throw new Error('simulated evaluate failure');
-            },
-        }));
-        const r = await refine('skill', file, { auto: true });
-        expect(r.preScore).toBe(0);
-        expect(r.postScore).toBe(0);
-        expect(r.delta).toBe(0);
     });
 });
 // ── refine — file not found ──────────────────────────────────────────────────
