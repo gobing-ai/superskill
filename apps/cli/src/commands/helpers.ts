@@ -17,14 +17,16 @@ export function addScaffoldOptions(cmd: Command): Command {
         .option('--force', 'Overwrite existing file if present');
 }
 
-/** Add evolve-specific options. */
+/** Add evolve-specific options (F023: --json for envelope-out, --ingest for ingest-in). */
 export function addEvolveOptions(cmd: Command): Command {
     return cmd
         .option('-t, --target <agent>', 'Target agent platform', 'claude')
         .option('--from <date>', 'Analyze evaluations since date (ISO 8601)')
         .option('--propose-only', 'Generate proposal without applying')
         .option('--accept <id>', 'Accept a specific proposal by ID')
-        .option('--reject <id>', 'Reject a specific proposal');
+        .option('--reject <id>', 'Reject a specific proposal')
+        .option('--json', 'Output machine-readable JSON (envelope-out with --propose-only)')
+        .option('--ingest <file>', 'Agent-authored proposal JSON (ingest-in mode)');
 }
 
 /** Add --json option. */

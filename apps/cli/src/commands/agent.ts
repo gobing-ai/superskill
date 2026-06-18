@@ -97,6 +97,8 @@ export async function agentEvolve(opts: {
     proposeOnly?: boolean;
     accept?: string;
     reject?: string;
+    json?: boolean;
+    ingest?: string;
 }): Promise<number | undefined> {
     const target = resolveTarget(opts);
     await evolve('agent', opts.name, {
@@ -105,6 +107,8 @@ export async function agentEvolve(opts: {
         proposeOnly: opts.proposeOnly,
         acceptId: opts.accept,
         rejectId: opts.reject,
+        json: opts.json,
+        ingest: opts.ingest,
     });
     return undefined;
 }
@@ -151,7 +155,6 @@ export async function handleAgentRefine(opts: {
 }): Promise<void> {
     await runOperation(() => agentRefine(opts));
 }
-
 /** Run agent evolve as a CLI action. */
 export async function handleAgentEvolve(opts: {
     name: string;
@@ -160,6 +163,8 @@ export async function handleAgentEvolve(opts: {
     proposeOnly?: boolean;
     accept?: string;
     reject?: string;
+    json?: boolean;
+    ingest?: string;
 }): Promise<void> {
     await runOperation(() => agentEvolve(opts));
 }

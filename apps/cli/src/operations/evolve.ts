@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { createInterface } from 'node:readline';
 import { echo, echoError } from '@gobing-ai/ts-utils';
@@ -7,6 +7,7 @@ import { parseFrontmatter } from '../content/frontmatter';
 import { resolveContentName, resolveContentPath } from '../content/identity';
 import { getProposalsDir } from '../content/paths';
 import type { ContentType, QualityReport } from '../quality/dimensions';
+import { loadRubric } from '../quality/rubric';
 import type { DbAdapter, Evaluation, Proposal } from '../store';
 import { EvaluationDao } from '../store/evaluations';
 import { ProposalDao } from '../store/proposals';
@@ -26,8 +27,30 @@ export interface EvolveOptions {
     acceptId?: string;
     /** Reject a proposal by its `proposal_id`. */
     rejectId?: string;
+    /** Output machine-readable JSON (envelope-out mode with --propose-only). */
+    json?: boolean;
+    /** Path to an agent-authored proposal JSON (ingest-in mode). */
+    ingest?: string;
     /** Inject an already-open DbAdapter for testing. */
     adapter?: DbAdapter;
+}
+
+/** Immutable goal anchor emitted verbatim in every generation brief (design §2.2, anti-drift). */
+export interface GenerationAnchor {
+    /** Original frontmatter as parsed — never summarised. */
+    frontmatter: Record<string, unknown>;
+    /** Rubric criterion for this dimension, verbatim. */
+    rubric_criteria: string;
+    /** Negative constraints (DON'T/NEVER rules) from the description, verbatim. */
+    negative_constraints: string[];
+}
+
+/** A work-order brief for the Author persona: what dimension, current text, target criterion, anchor. */
+export interface GenerationBrief {
+    dimension: string;
+    current_text: string;
+    target_criterion: string;
+    anchor: GenerationAnchor;
 }
 
 /** A single dimension's trend over time: earliest score, latest score, delta, and trend direction. */
@@ -184,6 +207,166 @@ export function generateProposalId(type: ContentType, _name: string, existingPro
     return `${type}-evolve-${date}-${seq}`;
 }
 
+// ── Generation Seam (F023) ───────────────────────────────────────────────────
+
+/**
+ * Extract negative constraints (DON'T/NEVER rules) from a description string.
+ * Each rule is returned verbatim. Returns empty array if none found.
+ */
+function extractNegativeConstraints(description: unknown): string[] {
+    if (typeof description !== 'string') return [];
+    const constraints: string[] = [];
+    for (const line of description.split('\n')) {
+        const trimmed = line.trim();
+        if (/^(DON['']T|NEVER)\b/i.test(trimmed)) {
+            constraints.push(trimmed);
+        }
+    }
+    return constraints;
+}
+
+/**
+ * Envelope-out: emit `{ trends, baseline, rubric, briefs }` as JSON to stdout.
+ * Each brief carries the immutable goal anchor (frontmatter + rubric criterion + negative constraints) verbatim.
+ * No DB write, no model call (design §2.2, invariant #1 + #6).
+ */
+function emitGenerationEnvelope(
+    type: ContentType,
+    resolvedPath: string,
+    content: string,
+    baseline: QualityReport,
+    trends: TrendEntry[],
+): EvolveResult {
+    const rubric = loadRubric(type);
+    const parsed = parseFrontmatter(content);
+    const frontmatter = parsed.data;
+    const description = frontmatter.description;
+    const negativeConstraints = extractNegativeConstraints(description);
+    const contentName = resolveContentName(resolvedPath);
+
+    // Build a brief for every dimension in the baseline report.
+    const dimMap = new Map(Object.entries(baseline.dimensions));
+    const rubricByName = new Map(rubric.dimensions.map((d) => [d.name, d]));
+
+    const briefs: GenerationBrief[] = [];
+    for (const dimName of dimMap.keys()) {
+        const rubricDim = rubricByName.get(dimName);
+        const dimData = dimMap.get(dimName);
+        briefs.push({
+            dimension: dimName,
+            current_text: typeof description === 'string' ? description : '',
+            target_criterion: rubricDim?.criterion ?? `Improve ${dimName}`,
+            anchor: {
+                frontmatter,
+                rubric_criteria: rubricDim?.criterion ?? '',
+                negative_constraints: negativeConstraints,
+            },
+        });
+        void dimData; // dimData available for future use; not needed for the brief shape
+    }
+
+    const envelope = {
+        type,
+        content_name: contentName,
+        trends,
+        baseline,
+        rubric: { version: rubric.version, type: rubric.type, dimensions: rubric.dimensions },
+        briefs,
+    };
+
+    echo(JSON.stringify(envelope, null, 2));
+    return {
+        baselineScore: baseline.aggregate,
+        postScore: baseline.aggregate,
+        delta: 0,
+        changesApplied: 0,
+        proposalPath: '',
+    };
+}
+
+/**
+ * Ingest-in: read agent-authored ProposedChange[] from a JSON file, validate, persist.
+ * On accept (opts.acceptId), apply via stepApply + stepVerify.
+ * The JSON shape: `{ proposal_id?: string, changes: ProposedChange[] }`.
+ */
+async function ingestProposal(
+    db: DbAdapter,
+    type: ContentType,
+    name: string,
+    resolvedPath: string,
+    ingestPath: string,
+    opts: EvolveOptions | undefined,
+    baselineScore: number,
+): Promise<EvolveResult> {
+    let raw: string;
+    try {
+        raw = readFileSync(ingestPath, 'utf-8');
+    } catch {
+        throw Object.assign(new Error(`Cannot read proposal file: ${ingestPath}`), { code: 2 });
+    }
+
+    let parsed: { proposal_id?: string; changes: ProposedChange[] };
+    try {
+        parsed = JSON.parse(raw) as { proposal_id?: string; changes: ProposedChange[] };
+    } catch {
+        throw Object.assign(new Error(`Invalid JSON in proposal file: ${ingestPath}`), { code: 1 });
+    }
+
+    if (!Array.isArray(parsed.changes) || parsed.changes.length === 0) {
+        throw Object.assign(new Error('Proposal file must contain a non-empty changes array'), { code: 1 });
+    }
+
+    // Validate each change has the required fields with non-empty proposed text.
+    for (const change of parsed.changes) {
+        if (!change.dimension || !change.location || !change.proposed || !change.reason) {
+            throw Object.assign(
+                new Error(`Invalid ProposedChange: missing required field (dimension, location, proposed, reason)`),
+                { code: 1 },
+            );
+        }
+    }
+
+    const proposalDao = new ProposalDao(db);
+    const existingProposals = await proposalDao.getProposals(type, name);
+    const proposalId = parsed.proposal_id ?? generateProposalId(type, name, existingProposals);
+
+    const proposalJson = {
+        proposal_id: proposalId,
+        changes: parsed.changes,
+    };
+
+    const proposalRecord = await proposalDao.insertProposal({
+        content_type: type,
+        content_name: name,
+        baseline_id: 0,
+        proposal_json: proposalJson,
+    });
+
+    const proposalsRoot = getProposalsDir();
+    const proposalsDir = join(proposalsRoot, type, name);
+    mkdirSync(proposalsDir, { recursive: true });
+    const proposalPath = join(proposalsDir, `${proposalId}.json`);
+    writeFileSync(proposalPath, JSON.stringify(proposalJson, null, 2));
+
+    echo(`Proposal ${proposalId} ingested and persisted (ID: ${proposalRecord.id}).`);
+
+    // If --accept <id> is also provided, apply the ingested proposal.
+    if (opts?.acceptId) {
+        const appliedCount = await stepApply(parsed.changes, resolvedPath, proposalRecord.id, db);
+        const verdict = await stepVerify(type, name, resolvedPath, baselineScore, proposalRecord.id, opts, db);
+        return {
+            baselineScore,
+            postScore: verdict.postScore,
+            delta: verdict.delta,
+            changesApplied: appliedCount,
+            proposalPath,
+        };
+    }
+
+    echo(`Use --accept ${proposalId} to apply this proposal.`);
+    return { baselineScore, postScore: baselineScore, delta: 0, changesApplied: 0, proposalPath };
+}
+
 // ── Internal Steps ───────────────────────────────────────────────────────────
 
 async function openDb(opts?: EvolveOptions): Promise<DbAdapter> {
@@ -236,7 +419,7 @@ async function stepPropose(
     db: DbAdapter,
     type: ContentType,
     name: string,
-    report: QualityReport,
+    _report: QualityReport,
     trends: TrendEntry[],
     evaluations: Evaluation[],
     baselineScore: number,
@@ -248,7 +431,7 @@ async function stepPropose(
     changes: ProposedChange[];
     proposalRecord: Proposal;
 }> {
-    const changes = generateChanges(report, trends);
+    const changes: ProposedChange[] = []; // F023: placeholder generation removed — changes come via --ingest
     const proposalDao = new ProposalDao(db);
 
     const existingProposals = await proposalDao.getProposals(type, name);
@@ -555,6 +738,17 @@ export async function evolve(type: ContentType, name: string, opts?: EvolveOptio
     } catch {
         echoError('Cannot evaluate content.');
         return { baselineScore, postScore: baselineScore, delta: 0, changesApplied: 0, proposalPath: '' };
+    }
+
+    // F023: Envelope-out — emit generation briefs as JSON (no DB write, no model call).
+    if (opts?.json && opts.proposeOnly) {
+        const content = await Bun.file(resolvedPath).text();
+        return emitGenerationEnvelope(type, resolvedPath, content, baselineReport, trends);
+    }
+
+    // F023: Ingest-in — consume agent-authored ProposedChange[] from a JSON file.
+    if (opts?.ingest) {
+        return ingestProposal(db, type, contentName, resolvedPath, opts.ingest, opts, baselineScore);
     }
 
     // Step 3 (early): --reject loads an existing proposal by id and rejects it; no new proposal, no apply.

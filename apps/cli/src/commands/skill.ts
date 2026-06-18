@@ -96,6 +96,8 @@ export async function skillEvolve(opts: {
     proposeOnly?: boolean;
     accept?: string;
     reject?: string;
+    json?: boolean;
+    ingest?: string;
 }): Promise<number | undefined> {
     const target = resolveTarget(opts);
     await evolve('skill', opts.name, {
@@ -104,6 +106,8 @@ export async function skillEvolve(opts: {
         proposeOnly: opts.proposeOnly,
         acceptId: opts.accept,
         rejectId: opts.reject,
+        json: opts.json,
+        ingest: opts.ingest,
     });
     return undefined;
 }
@@ -143,7 +147,15 @@ export async function handleSkillRefine(
 /** Run skill evolve as a CLI action. */
 export async function handleSkillEvolve(
     name: string,
-    opts: { target?: string; from?: string; proposeOnly?: boolean; accept?: string; reject?: string },
+    opts: {
+        target?: string;
+        from?: string;
+        proposeOnly?: boolean;
+        accept?: string;
+        reject?: string;
+        json?: boolean;
+        ingest?: string;
+    },
 ): Promise<void> {
     await runOperation(() => skillEvolve({ name, ...opts }));
 }

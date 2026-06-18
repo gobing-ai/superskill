@@ -1,0 +1,12 @@
+{
+    "proposal_id": "skill-evolve-fixture-001",
+    "changes": [
+        {
+            "dimension": "clarity",
+            "location": "frontmatter.description",
+            "current": "clarity score: 0.60",
+            "proposed": "A highly focused widget skill that streamlines widget creation, validation, and lifecycle management with clear, actionable steps.",
+            "reason": "Score: 0.60 (trend: declining). The current description is vague and does not communicate the skill's specific value or scope."
+        }
+    ]
+}

@@ -58,7 +58,15 @@ async function refineHook(nameOrPath: string, opts: { target?: string; auto?: bo
 
 async function evolveHook(
     name: string,
-    opts: { target?: string; from?: string; proposeOnly?: boolean; accept?: string; reject?: string },
+    opts: {
+        target?: string;
+        from?: string;
+        proposeOnly?: boolean;
+        accept?: string;
+        reject?: string;
+        json?: boolean;
+        ingest?: string;
+    },
 ) {
     const target = resolveTarget(opts);
     return evolve('hook', name, {
@@ -67,6 +75,8 @@ async function evolveHook(
         proposeOnly: opts.proposeOnly,
         acceptId: opts.accept,
         rejectId: opts.reject,
+        json: opts.json,
+        ingest: opts.ingest,
     });
 }
 
@@ -127,7 +137,7 @@ export async function hookRefine(opts: {
     return undefined;
 }
 
-/** Evolve a hook definition from saved evaluation history. */
+/** Evolve a hook definition with optional propose-only/ingest generation seam. */
 export async function hookEvolve(opts: {
     name: string;
     target?: string;
@@ -135,6 +145,8 @@ export async function hookEvolve(opts: {
     proposeOnly?: boolean;
     accept?: string;
     reject?: string;
+    json?: boolean;
+    ingest?: string;
 }): Promise<number | undefined> {
     await evolveHook(opts.name, opts);
     return undefined;

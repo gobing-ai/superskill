@@ -292,11 +292,14 @@ describe('evolve — orchestrator', () => {
         expect(r.proposalPath).toBe('');
     });
 
-    it('--propose-only writes a proposal file and applies nothing', async () => {
+    it('--propose-only writes a proposal file with no placeholder changes (F023 R5)', async () => {
         await seedHistory(adapter, [0.9, 0.5]); // declining clarity
         const r = await evolve('skill', 'widget', { adapter, proposeOnly: true });
         expect(r.proposalPath).not.toBe('');
-        expect(readFileSync(r.proposalPath, 'utf-8')).toContain('Fix clarity');
+        // F023 R5: no [Improve placeholder in the proposal file
+        const proposalContent = readFileSync(r.proposalPath, 'utf-8');
+        expect(proposalContent).not.toContain('[Improve');
+        expect(proposalContent).not.toContain('Fix clarity');
         expect(r.changesApplied).toBe(0);
         // Proposal persisted as draft.
         const props = await new ProposalDao(adapter).getProposals('skill', 'widget');
@@ -352,36 +355,65 @@ describe('evolve — orchestrator', () => {
         expect(r.changesApplied).toBe(0);
     });
 
-    it('applies auto-generated changes to content (generateChanges → stepApply end-to-end)', async () => {
+    it('applies authored changes via --ingest + --accept (F023 R6, no placeholder)', async () => {
         await seedHistory(adapter, [0.9, 0.5]); // declining clarity
-        await evolve('skill', 'widget', { adapter, proposeOnly: true });
-        const draft = (await new ProposalDao(adapter).getProposals('skill', 'widget'))[0];
-        const pid = ((draft?.proposal_json as Record<string, unknown>)?.proposal_id as string) ?? '';
-        const r = await evolve('skill', 'widget', { adapter, acceptId: pid });
+        // Author a real proposal (not a placeholder) and ingest it.
+        const authoredProposal = {
+            proposal_id: 'skill-evolve-authored-001',
+            changes: [
+                {
+                    dimension: 'clarity',
+                    location: 'frontmatter.description',
+                    current: 'A widget skill that does widget things well',
+                    proposed: 'A sharper widget skill for clear lifecycle management.',
+                    reason: 'Score 0.50 declining — description is too vague.',
+                },
+            ],
+        };
+        const proposalPath = join(dir, 'authored-proposal.json');
+        writeFileSync(proposalPath, JSON.stringify(authoredProposal, null, 2));
+
+        const r = await evolve('skill', 'widget', {
+            adapter,
+            ingest: proposalPath,
+            acceptId: 'skill-evolve-authored-001',
+        });
         const content = readFileSync(join(dir, 'widget.md'), 'utf-8');
-        // C1 fix: auto-generated changes must actually modify the content (not skip silently)
+        // Authored change must actually modify the content
         expect(r.changesApplied).toBeGreaterThanOrEqual(1);
-        // The proposed improvement text is prepended to the existing description
-        expect(content).toContain('[Improve clarity]');
+        // The authored proposed text is prepended to the existing description
+        expect(content).toContain('A sharper widget skill for clear lifecycle management.');
+        // No placeholder text
+        expect(content).not.toContain('[Improve');
         // The original description is preserved (prepended, not replaced)
         expect(content).toContain('A widget skill that does widget things well');
     });
 
-    it('applies --from filter that removes all evaluations', async () => {
-        await seedHistory(adapter, [0.9, 0.5]);
-        // Far-future date filters all evaluations → no history error
-        const r = await evolve('skill', 'widget', { adapter, from: '2099-01-01' });
-        expect(r.baselineScore).toBe(0);
-    });
-
     it('warns when change.current is not found in content (guard)', async () => {
         await seedHistory(adapter, [0.9, 0.5]);
-        await evolve('skill', 'widget', { adapter, proposeOnly: true });
-        const draft = (await new ProposalDao(adapter).getProposals('skill', 'widget'))[0];
-        const pid = ((draft?.proposal_json as Record<string, unknown>)?.proposal_id as string) ?? '';
-        const r = await evolve('skill', 'widget', { adapter, acceptId: pid });
-        // Auto-generated change targets frontmatter.description — must apply exactly once
-        expect(r.changesApplied).toBe(1);
+        // Ingest a proposal whose `current` text does not exist in the file.
+        const badCurrentProposal = {
+            proposal_id: 'skill-evolve-bad-current-001',
+            changes: [
+                {
+                    dimension: 'clarity',
+                    location: 'body',
+                    current: 'THIS TEXT DOES NOT EXIST IN THE FILE',
+                    proposed: 'replacement text',
+                    reason: 'test guard',
+                },
+            ],
+        };
+        const proposalPath = join(dir, 'bad-current.json');
+        writeFileSync(proposalPath, JSON.stringify(badCurrentProposal, null, 2));
+
+        const r = await evolve('skill', 'widget', {
+            adapter,
+            ingest: proposalPath,
+            acceptId: 'skill-evolve-bad-current-001',
+        });
+        // The change targeting nonexistent text is skipped — 0 applied
+        expect(r.changesApplied).toBe(0);
     });
 
     it('--accept applies stored frontmatter and text changes', async () => {

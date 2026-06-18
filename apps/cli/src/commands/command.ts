@@ -96,6 +96,8 @@ export async function commandEvolve(opts: {
     proposeOnly?: boolean;
     accept?: string;
     reject?: string;
+    json?: boolean;
+    ingest?: string;
 }): Promise<number | undefined> {
     const target = resolveTarget(opts);
     await evolve('command', opts.name, {
@@ -104,6 +106,8 @@ export async function commandEvolve(opts: {
         proposeOnly: opts.proposeOnly,
         acceptId: opts.accept,
         rejectId: opts.reject,
+        json: opts.json,
+        ingest: opts.ingest,
     });
     return undefined;
 }
@@ -159,6 +163,8 @@ export async function handleCommandEvolve(opts: {
     proposeOnly?: boolean;
     accept?: string;
     reject?: string;
+    json?: boolean;
+    ingest?: string;
 }): Promise<void> {
     await runOperation(() => commandEvolve(opts));
 }
