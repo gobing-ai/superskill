@@ -250,6 +250,7 @@ describe('generation seam — ingest-in (F023)', () => {
             adapter,
             ingest: proposalPath,
             acceptId: 'skill-evolve-test-001',
+            margin: -1, // gate disabled — test probes apply mechanics, not Δ
         });
 
         // The proposal was applied — changesApplied should be >= 1
@@ -285,6 +286,17 @@ describe('generation seam — ingest-in (F023)', () => {
 
         await expect(evolve('skill', 'widget', { adapter, ingest: proposalPath })).rejects.toThrow(
             /non-empty changes array/,
+        );
+    });
+
+    it('throws on invalid JSON (parse failure)', async () => {
+        await seedHistory(adapter);
+
+        const proposalPath = join(dir, 'malformed.json');
+        writeFileSync(proposalPath, '{broken json');
+
+        await expect(evolve('skill', 'widget', { adapter, ingest: proposalPath })).rejects.toThrow(
+            /Invalid JSON in proposal file/,
         );
     });
 

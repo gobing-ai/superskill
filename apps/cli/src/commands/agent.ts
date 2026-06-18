@@ -99,6 +99,7 @@ export async function agentEvolve(opts: {
     reject?: string;
     json?: boolean;
     ingest?: string;
+    margin?: number;
 }): Promise<number | undefined> {
     const target = resolveTarget(opts);
     await evolve('agent', opts.name, {
@@ -109,6 +110,7 @@ export async function agentEvolve(opts: {
         rejectId: opts.reject,
         json: opts.json,
         ingest: opts.ingest,
+        margin: opts.margin,
     });
     return undefined;
 }

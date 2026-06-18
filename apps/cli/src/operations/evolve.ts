@@ -1,7 +1,8 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { createInterface } from 'node:readline';
 import { echo, echoError } from '@gobing-ai/ts-utils';
+import { backupFile, restoreFromBackup } from '../content/backup';
 import { applyChange, type Change } from '../content/edit';
 import { parseFrontmatter } from '../content/frontmatter';
 import { resolveContentName, resolveContentPath } from '../content/identity';
@@ -13,6 +14,7 @@ import { EvaluationDao } from '../store/evaluations';
 import { ProposalDao } from '../store/proposals';
 import type { Target } from '../targets';
 import { evaluate } from './evaluate';
+import { validate } from './validate';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -31,6 +33,8 @@ export interface EvolveOptions {
     json?: boolean;
     /** Path to an agent-authored proposal JSON (ingest-in mode). */
     ingest?: string;
+    /** Δ-margin gate threshold: post must exceed baseline by at least this (default 0.05). */
+    margin?: number;
     /** Inject an already-open DbAdapter for testing. */
     adapter?: DbAdapter;
 }
@@ -51,6 +55,8 @@ export interface GenerationBrief {
     current_text: string;
     target_criterion: string;
     anchor: GenerationAnchor;
+    /** 16-hex sha256 of the anchor — the agent echoes this in the proposal so the gate detects drift (F024 R3). */
+    anchor_hash: string;
 }
 
 /** A single dimension's trend over time: earliest score, latest score, delta, and trend direction. */
@@ -80,6 +86,17 @@ export interface EvolveResult {
     delta: number;
     changesApplied: number;
     proposalPath: string;
+    /** True when the double-loop gate rejected the proposal (file restored, proposal stays draft). */
+    rejected?: boolean;
+    /** Human-readable reason the gate rejected the proposal (names the failed gate). */
+    rejectionReason?: string;
+}
+
+/** Skeptic persona verdict carried on an ingested proposal (F024 R4). Absent ⇒ treated as ok. */
+export interface SkepticVerdict {
+    ok: boolean;
+    violations?: string[];
+    note?: string;
 }
 // ── Pure Helpers ─────────────────────────────────────────────────────────────
 
@@ -226,6 +243,121 @@ function extractNegativeConstraints(description: unknown): string[] {
 }
 
 /**
+ * Compute a stable 16-hex-char sha256 hash of a generation anchor (F024 R3).
+ *
+ * The anchor is serialized with its keys in a fixed order so the hash is reproducible
+ * across CLI and agent: tampering with or summarising the frontmatter / criteria /
+ * constraints changes the hash, which the gate detects as an anchor violation.
+ */
+export function computeAnchorHash(anchor: GenerationAnchor): string {
+    const stable = JSON.stringify({
+        frontmatter: anchor.frontmatter,
+        rubric_criteria: anchor.rubric_criteria,
+        negative_constraints: anchor.negative_constraints,
+    });
+    const hasher = new Bun.CryptoHasher('sha256');
+    hasher.update(stable);
+    return hasher.digest('hex').slice(0, 16);
+}
+
+/**
+ * Recompute the baseline anchor hash for a content file's current frontmatter (F024 R3).
+ * Mirrors the anchor that `emitGenerationEnvelope` emits, so a faithful agent round-trip
+ * yields a matching `anchor_hash`. The rubric criterion is omitted (dimension-specific) —
+ * the anchor gate guards the frontmatter + negative constraints that bound the goal.
+ */
+function computeBaselineAnchorHash(content: string): string {
+    const parsed = parseFrontmatter(content);
+    const frontmatter = parsed.data;
+    return computeAnchorHash({
+        frontmatter,
+        rubric_criteria: '',
+        negative_constraints: extractNegativeConstraints(frontmatter.description),
+    });
+}
+
+// ── Double-Loop Gate (F024) ──────────────────────────────────────────────────
+
+/** Inputs to the double-loop gate. */
+interface GateInput {
+    type: ContentType;
+    resolvedPath: string;
+    postScore: number;
+    baselineScore: number;
+    margin: number;
+    /** anchor_hash carried on the ingested proposal (optional — absent ⇒ anchor gate skipped). */
+    ingestedAnchorHash?: string;
+    /** Baseline anchor hash recomputed from the current file (paired with ingestedAnchorHash). */
+    baselineAnchorHash?: string;
+    /** Skeptic persona verdict (optional — absent ⇒ treated as ok). */
+    skeptic?: SkepticVerdict;
+}
+
+/** Outcome of the double-loop gate: ok, plus the failed gate name + reason when ok=false. */
+interface GateResult {
+    ok: boolean;
+    failedGate?: 'deterministic' | 'delta-margin' | 'anchor' | 'skeptic';
+    reason?: string;
+}
+
+/**
+ * The double-loop gate (design §4). A proposal is accepted only if it passes ALL gates:
+ * 1. Deterministic — the rewritten file validates with zero errors (R1).
+ * 2. Δ-margin — postScore − baselineScore ≥ margin (R2).
+ * 3. Anchor — the ingested anchor_hash matches the recomputed baseline hash (R3).
+ * 4. Skeptic — the proposal carries no `skeptic.ok === false` veto (R4).
+ *
+ * Evaluated in order; the first failure wins and names the gate. No I/O beyond `validate`.
+ */
+async function runGate(input: GateInput): Promise<GateResult> {
+    // 1. Deterministic gate (R1): the rewritten file must validate with zero errors.
+    const validation = await validate(input.type, input.resolvedPath);
+    const errorCount = validation.findings.filter((f) => f.severity === 'error').length;
+    if (errorCount > 0) {
+        return {
+            ok: false,
+            failedGate: 'deterministic',
+            reason: `Deterministic gate failed: rewritten file has ${errorCount} validation error(s).`,
+        };
+    }
+
+    // 2. Δ-margin gate (R2): the post-aggregate must exceed baseline by at least the margin.
+    const delta = input.postScore - input.baselineScore;
+    if (delta < input.margin) {
+        return {
+            ok: false,
+            failedGate: 'delta-margin',
+            reason: `Δ-margin gate failed: Δ${delta >= 0 ? '+' : ''}${delta.toFixed(2)} < required margin ${input.margin.toFixed(2)}.`,
+        };
+    }
+
+    // 3. Anchor gate (R3): the ingested anchor_hash must match the recomputed baseline hash.
+    if (input.ingestedAnchorHash !== undefined && input.baselineAnchorHash !== undefined) {
+        if (input.ingestedAnchorHash !== input.baselineAnchorHash) {
+            return {
+                ok: false,
+                failedGate: 'anchor',
+                reason: `Anchor gate failed: anchor_hash mismatch (proposal ${input.ingestedAnchorHash}, baseline ${input.baselineAnchorHash}) — goal anchor was tampered or summarised.`,
+            };
+        }
+    }
+
+    // 4. Skeptic gate (R4): an explicit ok=false veto fails the gate.
+    if (input.skeptic && input.skeptic.ok === false) {
+        const violations = input.skeptic.violations?.length
+            ? ` Violations: ${input.skeptic.violations.join('; ')}.`
+            : '';
+        return {
+            ok: false,
+            failedGate: 'skeptic',
+            reason: `Skeptic gate failed: the Skeptic reported an anchor/invariant violation.${violations}`,
+        };
+    }
+
+    return { ok: true };
+}
+
+/**
  * Envelope-out: emit `{ trends, baseline, rubric, briefs }` as JSON to stdout.
  * Each brief carries the immutable goal anchor (frontmatter + rubric criterion + negative constraints) verbatim.
  * No DB write, no model call (design §2.2, invariant #1 + #6).
@@ -248,6 +380,14 @@ function emitGenerationEnvelope(
     const dimMap = new Map(Object.entries(baseline.dimensions));
     const rubricByName = new Map(rubric.dimensions.map((d) => [d.name, d]));
 
+    // R3: the anchor_hash the gate later checks is computed from the frontmatter + constraints
+    // (dimension-independent), so every brief shares the same baseline anchor hash.
+    const anchorHash = computeAnchorHash({
+        frontmatter,
+        rubric_criteria: '',
+        negative_constraints: negativeConstraints,
+    });
+
     const briefs: GenerationBrief[] = [];
     for (const dimName of dimMap.keys()) {
         const rubricDim = rubricByName.get(dimName);
@@ -261,6 +401,7 @@ function emitGenerationEnvelope(
                 rubric_criteria: rubricDim?.criterion ?? '',
                 negative_constraints: negativeConstraints,
             },
+            anchor_hash: anchorHash,
         });
         void dimData; // dimData available for future use; not needed for the brief shape
     }
@@ -305,9 +446,14 @@ async function ingestProposal(
         throw Object.assign(new Error(`Cannot read proposal file: ${ingestPath}`), { code: 2 });
     }
 
-    let parsed: { proposal_id?: string; changes: ProposedChange[] };
+    let parsed: { proposal_id?: string; changes: ProposedChange[]; anchor_hash?: string; skeptic?: SkepticVerdict };
     try {
-        parsed = JSON.parse(raw) as { proposal_id?: string; changes: ProposedChange[] };
+        parsed = JSON.parse(raw) as {
+            proposal_id?: string;
+            changes: ProposedChange[];
+            anchor_hash?: string;
+            skeptic?: SkepticVerdict;
+        };
     } catch {
         throw Object.assign(new Error(`Invalid JSON in proposal file: ${ingestPath}`), { code: 1 });
     }
@@ -333,6 +479,8 @@ async function ingestProposal(
     const proposalJson = {
         proposal_id: proposalId,
         changes: parsed.changes,
+        ...(parsed.anchor_hash !== undefined ? { anchor_hash: parsed.anchor_hash } : {}),
+        ...(parsed.skeptic !== undefined ? { skeptic: parsed.skeptic } : {}),
     };
 
     const proposalRecord = await proposalDao.insertProposal({
@@ -350,16 +498,23 @@ async function ingestProposal(
 
     echo(`Proposal ${proposalId} ingested and persisted (ID: ${proposalRecord.id}).`);
 
-    // If --accept <id> is also provided, apply the ingested proposal.
+    // If --accept <id> is also provided, apply the ingested proposal through the double-loop gate.
     if (opts?.acceptId) {
+        // R6: back up before applying so a gate failure can restore the file byte-identical.
+        const backupPath = await backupFile(resolvedPath);
         const appliedCount = await stepApply(parsed.changes, resolvedPath, proposalRecord.id, db);
-        const verdict = await stepVerify(type, name, resolvedPath, baselineScore, proposalRecord.id, opts, db);
+        const verdict = await stepVerify(type, name, resolvedPath, baselineScore, proposalRecord.id, opts, db, {
+            backupPath,
+            ingestedAnchorHash: parsed.anchor_hash,
+            skeptic: parsed.skeptic,
+        });
         return {
             baselineScore,
             postScore: verdict.postScore,
             delta: verdict.delta,
-            changesApplied: appliedCount,
+            changesApplied: verdict.rejected ? 0 : appliedCount,
             proposalPath,
+            ...(verdict.rejected ? { rejected: true, rejectionReason: verdict.reason } : {}),
         };
     }
 
@@ -640,6 +795,16 @@ async function stepApply(
     return applied;
 }
 
+/** Gate inputs threaded into stepVerify when an apply must pass the double-loop gate (F024). */
+interface GateContext {
+    /** Pre-apply backup path; the file is restored from this when a gate fails. */
+    backupPath: string;
+    /** anchor_hash carried on the ingested proposal (optional). */
+    ingestedAnchorHash?: string;
+    /** Skeptic persona verdict (optional). */
+    skeptic?: SkepticVerdict;
+}
+
 async function stepVerify(
     type: ContentType,
     name: string,
@@ -648,10 +813,13 @@ async function stepVerify(
     proposalDbId: number,
     opts: EvolveOptions | undefined,
     db: DbAdapter,
-): Promise<{ postScore: number; delta: number }> {
+    gate?: GateContext,
+): Promise<{ postScore: number; delta: number; rejected?: boolean; reason?: string }> {
     let postScore = baselineScore;
+    let postReport: QualityReport | undefined;
     try {
-        // R10: persist the post-evolution evaluation with operation 'evolve' (reuses the same store adapter).
+        // R10/R7: persist the post-evolution evaluation with operation 'evolve' (reuses the same store adapter).
+        // The gate sits ON TOP of this row — it never bypasses the closed-loop verify write (invariant #6).
         const report = await evaluate(type, filePath, {
             target: opts?.target,
             adapter: db,
@@ -660,17 +828,56 @@ async function stepVerify(
         });
         if (!report) throw new Error('evaluate returned null in heuristic mode');
         postScore = report.aggregate;
-
-        // R10: link the proposal back to the verifying evaluation row.
-        const verifyEval = await new EvaluationDao(db).getLatestEvaluation(type, name);
-        if (verifyEval) {
-            await new ProposalDao(db).updateProposalStatus(proposalDbId, 'accepted', { verify_id: verifyEval.id });
-        }
+        postReport = report;
     } catch {
         echoError('Cannot re-evaluate after changes.');
     }
 
     const delta = postScore - baselineScore;
+
+    // F024: when a gate context is supplied, the proposal is accepted only if it passes ALL gates.
+    if (gate) {
+        const margin = opts?.margin ?? 0.05;
+        // The backup holds the pre-apply (baseline) content — recompute the baseline anchor from it.
+        const baselineAnchorHash =
+            gate.ingestedAnchorHash !== undefined
+                ? computeBaselineAnchorHash(readFileSync(gate.backupPath, 'utf-8'))
+                : undefined;
+        const gateResult = await runGate({
+            type,
+            resolvedPath: filePath,
+            postScore: postReport ? postScore : baselineScore,
+            baselineScore,
+            margin,
+            ingestedAnchorHash: gate.ingestedAnchorHash,
+            baselineAnchorHash,
+            skeptic: gate.skeptic,
+        });
+
+        if (!gateResult.ok) {
+            // R5: restore from backup, keep the proposal 'draft' (NOT accepted), surface the reason.
+            await restoreFromBackup(gate.backupPath, filePath);
+            await new ProposalDao(db).updateProposalStatus(proposalDbId, 'draft');
+            echoError(`Gate rejected proposal — ${gateResult.reason} File restored; proposal stays draft.`);
+            return { postScore: baselineScore, delta: 0, rejected: true, reason: gateResult.reason };
+        }
+    }
+
+    // On pass (or no gate): keep the existing accept + verify_id linkage (R7).
+    try {
+        const verifyEval = await new EvaluationDao(db).getLatestEvaluation(type, name);
+        if (verifyEval) {
+            await new ProposalDao(db).updateProposalStatus(proposalDbId, 'accepted', { verify_id: verifyEval.id });
+        }
+    } catch {
+        echoError('Cannot link verify evaluation.');
+    }
+
+    // R6: on a clean pass, delete the pre-apply backup so no residue remains.
+    if (gate) {
+        rmSync(gate.backupPath, { force: true });
+    }
+
     const pctStr = baselineScore > 0 ? `, ${delta >= 0 ? '+' : ''}${((delta / baselineScore) * 100).toFixed(1)}%` : '';
     echo(
         `Score: ${baselineScore.toFixed(2)} → ${postScore.toFixed(2)} (${delta >= 0 ? '+' : ''}${delta.toFixed(2)}${pctStr})`,
@@ -781,21 +988,32 @@ export async function evolve(type: ContentType, name: string, opts?: EvolveOptio
             return { baselineScore, postScore: baselineScore, delta: 0, changesApplied: 0, proposalPath: '' };
         }
         let acceptedFromStore: ProposedChange[] = [];
+        let storedAnchorHash: string | undefined;
+        let storedSkeptic: SkepticVerdict | undefined;
         try {
             const json =
                 typeof target.proposal_json === 'string' ? JSON.parse(target.proposal_json) : target.proposal_json;
             acceptedFromStore = (json?.changes as ProposedChange[]) ?? [];
+            storedAnchorHash = json?.anchor_hash as string | undefined;
+            storedSkeptic = json?.skeptic as SkepticVerdict | undefined;
         } catch {
             acceptedFromStore = [];
         }
+        // R6: back up before applying so the gate can restore on failure.
+        const backupPath = await backupFile(resolvedPath);
         const appliedCount = await stepApply(acceptedFromStore, resolvedPath, target.id, db);
-        const verdict = await stepVerify(type, contentName, resolvedPath, baselineScore, target.id, opts, db);
+        const verdict = await stepVerify(type, contentName, resolvedPath, baselineScore, target.id, opts, db, {
+            backupPath,
+            ingestedAnchorHash: storedAnchorHash,
+            skeptic: storedSkeptic,
+        });
         return {
             baselineScore,
             postScore: verdict.postScore,
             delta: verdict.delta,
-            changesApplied: appliedCount,
+            changesApplied: verdict.rejected ? 0 : appliedCount,
             proposalPath: '',
+            ...(verdict.rejected ? { rejected: true, rejectionReason: verdict.reason } : {}),
         };
     }
 

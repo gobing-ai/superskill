@@ -98,6 +98,7 @@ export async function magentEvolve(opts: {
     reject?: string;
     json?: boolean;
     ingest?: string;
+    margin?: number;
 }): Promise<number | undefined> {
     const target = resolveTarget(opts);
     await evolve('magent', opts.name, {
@@ -108,6 +109,7 @@ export async function magentEvolve(opts: {
         rejectId: opts.reject,
         json: opts.json,
         ingest: opts.ingest,
+        margin: opts.margin,
     });
     return undefined;
 }

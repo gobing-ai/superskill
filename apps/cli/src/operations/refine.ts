@@ -1,6 +1,6 @@
-import { rmSync } from 'node:fs';
 import { createInterface } from 'node:readline';
 import { echo, echoError } from '@gobing-ai/ts-utils';
+import { backupFile, restoreFromBackup } from '../content/backup';
 import { applyChange, type Change } from '../content/edit';
 import { parseFrontmatter } from '../content/frontmatter';
 import { resolveContentPath } from '../content/identity';
@@ -130,24 +130,6 @@ export function generateAutoChange(finding: Finding, content: string): Change | 
     }
 
     return null;
-}
-
-// ── Backup / Restore ─────────────────────────────────────────────────────────
-
-async function backupFile(filePath: string): Promise<string> {
-    let backupPath = `${filePath}.bak`;
-    if (await Bun.file(backupPath).exists()) {
-        const ts = new Date().toISOString().replace(/[:.]/g, '').slice(0, 15);
-        backupPath = `${filePath}.bak.${ts}`;
-    }
-    await Bun.write(backupPath, Bun.file(filePath));
-    return backupPath;
-}
-
-async function restoreFromBackup(backupPath: string, originalPath: string): Promise<void> {
-    await Bun.write(originalPath, Bun.file(backupPath));
-    // R12: delete the backup after a successful restore so quit leaves no residue.
-    rmSync(backupPath, { force: true });
 }
 
 // ── Interactive Mode ─────────────────────────────────────────────────────────

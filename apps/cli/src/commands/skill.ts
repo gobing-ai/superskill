@@ -98,6 +98,7 @@ export async function skillEvolve(opts: {
     reject?: string;
     json?: boolean;
     ingest?: string;
+    margin?: number;
 }): Promise<number | undefined> {
     const target = resolveTarget(opts);
     await evolve('skill', opts.name, {
@@ -108,6 +109,7 @@ export async function skillEvolve(opts: {
         rejectId: opts.reject,
         json: opts.json,
         ingest: opts.ingest,
+        margin: opts.margin,
     });
     return undefined;
 }

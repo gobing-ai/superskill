@@ -66,6 +66,7 @@ async function evolveHook(
         reject?: string;
         json?: boolean;
         ingest?: string;
+        margin?: number;
     },
 ) {
     const target = resolveTarget(opts);
@@ -77,6 +78,7 @@ async function evolveHook(
         rejectId: opts.reject,
         json: opts.json,
         ingest: opts.ingest,
+        margin: opts.margin,
     });
 }
 

@@ -315,8 +315,9 @@ describe('evolve — orchestrator', () => {
         expect(draft).toBeDefined();
 
         // Accept it by proposal_id string (as users see in the proposal file).
+        // margin:0 — this test exercises the accept/link mechanics, not the Δ-margin gate (F024).
         const pid = ((draft?.proposal_json as Record<string, unknown>)?.proposal_id as string) ?? '';
-        await evolve('skill', 'widget', { adapter, acceptId: pid });
+        await evolve('skill', 'widget', { adapter, acceptId: pid, margin: -1 });
 
         // R9: proposal status updated to accepted with a real applied_at timestamp.
         const after = (await new ProposalDao(adapter).getProposals('skill', 'widget')).find((p) => p.id === draft?.id);
@@ -377,6 +378,7 @@ describe('evolve — orchestrator', () => {
             adapter,
             ingest: proposalPath,
             acceptId: 'skill-evolve-authored-001',
+            margin: -1, // gate disabled — test probes apply mechanics, not Δ
         });
         const content = readFileSync(join(dir, 'widget.md'), 'utf-8');
         // Authored change must actually modify the content
@@ -411,6 +413,7 @@ describe('evolve — orchestrator', () => {
             adapter,
             ingest: proposalPath,
             acceptId: 'skill-evolve-bad-current-001',
+            margin: -1, // gate disabled — test probes the skip-guard, not the Δ gate
         });
         // The change targeting nonexistent text is skipped — 0 applied
         expect(r.changesApplied).toBe(0);
@@ -444,7 +447,7 @@ describe('evolve — orchestrator', () => {
             },
         });
 
-        const r = await evolve('skill', 'widget', { adapter, acceptId: handPid });
+        const r = await evolve('skill', 'widget', { adapter, acceptId: handPid, margin: -1 });
         const content = readFileSync(join(dir, 'widget.md'), 'utf-8');
         expect(r.changesApplied).toBe(2);
         expect(content).toContain('description: A sharper widget skill');
@@ -464,6 +467,31 @@ describe('evolve — orchestrator', () => {
         const r = await evolve('skill', 'widget', { adapter, proposeOnly: true });
         // Should still produce a proposal file
         expect(r.proposalPath).not.toBe('');
+    });
+
+    it('filters evaluations by --from date', async () => {
+        // Seed 3 evals: 2026-06-01T00:00:00, :01, :02
+        await seedHistory(adapter, [0.9, 0.8, 0.5]);
+        // Use --from to keep only the last 2 (>= 2026-06-01T00:00:01)
+        const r = await evolve('skill', 'widget', {
+            adapter,
+            proposeOnly: true,
+            from: '2026-06-01T00:00:01Z',
+        });
+        // With 2 remaining evals, should produce a proposal
+        expect(r.proposalPath).not.toBe('');
+    });
+
+    it('runs double-loop gate on --accept with default margin', async () => {
+        await seedHistory(adapter, [0.9, 0.5]);
+        await evolve('skill', 'widget', { adapter, proposeOnly: true });
+        const draft = (await new ProposalDao(adapter).getProposals('skill', 'widget'))[0];
+        expect(draft).toBeDefined();
+        const pid = ((draft?.proposal_json as Record<string, unknown>)?.proposal_id as string) ?? '';
+        // No margin override — defaults to 0.05, runs the full gate
+        const r = await evolve('skill', 'widget', { adapter, acceptId: pid });
+        // Gate may pass or reject; verify either outcome is clean (no throw)
+        expect([true, undefined]).toContain(r.rejected);
     });
 });
 

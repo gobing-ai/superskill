@@ -98,6 +98,7 @@ export async function commandEvolve(opts: {
     reject?: string;
     json?: boolean;
     ingest?: string;
+    margin?: number;
 }): Promise<number | undefined> {
     const target = resolveTarget(opts);
     await evolve('command', opts.name, {
@@ -108,6 +109,7 @@ export async function commandEvolve(opts: {
         rejectId: opts.reject,
         json: opts.json,
         ingest: opts.ingest,
+        margin: opts.margin,
     });
     return undefined;
 }
