@@ -279,6 +279,7 @@ export async function refine(type: ContentType, nameOrPath: string, opts?: Refin
     let preDimensions: Record<string, DimensionScore>;
     try {
         const report = await evaluate(type, resolvedPath ?? nameOrPath, { target: resolvedTarget });
+        if (!report) throw new Error('evaluate returned null in heuristic mode');
         preScore = report.aggregate;
         preDimensions = report.dimensions;
     } catch {
@@ -355,7 +356,9 @@ export async function refine(type: ContentType, nameOrPath: string, opts?: Refin
     // Step 7: Re-evaluate
     let postScore: number;
     try {
-        postScore = (await evaluate(type, resolvedPath ?? nameOrPath, { target: resolvedTarget })).aggregate;
+        const postReport = await evaluate(type, resolvedPath ?? nameOrPath, { target: resolvedTarget });
+        if (!postReport) throw new Error('evaluate returned null in heuristic mode');
+        postScore = postReport.aggregate;
     } catch {
         echoError('Cannot re-evaluate after fixes.');
         return { preScore, postScore: preScore, delta: 0, fixesApplied, fixesSkipped };

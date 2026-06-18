@@ -7,6 +7,7 @@ import { scaffold } from '../operations/scaffold';
 import { formatValidationResult, validate } from '../operations/validate';
 import {
     addAutoOption,
+    addEvaluateOptions,
     addEvolveOptions,
     addJsonOption,
     addSaveOption,
@@ -37,10 +38,17 @@ async function validateHook(nameOrPath: string, opts: { target?: string; strict?
     const target = resolveTarget(opts);
     return validate('hook', nameOrPath, { target, strict: opts.strict });
 }
-
-async function evaluateHook(nameOrPath: string, opts: { target?: string; save?: boolean }) {
+async function evaluateHook(
+    nameOrPath: string,
+    opts: { target?: string; save?: boolean; rubric?: string; ingest?: string },
+) {
     const target = resolveTarget(opts);
-    return evaluate('hook', nameOrPath, { target, save: opts.save });
+    return evaluate('hook', nameOrPath, {
+        target,
+        save: opts.save,
+        ...(opts.rubric ? { rubric: opts.rubric } : {}),
+        ...(opts.ingest ? { ingest: opts.ingest } : {}),
+    });
 }
 
 async function refineHook(nameOrPath: string, opts: { target?: string; auto?: boolean; save?: boolean }) {
@@ -97,10 +105,14 @@ export async function hookEvaluate(opts: {
     target?: string;
     json?: boolean;
     save?: boolean;
+    rubric?: string;
+    ingest?: string;
 }): Promise<number | undefined> {
     const report = await evaluateHook(opts.nameOrPath, opts);
-    const output = formatEvaluationReport(report, opts.json);
-    echo(`${output}`);
+    if (report) {
+        const output = formatEvaluationReport(report, opts.json);
+        echo(`${output}`);
+    }
     return undefined;
 }
 
@@ -146,11 +158,26 @@ export function registerHook(program: Command): void {
         await runOperation(() => hookValidate({ nameOrPath, ...opts }));
     });
 
-    addSaveOption(
-        addTargetOption(addJsonOption(cmd.command('evaluate <nameOrPath>').description('Evaluate hook quality'))),
-    ).action(async (nameOrPath: string, opts: { target?: string; json?: boolean; save?: boolean }) => {
-        await runOperation(() => hookEvaluate({ nameOrPath, ...opts }));
-    });
+    addEvaluateOptions(
+        addSaveOption(
+            addTargetOption(
+                addJsonOption(
+                    cmd
+                        .command('evaluate <nameOrPath>')
+                        .description(
+                            'Evaluate hook quality (use --rubric --json for envelope, --ingest --save to persist scores)',
+                        ),
+                ),
+            ),
+        ),
+    ).action(
+        async (
+            nameOrPath: string,
+            opts: { target?: string; json?: boolean; save?: boolean; rubric?: string; ingest?: string },
+        ) => {
+            await runOperation(() => hookEvaluate({ nameOrPath, ...opts }));
+        },
+    );
 
     addSaveOption(
         addTargetOption(addAutoOption(cmd.command('refine <nameOrPath>').description('Evaluate and auto-fix a hook'))),

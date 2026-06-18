@@ -7,6 +7,7 @@ import { scaffold } from '../operations/scaffold';
 import { formatValidationResult, validate } from '../operations/validate';
 import {
     addAutoOption,
+    addEvaluateOptions,
     addEvolveOptions,
     addJsonOption,
     addSaveOption,
@@ -58,11 +59,20 @@ export async function skillEvaluate(opts: {
     target?: string;
     json?: boolean;
     save?: boolean;
+    rubric?: string;
+    ingest?: string;
 }): Promise<number | undefined> {
     const target = resolveTarget(opts);
-    const report = await evaluate('skill', opts.nameOrPath, { target, save: opts.save });
-    const output = formatEvaluationReport(report, opts.json);
-    echo(`${output}`);
+    const report = await evaluate('skill', opts.nameOrPath, {
+        target,
+        save: opts.save,
+        ...(opts.rubric ? { rubric: opts.rubric } : {}),
+        ...(opts.ingest ? { ingest: opts.ingest } : {}),
+    });
+    if (report) {
+        const output = formatEvaluationReport(report, opts.json);
+        echo(`${output}`);
+    }
     return undefined;
 }
 
@@ -117,7 +127,7 @@ export async function handleSkillValidate(
 /** Run skill evaluate as a CLI action. */
 export async function handleSkillEvaluate(
     nameOrPath: string,
-    opts: { target?: string; json?: boolean; save?: boolean },
+    opts: { target?: string; json?: boolean; save?: boolean; rubric?: string; ingest?: string },
 ): Promise<void> {
     await runOperation(() => skillEvaluate({ nameOrPath, ...opts }));
 }
@@ -150,8 +160,18 @@ export function registerSkill(program: Command): void {
         addTargetOption(addJsonOption(cmd.command('validate <nameOrPath>').description('Validate a skill file'))),
     ).action(handleSkillValidate);
 
-    addSaveOption(
-        addTargetOption(addJsonOption(cmd.command('evaluate <nameOrPath>').description('Evaluate skill quality'))),
+    addEvaluateOptions(
+        addSaveOption(
+            addTargetOption(
+                addJsonOption(
+                    cmd
+                        .command('evaluate <nameOrPath>')
+                        .description(
+                            'Evaluate skill quality (use --rubric --json for envelope, --ingest --save to persist scores)',
+                        ),
+                ),
+            ),
+        ),
     ).action(handleSkillEvaluate);
 
     addSaveOption(

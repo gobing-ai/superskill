@@ -31,8 +31,8 @@
     },
     "scripts": {
         "start": "bun run src/index.ts",
-        "build": "bun build src/index.ts --outfile dist/index.js --target bun && bun run ../../scripts/builder.ts postbuild dist/index.js",
-        "prepublishOnly": "bun run build && cp ../../README.md README.md && rm -rf templates && cp -r src/templates templates && rm -rf rubrics && cp -r src/rubrics rubrics",
+        "build": "bun build src/index.ts --outfile dist/index.js --target bun && bun run ../../scripts/builder.ts postbuild dist/index.js && rm -rf templates rubrics && cp -r src/templates templates && cp -r src/rubrics rubrics",
+        "prepublishOnly": "bun run build && cp ../../README.md README.md",
         "test": "NODE_ENV=test bun test --reporter=dots",
         "typecheck": "tsc --noEmit"
     },

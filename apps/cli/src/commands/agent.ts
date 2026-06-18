@@ -7,6 +7,7 @@ import { scaffold } from '../operations/scaffold';
 import { formatValidationResult, validate } from '../operations/validate';
 import {
     addAutoOption,
+    addEvaluateOptions,
     addEvolveOptions,
     addJsonOption,
     addSaveOption,
@@ -58,11 +59,21 @@ export async function agentEvaluate(opts: {
     target?: string;
     json?: boolean;
     save?: boolean;
+    rubric?: string;
+    ingest?: string;
 }): Promise<number | undefined> {
     const target = resolveTarget(opts);
-    const report = await evaluate('agent', opts.nameOrPath, { target, save: opts.save });
-    const output = formatEvaluationReport(report, opts.json);
-    echo(`${output}`);
+    const report = await evaluate('agent', opts.nameOrPath, {
+        target,
+        save: opts.save,
+        ...(opts.rubric ? { rubric: opts.rubric } : {}),
+        ...(opts.ingest ? { ingest: opts.ingest } : {}),
+    });
+    // Envelope-out mode returns null (envelope already written to stdout)
+    if (report) {
+        const output = formatEvaluationReport(report, opts.json);
+        echo(`${output}`);
+    }
     return undefined;
 }
 
@@ -125,6 +136,8 @@ export async function handleAgentEvaluate(opts: {
     target?: string;
     json?: boolean;
     save?: boolean;
+    rubric?: string;
+    ingest?: string;
 }): Promise<void> {
     await runOperation(() => agentEvaluate(opts));
 }
@@ -167,11 +180,26 @@ export function registerAgent(program: Command): void {
         await handleAgentValidate({ nameOrPath, ...opts });
     });
 
-    addSaveOption(
-        addTargetOption(addJsonOption(cmd.command('evaluate <nameOrPath>').description('Evaluate agent quality'))),
-    ).action(async (nameOrPath: string, opts: { target?: string; json?: boolean; save?: boolean }) => {
-        await handleAgentEvaluate({ nameOrPath, ...opts });
-    });
+    addEvaluateOptions(
+        addSaveOption(
+            addTargetOption(
+                addJsonOption(
+                    cmd
+                        .command('evaluate <nameOrPath>')
+                        .description(
+                            'Evaluate agent quality (use --rubric --json for envelope, --ingest --save to persist scores)',
+                        ),
+                ),
+            ),
+        ),
+    ).action(
+        async (
+            nameOrPath: string,
+            opts: { target?: string; json?: boolean; save?: boolean; rubric?: string; ingest?: string },
+        ) => {
+            await handleAgentEvaluate({ nameOrPath, ...opts });
+        },
+    );
 
     addSaveOption(
         addTargetOption(

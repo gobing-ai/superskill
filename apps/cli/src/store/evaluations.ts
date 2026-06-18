@@ -10,8 +10,11 @@ export interface EvaluationInput {
     aggregate: number;
     dimensions: Record<string, { score: number; note: string }>;
     file_hash?: string;
+    /** Scoring method: 'heuristic' (default) or 'rubric'. F022 scorer seam. */
+    scorer?: string;
+    /** Rubric version stamped on rubric-scored rows. Null/absent for heuristic rows. */
+    rubric_version?: number;
 }
-
 /** Full evaluation row as returned from the store. */
 export interface Evaluation extends EvaluationInput {
     id: number;
@@ -42,6 +45,8 @@ export class EvaluationDao extends EntityDao<typeof evaluations.table, typeof ev
             aggregate: record.aggregate,
             dimensions: JSON.stringify(record.dimensions),
             ...(record.file_hash !== undefined ? { file_hash: record.file_hash } : {}),
+            ...(record.scorer !== undefined ? { scorer: record.scorer } : {}),
+            ...(record.rubric_version !== undefined ? { rubric_version: record.rubric_version } : {}),
         } as Parameters<EvaluationDao['create']>[0]);
         return row.id;
     }
@@ -96,6 +101,8 @@ function deserializeEvaluation(row: Record<string, unknown>): Evaluation {
         aggregate: row.aggregate as number,
         dimensions: JSON.parse(row.dimensions as string),
         file_hash: (row.file_hash as string | null) ?? undefined,
+        scorer: (row.scorer as string | null) ?? undefined,
+        rubric_version: (row.rubric_version as number | null) ?? undefined,
         created_at: row.createdAt as number,
     };
 }

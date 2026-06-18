@@ -7,6 +7,7 @@ import { scaffold } from '../operations/scaffold';
 import { formatValidationResult, validate } from '../operations/validate';
 import {
     addAutoOption,
+    addEvaluateOptions,
     addEvolveOptions,
     addJsonOption,
     addSaveOption,
@@ -58,11 +59,20 @@ export async function magentEvaluate(opts: {
     target?: string;
     json?: boolean;
     save?: boolean;
+    rubric?: string;
+    ingest?: string;
 }): Promise<number | undefined> {
     const target = resolveTarget(opts);
-    const report = await evaluate('magent', opts.nameOrPath, { target, save: opts.save });
-    const output = formatEvaluationReport(report, opts.json);
-    echo(`${output}`);
+    const report = await evaluate('magent', opts.nameOrPath, {
+        target,
+        save: opts.save,
+        ...(opts.rubric ? { rubric: opts.rubric } : {}),
+        ...(opts.ingest ? { ingest: opts.ingest } : {}),
+    });
+    if (report) {
+        const output = formatEvaluationReport(report, opts.json);
+        echo(`${output}`);
+    }
     return undefined;
 }
 
@@ -125,6 +135,8 @@ export async function handleMagentEvaluate(opts: {
     target?: string;
     json?: boolean;
     save?: boolean;
+    rubric?: string;
+    ingest?: string;
 }): Promise<void> {
     await runOperation(() => magentEvaluate(opts));
 }
@@ -167,11 +179,26 @@ export function registerMagent(program: Command): void {
         await handleMagentValidate({ nameOrPath, ...opts });
     });
 
-    addSaveOption(
-        addTargetOption(addJsonOption(cmd.command('evaluate <nameOrPath>').description('Evaluate magent quality'))),
-    ).action(async (nameOrPath: string, opts: { target?: string; json?: boolean; save?: boolean }) => {
-        await handleMagentEvaluate({ nameOrPath, ...opts });
-    });
+    addEvaluateOptions(
+        addSaveOption(
+            addTargetOption(
+                addJsonOption(
+                    cmd
+                        .command('evaluate <nameOrPath>')
+                        .description(
+                            'Evaluate magent quality (use --rubric --json for envelope, --ingest --save to persist scores)',
+                        ),
+                ),
+            ),
+        ),
+    ).action(
+        async (
+            nameOrPath: string,
+            opts: { target?: string; json?: boolean; save?: boolean; rubric?: string; ingest?: string },
+        ) => {
+            await handleMagentEvaluate({ nameOrPath, ...opts });
+        },
+    );
 
     addSaveOption(
         addTargetOption(

@@ -1,0 +1,10 @@
+{
+    "rubric_version": 1,
+    "dimensions": {
+        "completeness": { "score": 0.8, "note": "All sections present" },
+        "clarity": { "score": 0.85, "note": "Clear instructions" },
+        "trigger-accuracy": { "score": 0.9, "note": "Precise trigger conditions" },
+        "anti-hallucination": { "score": 0.75, "note": "Verification steps included" },
+        "conciseness": { "score": 0.7, "note": "Some redundancy in instructions" }
+    }
+}

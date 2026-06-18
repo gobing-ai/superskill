@@ -14,6 +14,10 @@ export const evaluations = defineTable('evaluations', {
     aggregate: real('aggregate').notNull(),
     dimensions: text('dimensions').notNull(),
     file_hash: text('file_hash'),
+    /** Scoring method: 'heuristic' (default) or 'rubric' (F022 scorer seam). Null for pre-F022 rows. */
+    scorer: text('scorer'),
+    /** Rubric version stamped on rubric-scored rows. Null for heuristic rows. */
+    rubric_version: integer('rubric_version'),
     ...standardColumns,
 });
 

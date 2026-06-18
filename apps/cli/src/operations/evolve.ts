@@ -37,6 +37,8 @@ export interface TrendEntry {
     latest: number;
     delta: number;
     trend: 'improving' | 'declining' | 'flat';
+    /** True when a rubric version boundary exists in the evaluation history (F022 R8). */
+    version_boundary?: boolean;
 }
 
 /** A concrete change proposed by the evolve operation. */
@@ -67,6 +69,11 @@ export interface EvolveResult {
  * - `'declining'` if delta ≤ -0.05
  * - `'flat'` if |delta| < 0.05
  *
+ * Version-aware (F022 R8): evaluations are partitioned by rubric_version. Trends are
+ * computed within each partition only — a rubric version change is never compared as a
+ * regression. When multiple version partitions exist, every TrendEntry carries
+ * `version_boundary: true` so callers can flag the boundary.
+ *
  * Sorted: declining first, then flat, then improving; within same trend, lowest latest first.
  */
 export function computeTrends(evaluations: Evaluation[]): TrendEntry[] {
@@ -74,31 +81,57 @@ export function computeTrends(evaluations: Evaluation[]): TrendEntry[] {
 
     const ordered = [...evaluations].sort((a, b) => a.created_at - b.created_at);
 
-    const dims = new Map<string, { earliest: number; earliestDate: number; latest: number; latestDate: number }>();
+    // Partition by rubric_version (null/undefined = heuristic group). F022 R8:
+    // only compare scores within the same rubric version, or flag a version boundary.
+    const partitions = new Map<string, Evaluation[]>();
     for (const record of ordered) {
-        const dimsData = record.dimensions as Record<string, { score: number }> | undefined;
-        if (!dimsData || typeof dimsData !== 'object') continue;
-        for (const [dim, { score }] of Object.entries(dimsData)) {
-            const existing = dims.get(dim);
-            if (!existing) {
-                dims.set(dim, {
-                    earliest: score,
-                    earliestDate: record.created_at,
-                    latest: score,
-                    latestDate: record.created_at,
-                });
-            } else if (record.created_at > existing.latestDate) {
-                existing.latest = score;
-                existing.latestDate = record.created_at;
-            }
+        const key = record.rubric_version !== undefined ? String(record.rubric_version) : 'heuristic';
+        const group = partitions.get(key);
+        if (group) {
+            group.push(record);
+        } else {
+            partitions.set(key, [record]);
         }
     }
 
+    const hasVersionBoundary = partitions.size > 1;
     const trends: TrendEntry[] = [];
-    for (const [dimension, { earliest, latest }] of dims) {
-        const delta = earliest === latest ? 0 : latest - earliest;
-        const trend = delta >= 0.05 ? 'improving' : delta <= -0.05 ? 'declining' : 'flat';
-        trends.push({ dimension, earliest, latest, delta, trend });
+
+    for (const group of partitions.values()) {
+        if (group.length < 2) continue;
+
+        const dims = new Map<string, { earliest: number; earliestDate: number; latest: number; latestDate: number }>();
+        for (const record of group) {
+            const dimsData = record.dimensions as Record<string, { score: number }> | undefined;
+            if (!dimsData || typeof dimsData !== 'object') continue;
+            for (const [dim, { score }] of Object.entries(dimsData)) {
+                const existing = dims.get(dim);
+                if (!existing) {
+                    dims.set(dim, {
+                        earliest: score,
+                        earliestDate: record.created_at,
+                        latest: score,
+                        latestDate: record.created_at,
+                    });
+                } else if (record.created_at > existing.latestDate) {
+                    existing.latest = score;
+                    existing.latestDate = record.created_at;
+                }
+            }
+        }
+
+        for (const [dimension, { earliest, latest }] of dims) {
+            const delta = earliest === latest ? 0 : latest - earliest;
+            const trend = delta >= 0.05 ? 'improving' : delta <= -0.05 ? 'declining' : 'flat';
+            trends.push({
+                dimension,
+                earliest,
+                latest,
+                delta,
+                trend,
+                ...(hasVersionBoundary ? { version_boundary: true } : {}),
+            });
+        }
     }
 
     trends.sort((a, b) => {
@@ -442,6 +475,7 @@ async function stepVerify(
             save: true,
             operation: 'evolve',
         });
+        if (!report) throw new Error('evaluate returned null in heuristic mode');
         postScore = report.aggregate;
 
         // R10: link the proposal back to the verifying evaluation row.
@@ -515,7 +549,9 @@ export async function evolve(type: ContentType, name: string, opts?: EvolveOptio
     // Get baseline report
     let baselineReport: QualityReport;
     try {
-        baselineReport = await evaluate(type, resolvedPath, { target: opts?.target });
+        const report = await evaluate(type, resolvedPath, { target: opts?.target });
+        if (!report) throw new Error('evaluate returned null in heuristic mode');
+        baselineReport = report;
     } catch {
         echoError('Cannot evaluate content.');
         return { baselineScore, postScore: baselineScore, delta: 0, changesApplied: 0, proposalPath: '' };

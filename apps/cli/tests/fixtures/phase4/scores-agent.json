@@ -1,0 +1,10 @@
+{
+    "rubric_version": 1,
+    "dimensions": {
+        "completeness": { "score": 0.85, "note": "All required sections present and well-structured" },
+        "role-clarity": { "score": 0.9, "note": "Specific, non-generic persona with clear scope" },
+        "tool-selection": { "score": 0.75, "note": "Good tool list but missing some relevant tools" },
+        "skill-linkage": { "score": 0.8, "note": "References skills appropriately" },
+        "model-fit": { "score": 0.7, "note": "Model choice adequate but could be optimized" }
+    }
+}

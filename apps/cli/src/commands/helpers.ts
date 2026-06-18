@@ -37,6 +37,13 @@ export function addSaveOption(cmd: Command): Command {
     return cmd.option('--save', 'Persist result to data store');
 }
 
+/** Add evaluate-specific options (--rubric, --ingest) for the scorer seam (F022). */
+export function addEvaluateOptions(cmd: Command): Command {
+    return cmd
+        .option('--rubric <file>', 'Rubric file path (envelope-out mode with --json: emit scoring work order)')
+        .option('--ingest <file>', 'Scores JSON path (ingest-in mode with --save: persist agent-scored results)');
+}
+
 /** Add --strict option (validate). */
 export function addStrictOption(cmd: Command): Command {
     return cmd.option('--strict', 'Enable all optional checks');
