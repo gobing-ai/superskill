@@ -14,4 +14,4 @@ coverageSkipTestFiles = true
 # Scaffolds rely on @SCOPE/* workspace aliases that resolve through their own
 # node_modules — `pretest` runs scripts/ensure-scaffold-installs.ts to set
 # those up on first run.
-pathIgnorePatterns = ["vendors/**", "build/**", "dist/**", "node_modules/**"]
+pathIgnorePatterns = ["vendors/**", "build/**", "dist/**", "node_modules/**", "plugins/cc/skills/**/scripts", "plugins/cc/skills/**/tests"]

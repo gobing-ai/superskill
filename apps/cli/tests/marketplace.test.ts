@@ -161,6 +161,7 @@ describe('listResolvablePlugins', () => {
     });
 
     it('returns empty when no manifest found', () => {
-        expect(listResolvablePlugins(undefined)).toEqual([]);
+        tmpDir = mkdtempSync('superskill-mp-');
+        expect(listResolvablePlugins(tmpDir)).toEqual([]);
     });
 });
