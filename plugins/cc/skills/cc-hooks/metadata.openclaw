@@ -1,0 +1,7 @@
+name: cc-hooks
+description: "Create Claude Code plugin hooks: PreToolUse, PostToolUse, Stop,
+  SessionStart hooks for validation, automation, and context loading. Covers
+  prompt-based vs command hooks, patterns, migration from basic to advanced
+  hooks."
+version: 1.0.0
+emoji: 🛠️

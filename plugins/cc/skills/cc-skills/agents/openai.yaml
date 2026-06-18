@@ -1,0 +1,12 @@
+name: cc-skills
+description: Create, modify, evaluate, evolve, and package Agent skills. This
+  skill should be used when you want to scaffold a new skill directory, validate
+  skill structure across multiple platforms, generate platform-specific
+  companion files, migrate existing rd2 skills, or run a governed evolution
+  workflow with proposal history and rollback.
+version: 3.0.0
+icon: 🛠️
+category: debugging
+tags:
+  - code
+  - workflow

@@ -1,0 +1,8 @@
+name: cc-agents
+description: Use this skill when the user asks to 'create a new agent',
+  'scaffold an agent', 'evaluate agent quality', 'validate agent file', 'refine
+  agent definition', 'adapt agent', 'cross-platform agent', or 'plan agent
+  evolution'. Creates, validates, evaluates, refines, adapts, and supports
+  longitudinal evolution workflows for subagent definitions across 6 platforms.
+version: 1.0.0
+emoji: 🛠️

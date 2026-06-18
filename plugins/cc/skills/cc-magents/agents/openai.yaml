@@ -1,0 +1,10 @@
+name: cc-magents
+description: Create, validate, evaluate, refine, evolve, and adapt main agent
+  customization files across coding-agent platforms using a capability-aware
+  model.
+version: 5.0.0
+icon: 🛠️
+category: debugging
+tags:
+  - code
+  - workflow

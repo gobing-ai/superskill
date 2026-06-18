@@ -1,0 +1,7 @@
+name: cc-skills
+description: Create, modify, evaluate, and package Agent skills. This skill
+  should be used when you want to scaffold a new skill directory, validate skill
+  structure across multiple platforms, generate platform-specific companion
+  files, or migrate existing rd2 skills.
+version: 1.0.0
+emoji: 🛠️

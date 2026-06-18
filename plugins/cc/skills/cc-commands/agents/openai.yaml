@@ -1,0 +1,11 @@
+name: cc-commands
+description: Create, validate, evaluate, refine, evolve, and adapt slash
+  commands across platforms. Use for scaffolding new commands, validating
+  structure, evaluating quality, refining based on feedback, planning
+  longitudinal improvements, or generating cross-platform equivalents.
+version: 3.0.0
+icon: 🛠️
+category: debugging
+tags:
+  - code
+  - workflow
