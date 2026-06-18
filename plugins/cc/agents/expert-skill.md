@@ -28,6 +28,21 @@ You are an **expert skill specialist** that routes requests to the correct `cc:c
 
 The `cc:cc-skills` skill implements all operations via the **`superskill skill` CLI + LLM content improvement**. Read `plugins/cc/skills/cc-skills/references/workflows.md` for step-by-step workflows including LLM content improvement for scaffold, refine, and evaluate operations.
 
+## Personas
+
+The **evaluate** and **evolve** operations drive Phase 4 seams via four personas. Each persona has a defined I/O contract with the CLI.
+
+| Persona | Role | Input | Output |
+|---------|------|-------|--------|
+| **Scorer** | Rubric judge — scores each dimension against the criterion | Envelope JSON from `evaluate --rubric --json` | `{ rubric_version, dimensions: { name: { score, note } } }` |
+| **Author** | Rewriter — rewrites content per dimension from generation briefs | Envelope JSON from `evolve --propose-only --json` | `ProposedChange[]` with real `proposed` text + `anchor_hash` |
+| **Skeptic** | Refuter — checks proposal against verbatim goal anchor for violations/omissions | Proposal + verbatim original instructions + negative constraints | `{ ok, violations[] }` |
+| **Judge** | Tournament selector — pairwise comparison when multiple candidates exist | Multiple candidate proposals + verbatim goal anchor | Winning proposal ID |
+
+### Goal-Anchor Verbatim Discipline
+
+Persona prompts MUST pass the original instructions + negative constraints **verbatim** to Skeptic/Judge. No compaction, no summarization, no paraphrasing of the goal anchor. The CLI gate (F024) enforces via `anchor_hash` — if the agent strips or alters the anchor, the hash won't match and the gate rejects. Pass the original frontmatter and negative constraints verbatim — do not summarize or compact.
+
 ## Skill Invocation
 
 Invoke `cc:cc-skills` with the appropriate operation using your platform's native skill mechanism:

@@ -34,6 +34,19 @@ You are an **expert subagent specialist** that routes requests to the correct `c
 
 The `cc:cc-agents` skill documents operation semantics and LLM content improvement. Lifecycle operations execute via the **`superskill agent`** CLI. Read `plugins/cc/skills/cc-agents/references/workflows.md` for step-by-step workflows including LLM content improvement.
 
+## Personas
+
+The evaluate and evolve workflows drive Phase 4 seams via four personas. Each persona has a fixed I/O contract — the CLI gate validates the shape and (for evolve) the goal anchor.
+
+| Persona | Role | Input | Output |
+|---------|------|-------|--------|
+| **Scorer** | Rubric judge — scores each dimension against its criterion | Envelope JSON from `evaluate --rubric --json`: `{ type, content_name, target, content, rubric, baseline }` | `{ rubric_version, dimensions: { name: { score, note } } }` |
+| **Author** | Rewriter — rewrites content per dimension from generation briefs | Envelope JSON from `evolve --propose-only --json`: `{ trends, baseline, rubric, briefs }` | `ProposedChange[]` with real `proposed` text + `anchor_hash` |
+| **Skeptic** | Refuter — checks proposal against the verbatim goal anchor for violations/omissions | Proposal + verbatim original instructions + negative constraints | `{ ok, violations[] }` |
+| **Judge** | Tournament selector — pairwise comparison when multiple candidates exist | Multiple candidate proposals + verbatim goal anchor | Winning proposal ID |
+
+**Goal-anchor verbatim discipline:** Persona prompts pass the original instructions + negative constraints verbatim to Skeptic and Judge; no compaction. The CLI gate enforces via `anchor_hash` — if the agent strips or alters the anchor, the hash won't match and the gate rejects.
+
 ## Skill Invocation
 
 Use the global `superskill agent` CLI for lifecycle operations. `cc:cc-agents` remains the skill namespace for platforms that need direct skill fallback:

@@ -37,9 +37,9 @@ This skill provides a complete pipeline for slash command development:
 |-----------|---------|--------|
 | **scaffold** | Create new command from template | `superskill command scaffold` |
 | **validate** | Check structure and frontmatter | `superskill command validate` |
-| **evaluate** | Score quality across dimensions | `superskill command evaluate` |
+| **evaluate** | Score quality via two-call seam (envelope-out → Scorer → ingest-in) | `superskill command evaluate` |
 | **refine** | Fix issues and improve quality | `superskill command refine` |
-| **evolve** | Analyze, propose, accept, and reject longitudinal improvements | `superskill command evolve` |
+| **evolve** | Propose/accept longitudinal improvements via two-call seam (envelope-out → Author → Skeptic → Judge → ingest-in) | `superskill command evolve` |
 
 ## When to Use
 
@@ -59,14 +59,18 @@ superskill command scaffold my-command --output ./commands
 # Validate command structure
 superskill command validate ./commands/my-command.md
 
-# Evaluate command quality
-superskill command evaluate ./commands/my-command.md --save
+# Evaluate: envelope-out → Scorer → ingest-in
+superskill command evaluate ./commands/my-command.md --rubric <file> --json
+# ... Scorer persona scores offline ...
+superskill command evaluate ./commands/my-command.md --ingest <scores.json> --save
 
 # Refine command based on evaluation
 superskill command refine ./commands/my-command.md --auto --save
 
-# Analyze and propose longitudinal improvements
-superskill command evolve my-command --propose-only
+# Evolve: envelope-out → Author → Skeptic → Judge → ingest-in
+superskill command evolve my-command --propose-only --json
+# ... Author rewrites, Skeptic refutes, Judge selects ...
+superskill command evolve my-command --ingest <proposal.json> --accept <id>
 ```
 
 ## Core Principles
@@ -189,6 +193,24 @@ LLM content improvement is embedded in the normal workflow for every operation; 
 - Success/failure criteria
 - Mandatory checklist items
 - Retry policies
+
+### Two-Call Seam Pattern (Evaluate & Evolve)
+
+The `evaluate` and `evolve` operations use a **two-call seam pattern** that separates the CLI envelope from offline persona-driven work. The deterministic heuristic path remains as a fallback, but the seam pattern is the primary mode.
+
+**Evaluate (Scorer seam):**
+1. **Envelope-out:** `superskill command evaluate <name> --rubric <file> --json` — emits `{ type, content_name, target, content, rubric, baseline }` as JSON. No scoring, no DB write.
+2. **Scorer persona:** reads the envelope, scores each dimension against the rubric criterion, produces `{ rubric_version, dimensions: { name: { score, note } } }`.
+3. **Ingest-in:** `superskill command evaluate <name> --ingest <scores.json> --save` — validates agent-produced scores against rubric schema, persists as evaluation row.
+
+**Evolve (Generation seam):**
+1. **Envelope-out:** `superskill command evolve <name> --propose-only --json` — emits `{ trends, baseline, rubric, briefs }` as JSON. Each brief carries the immutable goal anchor (frontmatter + rubric criterion + negative constraints) **verbatim** + an `anchor_hash`. No DB write, no model call.
+2. **Author persona:** reads briefs, rewrites the content per dimension, produces `ProposedChange[]` with real `proposed` text + `anchor_hash`.
+3. **Skeptic persona:** receives the proposal + the **verbatim** goal anchor, checks for violations/omissions, produces `{ ok, violations[] }`.
+4. **Judge persona (if multiple candidates):** pairwise tournament comparison, selects the winner.
+5. **Ingest-in:** `superskill command evolve <name> --ingest <proposal.json> --accept <id>` — CLI double-loop gate (F024) decides: deterministic validate-zero-errors + Δ-margin + anchor-hash match + skeptic veto. Failing any gate → proposal stays `draft`, file restored.
+
+**Goal-anchor verbatim discipline:** Pass the original frontmatter and negative constraints verbatim to Skeptic and Judge — do not summarize. The CLI gate enforces via `anchor_hash`.
 
 ## Evaluation Dimensions (10)
 

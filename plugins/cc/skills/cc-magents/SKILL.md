@@ -49,9 +49,9 @@ Main-agent support is capability-based. Each platform declares:
 | --- | --- | --- |
 | add / synthesize | `superskill magent scaffold <name>` | Create new platform-native config from a template |
 | validate | `superskill magent validate <nameOrPath>` | Validate document and registry structure |
-| evaluate | `superskill magent evaluate <nameOrPath>` | Score quality across capability-aware dimensions |
+| evaluate | `superskill magent evaluate <nameOrPath>` | Two-call seam: envelope-out (`--rubric --json`) → Scorer → ingest-in (`--ingest --save`) |
 | refine | `superskill magent refine <nameOrPath>` | Recommend native splits, scoping, safety, and evidence improvements |
-| evolve | `superskill magent evolve <name>` | Propose registry and fixture improvements |
+| evolve | `superskill magent evolve <name>` | Two-call seam: envelope-out (`--propose-only --json`) → Author → Skeptic → Judge → ingest-in (`--ingest --accept`) |
 
 ## Quick Start
 
@@ -59,14 +59,18 @@ Main-agent support is capability-based. Each platform declares:
 # Create a new platform-native config from a template
 superskill magent scaffold general-agent --output AGENTS.md
 
-# Score quality and persist the result
-superskill magent evaluate AGENTS.md --save
+# Evaluate: envelope-out → Scorer → ingest-in
+superskill magent evaluate AGENTS.md --rubric <file> --json
+# ... Scorer persona scores offline ...
+superskill magent evaluate AGENTS.md --ingest <scores.json> --save
 
 # Preview and apply refinements non-interactively
 superskill magent refine AGENTS.md --auto --save
 
-# Propose registry/fixture improvements
-superskill magent evolve AGENTS.md --propose-only
+# Evolve: envelope-out → Author → Skeptic → Judge → ingest-in
+superskill magent evolve AGENTS.md --propose-only --json
+# ... Author rewrites, Skeptic refutes, Judge selects ...
+superskill magent evolve AGENTS.md --ingest <proposal.json> --accept <id>
 ```
 
 JSON output is supported on every command via `--json` for automation.
@@ -77,13 +81,15 @@ JSON output is supported on every command via `--json` for automation.
 | --- | --- | --- |
 | **Add** | template selection -> scaffold -> validate -> evaluate | `superskill magent scaffold` -> `superskill magent validate` -> `superskill magent evaluate` |
 | **Validate** | parse -> registry check -> structural lint | `superskill magent validate` |
-| **Evaluate** | capability-aware scoring across dimensions | `superskill magent evaluate` |
+| **Evaluate** | envelope-out → Scorer scores offline → ingest-in (two-call seam) | `superskill magent evaluate --rubric --json` → Scorer → `superskill magent evaluate --ingest --save` |
 | **Refine** | auto-suggest -> review -> persist | `superskill magent refine --auto --save` |
-| **Evolve** | longitudinal analysis -> proposal -> accept | `superskill magent evolve --propose-only` -> `superskill magent evolve --accept <id>` |
+| **Evolve** | envelope-out → Author → Skeptic → (Judge) → ingest-in (two-call seam) | `superskill magent evolve --propose-only --json` → Author/Skeptic/Judge → `superskill magent evolve --ingest --accept <id>` |
 
 Branching:
 - IF validate fails -> stop and surface registry/parse errors
 - IF evaluate score below threshold -> route to `refine`
+
+**Goal-anchor verbatim discipline.** The evolve seam passes each brief's goal anchor — original frontmatter, rubric criterion, and negative constraints — **verbatim** to the Author, Skeptic, and Judge personas. Do not summarize, compact, or paraphrase the anchor. The CLI double-loop gate (F024) enforces this via `anchor_hash`: if a persona strips or alters the anchor, the hash will not match and the gate rejects the proposal.
 
 See [references/workflows.md](references/workflows.md) for full step tables and
 [references/platform-compatibility.md](references/platform-compatibility.md) for the platform capability matrix.

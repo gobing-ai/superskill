@@ -39,9 +39,9 @@ This skill accepts **5 operations**:
 |-----------|---------|--------|
 | **add** | Scaffold a new skill | `superskill skill scaffold` |
 | **validate** | Check skill structure and frontmatter | `superskill skill validate` |
-| **evaluate** | Validate and score skill quality | `superskill skill evaluate` |
+| **evaluate** | Validate and score skill quality (rubric-driven two-call seam) | `superskill skill evaluate` |
 | **refine** | Fix issues and improve quality | `superskill skill refine` |
-| **evolve** | Analyze and propose longitudinal improvements | `superskill skill evolve` |
+| **evolve** | Propose and apply longitudinal improvements (persona-driven two-call seam) | `superskill skill evolve` |
 
 ## Workflow Design
 
@@ -90,6 +90,26 @@ Each workflow follows this pattern:
 - Mandatory checklist items
 - Retry policies
 
+### Two-Call Seam Pattern
+
+The **evaluate** and **evolve** operations use a two-call seam pattern that separates deterministic CLI envelope emission from persona-driven LLM judgment. This is the primary workflow — the deterministic heuristic path remains as a fallback when no rubric or persona is available.
+
+**Evaluate seam (Scorer):**
+1. **Envelope-out:** `superskill skill evaluate <name> --rubric <file> --json` — emits `{ type, content_name, target, content, rubric, baseline }` as JSON. No scoring, no DB write.
+2. **Scorer persona:** reads the envelope, scores each dimension against the rubric criterion, produces `{ rubric_version, dimensions: { name: { score, note } } }`.
+3. **Ingest-in:** `superskill skill evaluate <name> --ingest <scores.json> --save` — validates agent-produced scores against rubric schema, persists as evaluation row (tagged `scorer: rubric`).
+
+**Evolve seam (Author → Skeptic → Judge):**
+1. **Envelope-out:** `superskill skill evolve <name> --propose-only --json` — emits `{ trends, baseline, rubric, briefs }` as JSON. Each brief carries the immutable goal anchor (frontmatter + rubric criterion + negative constraints) **verbatim** + an `anchor_hash`. No DB write, no model call.
+2. **Author persona:** reads briefs, rewrites content per dimension, produces `ProposedChange[]` with real `proposed` text + `anchor_hash`.
+3. **Skeptic persona:** receives the proposal + the **verbatim** goal anchor, checks for violations/omissions, produces `{ ok, violations[] }`.
+4. **Judge persona (if multiple candidates):** pairwise tournament comparison, selects the winner.
+5. **Ingest-in:** `superskill skill evolve <name> --ingest <proposal.json> --accept <id>` — CLI double-loop gate decides: deterministic validate-zero-errors + Δ-margin + anchor-hash match + skeptic veto. Failing any gate → proposal stays `draft`, file restored.
+
+### Goal-Anchor Verbatim Discipline
+
+Persona prompts MUST pass the original instructions + negative constraints **verbatim** to Skeptic/Judge. No compaction, no summarization, no paraphrasing of the goal anchor. The CLI gate (F024) enforces via `anchor_hash` — if the agent strips or alters the anchor, the hash won't match and the gate rejects. Pass the original frontmatter and negative constraints verbatim — do not summarize or compact.
+
 ## Quick Start
 
 ```sh
@@ -99,14 +119,18 @@ superskill skill scaffold my-skill --output ./skills
 # Add with a description
 superskill skill scaffold my-skill --output ./skills --description "Skill description"
 
-# Evaluate: Validate skill structure (Two-Tier: Structural + Quality)
-superskill skill evaluate ./skills/my-skill --save
+# Evaluate: envelope-out → Scorer → ingest-in
+superskill skill evaluate ./skills/my-skill --rubric <file> --json
+# ... Scorer persona scores offline ...
+superskill skill evaluate ./skills/my-skill --ingest <scores.json> --save
 
 # Refine: Apply deterministic fixes (fuzzy checks via invoking agent checklist)
 superskill skill refine ./skills/my-skill --auto --save
 
-# Evolve: Analyze and propose longitudinal improvements
-superskill skill evolve my-skill --propose-only
+# Evolve: envelope-out → Author → Skeptic → Judge → ingest-in
+superskill skill evolve my-skill --propose-only --json
+# ... Author rewrites, Skeptic refutes, Judge selects ...
+superskill skill evolve my-skill --ingest <proposal.json> --accept <id>
 ```
 
 ## When to Use

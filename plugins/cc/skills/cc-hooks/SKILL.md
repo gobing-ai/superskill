@@ -66,6 +66,46 @@ superskill hook validate hooks/my-hooks.yaml
 See [cross-platform.md](references/cross-platform.md) for the full event crosswalk and tool name mapping.
 See [platform-limits.md](references/platform-limits.md) for what's NOT portable and why.
 
+## Quality Operations
+
+Hook configs support quality scoring and longitudinal evolution via the **two-call seam pattern**: the CLI emits a JSON envelope; a persona scores or rewrites offline; the CLI ingests the result. The CLI never scores or generates inline — that work belongs to the persona.
+
+### Evaluate (Scorer Seam)
+
+Score a hook config against a rubric in two calls.
+
+1. **Envelope-out** — emit the hook content + rubric as JSON (no scoring, no DB write):
+   ```bash
+   superskill hook evaluate <nameOrPath> --rubric <file> --json
+   ```
+   Returns `{ type, content_name, target, content, rubric, baseline }`.
+2. **Scorer persona** — read the envelope, score each dimension against its rubric criterion, emit `{ rubric_version, dimensions: { name: { score, note } } }`.
+3. **Ingest-in** — validate the agent-produced scores against the rubric schema and persist as an evaluation row:
+   ```bash
+   superskill hook evaluate <nameOrPath> --ingest <scores.json> --save
+   ```
+
+### Evolve (Generation Seam)
+
+Propose improvements from evaluation history in two calls.
+
+1. **Envelope-out** — emit trends, baseline, rubric, and generation briefs as JSON (no DB write, no model call):
+   ```bash
+   superskill hook evolve <name> --propose-only --json
+   ```
+   Each brief carries the immutable goal anchor (frontmatter + rubric criterion + negative constraints) **verbatim** plus an `anchor_hash`.
+2. **Author persona** — read the briefs, rewrite the hook content per dimension, emit `ProposedChange[]` with real `proposed` text + `anchor_hash`.
+3. **Skeptic persona** — receive the proposal + the **verbatim** goal anchor, check for violations or omissions, emit `{ ok, violations[] }`.
+4. **Judge persona** *(if multiple candidates)* — pairwise tournament comparison, select the winner.
+5. **Ingest-in** — the CLI double-loop gate decides: deterministic validate-zero-errors + Δ-margin + anchor-hash match + skeptic veto. Failing any gate leaves the proposal in `draft` and restores the file:
+   ```bash
+   superskill hook evolve <name> --ingest <proposal.json> --accept <id>
+   ```
+
+### Goal-Anchor Verbatim Discipline
+
+Pass the original frontmatter and negative constraints **verbatim** to the Skeptic and Judge — do not summarize, compact, or paraphrase. The CLI gate enforces via `anchor_hash`: if the anchor is stripped or altered, the hash won't match and the gate rejects the proposal. A paraphrased anchor defeats the double-loop gate; this is non-negotiable.
+
 ## Hook Events
 
 | Event | When | Use For |

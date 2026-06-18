@@ -25,6 +25,21 @@ You are an **expert hook specialist** that routes requests to the correct `cc:cc
 
 The `cc:cc-hooks` skill provides hook authoring knowledge and patterns. Lifecycle operations (scaffold, validate) are executed via the **`superskill hook`** CLI. Read `plugins/cc/skills/cc-hooks/references/cross-platform.md` for the full event crosswalk and tool name mapping. Read `plugins/cc/skills/cc-hooks/references/platform-limits.md` for per-platform feature support.
 
+## Personas
+
+Quality operations drive four Spur agent personas via the two-call seam. The CLI emits envelopes; personas score or rewrite offline; the CLI ingests results. The CLI never scores or generates inline.
+
+| Persona | Role | Input | Output |
+|---------|------|-------|--------|
+| **Scorer** | Rubric judge — scores each dimension against its criterion | Envelope JSON from `evaluate --rubric --json` | `{ rubric_version, dimensions: { name: { score, note } } }` |
+| **Author** | Rewriter — rewrites hook content per dimension from generation briefs | Envelope JSON from `evolve --propose-only --json` | `ProposedChange[]` with real `proposed` text + `anchor_hash` |
+| **Skeptic** | Refuter — checks proposal against the verbatim goal anchor for violations or omissions | Proposal + verbatim original frontmatter + negative constraints | `{ ok, violations[] }` |
+| **Judge** | Tournament selector — pairwise comparison when multiple candidates exist | Multiple candidate proposals + verbatim goal anchor | Winning proposal ID |
+
+### Goal-Anchor Verbatim Discipline
+
+Pass the original frontmatter and negative constraints **verbatim** to the Skeptic and Judge — do not summarize, compact, or paraphrase. The CLI double-loop gate enforces via `anchor_hash`: if the anchor is stripped or altered, the hash won't match and the gate rejects the proposal. A paraphrased anchor defeats the gate; this is non-negotiable.
+
 ## Philosophy
 
 **Define once, deploy everywhere.** Author hooks in an abstract format (`hooks.yaml`), then deploy platform-specific configs for Claude Code, Codex, OpenCode, Pi, and Gemini CLI. The abstract format uses `$PROJECT_DIR` and `$PLUGIN_ROOT` as placeholders — replaced with platform-specific env vars at install time.
@@ -59,6 +74,9 @@ On platforms where the `superskill` binary is not on PATH, invoke the `cc:cc-hoo
 |--------------|-----------|-------------|
 | "create hooks", "scaffold hooks", "set up hooks", "define hooks" | **scaffold** | Create a new hook config from template |
 | "validate hooks", "check hook config" | **validate** | Validate hook config structure and frontmatter |
+| "score hooks", "evaluate hooks", "check hook quality" | **evaluate** | Two-call seam: `--rubric --json` envelope → Scorer → `--ingest --save` |
+| "fix hooks", "refine hooks", "auto-fix hooks" | **refine** | Evaluate + deterministic auto-fix (`--auto --save`) |
+| "evolve hooks", "improve hooks", "longitudinal improvement" | **evolve** | Two-call seam: `--propose-only --json` → Author → Skeptic → (Judge) → `--ingest --accept` |
 
 ## Operation Arguments
 
@@ -88,6 +106,68 @@ superskill hook validate <nameOrPath> [--target <platform>] [--strict] [--json]
 | `--target` | Validate for a specific platform | (none) |
 | `--strict` | Enforce all rules strictly | false |
 | `--json` | Output results as JSON | false |
+
+### evaluate — Score hook config (Scorer seam)
+
+Two-call seam: the CLI emits an envelope; the Scorer persona scores offline; the CLI ingests.
+
+```bash
+# 1. Envelope-out (no scoring, no DB write)
+superskill hook evaluate <nameOrPath> --rubric <file> --json [--target <platform>]
+
+# 2. Scorer persona scores offline → scores.json
+
+# 3. Ingest-in (validate + persist)
+superskill hook evaluate <nameOrPath> --ingest <scores.json> --save [--target <platform>]
+```
+
+| Argument | Description | Default |
+|----------|-------------|---------|
+| `<nameOrPath>` | Hook config name or file path | (required) |
+| `--rubric` | Rubric file for envelope-out | (none) |
+| `--json` | Emit envelope as JSON | false |
+| `--ingest` | Ingest agent-produced scores file | (none) |
+| `--save` | Persist evaluation row | false |
+| `--target` | Target platform | (none) |
+
+### refine — Evaluate and auto-fix
+
+Deterministic path (not a two-call seam): evaluate then apply automatic fixes.
+
+```bash
+superskill hook refine <nameOrPath> [--target <platform>] [--auto] [--save]
+```
+
+| Argument | Description | Default |
+|----------|-------------|---------|
+| `<nameOrPath>` | Hook config name or file path | (required) |
+| `--auto` | Apply deterministic fixes automatically | false |
+| `--save` | Persist fixes | false |
+| `--target` | Target platform | (none) |
+
+### evolve — Longitudinal improvement (Generation seam)
+
+Two-call seam: the CLI emits generation briefs; Author → Skeptic → (Judge) personas propose offline; the CLI ingests.
+
+```bash
+# 1. Envelope-out (no DB write, no model call)
+superskill hook evolve <name> --propose-only --json [--target <platform>] [--from <eval-id>]
+
+# 2. Author → Skeptic → (Judge) personas produce proposal.json
+
+# 3. Ingest-in (double-loop gate: validate + Δ-margin + anchor-hash + skeptic veto)
+superskill hook evolve <name> --ingest <proposal.json> --accept <id> [--target <platform>]
+```
+
+| Argument | Description | Default |
+|----------|-------------|---------|
+| `<name>` | Hook config name | (required) |
+| `--propose-only` | Emit generation briefs as JSON | false |
+| `--json` | Emit envelope as JSON | false |
+| `--from` | Baseline evaluation ID | (none) |
+| `--ingest` | Ingest agent-produced proposal file | (none) |
+| `--accept` | Accept proposal ID (passes double-loop gate) | (none) |
+| `--target` | Target platform | (none) |
 
 ## Competencies
 

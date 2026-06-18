@@ -43,14 +43,18 @@ superskill agent scaffold my-agent --output ./agents
 # Check structure
 superskill agent validate agents/my-agent.md
 
-# Score quality
-superskill agent evaluate agents/my-agent.md --save
+# Score quality (two-call seam: envelope → Scorer → ingest)
+superskill agent evaluate agents/my-agent.md --rubric <rubric.yaml> --json > envelope.json
+# ... Scorer persona scores envelope.json → scores.json ...
+superskill agent evaluate agents/my-agent.md --ingest scores.json --save
 
 # Fix issues
 superskill agent refine agents/my-agent.md --auto --save
 
-# Analyze and propose longitudinal improvements
-superskill agent evolve agents/my-agent --propose-only
+# Evolve (two-call seam: envelope → Author → Skeptic → Judge → ingest)
+superskill agent evolve agents/my-agent --propose-only --json > briefs.json
+# ... Author persona rewrites → proposal.json; Skeptic refutes; Judge picks winner ...
+superskill agent evolve agents/my-agent --ingest proposal.json --accept <id>
 ```
 
 ## Workflows
@@ -67,9 +71,9 @@ This skill accepts **5 operations**:
 |-----------|---------|--------|
 | **scaffold** | Create a new agent from template | `superskill agent scaffold` |
 | **validate** | Check agent structure | `superskill agent validate` |
-| **evaluate** | Score agent quality (10 dimensions) | `superskill agent evaluate` |
+| **evaluate** | Score agent quality (rubric-driven two-call seam) | `superskill agent evaluate` |
 | **refine** | Fix issues and improve quality | `superskill agent refine` |
-| **evolve** | Analyze, propose, apply, and rollback deterministic improvements | `superskill agent evolve` |
+| **evolve** | Propose and apply longitudinal improvements (two-call seam with personas) | `superskill agent evolve` |
 
 ## Pipeline Architecture
 
@@ -103,14 +107,13 @@ Check agent structure and frontmatter:
 
 ### Evaluate Workflow
 
-Score agent quality across 10 dimensions:
+Score agent quality via the two-call seam (rubric-driven, persona-scored):
 
-1. Run `superskill agent evaluate <agent.md> --save`
-2. Review per-dimension scores and findings
-3. Profile auto-detection selects thin-wrapper or specialist weights
-4. Use `--json` to get machine-readable scores
-5. Target grade: A (90-100) or B (80-89) for production agents
-6. Grade C or below: proceed to refine
+1. **Envelope-out:** `superskill agent evaluate <agent.md> --rubric <rubric.yaml> --json` — emits `{ type, content_name, target, content, rubric, baseline }` as JSON. No scoring, no DB write. Pipe to a file (e.g. `envelope.json`).
+2. **Scorer persona:** read the envelope, score each dimension against its rubric criterion, produce `{ rubric_version, dimensions: { name: { score, note } } }`. Write to `scores.json`.
+3. **Ingest-in:** `superskill agent evaluate <agent.md> --ingest scores.json --save` — validates agent-produced scores against the rubric schema and persists as an evaluation row (tagged `scorer: rubric`).
+
+Target grade: A (90-100) or B (80-89) for production agents. Grade C or below: proceed to refine. Profile auto-detection (thin-wrapper vs specialist) still selects the rubric weighting.
 
 ### Refine Workflow
 
@@ -122,12 +125,15 @@ Fix quality issues and apply improvements:
 
 ### Evolve Workflow
 
-Use the longitudinal maintenance loop when quality drifts over time:
+Longitudinal improvement via the two-call seam (persona-driven, gate-checked):
 
-1. Run `superskill agent evolve <name> --propose-only` to analyze and propose improvements
-2. Apply a saved proposal with `superskill agent evolve <name> --accept <id>`
-3. Reject a proposal with `superskill agent evolve <name> --reject <id>`
-4. Use `--from` to analyze changes since a specific version
+1. **Envelope-out:** `superskill agent evolve <name> --propose-only --json` — emits `{ trends, baseline, rubric, briefs }` as JSON. Each brief carries the immutable goal anchor (frontmatter + rubric criterion + negative constraints) **verbatim**, plus an `anchor_hash`. No DB write, no model call. Pipe to `briefs.json`.
+2. **Author persona:** read the briefs, rewrite the content per dimension, produce `ProposedChange[]` with real `proposed` text + `anchor_hash`. Write to `proposal.json`.
+3. **Skeptic persona:** receive the proposal + the **verbatim** goal anchor, check for violations/omissions, produce `{ ok, violations[] }`.
+4. **Judge persona (if multiple candidates):** pairwise tournament comparison against the verbatim goal anchor, select the winner.
+5. **Ingest-in:** `superskill agent evolve <name> --ingest proposal.json --accept <id>` — the CLI double-loop gate decides: deterministic validate-zero-errors + Δ-margin + anchor-hash match + skeptic veto. Failing any gate leaves the proposal in `draft` and restores the file. Reject with `--reject <id>`; analyze changes since a version with `--from`.
+
+**Goal-anchor verbatim discipline:** Pass the original frontmatter and negative constraints verbatim to Skeptic and Judge — do not summarize, compact, or paraphrase. The CLI gate enforces this via `anchor_hash`; stripping the anchor pre-call will cause the gate to reject.
 
 ## Core Principles
 
