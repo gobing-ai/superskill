@@ -74,11 +74,14 @@ async function dropTags(ver: string) {
 }
 
 /**
- * Prepend `#!/usr/bin/env bun` to a bundle so the bin entry is directly
- * executable. Bun build emits plain JS without a shebang.
+ * Ensure a bundle starts with a `#!/usr/bin/env bun` shebang so the bin entry
+ * is directly executable. Idempotent: `bun build --target bun` already emits
+ * the shebang, so only prepend when missing (otherwise a duplicate shebang on
+ * line 2 causes a syntax error at runtime).
  */
 async function postbuild(outfile: string) {
     const content = await Bun.file(outfile).text();
+    if (content.startsWith('#!/usr/bin/env bun\n')) return;
     await Bun.write(outfile, `#!/usr/bin/env bun\n${content}`);
 }
 

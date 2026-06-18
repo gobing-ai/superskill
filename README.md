@@ -51,11 +51,18 @@ bun run dev
 bun run apps/cli/src/index.ts --help
 ```
 
-### Build a standalone binary
+### Build and install (development)
 
 ```bash
-bun run build
-# Output: dist/cli/superskill
+bun run build          # emits apps/cli/dist/index.js
+cd apps/cli && bun link  # register the global `superskill` binary on PATH
+which superskill       # → ~/.bun/bin/superskill
+```
+
+### Consumer install
+
+```bash
+npm i -g @gobing-ai/superskill
 ```
 
 ## Commands

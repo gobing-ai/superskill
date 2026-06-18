@@ -30,8 +30,8 @@
     },
     "scripts": {
         "start": "bun run src/index.ts",
-        "build": "bun build src/index.ts --outfile ../../dist/cli/index.js --target bun && bun run ../../scripts/builder.ts postbuild ../../dist/cli/index.js",
-        "prepublishOnly": "bun run build && mkdir -p dist && cp ../../dist/cli/index.js dist/index.js && cp ../../README.md README.md && rm -rf templates && cp -r src/templates templates",
+        "build": "bun build src/index.ts --outfile dist/index.js --target bun && bun run ../../scripts/builder.ts postbuild dist/index.js",
+        "prepublishOnly": "bun run build && cp ../../README.md README.md && rm -rf templates && cp -r src/templates templates",
         "test": "NODE_ENV=test bun test --reporter=dots",
         "typecheck": "tsc --noEmit"
     },
