@@ -1,0 +1,52 @@
+version: 1
+type: magent
+dimensions:
+  - name: completeness
+    weight: 0.25
+    criterion: >
+      Does the main-agent config cover its stated scope end-to-end? Penalize
+      missing routing rules, undocumented fallbacks, and gaps between the
+      stated trigger and the actual execution path.
+    anchors:
+      excellent: "Routing, fallbacks, and execution path are fully explicit; no implicit steps."
+      poor: "Scope claims coverage but routing or fallbacks are implicit."
+
+  - name: platform-coverage
+    weight: 0.25
+    criterion: >
+      Does the config address all platforms it claims to support? Penalize
+      platforms listed in scope but with no corresponding rules, and rules
+      that reference capabilities a listed platform lacks.
+    anchors:
+      excellent: "Every listed platform has corresponding rules; rules respect each platform's capabilities."
+      poor: "Platforms listed without rules, or rules reference capabilities a platform lacks."
+
+  - name: conciseness
+    weight: 0.15
+    criterion: >
+      Is the config as short as possible while remaining complete? Penalize
+      redundant rule restating, boilerplate that adds no information, and
+      rules that could be merged without loss.
+    anchors:
+      excellent: "Minimal length with no redundancy; every rule carries unique information."
+      poor: "Redundant rules and boilerplate; rules could be merged without loss."
+
+  - name: tone-consistency
+    weight: 0.20
+    criterion: >
+      Is the agent's tone consistent across the config? Penalize mixed
+      registers (formal header + casual body), inconsistent second/third
+      person, and persona drift between sections.
+    anchors:
+      excellent: "Single register and person throughout; persona is stable across all sections."
+      poor: "Mixed registers, inconsistent person, or persona drift between sections."
+
+  - name: safety
+    weight: 0.15
+    criterion: >
+      Does the config avoid dangerous defaults? Penalize configs that grant
+      blanket permissions, disable safety gates by default, or route
+      destructive actions without an explicit guard.
+    anchors:
+      excellent: "Least-privilege defaults; safety gates enabled; destructive actions guarded."
+      poor: "Blanket permissions or disabled safety gates without justification."

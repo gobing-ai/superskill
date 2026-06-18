@@ -1,0 +1,52 @@
+version: 1
+type: agent
+dimensions:
+  - name: completeness
+    weight: 0.20
+    criterion: >
+      Does the agent cover its stated scope end-to-end? Penalize missing workflow
+      phases, undocumented edge cases, and gaps between the stated trigger and
+      the actual execution path.
+    anchors:
+      excellent: "Full workflow from intake to delivery; every phase has explicit steps and exit conditions."
+      poor: "Scope claims coverage but execution path skips phases or leaves edge cases unhandled."
+
+  - name: role-clarity
+    weight: 0.25
+    criterion: >
+      Does the body define a specific, non-generic persona with a clear scope?
+      Penalize "helpful assistant" framing and vague responsibilities. The role
+      name must convey expertise and boundary, not just willingness to help.
+    anchors:
+      excellent: "Named specialist with explicit expertise boundary, e.g. 'SECU security reviewer for auth flows'."
+      poor: "Generic 'helpful assistant that assists with tasks' — no specialization, no boundary."
+
+  - name: tool-selection
+    weight: 0.20
+    criterion: >
+      Are tool choices appropriate and justified? Each tool reference should
+      match the task's needs; penalize missing tools that the workflow requires
+      or tools listed but never invoked in the execution path.
+    anchors:
+      excellent: "Every tool is matched to a specific step; no missing or orphaned tool references."
+      poor: "Tools listed generically or mismatched to the workflow's actual needs."
+
+  - name: skill-linkage
+    weight: 0.20
+    criterion: >
+      Does the agent link to the right skills at the right time? Skill
+      references should appear where the workflow delegates, not as a bulk
+      list. Penalize skills referenced but never reached in execution.
+    anchors:
+      excellent: "Skills are linked at the exact delegation point in the workflow; each link is reachable."
+      poor: "Skills listed in a block with no workflow context on when to invoke each."
+
+  - name: model-fit
+    weight: 0.15
+    criterion: >
+      Is the recommended model tier appropriate for the agent's cognitive
+      load? A routing/lookup agent should not mandate a slow model; a deep
+      reasoning agent should not default to a fast model.
+    anchors:
+      excellent: "Model tier matches cognitive demand; routing uses fast, synthesis uses slow, with rationale."
+      poor: "Single model tier with no justification, or mismatched to the task's reasoning depth."

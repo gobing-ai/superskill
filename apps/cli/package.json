@@ -23,6 +23,7 @@
     "files": [
         "dist/",
         "templates/",
+        "rubrics/",
         "README.md"
     ],
     "engines": {
@@ -31,7 +32,7 @@
     "scripts": {
         "start": "bun run src/index.ts",
         "build": "bun build src/index.ts --outfile dist/index.js --target bun && bun run ../../scripts/builder.ts postbuild dist/index.js",
-        "prepublishOnly": "bun run build && cp ../../README.md README.md && rm -rf templates && cp -r src/templates templates",
+        "prepublishOnly": "bun run build && cp ../../README.md README.md && rm -rf templates && cp -r src/templates templates && rm -rf rubrics && cp -r src/rubrics rubrics",
         "test": "NODE_ENV=test bun test --reporter=dots",
         "typecheck": "tsc --noEmit"
     },

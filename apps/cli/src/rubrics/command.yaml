@@ -1,0 +1,52 @@
+version: 1
+type: command
+dimensions:
+  - name: completeness
+    weight: 0.25
+    criterion: >
+      Does the command cover its stated function end-to-end? Penalize missing
+      argument validation, undocumented flags, and incomplete output. A
+      complete command handles the happy path and the documented error paths.
+    anchors:
+      excellent: "All arguments validated, all flags documented, output covers success and error paths."
+      poor: "Happy path only; argument validation and error paths undocumented."
+
+  - name: clarity
+    weight: 0.25
+    criterion: >
+      Is the command's purpose and usage unambiguous? The description should
+      tell the user what it does and when to use it. Penalize descriptions
+      that restate the command name without adding information.
+    anchors:
+      excellent: "Description states what the command does, when to use it, and what the output means."
+      poor: "Description restates the command name; user cannot tell when to use it."
+
+  - name: argument-hints
+    weight: 0.20
+    criterion: >
+      Are argument hints present and accurate? Each argument should have a
+      hint that helps the user supply the right value. Penalize missing hints,
+      hints that restate the argument name, and hints that mislead.
+    anchors:
+      excellent: "Every argument has a hint that guides the user to the correct value."
+      poor: "Hints missing, or restate the argument name without guidance."
+
+  - name: tool-references
+    weight: 0.15
+    criterion: >
+      Are tool references (if any) correct and reachable? Penalize commands
+      that reference tools the CLI does not expose, or tools that are exposed
+      but never documented in the command's usage.
+    anchors:
+      excellent: "Tool references match exposed CLI verbs; no orphaned or undocumented references."
+      poor: "Tool references are stale, orphaned, or undocumented."
+
+  - name: slash-syntax
+    weight: 0.15
+    criterion: >
+      Is the slash command syntax correct and consistent? Penalize syntax
+      that diverges from the platform convention, inconsistent argument
+      ordering, and missing required markers.
+    anchors:
+      excellent: "Syntax follows platform convention; argument ordering is consistent across sibling commands."
+      poor: "Syntax diverges from convention or is inconsistent with sibling commands."

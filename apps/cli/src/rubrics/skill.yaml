@@ -1,0 +1,53 @@
+version: 1
+type: skill
+dimensions:
+  - name: completeness
+    weight: 0.25
+    criterion: >
+      Does the skill cover its stated purpose end-to-end? Penalize missing
+      steps, undocumented preconditions, and gaps between the trigger and the
+      delivered outcome. A complete skill leaves no implicit step.
+    anchors:
+      excellent: "Every phase from trigger to outcome is explicit; preconditions and exit conditions stated."
+      poor: "Purpose claims coverage but steps are implicit or preconditions unstated."
+
+  - name: clarity
+    weight: 0.25
+    criterion: >
+      Is the skill's instruction unambiguous to a fresh agent? Penalize
+      vague verbs ('handle', 'process'), undefined terms, and instructions
+      that require external context the skill does not provide.
+    anchors:
+      excellent: "Concrete verbs, defined terms, self-contained instructions an agent can execute without guessing."
+      poor: "Vague verbs and undefined terms; agent must guess the intended behavior."
+
+  - name: trigger-accuracy
+    weight: 0.20
+    criterion: >
+      Does the skill fire on the right inputs and not on adjacent ones? The
+      description must precisely scope when the skill activates. Penalize
+      triggers that are too broad (fires on unrelated requests) or too narrow
+      (misses the intended case).
+    anchors:
+      excellent: "Trigger description scopes activation precisely; no overlap with adjacent skills."
+      poor: "Trigger is broad enough to fire on unrelated requests or narrow enough to miss the intended case."
+
+  - name: anti-hallucination
+    weight: 0.15
+    criterion: >
+      Does the skill prevent fabrication? Penalize instructions that invite
+      guessing (e.g. 'infer the answer'), missing verification gates, and
+      absence of source-grounding requirements where facts are involved.
+    anchors:
+      excellent: "Explicit verification gates and source-grounding; no instruction invites guessing."
+      poor: "Instructions invite inference without verification; no grounding requirement."
+
+  - name: conciseness
+    weight: 0.15
+    criterion: >
+      Is the skill as short as possible while remaining complete? Penalize
+      redundant restating, boilerplate that adds no information, and steps
+      that could be merged without loss.
+    anchors:
+      excellent: "Minimal length with no redundancy; every line carries unique information."
+      poor: "Redundant restating and boilerplate; steps could be merged without loss."

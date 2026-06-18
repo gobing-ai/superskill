@@ -1,0 +1,42 @@
+version: 1
+type: hook
+dimensions:
+  - name: correctness
+    weight: 0.30
+    criterion: >
+      Does the hook's logic produce the intended effect? Penalize hooks that
+      fire on the wrong event, mutate state the spec says they shouldn't, or
+      exit with the wrong code on a documented path.
+    anchors:
+      excellent: "Logic matches the spec on every documented path; correct event, mutation, and exit code."
+      poor: "Logic diverges from spec on at least one documented path."
+
+  - name: event-coverage
+    weight: 0.30
+    criterion: >
+      Does the hook handle all events it claims to? Penalize hooks that
+      register for an event but silently no-op on it, or that miss an event
+      the spec requires. Coverage means the hook acts on every registered event.
+    anchors:
+      excellent: "Every registered event has a real handler; no silent no-ops; no missing required events."
+      poor: "Registered events include silent no-ops, or required events are missing."
+
+  - name: safety
+    weight: 0.25
+    criterion: >
+      Does the hook avoid destructive side effects? Penalize hooks that
+      force-push, delete without confirmation, bypass gates, or modify files
+      outside their stated scope. Safety is about blast radius, not just correctness.
+    anchors:
+      excellent: "No destructive side effect without an explicit guard; blast radius matches stated scope."
+      poor: "Destructive side effects (force-push, delete, bypass) without guards."
+
+  - name: pattern-match-quality
+    weight: 0.15
+    criterion: >
+      Are the matchers precise? Penalize matchers that over-match (fire on
+      unrelated commands) or under-match (miss the intended case). A precise
+      matcher fires on exactly the intended inputs.
+    anchors:
+      excellent: "Matchers fire on exactly the intended inputs; no over- or under-matching."
+      poor: "Matchers over-match (fire on unrelated commands) or under-match (miss intended case)."
