@@ -195,7 +195,7 @@ describe('executeInstall', () => {
         const output = stdout.mock.calls.map((call) => String(call[0])).join('');
         expect(output).toContain('Plugin root:');
         expect(output).toContain('Running rulesync for codex');
-        expect(output).toContain('Skills written: 1, Commands: 1, Subagents: 1');
+        expect(output).toContain('Skills written: 1, Commands: 1, Subagents: 1, Hooks: 0');
         expect(output).toContain('[DRY-RUN] No files were written.');
         stdout.mockRestore();
     });

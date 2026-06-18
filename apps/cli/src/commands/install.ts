@@ -73,6 +73,7 @@ interface InstallResultCounts {
     skillsCount: number;
     commandsCount: number;
     subagentsCount: number;
+    hooksCount: number;
 }
 
 /** Execute the full install flow: resolve → map → pipeline → rulesync → dispatch. */
@@ -141,7 +142,7 @@ export async function executeInstall(
         }
         rulesyncTargets.push('opencode');
     }
-    const resultCounts: InstallResultCounts = { skillsCount: 0, commandsCount: 0, subagentsCount: 0 };
+    const resultCounts: InstallResultCounts = { skillsCount: 0, commandsCount: 0, subagentsCount: 0, hooksCount: 0 };
 
     if (rulesyncTargets.length > 0) {
         if (options.verbose) echo(`Running rulesync for ${rulesyncTargets.join(', ')}...`);
@@ -159,10 +160,11 @@ export async function executeInstall(
             resultCounts.skillsCount += result.skillsCount;
             resultCounts.commandsCount += result.commandsCount;
             resultCounts.subagentsCount += result.subagentsCount;
+            resultCounts.hooksCount += result.hooksCount;
         }
         if (options.verbose) {
             echo(
-                `  Skills written: ${resultCounts.skillsCount}, Commands: ${resultCounts.commandsCount}, Subagents: ${resultCounts.subagentsCount}`,
+                `  Skills written: ${resultCounts.skillsCount}, Commands: ${resultCounts.commandsCount}, Subagents: ${resultCounts.subagentsCount}, Hooks: ${resultCounts.hooksCount}`,
             );
         }
     }
