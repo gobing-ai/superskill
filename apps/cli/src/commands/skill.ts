@@ -2,6 +2,7 @@ import { echo, echoError } from '@gobing-ai/ts-utils';
 import type { Command } from 'commander';
 import { evaluate, formatEvaluationReport } from '../operations/evaluate';
 import { evolve } from '../operations/evolve';
+import { packageSkill } from '../operations/package';
 import { refine } from '../operations/refine';
 import { scaffold } from '../operations/scaffold';
 import { formatValidationResult, validate } from '../operations/validate';
@@ -162,6 +163,18 @@ export async function handleSkillEvolve(
     await runOperation(() => skillEvolve({ name, ...opts }));
 }
 
+/** Run skill package as a CLI action. */
+export async function handleSkillPackage(
+    name: string,
+    opts: { output?: string; includeCompanions?: boolean },
+): Promise<void> {
+    await runOperation(async () => {
+        const path = await packageSkill(name, opts);
+        process.stdout.write(`${path}\n`);
+        return undefined;
+    });
+}
+
 /** Register the skill command group. */
 export function registerSkill(program: Command): void {
     const cmd = program.command('skill').description('Manage skill definitions');
@@ -195,4 +208,10 @@ export function registerSkill(program: Command): void {
     addEvolveOptions(
         cmd.command('evolve <name>').description('Longitudinal improvement from evaluation history'),
     ).action(handleSkillEvolve);
+
+    cmd.command('package <name>')
+        .description('Package a skill for distribution')
+        .option('-o, --output <dir>', 'Output directory (default: cwd)')
+        .option('--include-companions', 'Include companion configs (metadata.openclaw, agents/)')
+        .action(handleSkillPackage);
 }

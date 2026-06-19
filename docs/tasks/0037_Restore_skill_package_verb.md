@@ -52,31 +52,41 @@ superskill skill package does-not-exist                      # → exit 2
 
 ### Design
 
-
+- **Scope:** `operations/package.ts` (new) + `commands/skill.ts` (package subcommand) + `tests/operations/skill-package.test.ts` (new)
+- **Key decision:** Bundle as directory copy (not archive). `resolveContentPath` resolves skill path; `statSync` discriminates directory vs file to handle both name-based and path-based invocation.
+- **Boundaries affected:** `commands/skill.ts` (registerSkill adds package subcommand), `content/identity.ts` (reused via resolveContentPath), `tests/commands/content-command-modules.test.ts` (updated subcommand list)
+- **Risks:** none beyond normal regression risk
 
 ### Solution
 
 commands/skill.ts: register package subcommand. operations/package.ts: packageSkill resolves skill via content/identity.ts, gathers SKILL.md+references/+companions, writes a distributable bundle/archive to --output. Reuse content/frontmatter.ts, content/identity.ts, content/paths.ts. Read the deleted package.ts from git history to recover the original bundling intent, then map onto content-IO.
-
-
 ### Plan
 
+- [x] Review task requirements, design doc P5-D4, feature F030, and existing code patterns
+- [x] Create `operations/package.ts` with `packageSkill(name, opts)` reusing `resolveContentPath`
+- [x] Register `package` subcommand on `skill` command group with `--output` and `--include-companions`
+- [x] Create `tests/operations/skill-package.test.ts` (7 tests, 100% coverage on package.ts)
+- [x] Update `content-command-modules.test.ts` for new subcommand
+- [x] Verify: lint, typecheck, 640 tests pass, build succeeds, CLI smoke test
 
 
 ### Review
+
+- **Verdict:** PASS
+- **SECU:** No security concerns — deterministic file I/O, no external calls, no user input beyond paths
+- **Correctness:** All acceptance criteria met: bundle SKILL.md+references, --include-companions, missing-skill→exit 2, path printed
+- **Traceability:** R1–R8 all satisfied; content-IO reused (R4); CLI home (R8); deterministic (R7)
+- **Coverage:** package.ts 100% func/line; full suite 640/640 pass
 
 
 
 ### Testing
 
-Tests ship **in this task** (design rule: each task owns its tests — no separate pure-test task).
-
-- [ ] `tests/operations/skill-package.test.ts`:
-  - `packageSkill` bundles `SKILL.md` + `references/` + companion configs; returns the bundle path.
-  - `--include-companions` includes `metadata.openclaw` / `agents/openai.yaml`.
-  - Missing skill → exit 2 (content-not-found convention).
-  - Uses content-IO primitives (assert via the shared `content/*` helpers, not bespoke parsing).
-- [ ] Deterministic — no model call in the tested path.
+- **Command:** `bun test apps/cli/tests/operations/skill-package.test.ts` + full `bun run test`
+- **Scope:** packageSkill core flow, --include-companions, missing-skill error, output path contract, determinism, graceful no-companion handling, default output
+- **Result:** 7/7 pass, 640/640 full suite pass. `package.ts`: 100% func, 100% line coverage
+- **Evidence:** `SKILL.md` + `references/` bundled correctly; companions included with flag; ENOENT→exit 2 verified
+- **Next action:** none
 - [ ] Coverage for `operations/package.ts` contributes to the ≥90% gate.
 - [ ] No test skipped / `.skip`'d (R12).
 
