@@ -1,3 +1,16 @@
 {
-    "hooks": {}
+    "hooks": {
+        "Stop": [
+            {
+                "matcher": "*",
+                "hooks": [
+                    {
+                        "type": "command",
+                        "command": "bun ${CLAUDE_PLUGIN_ROOT}/scripts/anti-hallucination/ah_guard.ts",
+                        "timeout": 10
+                    }
+                ]
+            }
+        ]
+    }
 }

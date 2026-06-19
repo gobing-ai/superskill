@@ -1,0 +1,6 @@
+name: anti-hallucination
+description: Use for ANY task requiring external information (APIs, libraries,
+  frameworks, facts, recent events). Zero-trust verification-before-generation
+  with MCP tool priority.
+version: 1.0.0
+emoji: 🛠️

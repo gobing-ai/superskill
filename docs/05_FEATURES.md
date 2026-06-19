@@ -343,3 +343,15 @@ F032 (adapt gap + phase closing gate) ── independent
 > ≥90% coverage) is owned by F032.
 
 **Parallelization**: F027, F030, F032 are independent and can start together. F028/F029 follow F027. F031 follows F030 **and** Phase 4's F023.
+
+## Cross-repo: anti-hallucination migration (task 0041)
+
+| ID | Feature | Status | Files |
+|----|---------|--------|-------|
+| AH1 | Engine + prose relocated to superskill | ✅ | `plugins/cc/scripts/anti-hallucination/`, `plugins/cc/skills/anti-hallucination/` |
+| AH2 | Claude Stop-hook re-homed | ✅ | `plugins/cc/hooks/hooks.json` |
+| AH3 | Delete from Spur + dedup logger | 💤 | Blocked by AH4 (enforcement gap) |
+| AH4 | Cross-agent enforcement as `spur workflow` + `spur agent` | 💤 | Blocked: Spur data-threading gap (ADR-015) |
+| AH5 | Single-source seam + full governance | 💤 | Blocked by AH4 |
+
+See ADR-015 for the decision and the Phase 4 blocker. Spur companion task: spur-new#0087 (Done, but acceptance claim unverified by executable test).
