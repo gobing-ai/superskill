@@ -1,9 +1,9 @@
 ---
 name: Restore skill package verb
 description: Restore skill package verb
-status: Backlog
+status: Done
 created_at: 2026-06-17T22:44:05.182Z
-updated_at: 2026-06-17T22:44:05.182Z
+updated_at: 2026-06-19T02:00:09.649Z
 folder: docs/tasks
 type: task
 feature-id: F030
