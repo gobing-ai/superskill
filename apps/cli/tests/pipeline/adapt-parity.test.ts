@@ -15,7 +15,7 @@ import type { Target } from '../../src/targets';
  * rewriteColonRefs, translateSlashCommands, normalizeFrontmatter,
  * convertToPiSubagent — fully cover the deleted-adapter behavior.
  *
- * Wiring (install.ts:306-339 transformMarkdownDirectory):
+ * Wiring (commands/install.ts:306-339 transformMarkdownDirectory):
  * - skills:    rewriteColonRefs
  * - commands:  normalizeFrontmatter → translateSlashCommands → rewriteColonRefs
  * - subagents: normalizeFrontmatter → rewriteColonRefs → convertToPiSubagent (pi/omp only)

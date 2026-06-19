@@ -11,11 +11,11 @@ priority: medium
 estimated_hours: 3
 tags: ["phase5","adapt","install","pipeline","audit"]
 impl_progress:
-  planning: pending
-  design: pending
-  implementation: pending
-  review: pending
-  testing: pending
+  planning: complete
+  design: complete
+  implementation: complete
+  review: complete
+  testing: complete
 ---
 
 ## 0039. Confirm and close adapt gap in install
@@ -69,7 +69,7 @@ The deleted `adapt.ts` + `adapters/` (`cc-{agents,commands,skills}/scripts/adapt
 
 ## Wiring
 
-The 4 pipeline stages are wired into `install.ts:306-339` (`transformRulesyncMarkdown` → `transformMarkdownDirectory`):
+The 4 pipeline stages are wired into `commands/install.ts:306-339` (`transformRulesyncMarkdown` → `transformMarkdownDirectory`):
 - `rewriteColonRefs(content)` — applied to ALL targets, ALL content types
 - `normalizeFrontmatter(content, name)` — commands + subagents (when `normalizeName` option set)
 - `translateSlashCommands(content, target)` — commands only (when `translateSlash` option set)
@@ -125,9 +125,9 @@ Audit: recover deleted adapt.ts/adapters/ behavior from git history; build parit
 
 **SECU review:**
 
-- **Security (S):** No new production code processing untrusted content. Test fixtures hand-authored. No FS, no side effects. PASS.
-- **Correctness (E):** Parity test exercises all 4 pipeline stages in correct wiring order (matching install.ts:306-339). Fixtures use correct Skills 2.0 format (tools: [Read] inline YAML). PASS.
-- **Code quality (C):** No new production code (no gap → no new stage). Test follows project conventions. PASS.
+- **Security (S):** No new production code processing untrusted content. Test fixtures hand-authored. No FS, no side effects, no eval/exec/spawn in pipeline stages. PASS.
+- **Correctness (E):** Parity test exercises all 4 pipeline stages in correct wiring order (matching commands/install.ts:306-339). Fixtures use correct Skills 2.0 format (tools: [Read] inline YAML). PASS.
+- **Code quality (C):** No new production code (no gap → no new stage). Test follows project conventions. No `any`, no `biome-ignore`. PASS.
 - **Architecture (U):** No architectural change — audit confirms existing architecture is correct. Parity table documents why allowed-tools is rulesync's job. PASS.
 
 **Testing evidence:**
@@ -135,6 +135,20 @@ Audit: recover deleted adapt.ts/adapters/ behavior from git history; build parit
 - 15 tests in `tests/pipeline/adapt-parity.test.ts`: colon rewriting (2), slash translation (4), frontmatter injection (3), Pi subagent conversion (3), full pipeline ordering (2), gap-closed assertion (1).
 - Full suite: 666 pass, 0 fail. Lint clean. Build succeeds.
 - Aggregate coverage: 99.52% functions, 98.38% lines (≥90% gate met).
+
+---
+
+## Re-verification — 2026-06-19 (dev-verify --force --fix all)
+
+Re-audit of a `Done` task (status guard bypassed via `--force`). Phase 7 SECU + Phase 8 traceability re-run inline.
+
+- **Phase 7 SECU** — clean across all four dimensions. Detection scans on `pipeline/` + parity test (secrets, eval/exec/spawn, explicit `any`, empty catch, `biome-ignore`, `.skip`/`.only`) returned zero real hits (one false positive: JSDoc "token" in `pi-subagent.ts:1`).
+- **Phase 8 traceability** — R1-R8 all MET. **Parity claim verified against real source:** the test's three pipeline simulators (`applyCommandPipeline`, `applySubagentPipeline`, `applySkillPipeline`) exactly mirror the real wiring in `commands/install.ts:306-339` — skills=colon-only; commands=name→slash→colon; subagents=name→colon→Pi(pi/omp). Order matches line-for-line.
+- **Gates (Phase 5 closing gate, R8)** — `bun run lint` clean (112 files); `bun run test` 666 pass / 0 fail; `bun run build` succeeds; coverage 99.52% funcs / 98.38% lines.
+
+**Finding (P4 — doc accuracy, FIXED):** Wiring path was cited as `install.ts:306-339`; actual file is `commands/install.ts:306-339` (line numbers correct, directory prefix missing). Fixed in 3 places: test header comment + Design section + this Review section. Mechanical fix, no behavior change, gates re-confirmed green.
+
+**Re-verification verdict: PASS** — one P4 doc-accuracy finding fixed; no blocking findings. Task remains `Done`.
 
 
 ### Testing
