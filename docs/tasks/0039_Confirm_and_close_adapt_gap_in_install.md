@@ -1,9 +1,9 @@
 ---
 name: Confirm and close adapt gap in install
 description: Confirm and close adapt gap in install
-status: Testing
+status: Done
 created_at: 2026-06-17T22:44:31.761Z
-updated_at: 2026-06-19T21:47:49.897Z
+updated_at: 2026-06-19T21:48:50.508Z
 folder: docs/tasks
 type: task
 feature-id: F032
@@ -162,6 +162,11 @@ No test `.skip`'d to pass (R12). Test execution timestamp: 2026-06-19T06:30:00Z.
 
 | Type | Path | Agent | Date |
 | ---- | ---- | ----- | ---- |
+| test | apps/cli/tests/pipeline/adapt-parity.test.ts | Main | 2026-06-19 |
+| doc | docs/design/design-doc-phase5.md (§3.1 audit note) | Main | 2026-06-19 |
+| commit | 3aa1d69 | Main | 2026-06-19 |
+| commit | 22db9a9 | Main | 2026-06-19 |
+
 
 ### References
 
