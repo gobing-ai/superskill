@@ -186,4 +186,12 @@ describe('mapPluginToRulesync', () => {
         expect(existsSync(join(outDir, 'commands', 'rd3-run.md'))).toBe(true);
         expect(existsSync(join(outDir, 'subagents', 'rd3-coder.md'))).toBe(true);
     });
+
+    it('rejects plugin names that are not a single path segment', () => {
+        tmpDir = mkdtempSync('superskill-mapper-');
+        const outDir = join(tmpDir, '.rulesync');
+
+        expect(() => mapPluginToRulesync(FIXTURE_DIR, '../escape', outDir)).toThrow('single path segment');
+        expect(() => mapPluginToRulesync(FIXTURE_DIR, 'nested/name', outDir)).toThrow('single path segment');
+    });
 });

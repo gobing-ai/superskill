@@ -25,6 +25,7 @@ export interface MapResult {
  * gracefully — nothing is created for absent inputs.
  */
 export function mapPluginToRulesync(pluginPath: string, pluginName: string, outputDir: string): MapResult {
+    assertSafePathSegment(pluginName, 'plugin name');
     mkdirSync(outputDir, { recursive: true });
 
     const result: MapResult = { skills: 0, commands: 0, subagents: 0, hooks: false, mcp: false };
@@ -84,6 +85,19 @@ export function mapPluginToRulesync(pluginPath: string, pluginName: string, outp
     }
 
     return result;
+}
+
+function assertSafePathSegment(value: string, label: string): void {
+    if (
+        !value ||
+        value === '.' ||
+        value === '..' ||
+        value.includes('/') ||
+        value.includes('\\') ||
+        value.includes('\0')
+    ) {
+        throw new Error(`Invalid ${label} '${value}': must be a single path segment`);
+    }
 }
 
 function deepMergeJsonFile(sourcePath: string, targetPath: string): void {

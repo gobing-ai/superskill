@@ -28,4 +28,15 @@ describe('cli', () => {
         const pkg = JSON.parse(readFileSync(pkgPath, 'utf-8'));
         expect(pkg.bin?.superskill).toBe('dist/index.js');
     });
+
+    it('program version matches package.json', async () => {
+        const { readFileSync } = await import('node:fs');
+        const { resolve } = await import('node:path');
+        const { createProgram } = await import('../src/cli');
+        const thisDir = resolve(import.meta.path, '..');
+        const pkgPath = resolve(thisDir, '../package.json');
+        const pkg = JSON.parse(readFileSync(pkgPath, 'utf-8'));
+
+        expect(createProgram().version()).toBe(pkg.version);
+    });
 });
