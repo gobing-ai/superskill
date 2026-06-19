@@ -95,6 +95,50 @@ can Pi / omp be given a Claude-Code-like hook lifecycle via an installable exten
 > Deliverable for §1.2 only: a short note (chosen rung + source + date, per the anti-hallucination
 > rule). §1's coverage table is already complete above.
 
+#### Research note (2026-06-18)
+
+**Pi** — Pi exposes a full extension system: TypeScript modules at `~/.pi/agent/extensions/*.ts`
+(global) or `.pi/extensions/*.ts` (project) that subscribe to lifecycle events via `pi.on(eventName, handler)`.
+Lifecycle events include `session_start`, `session_shutdown`, `agent_start`, `agent_end`, `tool_call`,
+`tool_result`, `turn_start`, `turn_end`, `message_start/update/end`, and more.
+
+- **Chosen rung: (b) superskill-installed shim.** The `@vahor/pi-hooks` package (v0.0.11, npm, MIT,
+  681 downloads/mo, published 2026-05-23) provides a declarative `.pi/hooks.json` config that runs shell
+  commands on Pi lifecycle events. superskill converts the rulesync-canonical `hooks.json` to
+  `@vahor/pi-hooks` format and writes it to `.pi/hooks.json` (project) or `~/.pi/agent/hooks.json` (global).
+  The user installs `@vahor/pi-hooks` (`pi install npm:@vahor/pi-hooks`) as the shim; superskill emits
+  the config. Install output documents this dependency (no silent drop).
+
+- **Event mapping** (canonical camelCase → Pi snake_case):
+  `sessionStart`→`session_start`, `sessionEnd`→`session_shutdown`, `preToolUse`→`tool_call`,
+  `postToolUse`→`tool_result`, `stop`→`agent_end`, `preCompact`→`session_before_compact`.
+  Events without a Pi equivalent (e.g. `subagentStop`) are skipped.
+
+- **Limitation:** `@vahor/pi-hooks` fires `tool_call`/`tool_result` for all tools without matcher
+  filtering. Matchers from the canonical format are dropped. Full matcher enforcement requires
+  `@hsingjui/pi-hooks` (Claude Code-compatible format with matchers) or a superskill-shipped extension.
+  This is an acceptable trade-off for the initial implementation; the config is inert without the
+  extension, so no silent execution occurs.
+
+- **Sources:**
+  - https://pi.dev/packages/@vahor/pi-hooks (v0.0.11, accessed 2026-06-18)
+  - https://pt-act-pi-mono.mintlify.app/api/coding-agent/hooks (Pi hooks API, accessed 2026-06-18)
+  - https://github.com/earendil-works/pi/blob/main/packages/coding-agent/docs/extensions.md (Pi extensions, accessed 2026-06-18)
+
+**omp** — Pi variant ("Oh My Pi"). Uses `.omp/` paths and Pi's slash dialect. Inherits Pi's extension
+system; hooks config at `.omp/hooks.json` (project) or `~/.omp/agent/hooks.json` (global).
+
+- **Chosen rung: (b) superskill-installed shim.** Same mechanism as Pi — superskill emits
+  `.omp/hooks.json` in `@vahor/pi-hooks` format. The `@vahor/pi-hooks` extension (installed at the Pi
+  level) reads from `.omp/hooks.json` when omp is the active agent.
+
+**hermes** — Custom agent, absent from rulesync's tool set. Uses opencode as a rulesync surrogate.
+
+- **Chosen rung: (c) copy-step.** No extension research required (design §1.2: "the copy-step
+  fallback is the ceiling"). superskill copies the canonical `.rulesync/hooks.json` to
+  `.hermes/hooks.json` (project) or `~/.hermes/hooks.json` (global). The canonical format is preserved
+  verbatim — hermes or its users can interpret it as needed.
+
 ---
 
 ## 2. Hook Work Breakdown

@@ -12,6 +12,7 @@ import { homedir } from 'node:os';
 import { basename, join } from 'node:path';
 import { echo } from '@gobing-ai/ts-utils';
 import type { Command } from 'commander';
+import { type EmitHooksResult, emitHermesHooks, emitPiStyleHooks } from '../hooks';
 import { mapPluginToRulesync } from '../mapper';
 import { listResolvablePlugins, resolvePlugin } from '../marketplace';
 import { normalizeFrontmatter } from '../pipeline/frontmatter';
@@ -169,8 +170,9 @@ export async function executeInstall(
         }
     }
 
-    // Step 4: Dispatch non-rulesync targets
+    // Step 4: Dispatch non-rulesync targets + emit hooks for uncovered targets
     const outputRoot = options.outputRoot ?? (options.global ? homedir() : process.cwd());
+    const hookEmitResults: EmitHooksResult[] = [];
     for (const target of targets) {
         if (target === 'claude') {
             if (options.verbose) echo('Claude Code: plugin marketplace update...');
@@ -189,6 +191,14 @@ export async function executeInstall(
             if (options.verbose) echo(`Copying to Hermes (via opencode rulesync): ${dest}...`);
             if (!options.dryRun)
                 copyDirectory(join(rulesyncSourceRoot(targetInputRoots.get(srcTarget), outputDir), 'skills'), dest);
+            // Rung (c): copy-step — hermes hooks via canonical hooks.json copy (design §1.2, §2.1)
+            const hookResult = emitHermesHooks(
+                rulesyncSourceRoot(targetInputRoots.get(srcTarget), outputDir),
+                outputRoot,
+                { dryRun: options.dryRun, global: options.global },
+            );
+            hookEmitResults.push(hookResult);
+            if (options.verbose) echo(`  ${hookResult.message}`);
         }
 
         if (target === 'omp') {
@@ -197,7 +207,36 @@ export async function executeInstall(
             if (options.verbose) echo(`Copying to omp (via pi rulesync): ${dest}...`);
             if (!options.dryRun)
                 copyDirectory(join(rulesyncSourceRoot(targetInputRoots.get(srcTarget), outputDir), 'skills'), dest);
+            // Rung (b): superskill-installed shim — omp hooks via @vahor/pi-hooks format (design §1.2)
+            const hookResult = emitPiStyleHooks(
+                rulesyncSourceRoot(targetInputRoots.get(srcTarget), outputDir),
+                outputRoot,
+                '.omp',
+                'omp',
+                { dryRun: options.dryRun, global: options.global },
+            );
+            hookEmitResults.push(hookResult);
+            if (options.verbose) echo(`  ${hookResult.message}`);
         }
+
+        // Pi reaches generate() but rulesync emits no hooks for it (hooks column blank, §1 table).
+        // Rung (b): superskill-installed shim — pi hooks via @vahor/pi-hooks format (design §1.2)
+        if (target === 'pi') {
+            const hookResult = emitPiStyleHooks(
+                rulesyncSourceRoot(targetInputRoots.get('pi'), outputDir),
+                outputRoot,
+                '.pi',
+                'pi',
+                { dryRun: options.dryRun, global: options.global },
+            );
+            hookEmitResults.push(hookResult);
+            if (options.verbose) echo(`  ${hookResult.message}`);
+        }
+    }
+
+    // No silent drop (design §6 exit #2): surface hook emission results for uncovered targets
+    for (const result of hookEmitResults) {
+        echo(result.message);
     }
 
     if (options.dryRun) {
