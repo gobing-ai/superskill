@@ -1,9 +1,9 @@
 ---
 name: Restore skill migrate verb
 description: Restore skill migrate verb
-status: Testing
+status: Done
 created_at: 2026-06-17T22:44:19.592Z
-updated_at: 2026-06-19T06:36:58.247Z
+updated_at: 2026-06-19T06:57:46.043Z
 folder: docs/tasks
 type: task
 feature-id: F031
@@ -150,6 +150,12 @@ Test execution timestamp: 2026-06-19T04:10:00Z.
 
 | Type | Path | Agent | Date |
 | ---- | ---- | ----- | ---- |
+| code | apps/cli/src/operations/migrate.ts | Main | 2026-06-19 |
+| code | apps/cli/src/commands/skill.ts (migrate registration) | Main | 2026-06-19 |
+| test | apps/cli/tests/operations/migrate.test.ts | Main | 2026-06-19 |
+| test | apps/cli/tests/commands/content-command-modules.test.ts (migrate subcommand) | Main | 2026-06-19 |
+| commit | a04865a | Main | 2026-06-19 |
+
 
 ### References
 
