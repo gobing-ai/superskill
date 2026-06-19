@@ -12,11 +12,11 @@ estimated_hours: 5
 dependencies: ["0037"]
 tags: ["phase5","skill","migrate","verb-restore","cross-phase"]
 impl_progress:
-  planning: pending
-  design: pending
-  implementation: pending
-  review: pending
-  testing: pending
+  planning: complete
+  design: complete
+  implementation: complete
+  review: complete
+  testing: complete
 ---
 
 ## 0038. Restore skill migrate verb
@@ -103,19 +103,25 @@ commands/skill.ts: register migrate subcommand. operations/migrate.ts: determini
 
 **SECU review:**
 
-- **Security (S):** No untrusted content expansion. Sources are local files. Proposal JSON parsed with proper `in` narrowing (no inline casts). No eval/exec/shell. PASS.
+- **Security (S):** No untrusted content expansion. Sources are local files. Proposal JSON parsed with proper `in` narrowing (no inline casts). No eval/exec/shell. No hardcoded secrets. PASS.
 - **Correctness (E):** Frontmatter union + documented conflict policy (arrays dedup, scalars first-wins, name=dest-derived). Body exact-line dedupe (deterministic, lossless for distinct content). Missing source → exit 2. Empty sources → error. Single source → valid copy. Dest dir auto-created. PASS.
 - **Code quality (C):** Follows `package.ts` pattern. No `any`, no `biome-ignore`, no non-null assertions. JSDoc documents conflict policy. Uses F007 content-IO. PASS.
 - **Architecture (U):** Deterministic core decoupled from `--refine` layer. Delegates to generation seam (evolve) — no duplication of F023. Operation owns merge + refine delegation; command handler owns arg splitting + output. PASS.
 
-**Testing evidence:**
+**Verdict counts:** P1 blockers: 0 · P2 warnings: 0 · P3 info: 0 · P4 suggestions: 0 · Unmet requirements: 0 · Partial requirements: 0.
 
-- 9 tests in `tests/operations/migrate.test.ts`: deterministic merge (2 sources, conflict policy, body dedupe, missing source ENOENT, single source, determinism, empty sources) + refine path (envelope-out JSON, regressive ingest rejected+restored).
-- Updated `tests/commands/content-command-modules.test.ts` to include `migrate` in registered subcommands.
-- Full suite: 650 pass, 0 fail. Lint clean. Typecheck clean. Build succeeds.
-- Smoke test: `skill migrate skill-a skill-b ./merged.md` → exit 0, merged file correct. `skill migrate does-not-exist skill-b ./out.md` → exit 2.
+---
 
-**Coverage:** `operations/migrate.ts` — 100% functions, 99.14% lines.
+## Re-verification — 2026-06-19 (dev-verify --force --fix all)
+
+Re-audit of a `Done` task (status guard bypassed via `--force`). Phase 7 SECU + Phase 8 traceability re-run inline.
+
+- **Phase 7 SECU** — clean across all four dimensions. Detection scans (secrets, eval/exec/shell, explicit `any`, empty catch, non-null assertions, `biome-ignore`) all returned zero hits on `operations/migrate.ts` + `commands/skill.ts`.
+- **Phase 8 traceability** — R1-R8 all MET; evidence re-confirmed against current source (`migrate.ts` 1-226, `skill.ts:249-256`, `helpers.ts:73-83` ENOENT->exit 2 mapping). `evolve` seam contract (`proposeOnly`/`json`/`acceptId`/`margin`/`adapter`/`ingest` -> `rejected`/`rejectionReason`) verified intact.
+- **Gates** — `bun run lint` clean (Biome + typecheck, 111 files). `bun run test` 651 pass / 0 fail. `bun run build` succeeds. `operations/migrate.ts` coverage 100% functions / 99.14% lines.
+- **Fix pass (`--fix all`)** — no findings to fix; no-op. No file changes made.
+
+**Re-verification verdict: PASS** — no new findings; prior verdict holds. Task remains `Done`.
 
 
 ### Testing
