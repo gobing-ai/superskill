@@ -72,12 +72,15 @@ commands/skill.ts: register package subcommand. operations/package.ts: packageSk
 
 ### Review
 
-- **Verdict:** PASS
-- **SECU:** No security concerns — deterministic file I/O, no external calls, no user input beyond paths
-- **Correctness:** All acceptance criteria met: bundle SKILL.md+references, --include-companions, missing-skill→exit 2, path printed
-- **Traceability:** R1–R8 all satisfied; content-IO reused (R4); CLI home (R8); deterministic (R7)
-- **Coverage:** package.ts 100% func/line; full suite 640/640 pass
 
+---
+
+**Re-verification (`dev-verify --force --fix all`, 2026-06-18):** PASS — re-confirmed.
+
+- **Phase 7 SECU** (operations/package.ts, commands/skill.ts, package.test.ts): 0 findings. Deterministic file I/O (`cpSync`), no `any`, no secrets, no exec/spawn, no model/Phase-4 imports.
+- **Phase 8 traceability:** R1–R8 all MET — R1 skill.ts:212 (`package <name>` registered), R2 package.ts:71 (`packageSkill → Promise<string>`), R3 SKILL.md+references/+companions (package.ts:78-90), R4 content-IO reuse via `resolveContentPath` package.ts:29 (no bespoke parsing), R5 path printed `echo(path)` skill.ts:173, R6 ENOENT→exit 2 (package.ts:31 + helpers.ts:79-81; live-verified exit_code=2), R7 deterministic (no model path), R8 CLI home (commands/skill.ts + operations/package.ts). 0 unmet, 0 partial.
+- **Gate:** lint exit 0 · 640 pass / 0 fail · build exit 0 · spur 2/2 passed. Live acceptance: `skill package does-not-exist` → exit 2.
+- **Fix-pass (--fix all):** cleaned up untracked `test-skill/` manual smoke-test fixture left in the working tree.
 
 
 ### Testing
@@ -95,6 +98,11 @@ commands/skill.ts: register package subcommand. operations/package.ts: packageSk
 
 | Type | Path | Agent | Date |
 | ---- | ---- | ----- | ---- |
+| code | apps/cli/src/operations/package.ts | task-runner | 2026-06-19 |
+| code | apps/cli/src/commands/skill.ts | task-runner | 2026-06-19 |
+| test | apps/cli/tests/operations/package.test.ts | task-runner | 2026-06-19 |
+| test | apps/cli/tests/commands/content-command-modules.test.ts | task-runner | 2026-06-19 |
+
 
 ### References
 
