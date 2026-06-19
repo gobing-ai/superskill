@@ -1,9 +1,9 @@
 ---
 name: Confirm and close adapt gap in install
 description: Confirm and close adapt gap in install
-status: Backlog
+status: WIP
 created_at: 2026-06-17T22:44:31.761Z
-updated_at: 2026-06-17T22:44:31.761Z
+updated_at: 2026-06-19T21:42:27.758Z
 folder: docs/tasks
 type: task
 feature-id: F032
@@ -51,6 +51,37 @@ superskill install <plugin> --targets all --dry-run                    # → all
 
 ### Design
 
+**Audit result: No gap. The install conversion pipeline already covers all deleted adapter transforms.**
+
+## Method
+
+The deleted `adapt.ts` + `adapters/` (`cc-{agents,commands,skills}/scripts/adapt.ts`, `scripts/adapters/`) are not in this repo's git history — they were Phase 3 plugin scripts removed with disposition "Fold into `superskill install` conversion pipeline" (design-doc-phase3 §2.1, D3). Their behavior is documented in `03_ARCHITECTURE.md` §Conversion rules ("Carried from cc-agents/scripts") and `design-doc-phase5.md` §3.
+
+## Parity table
+
+| Deleted adapter transform | Pipeline stage | File | Covered? | Gap |
+|---------------------------|---------------|------|----------|-----|
+| Slash command dialect translation (`/plugin:cmd` → per-agent) | `translateSlashCommands` | `pipeline/slash-command.ts` | ✅ | None |
+| Colon reference rewriting (`plugin:command` → `plugin-command`) | `rewriteColonRefs` | `pipeline/rewrite-colons.ts` | ✅ | None |
+| Frontmatter `name:` injection | `normalizeFrontmatter` | `pipeline/frontmatter.ts` | ✅ | None |
+| Pi subagent format conversion (Skills 2.0 → Pi YAML) | `convertToPiSubagent` | `pipeline/pi-subagent.ts` | ✅ | None |
+| `allowed-tools:` normalization | — (rulesync owns) | `vendors/rulesync/src/features/skills/*.ts` | ✅ | None (invariant #1: rulesync owns per-target format) |
+
+## Wiring
+
+The 4 pipeline stages are wired into `install.ts:306-339` (`transformRulesyncMarkdown` → `transformMarkdownDirectory`):
+- `rewriteColonRefs(content)` — applied to ALL targets, ALL content types
+- `normalizeFrontmatter(content, name)` — commands + subagents (when `normalizeName` option set)
+- `translateSlashCommands(content, target)` — commands only (when `translateSlash` option set)
+- `convertToPiSubagent(content)` — subagents only when target is `pi` or `omp`
+
+## `allowed-tools` is rulesync's job (invariant #1 / R7)
+
+`normalizeFrontmatter` only injects `name:` — it does NOT normalize `allowed-tools:`. This is correct: rulesync's per-target skill classes (`ClaudecodeSkill`, `CopilotSkill`, `AgentsSkillsSkill`, etc.) each own their `allowed-tools` schema and handle it during `toRulesyncSkill()` / `fromRulesyncSkill()`. The architecture doc's "normalize `allowed-tools:`" refers to rulesync's per-target conversion, not a superskill pipeline stage. Adding `allowed-tools` normalization to superskill's pipeline would violate invariant #1 (rulesync owns format knowledge).
+
+## Conclusion
+
+**Gap closed, nothing to add.** The 4 pipeline stages + rulesync's per-target format handling fully cover the deleted `adapt.ts`/`adapters/` behavior. No new pipeline stage needed. Deliverable: this parity table + a confirming regression test (asserts the pipeline applies all 4 transforms per target) + a "gap closed" note in the design doc.
 
 
 ### Solution
@@ -60,6 +91,21 @@ Audit: recover deleted adapt.ts/adapters/ behavior from git history; build parit
 
 ### Plan
 
+1. **Audit (done)** — Read deleted `adapt.ts`/`adapters/` intent from design docs (design-doc-phase3 §2.1, design-doc-phase5 §3, 03_ARCHITECTURE.md §Conversion rules). Enumerated 5 transforms the deleted adapters performed. Diffed against the 4 current pipeline stages + rulesync's per-target handling. Result: **no gap**.
+
+2. **Write parity test** — Create `apps/cli/tests/pipeline/adapt-parity.test.ts`:
+   - Test that `rewriteColonRefs` rewrites `rd3:foo` → `rd3-foo`, `wt:bar` → `wt-bar`
+   - Test that `translateSlashCommands` translates `/plugin:cmd` per target (at least claude + codex)
+   - Test that `normalizeFrontmatter` injects `name:` when missing, preserves when present
+   - Test that `convertToPiSubagent` converts a Skills 2.0 subagent to Pi YAML
+   - Test the full pipeline wiring: `transformMarkdownDirectory` applies all 4 stages in the correct order (colon rewrite always, name injection for commands, slash translation for commands, Pi conversion for pi/omp subagents)
+   - This is a parity/regression test — asserts existing pipeline covers deleted-adapter behavior
+
+3. **Add "gap closed" note to design-doc-phase5.md** — Append an audit note under §3 confirming the parity table and "gap closed, nothing to add."
+
+4. **Phase 5 closing gate** — Run full suite (`bun run test`), check aggregate coverage ≥90% line/function, `bun run lint`, `bun run build`, `git status` clean. This task owns the cross-feature Phase 5 gate (R8).
+
+5. **Verification** — SECU review + traceability, post-flight audit, transition to Done.
 
 
 ### Review

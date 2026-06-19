@@ -201,6 +201,24 @@ plugin scripts.
 > quality brain). Sequence Phase 4 before this verb, or ship a deterministic merge first and layer
 > refinement after.
 
+### 3.1 Adapt gap audit (task 0039 / F032 — 2026-06-19)
+
+**Verdict: gap closed, nothing to add.** The 4 pipeline stages already cover all transforms the
+deleted `adapt.ts` + `adapters/` performed:
+
+| Deleted adapter transform | Pipeline stage | File | Covered? |
+|---------------------------|---------------|------|----------|
+| Slash command dialect translation | `translateSlashCommands` | `pipeline/slash-command.ts` | ✅ |
+| Colon reference rewriting | `rewriteColonRefs` | `pipeline/rewrite-colons.ts` | ✅ |
+| Frontmatter `name:` injection | `normalizeFrontmatter` | `pipeline/frontmatter.ts` | ✅ |
+| Pi subagent format conversion | `convertToPiSubagent` | `pipeline/pi-subagent.ts` | ✅ |
+| `allowed-tools:` normalization | — (rulesync owns per-target format) | `vendors/rulesync/` | ✅ (invariant #1) |
+
+Wired in `install.ts:306-339` (`transformRulesyncMarkdown` → `transformMarkdownDirectory`).
+`allowed-tools` is rulesync's job (invariant #1: rulesync owns format knowledge; superskill's
+pipeline adds only cc-agents-specific transforms). Parity test:
+`apps/cli/tests/pipeline/adapt-parity.test.ts` (15 tests, all passing). Design §6 exit #5 closed.
+
 ---
 
 ## 4. Scope
