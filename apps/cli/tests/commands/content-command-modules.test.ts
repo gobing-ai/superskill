@@ -7,6 +7,8 @@ import { Command } from 'commander';
 // ESM namespace bindings is fully reverted by mock.restore() in afterEach.
 import * as evaluateOp from '../../src/operations/evaluate';
 import * as evolveOp from '../../src/operations/evolve';
+import * as migrateOp from '../../src/operations/migrate';
+import * as packageOp from '../../src/operations/package';
 import * as refineOp from '../../src/operations/refine';
 import * as scaffoldOp from '../../src/operations/scaffold';
 import * as validateOp from '../../src/operations/validate';
@@ -39,6 +41,11 @@ beforeEach(() => {
         delta: 0.15,
         changesApplied: 0,
         proposalPath: '',
+    });
+    spyOn(packageOp, 'packageSkill').mockResolvedValue('/test/output/skill.zip');
+    spyOn(migrateOp, 'migrateSkills').mockResolvedValue({
+        dest: '/test/output/merged.md',
+        envelopeOut: false,
     });
 });
 
@@ -189,9 +196,28 @@ describe('skill command module', () => {
             await program.parseAsync(['skill', 'evaluate', 'writer'], { from: 'user' });
             await program.parseAsync(['skill', 'refine', 'writer'], { from: 'user' });
             await program.parseAsync(['skill', 'evolve', 'writer'], { from: 'user' });
+            await program.parseAsync(['skill', 'package', 'writer'], { from: 'user' });
+            await program.parseAsync(['skill', 'migrate', 'skill-a', 'skill-b', './merged.md'], { from: 'user' });
             expect(exit).toHaveBeenCalled();
         } finally {
             exit.mockRestore();
+            process.exitCode = 0;
+        }
+    });
+
+    it('exits when migrate has no destination', async () => {
+        const { registerSkill } = await import('../../src/commands/skill');
+        const program = new Command();
+        registerSkill(program);
+        const exit = spyOn(process, 'exit').mockImplementation(() => undefined as never);
+        const stderr = spyOn(process.stderr, 'write').mockImplementation(() => true);
+        try {
+            await program.parseAsync(['skill', 'migrate', 'skill-a'], { from: 'user' });
+            expect(stderr).toHaveBeenCalled();
+            expect(exit).toHaveBeenCalledWith(1);
+        } finally {
+            exit.mockRestore();
+            stderr.mockRestore();
             process.exitCode = 0;
         }
     });
