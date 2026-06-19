@@ -259,7 +259,10 @@ export function parseTargets(raw: string | undefined): Target[] {
     return requested as Target[];
 }
 
-function prepareTargetRulesyncInput(sourceRoot: string, target: Target): string {
+/** Prepares a target-transformed rulesync input layout — copies source into
+ * `$sourceRoot/.targets/$target/.rulesync` and applies markdown transforms.
+ * Returns the target root path consumed by {@link runRulesync}. */
+export function prepareTargetRulesyncInput(sourceRoot: string, target: Target): string {
     const targetRoot = join(sourceRoot, '.targets', target);
     const targetRulesyncRoot = join(targetRoot, '.rulesync');
     rmSync(targetRoot, { recursive: true, force: true });
@@ -271,6 +274,33 @@ function prepareTargetRulesyncInput(sourceRoot: string, target: Target): string 
 function rulesyncSourceRoot(inputRoot: string | undefined, fallbackRoot: string): string {
     if (!inputRoot) return fallbackRoot;
     return join(inputRoot, '.rulesync');
+}
+
+/**
+ * Emit hooks for a single surrogate target (pi/omp/hermes) — the post-rulesync
+ * shim path. Factored from the install loop so `superskill hook emit` can reuse
+ * it for single-target emission without re-running the full install pipeline.
+ *
+ * Returns the {@link EmitHooksResult} from the underlying emit function. For
+ * non-surrogate targets (codex/opencode/antigravity/claude) returns `null` —
+ * those go through {@link runRulesync} directly.
+ */
+export function emitHooksForSurrogateTarget(
+    target: Target,
+    rulesyncSourceDir: string,
+    outputRoot: string,
+    options: { dryRun: boolean; global: boolean },
+): EmitHooksResult | null {
+    if (target === 'pi') {
+        return emitPiStyleHooks(rulesyncSourceDir, outputRoot, '.pi', 'pi', options);
+    }
+    if (target === 'omp') {
+        return emitPiStyleHooks(rulesyncSourceDir, outputRoot, '.omp', 'omp', options);
+    }
+    if (target === 'hermes') {
+        return emitHermesHooks(rulesyncSourceDir, outputRoot, options);
+    }
+    return null;
 }
 
 function transformRulesyncMarkdown(root: string, target: Target): void {
