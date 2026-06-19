@@ -170,7 +170,7 @@ export async function handleSkillPackage(
 ): Promise<void> {
     await runOperation(async () => {
         const path = await packageSkill(name, opts);
-        process.stdout.write(`${path}\n`);
+        echo(path);
         return undefined;
     });
 }
