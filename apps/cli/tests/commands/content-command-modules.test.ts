@@ -179,6 +179,7 @@ describe('skill command module', () => {
             'refine',
             'evolve',
             'package',
+            'migrate',
         ]);
 
         const exit = spyOn(process, 'exit').mockImplementation(() => undefined as never);

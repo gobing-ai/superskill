@@ -108,9 +108,17 @@ describe('packageSkill', () => {
     });
 
     it('uses cwd as output default when no output option given', async () => {
-        const result = await packageSkill(skillDir);
-        expect(result).toStartWith(process.cwd());
-        expect(result).toEndWith('test-skill');
+        // chdir into the temp dir so the default-output bundle lands inside
+        // tmpDir (cleaned by afterEach) instead of polluting the repo root.
+        const originalCwd = process.cwd();
+        process.chdir(tmpDir);
+        try {
+            const result = await packageSkill(skillDir);
+            expect(result).toStartWith(process.cwd());
+            expect(result).toEndWith('test-skill');
+        } finally {
+            process.chdir(originalCwd);
+        }
     });
 
     it('is deterministic — no model calls in the execution path', async () => {

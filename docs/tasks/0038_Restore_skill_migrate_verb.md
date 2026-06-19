@@ -1,9 +1,9 @@
 ---
 name: Restore skill migrate verb
 description: Restore skill migrate verb
-status: Backlog
+status: Testing
 created_at: 2026-06-17T22:44:19.592Z
-updated_at: 2026-06-17T22:44:19.592Z
+updated_at: 2026-06-19T06:36:58.247Z
 folder: docs/tasks
 type: task
 feature-id: F031
@@ -53,6 +53,23 @@ superskill skill migrate does-not-exist skill-b ./out.md      # → exit 2
 
 ### Design
 
+**Deterministic merge core** (ships independent of Phase 4 — locked decision 2026-06-17):
+
+- `operations/migrate.ts` exports `migrateSkills(sources: string[], dest: string, opts?: MigrateOptions): Promise<string>`.
+- Resolve each source via `resolveContentPath('skill', source)` (F007 / content/identity.ts). Missing source → `Object.assign(new Error(...), { code: 'ENOENT' })` → `runOperation` maps to exit 2 (R6).
+- Parse each source via `parseFrontmatter` (content/frontmatter.ts).
+- **Frontmatter conflict policy** (documented): union of all keys across sources. Array values → union with dedup (preserving first-source order). Scalar conflicts → first source wins (sources are ordered). `name` → dest-derived canonical name via `resolveContentName(dest)`.
+- **Body merge**: concatenate bodies in source order, separated by `\n\n`. Dedupe identical non-empty lines (first occurrence kept, order preserved). Collapse runs of ≥2 blank lines to one.
+- Serialize as `---\n<yaml>---\n<body>` via `yaml.stringify` for the frontmatter block.
+- Write to `<dest>` (create parent dir if missing). Return dest path.
+
+**Refinement layer** (`--refine`, routes through F023 generation seam — no bespoke rewrite, R8):
+
+- `--refine` alone → `evolve('skill', dest, { proposeOnly: true, json: true, target })` → envelope-out (generation briefs to stdout). No model call (R7).
+- `--refine --ingest <file>` → `evolve('skill', dest, { ingest: file, target, margin })` → ingest-in through the double-loop gate (F024). A regressive merge is rejected + the file restored by evolve's existing backup/restore path.
+- Decoupled (R5): without `--refine`, the deterministic merge is the complete output.
+
+**Command surface** (commands/skill.ts): `superskill skill migrate <sources...> <dest>` — variadic; Commander captures all-but-last as sources, last as dest. Options: `--refine`, `--ingest <file>`, `-t/--target <agent>`, `--margin <n>`. Registered on the `skill` command group (R1).
 
 
 ### Solution
@@ -62,26 +79,71 @@ commands/skill.ts: register migrate subcommand. operations/migrate.ts: determini
 
 ### Plan
 
+1. Create `apps/cli/src/operations/migrate.ts` — `MigrateOptions` interface + `migrateSkills()` (deterministic core + `--refine` delegation to `evolve()`).
+2. Register `migrate <sources...> <dest>` subcommand in `commands/skill.ts` (`registerSkill`): add `handleSkillMigrate` + `skillMigrate` handlers, wire options (`--refine`, `--ingest`, `--target`, `--margin`).
+3. Write `apps/cli/tests/operations/migrate.test.ts` — deterministic merge core (frontmatter union + conflict policy, body dedupe, dest name), missing source → exit 2, `--refine` fixture-replay (gated on seam existing, no model call, regression rejected+restored).
+4. Run `bun run lint` + `bun run test` + `bun run build`; iterate to green.
+5. Update task Review + Artifacts sections; run verification + post-flight gates.
 
 
 ### Review
 
+**Verdict: PASS**
+
+**Requirements traceability:**
+
+- **R1** ✅ — `migrate <sources...> <dest>` registered on `skill` command group with `--refine`, `--ingest`, `--target`, `--margin` options (`commands/skill.ts:250-256`).
+- **R2** ✅ — `operations/migrate.ts` exports `migrateSkills(sources, dest, opts)`.
+- **R3** ✅ — Deterministic merge core: resolves sources via `resolveContentPath` (F007/content/identity.ts), parses via `parseFrontmatter` (content/frontmatter.ts), merges frontmatter (union + documented conflict policy: arrays union+dedup, scalars first-wins, name=dest-derived), concatenates/dedupes bodies, writes to `<dest>`. Ships independent of Phase 4.
+- **R4** ✅ — `--refine` alone → `evolve('skill', dest, { proposeOnly: true, json: true })` (envelope-out generation briefs). `--refine --ingest <file>` → `evolve('skill', dest, { ingest, acceptId, margin })` applies through double-loop gate (F024). Regressive merge rejected + restored (tested, fixture-replay, no model call).
+- **R5** ✅ — Without `--refine`, deterministic merge is the complete output. Decoupled from Phase 4.
+- **R6** ✅ — Missing source → ENOENT → exit 2 (tested + smoke-tested).
+- **R7** ✅ — CLI makes no model call. Deterministic merge is pure. Refinement delegates to evolve (envelope-out emits briefs, ingest-in applies agent-authored changes — neither calls a model).
+- **R8** ✅ — Reuses content-IO (`resolveContentPath`, `parseFrontmatter`) + generation seam (`evolve()`). No bespoke merge-then-rewrite logic.
+
+**SECU review:**
+
+- **Security (S):** No untrusted content expansion. Sources are local files. Proposal JSON parsed with proper `in` narrowing (no inline casts). No eval/exec/shell. PASS.
+- **Correctness (E):** Frontmatter union + documented conflict policy (arrays dedup, scalars first-wins, name=dest-derived). Body exact-line dedupe (deterministic, lossless for distinct content). Missing source → exit 2. Empty sources → error. Single source → valid copy. Dest dir auto-created. PASS.
+- **Code quality (C):** Follows `package.ts` pattern. No `any`, no `biome-ignore`, no non-null assertions. JSDoc documents conflict policy. Uses F007 content-IO. PASS.
+- **Architecture (U):** Deterministic core decoupled from `--refine` layer. Delegates to generation seam (evolve) — no duplication of F023. Operation owns merge + refine delegation; command handler owns arg splitting + output. PASS.
+
+**Testing evidence:**
+
+- 9 tests in `tests/operations/migrate.test.ts`: deterministic merge (2 sources, conflict policy, body dedupe, missing source ENOENT, single source, determinism, empty sources) + refine path (envelope-out JSON, regressive ingest rejected+restored).
+- Updated `tests/commands/content-command-modules.test.ts` to include `migrate` in registered subcommands.
+- Full suite: 650 pass, 0 fail. Lint clean. Typecheck clean. Build succeeds.
+- Smoke test: `skill migrate skill-a skill-b ./merged.md` → exit 0, merged file correct. `skill migrate does-not-exist skill-b ./out.md` → exit 2.
+
+**Coverage:** `operations/migrate.ts` — 100% functions, 99.14% lines.
 
 
 ### Testing
 
-Tests ship **in this task** (design rule: each task owns its tests — no separate pure-test task).
+Tests shipped in this task (design rule: each task owns its tests).
 
-- [ ] `tests/operations/skill-migrate.test.ts`:
-  - **Deterministic merge core** (ships independent of Phase 4): two sources merge frontmatter (union + documented conflict policy) + bodies → `<dest>`; assert merged output. No model call.
-  - Missing source → exit 2.
-  - **Refined path** (`--refine --ingest`, gated on F023/0030): routes through the generation seam + double-loop gate; a regressive merge is rejected + restored (fixture-replay, **no model call**).
-- [ ] The deterministic-core tests run **without** Phase 4; only the `--refine` test depends on 0030 (skip-guard it behind F023 availability, but do NOT `.skip` to pass — gate the assertion on the seam existing).
-- [ ] Fixtures hand-authored: source skills + a `migrate` proposal fixture for the refined path.
-- [ ] Coverage for `operations/migrate.ts` contributes to the ≥90% gate.
-- [ ] No test skipped / `.skip`'d to go green (R12).
+**`tests/operations/migrate.test.ts`** (9 tests, all passing):
 
-`tests/fixtures/phase5/`. Spy on `process.stdout.write`.
+- **Deterministic merge core** (ships independent of Phase 4):
+  - `merges two sources into a destination file` — frontmatter union (tags from both, deduped), body concatenation, name=dest-derived. No model call.
+  - `frontmatter conflict policy: first source wins for scalars, union for arrays` — description from skill-a, tags unioned, license from skill-b.
+  - `body dedupe: identical lines collapsed to first occurrence` — duplicate "## Steps", "Configure the widget settings.", "Validate the configuration." each appear once.
+  - `throws ENOENT for missing source (exit 2)` — missing source → "Skill not found" error.
+  - `single source copies to destination` — valid degenerate case (1 source → copy).
+  - `is deterministic — no model calls` — two merges produce identical bodies (only name differs by dest).
+  - `throws on empty sources array` — empty sources → error.
+
+- **Refined path** (`--refine`, gated on F023/0030 — seam exists, test runs):
+  - `--refine (envelope-out): emits generation briefs as JSON to stdout` — envelope has type, content_name, briefs with goal anchor. No model call.
+  - `--refine --ingest: regressive proposal is rejected and file restored` — regressive proposal (prepends 'noise' to description) rejected by Δ-margin gate, file restored byte-identical to deterministic merge. Fixture-replay, no model call.
+
+**`tests/commands/content-command-modules.test.ts`** — updated to include `migrate` in registered subcommands list.
+
+No test `.skip`'d to pass (R12). The `--refine` test gates on the seam existing (F023/0030 is Done, so it runs). Fixtures hand-authored: SKILL_A, SKILL_B, SKILL_WITH_CONSTRAINTS, and a regressive proposal fixture.
+
+Coverage for `operations/migrate.ts`: 100% functions, 99.14% lines (contributes to ≥90% gate).
+Full suite: 650 pass, 0 fail.
+Test execution timestamp: 2026-06-19T04:10:00Z.
 
 
 ### Artifacts

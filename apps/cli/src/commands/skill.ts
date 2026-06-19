@@ -2,6 +2,7 @@ import { echo, echoError } from '@gobing-ai/ts-utils';
 import type { Command } from 'commander';
 import { evaluate, formatEvaluationReport } from '../operations/evaluate';
 import { evolve } from '../operations/evolve';
+import { migrateSkills } from '../operations/migrate';
 import { packageSkill } from '../operations/package';
 import { refine } from '../operations/refine';
 import { scaffold } from '../operations/scaffold';
@@ -175,6 +176,37 @@ export async function handleSkillPackage(
     });
 }
 
+/** Options for the skill migrate command. */
+interface SkillMigrateOptions {
+    refine?: boolean;
+    ingest?: string;
+    target?: string;
+    margin?: number;
+}
+
+/** Run skill migrate as a CLI action. */
+export async function handleSkillMigrate(sourcesAndDest: string[], opts: SkillMigrateOptions): Promise<void> {
+    const dest = sourcesAndDest[sourcesAndDest.length - 1];
+    const sources = sourcesAndDest.slice(0, -1);
+    if (!dest || sources.length === 0) {
+        echoError('migrate requires at least one source and a destination');
+        process.exit(1);
+    }
+    const target = resolveTarget(opts);
+    await runOperation(async () => {
+        const result = await migrateSkills(sources, dest, {
+            refine: opts.refine,
+            ingest: opts.ingest,
+            target,
+            margin: opts.margin,
+        });
+        if (!result.envelopeOut) {
+            echo(result.dest);
+        }
+        return undefined;
+    });
+}
+
 /** Register the skill command group. */
 export function registerSkill(program: Command): void {
     const cmd = program.command('skill').description('Manage skill definitions');
@@ -214,4 +246,11 @@ export function registerSkill(program: Command): void {
         .option('-o, --output <dir>', 'Output directory (default: cwd)')
         .option('--include-companions', 'Include companion configs (metadata.openclaw, agents/)')
         .action(handleSkillPackage);
+    cmd.command('migrate <sources...>')
+        .description('Merge/migrate skills into a destination')
+        .option('--refine', 'Route through the generation seam (F023) for content refinement')
+        .option('--ingest <file>', 'Agent-authored proposal JSON (apply through the double-loop gate)')
+        .option('-t, --target <agent>', 'Target agent platform', 'claude')
+        .option('--margin <n>', 'Δ-margin gate threshold (default 0.05)', Number.parseFloat, 0.05)
+        .action(handleSkillMigrate);
 }
