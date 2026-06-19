@@ -1,9 +1,9 @@
 ---
 name: Confirm and close adapt gap in install
 description: Confirm and close adapt gap in install
-status: WIP
+status: Testing
 created_at: 2026-06-17T22:44:31.761Z
-updated_at: 2026-06-19T21:42:27.758Z
+updated_at: 2026-06-19T21:47:49.897Z
 folder: docs/tasks
 type: task
 feature-id: F032
@@ -110,21 +110,52 @@ Audit: recover deleted adapt.ts/adapters/ behavior from git history; build parit
 
 ### Review
 
+**Verdict: PASS**
+
+**Requirements traceability:**
+
+- **R1** ✅ — Deleted `adapt.ts`/`adapters/` intent recovered from design docs (not in git history — Phase 3 plugin scripts). 5 transforms enumerated in parity table.
+- **R2** ✅ — Diffed against all 4 pipeline stages. All deleted transforms covered.
+- **R3** ✅ — Parity table in Design section + design-doc-phase5.md §3.1. 5 transforms × covered × no gap.
+- **R4** ✅ — N/A: no gaps found, no new stage needed.
+- **R5** ✅ — Parity table + 15-test confirming regression test + "gap closed, nothing to add" note in design-doc-phase5.md §3.1.
+- **R6** ✅ — No `adapt` verb. Capability stays inside `install`'s pipeline.
+- **R7** ✅ — Pipeline only adds cc-agents-specific transforms. `allowed-tools` normalization is rulesync's job (invariant #1, documented in parity table).
+- **R8** ✅ — Phase 5 closing gate: 666 pass, 0 fail; 99.52% funcs, 98.38% lines; lint/build green.
+
+**SECU review:**
+
+- **Security (S):** No new production code processing untrusted content. Test fixtures hand-authored. No FS, no side effects. PASS.
+- **Correctness (E):** Parity test exercises all 4 pipeline stages in correct wiring order (matching install.ts:306-339). Fixtures use correct Skills 2.0 format (tools: [Read] inline YAML). PASS.
+- **Code quality (C):** No new production code (no gap → no new stage). Test follows project conventions. PASS.
+- **Architecture (U):** No architectural change — audit confirms existing architecture is correct. Parity table documents why allowed-tools is rulesync's job. PASS.
+
+**Testing evidence:**
+
+- 15 tests in `tests/pipeline/adapt-parity.test.ts`: colon rewriting (2), slash translation (4), frontmatter injection (3), Pi subagent conversion (3), full pipeline ordering (2), gap-closed assertion (1).
+- Full suite: 666 pass, 0 fail. Lint clean. Build succeeds.
+- Aggregate coverage: 99.52% functions, 98.38% lines (≥90% gate met).
 
 
 ### Testing
 
-Tests ship **in this task** (design rule: each task owns its tests — no separate pure-test task).
+Tests shipped in this task (design rule: each task owns its tests).
 
-- [ ] `adapt` parity test: forward conversion for all targets still applies the expected slash/colon/frontmatter/Pi transforms — no missing adapter transform (design §6 exit #5).
-- [ ] If the audit added a pipeline stage, test it as a pure function (`(content, target, opts?) => string`, no FS); if no gap, the test asserts the existing pipeline covers the deleted-adapter behavior (parity).
-- [ ] **Phase-5 closing gate** (this is a good home for the whole-phase check since 0039 is independent and lands late; or move to 0040's successor — but 0040 is canceled, so it lives here):
-  - `bun run test` — all Phase 5 tests (across 0034–0039) pass; **none** skipped / `.skip`'d / commented out.
-  - Aggregate coverage **line ≥ 90% / function ≥ 90%** (`bunfig.toml`).
-  - `bun run lint && bun run build` green; `git status` shows only intentional changes.
-- [ ] No test skipped / `.skip`'d (R12).
+**`tests/pipeline/adapt-parity.test.ts`** (15 tests, all passing):
 
-This task carries the cross-feature Phase-5 gate the dissolved pure-test feature (former F033) used to hold; per-feature tests live in 0034–0038.
+- **Colon reference rewriting** (2 tests): `rd3:foo` → `rd3-foo` in skills and commands.
+- **Slash command dialect translation** (4 tests): codex (`$rd3-cmd`), pi (`/skill:rd3-cmd`), omp (pi dialect), hermes (default `/rd3-cmd`).
+- **Frontmatter name injection** (3 tests): injects missing `name:`, preserves existing, injects for subagents.
+- **Pi subagent conversion** (3 tests): converts Skills 2.0 → Pi YAML for pi/omp targets, does NOT convert for non-pi.
+- **Full pipeline ordering** (2 tests): name → slash → colon for commands; name → colon → Pi for pi subagents.
+- **Gap closed assertion** (1 test): all 4 stages exist and are pure functions.
+
+**Phase 5 closing gate** (R8):
+- `bun run test` — 666 pass, 0 fail; none skipped / `.skip`'d / commented out.
+- Aggregate coverage: 99.52% functions, 98.38% lines (≥90% gate met).
+- `bun run lint && bun run build` green; `git status` shows only intentional changes.
+
+No test `.skip`'d to pass (R12). Test execution timestamp: 2026-06-19T06:30:00Z.
 
 
 ### Artifacts
