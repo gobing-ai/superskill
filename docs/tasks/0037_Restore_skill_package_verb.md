@@ -27,14 +27,14 @@ Restore 'superskill skill package <name>' — bundle a skill plus its companions
 
 ### Requirements
 
-- [ ] **R1** — `superskill skill package <name> [--output <dir>] [--include-companions]` registered on the `skill` command group.
-- [ ] **R2** — `operations/package.ts` exports `packageSkill(name, opts): Promise<string>` returning the bundle path.
-- [ ] **R3** — Re-spec the deleted `package.ts` intent (recover from git history) onto the current content-IO: resolve via `resolveContentPath` (F007); bundle `SKILL.md` + `references/` + companion configs (`metadata.openclaw`, `agents/openai.yaml`).
-- [ ] **R4** — **Reuse content-IO primitives** (`content/frontmatter.ts`, `content/identity.ts`, `content/paths.ts`) — no bespoke frontmatter parsing or path resolution.
-- [ ] **R5** — Output: bundle at `--output` (default cwd); path returned + printed via `process.stdout.write`.
-- [ ] **R6** — Missing skill → exit 2 (content-not-found convention).
-- [ ] **R7** — Deterministic: no model call, no Phase 4 dependency.
-- [ ] **R8** — CLI home (invariant #3): verb in `commands/skill.ts` / `operations/package.ts`, never a plugin script.
+- [x] **R1** — `superskill skill package <name> [--output <dir>] [--include-companions]` registered on the `skill` command group.
+- [x] **R2** — `operations/package.ts` exports `packageSkill(name, opts): Promise<string>` returning the bundle path.
+- [x] **R3** — Re-spec the deleted `package.ts` intent (recover from git history) onto the current content-IO: resolve via `resolveContentPath` (F007); bundle `SKILL.md` + `references/` + companion configs (`metadata.openclaw`, `agents/openai.yaml`).
+- [x] **R4** — **Reuse content-IO primitives** (`content/frontmatter.ts`, `content/identity.ts`, `content/paths.ts`) — no bespoke frontmatter parsing or path resolution.
+- [x] **R5** — Output: bundle at `--output` (default cwd); path returned + printed via `process.stdout.write`.
+- [x] **R6** — Missing skill → exit 2 (content-not-found convention).
+- [x] **R7** — Deterministic: no model call, no Phase 4 dependency.
+- [x] **R8** — CLI home (invariant #3): verb in `commands/skill.ts` / `operations/package.ts`, never a plugin script.
 
 **Acceptance:**
 ```bash
@@ -82,15 +82,13 @@ commands/skill.ts: register package subcommand. operations/package.ts: packageSk
 
 ### Testing
 
+- **Timestamp:** 2026-06-19T01:55Z
 - **Command:** `bun test apps/cli/tests/operations/skill-package.test.ts` + full `bun run test`
 - **Scope:** packageSkill core flow, --include-companions, missing-skill error, output path contract, determinism, graceful no-companion handling, default output
 - **Result:** 7/7 pass, 640/640 full suite pass. `package.ts`: 100% func, 100% line coverage
 - **Evidence:** `SKILL.md` + `references/` bundled correctly; companions included with flag; ENOENT→exit 2 verified
 - **Next action:** none
-- [ ] Coverage for `operations/package.ts` contributes to the ≥90% gate.
-- [ ] No test skipped / `.skip`'d (R12).
 
-`bun:test`, `apps/cli/tests/operations/`. A sample skill-with-companions fixture.
 
 
 ### Artifacts
