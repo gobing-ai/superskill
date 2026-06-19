@@ -420,6 +420,16 @@ Both mechanical, no behavior change; gates re-confirmed green after.
 
 Spur companion task 0087 (Done) delivered `agent.run` capture + `response.validate`, but the engine's template resolver only supports `${vars.*}`/`${env.*}`/`${builtins}` — not `{{ steps.* }}` Mustache. The captured answer (`data.answer`) is unreachable by the validate action (actions only see `vars`; `agent.run` only sets `__agentSession` in setVars, not the answer). No executable test runs the spike to terminal. Three unblock options identified (see Design section); all require Spur-side or engine-side work.
 
+---
+
+**Re-verification — 2026-06-19 16:10 PDT (`rd3-dev-verify 0041 --auto --fix all --force`): PARTIAL.**
+No new findings. Forced re-audit confirmed the prior result against the current clean workspace:
+Phase 1–2/partial-5 artifacts remain correct, Phase 4 remains blocked on the Spur data-threading
+gap, and no fix pass was needed. Gates re-run clean: `bun run lint` (117 files + typecheck),
+`bun run test` (724 pass, 0 fail, 99.55% funcs / 98.35% lines), `bun run build` (758 modules),
+and Stop-hook smoke checks (no context → 0, non-compliant API claim → 1, compliant cited claim → 0).
+`git status` was clean before recording this verification note.
+
 
 ### Testing
 
