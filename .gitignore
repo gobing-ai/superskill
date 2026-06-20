@@ -144,6 +144,10 @@ dist
 /.rulesync
 /.opencode
 /.pi
+# Install test output generated under apps/cli/ by integration tests
+/apps/cli/.rulesync
+/apps/cli/.opencode
+/apps/cli/.pi
 /.wolf
 /docs/.ftree
 

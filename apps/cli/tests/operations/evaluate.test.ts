@@ -2,9 +2,9 @@ import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import type { QualityReport } from '@gobing-ai/superskill-core';
 import { createDbAdapter } from '@gobing-ai/ts-db';
 import { evaluate, formatEvaluationReport } from '../../src/operations/evaluate';
-import type { QualityReport } from '../../src/quality/dimensions';
 import { EvaluationDao } from '../../src/store/evaluations';
 import { evaluations } from '../../src/store/schema';
 

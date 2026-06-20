@@ -11,9 +11,8 @@ import {
     writeFileSync,
 } from 'node:fs';
 import { join } from 'node:path';
+import type { RulesyncOptions, Target } from '@gobing-ai/superskill-core';
 import { executeInstall } from '../../src/commands/install';
-import type { RulesyncOptions } from '../../src/rulesync';
-import type { Target } from '../../src/targets';
 
 const FIXTURE_DIR = join(import.meta.dir, '..', 'fixtures', 'plugin-min');
 

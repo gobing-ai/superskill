@@ -1,11 +1,16 @@
 import { createInterface } from 'node:readline';
+import {
+    applyChange,
+    backupFile,
+    type Change,
+    type ContentType,
+    type DimensionScore,
+    parseFrontmatter,
+    resolveContentPath,
+    restoreFromBackup,
+    type Target,
+} from '@gobing-ai/superskill-core';
 import { echo, echoError } from '@gobing-ai/ts-utils';
-import { backupFile, restoreFromBackup } from '../content/backup';
-import { applyChange, type Change } from '../content/edit';
-import { parseFrontmatter } from '../content/frontmatter';
-import { resolveContentPath } from '../content/identity';
-import type { ContentType, DimensionScore } from '../quality/dimensions';
-import type { Target } from '../targets';
 import { evaluate } from './evaluate';
 import type { Finding } from './validate';
 import { validate } from './validate';

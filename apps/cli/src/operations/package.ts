@@ -1,7 +1,7 @@
 import { cpSync, existsSync, mkdirSync, statSync } from 'node:fs';
 import { basename, dirname, join } from 'node:path';
 import { cwd } from 'node:process';
-import { resolveContentPath } from '../content/identity';
+import { resolveContentPath } from '@gobing-ai/superskill-core';
 
 /** Options for the package operation. */
 export interface PackageOptions {

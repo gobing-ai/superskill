@@ -86,7 +86,10 @@ describe('scorer seam — envelope-out', () => {
         }) as typeof process.stdout.write;
 
         try {
-            const result = await evaluate('agent', file, { rubric: 'apps/cli/src/rubrics/agent.yaml', json: true });
+            const result = await evaluate('agent', file, {
+                rubric: 'packages/core/src/rubrics/agent.yaml',
+                json: true,
+            });
             expect(result).toBeNull();
         } finally {
             process.stdout.write = origWrite;
@@ -116,7 +119,7 @@ describe('scorer seam — envelope-out', () => {
         process.stdout.write = vi.fn(() => true) as typeof process.stdout.write;
         try {
             await evaluate('agent', file, {
-                rubric: 'apps/cli/src/rubrics/agent.yaml',
+                rubric: 'packages/core/src/rubrics/agent.yaml',
                 json: true,
                 save: true,
                 adapter,

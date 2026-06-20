@@ -12,17 +12,31 @@
     },
     "apps/cli": {
       "name": "@gobing-ai/superskill",
-      "version": "0.1.0",
+      "version": "0.1.3",
       "bin": {
-        "superskill": "./superskill",
+        "superskill": "dist/index.js",
       },
       "dependencies": {
+        "@gobing-ai/superskill-core": "workspace:*",
         "@gobing-ai/ts-ai-runner": "^0.3.19",
         "@gobing-ai/ts-db": "^0.3.19",
         "@gobing-ai/ts-utils": "^0.3.19",
         "commander": "^14.0.0",
         "drizzle-orm": "^0.44.0",
         "drizzle-zod": "^0.7.0",
+        "rulesync": "^8.28.1",
+        "yaml": "^2.9.0",
+        "zod": "^3.25.0",
+      },
+      "devDependencies": {
+        "@types/bun": "1.3.14",
+      },
+    },
+    "packages/core": {
+      "name": "@gobing-ai/superskill-core",
+      "version": "0.1.3",
+      "dependencies": {
+        "@gobing-ai/ts-ai-runner": "^0.3.19",
         "rulesync": "^8.28.1",
         "yaml": "^2.9.0",
         "zod": "^3.25.0",
@@ -54,6 +68,8 @@
     "@borewit/text-codec": ["@borewit/text-codec@0.2.2", "", {}, "sha512-DDaRehssg1aNrH4+2hnj1B7vnUGEjU6OIlyRdkMd0aUdIUvKXrJfXsy8LVtXAy7DRvYVluWbMspsRhz2lcW0mQ=="],
 
     "@gobing-ai/superskill": ["@gobing-ai/superskill@workspace:apps/cli"],
+
+    "@gobing-ai/superskill-core": ["@gobing-ai/superskill-core@workspace:packages/core"],
 
     "@gobing-ai/ts-ai-runner": ["@gobing-ai/ts-ai-runner@0.3.19", "", { "dependencies": { "@gobing-ai/ts-db": "^0.3.19", "@gobing-ai/ts-infra": "^0.3.19", "@gobing-ai/ts-runtime": "^0.3.19" } }, "sha512-4Z02wSvwFbGBJT1Sl/3MKrNLyUB5X2ehdMo7pqYirHvfVy5dMIr6g+j5Go674G/6DIzHmWpOmn8HTQOheWRrSw=="],
 

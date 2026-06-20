@@ -1,18 +1,24 @@
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { createInterface } from 'node:readline';
+import {
+    applyChange,
+    backupFile,
+    type Change,
+    type ContentType,
+    getProposalsDir,
+    loadRubric,
+    parseFrontmatter,
+    type QualityReport,
+    resolveContentName,
+    resolveContentPath,
+    restoreFromBackup,
+    type Target,
+} from '@gobing-ai/superskill-core';
 import { echo, echoError } from '@gobing-ai/ts-utils';
-import { backupFile, restoreFromBackup } from '../content/backup';
-import { applyChange, type Change } from '../content/edit';
-import { parseFrontmatter } from '../content/frontmatter';
-import { resolveContentName, resolveContentPath } from '../content/identity';
-import { getProposalsDir } from '../content/paths';
-import type { ContentType, QualityReport } from '../quality/dimensions';
-import { loadRubric } from '../quality/rubric';
 import type { DbAdapter, Evaluation, Proposal } from '../store';
 import { EvaluationDao } from '../store/evaluations';
 import { ProposalDao } from '../store/proposals';
-import type { Target } from '../targets';
 import { evaluate } from './evaluate';
 import { validate } from './validate';
 

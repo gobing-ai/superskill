@@ -31,12 +31,13 @@
     },
     "scripts": {
         "start": "bun run src/index.ts",
-        "build": "bun build src/index.ts --outfile dist/index.js --target bun && bun run ../../scripts/builder.ts postbuild dist/index.js && rm -rf templates rubrics && cp -r src/templates templates && cp -r src/rubrics rubrics",
+        "build": "bun build src/index.ts --outfile dist/index.js --target bun && bun run ../../scripts/builder.ts postbuild dist/index.js && rm -rf templates rubrics && cp -r src/templates templates && cp -r ../../packages/core/src/rubrics rubrics",
         "prepublishOnly": "bun run build && cp ../../README.md README.md",
         "test": "NODE_ENV=test bun test --reporter=dots",
         "typecheck": "tsc --noEmit"
     },
     "dependencies": {
+        "@gobing-ai/superskill-core": "workspace:*",
         "@gobing-ai/ts-ai-runner": "^0.3.19",
         "@gobing-ai/ts-db": "^0.3.19",
         "@gobing-ai/ts-utils": "^0.3.19",

@@ -1,19 +1,24 @@
 import { readFileSync } from 'node:fs';
+import {
+    type ContentType,
+    type DimensionScore,
+    evaluateAgent,
+    evaluateCommand,
+    evaluateHook,
+    evaluateMagent,
+    evaluateSkill,
+    hashContent,
+    loadRubric,
+    type QualityReport,
+    type Rubric,
+    resolveContentName,
+    resolveContentPath,
+    type Target,
+} from '@gobing-ai/superskill-core';
 import { echo, echoError } from '@gobing-ai/ts-utils';
-import { hashContent } from '../content/hash';
-import { resolveContentName, resolveContentPath } from '../content/identity';
-import { evaluateAgent } from '../quality/agent';
-import { evaluateCommand } from '../quality/command';
-import type { ContentType, DimensionScore, QualityReport } from '../quality/dimensions';
-import { evaluateHook } from '../quality/hook';
-import { evaluateMagent } from '../quality/magent';
-import type { Rubric } from '../quality/rubric';
-import { loadRubric } from '../quality/rubric';
-import { evaluateSkill } from '../quality/skill';
 import type { DbAdapter } from '../store';
 import { openStore } from '../store/db';
 import { EvaluationDao } from '../store/evaluations';
-import type { Target } from '../targets';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 

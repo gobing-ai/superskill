@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
+import { getDBPath } from '@gobing-ai/superskill-core';
 import { createDbAdapter, type DbAdapter } from '@gobing-ai/ts-db';
-import { getDBPath } from '../content/paths';
 import { evaluations, proposals } from './schema';
 
 export { getDBPath };

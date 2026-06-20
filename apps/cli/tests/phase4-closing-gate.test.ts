@@ -12,7 +12,7 @@ import { join } from 'node:path';
  */
 describe('phase 4 closing gate — zero model API calls', () => {
     const OPS_DIR = join(import.meta.dir, '../src/operations');
-    const QUALITY_DIR = join(import.meta.dir, '../src/quality');
+    const QUALITY_DIR = join(import.meta.dir, '../../../packages/core/src/quality');
 
     /** Collect all .ts source files from a directory (non-recursive). */
     function collectTsFiles(dir: string): string[] {

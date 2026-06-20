@@ -2,10 +2,10 @@
 doc: 03_ARCHITECTURE
 owns: HOW — module boundaries, data flow, runtime model, invariants
 authority: derived
-version: 2.3.0
+version: 2.4.0
 derived_from: [00_ADR, 01_PRD]
 owner: Robin Min
-updated_at: 2026-06-17
+updated_at: 2026-06-19
 read_before: cross-module, seam, or schema work
 edit_rules: 99 §6.4
 sync: [T1]
@@ -27,40 +27,82 @@ sync: [T1]
 
 ## High-Level Architecture
 
-The superskill CLI is structured around clear separation between command handling, format conversion, core operations, and the data persistence layer.
+The superskill CLI is structured around clear separation between the CLI app (`apps/cli`) and reusable domain logic (`packages/core`). The CLI owns command handling, operation adapters, output formatting, and persistence; core owns content editing, quality scoring, conversion pipeline, target taxonomy, marketplace resolution, plugin mapping, and the rulesync wrapper. `apps/cli` imports `@gobing-ai/superskill-core`; core never depends on the app.
 
 ```mermaid
 graph TD
     CLI["superskill CLI (apps/cli)"]
     CMDS["Command Handlers (commands/)"]
-    OPS["Operations Core (operations/)"]
+    OPS["Operation Adapters (operations/)"]
+    STORE["Data Store & DAOs (store/)"]
+
+    CORE["@gobing-ai/superskill-core (packages/core)"]
     QUAL["Quality Evaluators (quality/)"]
     PIPE["Conversion Pipeline (pipeline/)"]
-    STORE["Data Store & DAOs (store/)"]
+    CONTENT["Content Primitives (content/)"]
     MAPPER["Mapper & Rulesync (mapper.ts, rulesync.ts)"]
-    UTILS["Shared Utilities (packages/utils)"]
+    TARGETS["Targets & Marketplace (targets.ts, marketplace.ts)"]
 
     CLI --> CMDS
     CMDS --> OPS
-    CMDS --> MAPPER
-    CMDS --> PIPE
-    OPS --> QUAL
+    CMDS --> STORE
     OPS --> STORE
-    PIPE --> MAPPER
+
+    CMDS --> CORE
+    OPS --> CORE
+    STORE --> CORE
+    CORE --> QUAL
+    CORE --> PIPE
+    CORE --> CONTENT
+    CORE --> MAPPER
+    CORE --> TARGETS
     MAPPER --> RS_PKG["rulesync (npm package)"]
     STORE --> SQLite["SQLite DB (.superskill/evaluations.db)"]
-
-    %% Dependencies on utils
-    CLI --> UTILS
-    CMDS --> UTILS
-    OPS --> UTILS
-    QUAL --> UTILS
 ```
 
 ## Module boundaries
 
 ```
-apps/cli/src/
+packages/core/src/                # ── Reusable domain logic (@gobing-ai/superskill-core) ──
+├── content/                      # ── Common content-IO primitives ──
+│   ├── backup.ts                 # .bak copy/restore helpers
+│   ├── edit.ts                   # Apply structured text & frontmatter modifications
+│   ├── frontmatter.ts            # Comment-preserving YAML frontmatter parser (ADR-012)
+│   ├── hash.ts                   # Content hashing helper
+│   ├── identity.ts               # Content name/path identity resolver (ADR-013)
+│   ├── paths.ts                  # Data-root / DB / proposals path resolution
+│   └── types.ts                  # ContentType canonical definition
+│
+├── quality/                      # ── Quality evaluation heuristics ──
+│   ├── agent.ts                  # Subagent quality evaluation heuristics
+│   ├── command.ts                # Slash command quality evaluation heuristics
+│   ├── dimensions.ts             # Shared type-specific dimension registries
+│   ├── hook.ts                   # Hook quality evaluation heuristics
+│   ├── magent.ts                 # Main agent quality evaluation heuristics
+│   ├── rubric.ts                 # Rubric loader & validator (ADR F022)
+│   └── skill.ts                  # Skill quality evaluation heuristics
+│
+├── rubrics/                      # ── Built-in rubric YAML data ──
+│   ├── agent.yaml
+│   ├── command.yaml
+│   ├── hook.yaml
+│   ├── magent.yaml
+│   └── skill.yaml
+│
+├── pipeline/                     # ── Conversion transformations (pure stages) ──
+│   ├── convert.ts                # Transformation pipeline orchestration
+│   ├── frontmatter.ts            # Frontmatter normalization stages
+│   ├── pi-subagent.ts            # pi subagent conversion stage
+│   ├── rewrite-colons.ts         # Rewrite colon syntax references
+│   └── slash-command.ts          # Slash-dialect translation mappings
+│
+├── targets.ts                    # Target mapping registries and conversions
+├── marketplace.ts                # Local plugin/marketplace manifest resolution (ADR-011)
+├── mapper.ts                     # Mappings from plugin structure to rulesync canonical
+├── rulesync.ts                   # Rulesync invocation wrapper (ADR-010)
+└── index.ts                      # Public API barrel (structured results, typed errors; no process/stdout)
+
+apps/cli/src/                     # ── CLI app (@gobing-ai/superskill) ──
 ├── commands/                     # ── Command CLI entry handlers ──
 │   ├── agent.ts                  # superskill agent subcommands
 │   ├── command.ts                # superskill command subcommands
@@ -70,55 +112,34 @@ apps/cli/src/
 │   ├── magent.ts                 # superskill magent subcommands
 │   └── skill.ts                  # superskill skill subcommands
 │
-├── content/                      # ── Common content-IO primitives ──
-│   ├── edit.ts                   # Apply structured text & frontmatter modifications
-│   ├── frontmatter.ts            # Comment-preserving YAML frontmatter parser (ADR-012)
-│   ├── hash.ts                   # Content hashing helper
-│   ├── identity.ts               # Content name/path identity resolver (ADR-013)
-│   └── paths.ts                  # Directory path configurations
-│
-├── operations/                   # ── Core platform operations ──
+├── operations/                   # ── Core platform operations (CLI adapters over core APIs) ──
 │   ├── evaluate.ts               # Score content across dimensions and persist reports
 │   ├── evolve.ts                 # Self-evolution loop using historical evaluations
+│   ├── migrate.ts                # Cross-format migration operation
+│   ├── package.ts                # Package content for distribution
 │   ├── refine.ts                 # Evaluate-and-fix automation pipeline
 │   ├── scaffold.ts               # Scaffolding content files from templates
 │   └── validate.ts               # Syntax and layout verification engine
 │
-├── pipeline/                     # ── Conversion transformations ──
-│   ├── convert.ts                # Transformation pipeline orchestration
-│   ├── frontmatter.ts            # Frontmatter normalization stages
-│   ├── pi-subagent.ts            # pi subagent conversion stage
-│   ├── rewrite-colons.ts         # Rewrite colon syntax references
-│   └── slash-command.ts          # Slash-dialect translation mappings
-│
-├── quality/                      # ── Quality evaluation heuristics ──
-│   ├── agent.ts                  # Subagent quality evaluation heuristics
-│   ├── command.ts                # Slash command quality evaluation heuristics
-│   ├── dimensions.ts             # Shared type-specific dimension registries
-│   ├── hook.ts                   # Hook quality evaluation heuristics
-│   ├── magent.ts                 # Main agent quality evaluation heuristics
-│   └── skill.ts                  # Skill quality evaluation heuristics
-│
-├── store/                        # ── Persistence database layer ──
-│   ├── db.ts                     # Database connection initialization and migrations (ADR-014)
+├── store/                        # ── Persistence database layer (app-owned; ADR-014) ──
+│   ├── db.ts                     # Database connection initialization and migrations (re-exports getDBPath from core)
 │   ├── evaluations.ts            # Append-only evaluations record DAO
 │   ├── proposals.ts              # Evolution proposal lifecycle DAO
 │   └── schema.ts                 # Database table schema definition
 │
-├── targets.ts                    # Target mapping registries and conversions
+├── templates/                    # Scaffold templates (app-owned; consumed by scaffold operation)
 ├── config.ts                     # Configuration schema definition
-├── mapper.ts                     # Mappings from plugin structure to rulesync canonical
-├── marketplace.ts                # Local plugin/marketplace manifest resolution (ADR-011)
-├── rulesync.ts                   # Rulesync invocation wrapper (ADR-010)
+├── hooks.ts                      # Hook emission (hermes/pi-style)
 ├── cli.ts                        # Program registration entrypoint
 └── index.ts                      # Executable entrypoint
 ```
 
+**Package boundary rules:** `apps/cli` imports `@gobing-ai/superskill-core`; `packages/core` never imports from `apps/cli`, never calls `process.exit`, and never writes to stdout/stderr. Cross-package access uses the `@gobing-ai/superskill-core` alias only — no deep relative imports across sibling packages. `store/` remains app-owned until a second consumer or independent library surface justifies extraction (deferred per task 0043 Phase 3).
+
 ### Workspace packages
 
-- [apps/cli/](file:///Users/robin/xprojects/superskill/apps/cli): Commander CLI binary and modules listed above.
-- [packages/utils/](file:///Users/robin/xprojects/superskill/packages/utils): Shared workspace utilities (Zod exports, logging, common math).
-
+- [apps/cli/](file:///Users/robin/xprojects/superskill/apps/cli): Commander CLI binary — command registration, option parsing, output formatting, exit-code mapping, operation adapters, and the persistence layer.
+- [packages/core/](file:///Users/robin/xprojects/superskill/packages/core): Reusable domain logic — content editing, quality scoring, conversion pipeline, target taxonomy, marketplace resolution, plugin mapping, rulesync wrapper. Consumed by the CLI via `@gobing-ai/superskill-core`.
 ## Data flow
 
 ### Phase 1: Distribution
@@ -249,7 +270,7 @@ Carried from cc-agents/scripts. Pipeline stages are pure functions per invariant
 | `normalizeFrontmatter` | commands, subagents | Inject `name:`, normalize `allowed-tools:` |
 | `convertToPiSubagent` | Pi subagents | Skills 2.0 → Pi native agent YAML |
 
-`translateSlashCommand` accepts a ts-ai-runner `AgentName`, not a superskill `Target`; the two sets are disjoint on `antigravity-cli`/`antigravity-ide`/`hermes`/`omp`. `TARGET_TO_AGENT_NAME` (in [config.ts](file:///Users/robin/xprojects/superskill/apps/cli/src/config.ts) / [targets.ts](file:///Users/robin/xprojects/superskill/apps/cli/src/targets.ts)) bridges them: `omp→pi`, the antigravity/hermes targets fall to the function's `default` branch (`/plugin-command`).
+`translateSlashCommand` accepts a ts-ai-runner `AgentName`, not a superskill `Target`; the two sets are disjoint on `antigravity-cli`/`antigravity-ide`/`hermes`/`omp`. `TARGET_TO_AGENT_NAME` (in [targets.ts](file:///Users/robin/xprojects/superskill/packages/core/src/targets.ts), consumed by [config.ts](file:///Users/robin/xprojects/superskill/apps/cli/src/config.ts)) bridges them: `omp→pi`, the antigravity/hermes targets fall to the function's `default` branch (`/plugin-command`).
 
 ## Target taxonomy
 

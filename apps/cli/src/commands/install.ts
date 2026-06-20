@@ -10,18 +10,21 @@ import {
 } from 'node:fs';
 import { homedir } from 'node:os';
 import { basename, join } from 'node:path';
+import {
+    convertToPiSubagent,
+    listResolvablePlugins,
+    mapPluginToRulesync,
+    normalizeFrontmatter,
+    resolvePlugin,
+    rewriteColonRefs,
+    runRulesync,
+    TARGETS,
+    type Target,
+    translateSlashCommands,
+} from '@gobing-ai/superskill-core';
 import { echo } from '@gobing-ai/ts-utils';
 import type { Command } from 'commander';
 import { type EmitHooksResult, emitHermesHooks, emitPiStyleHooks } from '../hooks';
-import { mapPluginToRulesync } from '../mapper';
-import { listResolvablePlugins, resolvePlugin } from '../marketplace';
-import { normalizeFrontmatter } from '../pipeline/frontmatter';
-import { convertToPiSubagent } from '../pipeline/pi-subagent';
-import { rewriteColonRefs } from '../pipeline/rewrite-colons';
-import { translateSlashCommands } from '../pipeline/slash-command';
-import { runRulesync } from '../rulesync';
-import type { Target } from '../targets';
-import { TARGETS } from '../targets';
 
 /**
  * Register the `superskill install` subcommand on the given Commander program.

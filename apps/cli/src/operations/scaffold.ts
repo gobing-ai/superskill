@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { cwd } from 'node:process';
-import type { ContentType } from '../content/types';
+import type { ContentType } from '@gobing-ai/superskill-core';
 
 /** Options for the scaffold operation. */
 export interface ScaffoldOptions {

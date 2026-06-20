@@ -1,10 +1,12 @@
 import { existsSync, statSync } from 'node:fs';
 import { dirname } from 'node:path';
-import { parseFrontmatter } from '../content/frontmatter';
-import { resolveContentPath } from '../content/identity';
-import type { ContentType } from '../quality/dimensions';
-import { REQUIRED_FIELDS } from '../quality/dimensions';
-import type { Target } from '../targets';
+import {
+    type ContentType,
+    parseFrontmatter,
+    REQUIRED_FIELDS,
+    resolveContentPath,
+    type Target,
+} from '@gobing-ai/superskill-core';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 

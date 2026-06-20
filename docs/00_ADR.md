@@ -39,6 +39,8 @@ Reversals = new entries naming what they supersede. Burned numbers get a `Skippe
 
 **Detail:** see 03 §Module boundaries.
 
+**Realization (2026-06-19, task 0043).** `packages/core` (`@gobing-ai/superskill-core`) extracted as the first concrete shared library: content, quality, pipeline, targets, marketplace, mapper, rulesync, and built-in rubrics. `apps/cli` imports it via the workspace alias; core never imports from the app, calls `process.exit`, or writes to stdout/stderr. `store/` remains app-owned pending a second consumer (deferred to Phase 3). No behavior change — the CLI bundle inlines core source via `bun build`. Detail: see 03 §Module boundaries.
+
 ---
 
 ## ADR-003: Commander as CLI framework

@@ -1,17 +1,20 @@
 import { existsSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
+import {
+    listResolvablePlugins,
+    mapPluginToRulesync,
+    resolvePlugin,
+    runRulesync,
+    type Target,
+} from '@gobing-ai/superskill-core';
 import { echo, echoError } from '@gobing-ai/ts-utils';
 import type { Command } from 'commander';
-import { mapPluginToRulesync } from '../mapper';
-import { listResolvablePlugins, resolvePlugin } from '../marketplace';
 import { evaluate, formatEvaluationReport } from '../operations/evaluate';
 import { evolve } from '../operations/evolve';
 import { refine } from '../operations/refine';
 import { scaffold } from '../operations/scaffold';
 import { formatValidationResult, validate } from '../operations/validate';
-import { runRulesync } from '../rulesync';
-import type { Target } from '../targets';
 import {
     addAutoOption,
     addEvaluateOptions,

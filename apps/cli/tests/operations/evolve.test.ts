@@ -3,6 +3,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { chdir, cwd } from 'node:process';
+import type { QualityReport } from '@gobing-ai/superskill-core';
 import { createDbAdapter, type DbAdapter } from '@gobing-ai/ts-db';
 import type { ProposedChange, TrendEntry } from '../../src/operations/evolve';
 import {
@@ -12,7 +13,6 @@ import {
     generateProposalId,
     interactiveReview,
 } from '../../src/operations/evolve';
-import type { QualityReport } from '../../src/quality/dimensions';
 import type { Evaluation, Proposal } from '../../src/store';
 import { EvaluationDao } from '../../src/store/evaluations';
 import { ProposalDao } from '../../src/store/proposals';

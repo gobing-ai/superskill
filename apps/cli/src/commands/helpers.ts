@@ -1,7 +1,6 @@
+import { TARGETS, type Target } from '@gobing-ai/superskill-core';
 import { echoError } from '@gobing-ai/ts-utils';
 import type { Command } from 'commander';
-import type { Target } from '../targets';
-import { TARGETS } from '../targets';
 
 /** Add --target <agent> option (common to all operations). */
 export function addTargetOption(cmd: Command): Command {

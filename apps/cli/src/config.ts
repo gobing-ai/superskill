@@ -1,6 +1,6 @@
 import { existsSync, readFileSync } from 'node:fs';
+import { TARGETS } from '@gobing-ai/superskill-core';
 import { z } from 'zod';
-import { TARGETS } from './targets';
 
 const pluginSchema = z.object({
     name: z.string().min(1),

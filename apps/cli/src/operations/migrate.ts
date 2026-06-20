@@ -1,11 +1,15 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
+import {
+    type ParsedFrontmatter,
+    parseFrontmatter,
+    resolveContentName,
+    resolveContentPath,
+    type Target,
+} from '@gobing-ai/superskill-core';
 import { echo } from '@gobing-ai/ts-utils';
 import { stringify } from 'yaml';
-import { type ParsedFrontmatter, parseFrontmatter } from '../content/frontmatter';
-import { resolveContentName, resolveContentPath } from '../content/identity';
 import type { DbAdapter } from '../store';
-import type { Target } from '../targets';
 import { evolve } from './evolve';
 
 /** Options for the migrate operation. */

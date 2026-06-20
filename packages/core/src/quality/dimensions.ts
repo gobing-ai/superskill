@@ -1,9 +1,9 @@
 import { FrontmatterError, parseFrontmatter } from '../content/frontmatter';
+import type { ContentType } from '../content/types';
+
+export type { ContentType };
 
 // ── Types ────────────────────────────────────────────────────────────────────
-
-/** Canonical content types — the authoritative definition consumed by F007 and F010–F014. */
-export type ContentType = 'skill' | 'command' | 'agent' | 'hook' | 'magent';
 
 /** Dimension names (union of all possible dimension keys across content types). */
 export type DimensionName =
