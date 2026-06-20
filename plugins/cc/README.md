@@ -1,0 +1,285 @@
+# Plugin `cc`
+
+> **superskill** — a manager for multi-agent skill, slash command, subagent, hook, MCP, and main-agent config.
+
+The `cc` plugin is the canonical Claude Code plugin for the superskill ecosystem. It provides a full lifecycle toolkit (scaffold → validate → evaluate → refine → evolve) for every entity type superskill manages — skills, slash commands, subagents, hooks, and main-agent configs — and ships an anti-hallucination guard that enforces verification-before-generation at the `Stop` hook.
+
+- **Marketplace entry:** `name: "cc"`, `version: "0.1.1"`, `source: "./plugins/cc"` (`.claude-plugin/marketplace.json`)
+- **Owner:** Robin Min
+
+## Directory Layout
+
+```
+plugins/cc/
+├── skills/                          # Domain knowledge + workflow documentation (6 skills)
+│   ├── anti-hallucination/          # Zero-trust verification protocol (v3.0.0)
+│   ├── cc-agents/                   # Subagent lifecycle (v3.0.0, 6 platforms)
+│   ├── cc-commands/                 # Slash command lifecycle (v3.0.0, 6 platforms)
+│   ├── cc-hooks/                    # Multi-agent hook system (v3.0.0, 6 platforms)
+│   ├── cc-magents/                  # Main-agent config (v5.0.0, 15 platforms)
+│   └── cc-skills/                   # Skill lifecycle (v3.0.0, 5 platforms)
+├── commands/                        # Slash command definitions (16)
+├── agents/                          # Expert subagent definitions (5)
+├── hooks/                           # Hook definitions
+│   └── hooks.json
+├── scripts/                         # Executable TypeScript (hook enforcement)
+│   └── anti-hallucination/
+│       ├── ah_guard.ts              # Core guard engine
+│       ├── validate_response.ts     # CLI entry point
+│       ├── logger.ts                # Self-contained logger
+│       └── tests/                   # Unit tests
+└── README.md                        # This file
+```
+
+## Entity Design Purposes
+
+### 1. Skills (`skills/`)
+
+**Purpose:** The single source of truth for domain knowledge and workflow documentation. Each skill is a self-contained knowledge module that teaches the agent how to perform a specialized task.
+
+| Skill | Version | Platforms | Domain |
+|-------|---------|-----------|--------|
+| `anti-hallucination` | 3.0.0 | claude-code, codex, antigravity, opencode, openclaw | Zero-trust verification protocol — enforces source citations, confidence scoring, and tool-usage evidence before factual claims |
+| `cc-agents` | 3.0.0 | claude-code, gemini-cli, opencode, codex, openclaw, antigravity | Subagent lifecycle — scaffold / validate / evaluate / refine / evolve subagent definitions across 6 platforms |
+| `cc-commands` | 3.0.0 | claude-code, codex, gemini, openclaw, opencode, antigravity | Slash command lifecycle — scaffold / validate / evaluate / refine / evolve slash commands across platforms |
+| `cc-hooks` | 3.0.0 | claude-code, codex, opencode, pi, openclaw, gemini | Multi-agent hook system — author hooks once in rulesync-canonical `hooks.json` (`HookDefinitionSchema`), deploy to 5+ agents |
+| `cc-magents` | 5.0.0 | 15 platforms (agents-md, codex, claude-code, gemini-cli, opencode, cursor, copilot, windsurf, cline, zed, amp, aider, openclaw, antigravity, pi) | Main-agent config — manage `AGENTS.md`, `CLAUDE.md`, `GEMINI.md`, `.cursor/rules`, etc. (not subagents) |
+| `cc-skills` | 3.0.0 | claude-code, codex, antigravity, opencode, openclaw | Skill lifecycle — scaffold / validate / evaluate / refine / evolve agent skills across platforms |
+
+Each skill directory contains:
+
+- `SKILL.md` — Main documentation with YAML frontmatter (`name`, `description`, `metadata.version`, `metadata.platforms`, `metadata.interactions`, etc.)
+- `references/` — Deep-dive docs (workflows, platform-compatibility, evaluation-frameworks, red-flags, troubleshooting)
+- `agents/openai.yaml` — Codex/OpenAI platform-specific agent config
+- `metadata.openclaw` — OpenClaw platform metadata
+
+The `cc-hooks` skill additionally ships an `examples/` directory with ready-to-use shell hook scripts (`load-context.sh`, `validate-bash.sh`, `validate-write.sh`).
+
+**Design principle:** Skills are **knowledge, not execution**. They describe what to do and why; the `superskill` CLI performs deterministic execution.
+
+### 2. Commands (`commands/`)
+
+**Purpose:** Thin slash-command wrappers that parse user arguments and delegate to the corresponding skill. Each command is a user-facing entry point that bridges natural language to skill invocation.
+
+There are **16 commands**, organized as a 4×4 matrix — four lifecycle operations × four entity types:
+
+| Operation | Agent | Command | Magent | Skill |
+|-----------|-------|---------|--------|-------|
+| **add** (scaffold) | `/cc:agent-add` | `/cc:command-add` | `/cc:magent-add` | `/cc:skill-add` |
+| **evaluate** | `/cc:agent-evaluate` | `/cc:command-evaluate` | `/cc:magent-evaluate` | `/cc:skill-evaluate` |
+| **refine** | `/cc:agent-refine` | `/cc:command-refine` | `/cc:magent-refine` | `/cc:skill-refine` |
+| **evolve** | `/cc:agent-evolve` | `/cc:command-evolve` | `/cc:magent-evolve` | `/cc:skill-evolve` |
+
+Each command file contains:
+- YAML frontmatter (`description`, `argument-hint`, `allowed-tools`)
+- A delegation block: `Skill(skill="cc:cc-XXX", args="<op> $ARGUMENTS")`
+- A CLI fallback: `superskill <type> <op> $ARGUMENTS` (for non-Claude platforms)
+
+**Design principle:** Commands are **pass-through routers**. They contain zero domain logic — they parse `$ARGUMENTS` and forward to the skill, which forwards to the CLI.
+
+### 3. Agents (`agents/`)
+
+**Purpose:** Thin specialist subagents that route requests to the correct skill operation. Unlike general-purpose subagents, these are tightly scoped: each expert agent owns exactly one entity type.
+
+| Agent | Delegates To | Color | Trigger Examples |
+|-------|-------------|-------|------------------|
+| `expert-agent` | `cc:cc-agents` | — | "create an agent", "evaluate agent", "refine agent" |
+| `expert-command` | `cc:cc-commands` | — | "create a command", "validate command" |
+| `expert-hook` | `cc:cc-hooks` | crimson | "create hooks", "cross-platform hooks" |
+| `expert-magent` | `cc:cc-magents` | — | "create AGENTS.md", "score my main agent" |
+| `expert-skill` | `cc:cc-skills` | teal | "create a skill", "scaffold a skill" |
+
+Each agent has:
+- `tools: [Read, Glob]` — minimal, read-only tool access
+- `skills: [cc:cc-XXX]` — bound to exactly one skill
+- `model: inherit` — inherits the parent session's model
+
+#### Personas — the Phase 4 quality seam
+
+The **evaluate** and **evolve** operations drive quality scoring via four personas. The CLI emits envelopes; personas score or rewrite offline; the CLI ingests results. The CLI never scores or generates inline.
+
+| Persona | Role | Input | Output |
+|---------|------|-------|--------|
+| **Scorer** | Rubric judge — scores each dimension against the criterion | Envelope JSON from `evaluate --rubric --json` | `{ rubric_version, dimensions: { name: { score, note } } }` |
+| **Author** | Rewriter — rewrites content per dimension from generation briefs | Envelope JSON from `evolve --propose-only --json` | `ProposedChange[]` with real `proposed` text + `anchor_hash` |
+| **Skeptic** | Refuter — checks proposal against verbatim goal anchor for violations/omissions | Proposal + verbatim original instructions + negative constraints | `{ ok, violations[] }` |
+| **Judge** | Tournament selector — pairwise comparison when multiple candidates exist | Multiple candidate proposals + verbatim goal anchor | Winning proposal ID |
+
+**Goal-anchor verbatim discipline:** Persona prompts MUST pass the original instructions + negative constraints **verbatim** to Skeptic/Judge. No compaction, no summarization, no paraphrasing. The CLI gate (F024) enforces via `anchor_hash` — if the agent strips or alters the anchor, the hash won't match and the gate rejects.
+
+**Design principle:** Expert agents are **delegates, not implementors**. They never contain domain logic. Their sole job is to recognize trigger phrases and route to the bound skill, which routes to the CLI. This separation means all knowledge lives in skills, all execution lives in the CLI, and agents are just dispatchers.
+
+### 4. Hooks (`hooks/`)
+
+**Purpose:** Event-driven enforcement that runs automatically without user invocation. The `hooks.json` file registers hook handlers for Claude Code lifecycle events.
+
+Currently registered:
+
+| Event | Matcher | Handler | Timeout |
+|-------|---------|---------|---------|
+| `Stop` | `*` (all responses) | `bun ${CLAUDE_PLUGIN_ROOT}/scripts/anti-hallucination/ah_guard.ts` | 10s |
+
+The `Stop` hook fires when Claude Code is about to stop and checks whether the response satisfies the anti-hallucination protocol (source citations, confidence levels, tool-usage evidence). If the protocol is not satisfied, the hook denies the stop and requests corrections.
+
+**Design principle:** Hooks provide **automatic enforcement** that complements skill knowledge. The `anti-hallucination` skill teaches *how* to verify; the `Stop` hook *enforces* that verification happened.
+
+### 5. Scripts (`scripts/`)
+
+**Purpose:** Executable TypeScript code that implements hook enforcement logic. Scripts are the runtime layer — they run as processes, not as LLM context.
+
+| Script | Role |
+|--------|------|
+| `ah_guard.ts` | Core guard engine — reads `Stop` hook context from `ARGUMENTS` env (messages + last_message), verifies citations/confidence/tool-usage patterns, exits 0 (allow) or 1 (deny with JSON reason) |
+| `validate_response.ts` | CLI entry point — reads response text from `RESPONSE_TEXT` env or stdin, runs `validateResponseText()`, exits 0/1 |
+| `logger.ts` | Self-contained minimal logger (migrated verbatim from Spur, task 0041) — avoids depending on host plugin's shared logger |
+| `tests/ah_guard.test.ts` | Unit tests for the guard engine |
+| `tests/validate_response.test.ts` | Unit tests for the CLI entry point |
+
+The guard checks for:
+- Source citation patterns (`[Source: ...]`, `Source: ...`, `Sources:` lists, HTTP/HTTPS URLs, markdown bold `**Source**:`)
+- Confidence level indicators (`Confidence: HIGH|MEDIUM|LOW`, `### Confidence`)
+- Evidence of verification tool usage (`ref_search_documentation`, `ref_read_url`, `searchCode`, `WebSearch`, `WebFetch`, MCP-prefixed variants)
+- Unverified factual claims
+
+**Design principle:** Scripts are **deterministic enforcement**. Unlike skills (which are advisory knowledge consumed by the LLM), scripts run as code and make binary allow/deny decisions. They are the hard gate that the soft skill cannot enforce on its own.
+
+## Relationship Diagram
+
+```mermaid
+graph TB
+    subgraph "User Entry Points"
+        CMD["Commands<br/>16 slash commands<br/>/cc:skill-add, /cc:agent-evaluate, ..."]
+        AGENT["Agents<br/>5 expert subagents<br/>expert-skill, expert-agent, ..."]
+        HOOK["Stop Hook<br/>hooks.json"]
+    end
+
+    subgraph "Knowledge Layer"
+        SKILL_AH["anti-hallucination<br/>Verification protocol"]
+        SKILL_AGENTS["cc-agents<br/>Subagent lifecycle"]
+        SKILL_COMMANDS["cc-commands<br/>Command lifecycle"]
+        SKILL_HOOKS["cc-hooks<br/>Hook system"]
+        SKILL_MAGENTS["cc-magents<br/>Main-agent config"]
+        SKILL_SKILLS["cc-skills<br/>Skill lifecycle"]
+    end
+
+    subgraph "Execution Layer"
+        CLI["superskill CLI<br/>Deterministic operations<br/>scaffold / validate / evaluate / refine / evolve"]
+        SCRIPT["scripts/anti-hallucination/<br/>ah_guard.ts + validate_response.ts"]
+    end
+
+    subgraph "Persistence Layer"
+        DB["SQLite store<br/>Evaluations + proposals"]
+    end
+
+    %% Command → Skill delegations
+    CMD -->|"Skill(cc:cc-skills, ...)"| SKILL_SKILLS
+    CMD -->|"Skill(cc:cc-agents, ...)"| SKILL_AGENTS
+    CMD -->|"Skill(cc:cc-commands, ...)"| SKILL_COMMANDS
+    CMD -->|"Skill(cc:cc-magents, ...)"| SKILL_MAGENTS
+
+    %% Agent → Skill bindings
+    AGENT -->|"skills: [cc:cc-skills]"| SKILL_SKILLS
+    AGENT -->|"skills: [cc:cc-agents]"| SKILL_AGENTS
+    AGENT -->|"skills: [cc:cc-commands]"| SKILL_COMMANDS
+    AGENT -->|"skills: [cc:cc-hooks]"| SKILL_HOOKS
+    AGENT -->|"skills: [cc:cc-magents]"| SKILL_MAGENTS
+
+    %% Hook → Script
+    HOOK -->|"bun scripts/ah_guard.ts"| SCRIPT
+
+    %% Script ↔ Skill knowledge
+    SCRIPT -.->|"implements protocol from"| SKILL_AH
+
+    %% Skill → CLI delegations
+    SKILL_SKILLS -->|"superskill skill &lt;op&gt;"| CLI
+    SKILL_AGENTS -->|"superskill agent &lt;op&gt;"| CLI
+    SKILL_COMMANDS -->|"superskill command &lt;op&gt;"| CLI
+    SKILL_HOOKS -->|"superskill hook &lt;op&gt;"| CLI
+    SKILL_MAGENTS -->|"superskill magent &lt;op&gt;"| CLI
+
+    %% CLI → DB
+    CLI -->|"evaluate --save<br/>evolve --accept"| DB
+
+    %% Styling
+    classDef entry fill:#4a9eff,color:#fff,stroke:#2563eb
+    classDef knowledge fill:#8b5cf6,color:#fff,stroke:#7c3aed
+    classDef execution fill:#10b981,color:#fff,stroke:#059669
+    classDef storage fill:#f59e0b,color:#fff,stroke:#d97706
+
+    class CMD,AGENT,HOOK entry
+    class SKILL_AH,SKILL_AGENTS,SKILL_COMMANDS,SKILL_HOOKS,SKILL_MAGENTS,SKILL_SKILLS knowledge
+    class CLI,SCRIPT execution
+    class DB storage
+```
+
+## Delegation Flow
+
+The plugin follows a strict **three-tier delegation** pattern — each tier has a single responsibility and delegates to the next:
+
+```
+Tier 1 — Entry Points (Commands / Agents / Hooks)
+  │   Parse user input, route to the correct skill
+  │   Contains ZERO domain logic
+  ▼
+Tier 2 — Knowledge Layer (Skills)
+  │   Provide domain knowledge, workflows, and patterns
+  │   Delegate deterministic operations to the CLI
+  │   Contains ZERO executable logic
+  ▼
+Tier 3 — Execution Layer (superskill CLI + Scripts)
+  │   Perform deterministic operations (scaffold, validate, evaluate, etc.)
+  │   Persist results to SQLite (evaluations, proposals)
+  │   Enforce hard gates (hook scripts)
+```
+
+### Example: Creating a Skill
+
+1. User types `/cc:skill-add my-skill --description "Wraps the foo API"`
+2. **Command** (`skill-add.md`) parses `$ARGUMENTS` and calls `Skill(skill="cc:cc-skills", args="scaffold $ARGUMENTS")`
+3. **Skill** (`cc-skills/SKILL.md`) provides the scaffold workflow documentation; the agent follows the skill to run `superskill skill scaffold my-skill --description "Wraps the foo API"`
+4. **CLI** executes the scaffold operation, creates the directory structure, writes SKILL.md from template
+5. Result: new skill directory on disk
+
+### Example: Anti-Hallucination Enforcement
+
+1. Claude Code prepares to stop after generating a response
+2. **Stop Hook** (`hooks.json`) fires, executing `bun scripts/anti-hallucination/ah_guard.ts`
+3. **Script** (`ah_guard.ts`) reads the `Stop` hook context from `ARGUMENTS` env (conversation messages + last assistant message), checks for citations, confidence levels, and tool-usage evidence
+4. If protocol satisfied → exit 0 (allow stop)
+5. If protocol violated → exit 1, output JSON with reason (deny stop, request corrections)
+6. The **`anti-hallucination` skill** provides the knowledge the agent uses to satisfy the guard on retry
+
+### Example: Quality Evaluation via Personas
+
+1. User types `/cc:skill-evaluate my-skill --save`
+2. **Command** delegates to `cc:cc-skills` skill → `superskill skill evaluate my-skill --rubric --json`
+3. **CLI** emits an envelope JSON with the skill content and rubric dimensions
+4. **Scorer** persona scores each dimension, returns `{ rubric_version, dimensions: { ... } }`
+5. CLI ingests scores, persists to SQLite via `--save`
+6. For **evolve**: **Author** proposes changes → **Skeptic** checks against verbatim goal anchor (hash-gated) → **Judge** selects winner if multiple candidates
+
+## Platform Compatibility
+
+The `cc` plugin is the Claude Code native format. On other platforms (Codex, Gemini, Pi, OpenCode, Antigravity, OpenClaw, Hermes, omp), the `superskill install` command maps plugin entities to platform-native locations via the rulesync mapper:
+
+| Plugin Entity | Claude Code | Other Platforms |
+|--------------|-------------|-----------------|
+| `skills/*.md` | `~/.claude/skills/` | `~/.agents/skills/`, `~/.pi/agent/skills/`, etc. |
+| `commands/*.md` | `~/.claude/commands/` | `~/.codex/commands/`, `~/.gemini/commands/`, etc. |
+| `agents/*.md` | `~/.claude/agents/` | `~/.pi/agent/agents/`, `~/.codex/agents/`, etc. |
+| `hooks/hooks.json` | `~/.claude/hooks/` | `~/.pi/agent/hooks/`, `~/.codex/hooks/`, etc. |
+| `scripts/` | `${CLAUDE_PLUGIN_ROOT}/scripts/` | Copied alongside platform output |
+
+Each skill declares its own platform support in `metadata.platforms` frontmatter — not all skills support all platforms. See the per-skill table above.
+
+## Lifecycle Operations
+
+All entity types share the same five-operation lifecycle, managed by the `superskill` CLI:
+
+| Operation | Purpose | Quality Gate |
+|-----------|---------|-------------|
+| **scaffold** | Create new entity from template | Structure validation |
+| **validate** | Check structure and frontmatter | Pre-check spur rules |
+| **evaluate** | Score quality across dimensions | Rubric-weighted scoring (Scorer persona) |
+| **refine** | Apply low-risk fixes automatically | Fix classification (auto-apply / suggest / flag) |
+| **evolve** | Propose and apply longitudinal improvements | Double-loop gate (Author → Skeptic → Judge) |
