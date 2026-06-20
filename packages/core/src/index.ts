@@ -20,6 +20,11 @@ export type { ContentType } from './content/types';
 export * from './content/types';
 export * from './mapper';
 export * from './marketplace';
+export * from './operations/migrate';
+// ── Operations ───────────────────────────────────────────────────────────────
+export * from './operations/package';
+export * from './operations/scaffold';
+export * from './operations/validate';
 // ── Pipeline ─────────────────────────────────────────────────────────────────
 export * from './pipeline/convert';
 export * from './pipeline/frontmatter';

@@ -1,14 +1,6 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { dirname } from 'node:path';
-import {
-    type ParsedFrontmatter,
-    parseFrontmatter,
-    resolveContentName,
-    resolveContentPath,
-    type Target,
-} from '@gobing-ai/superskill-core';
+import { readFileSync } from 'node:fs';
+import { migrateSkillsDeterministic, type Target } from '@gobing-ai/superskill-core';
 import { echo } from '@gobing-ai/ts-utils';
-import { stringify } from 'yaml';
 import type { DbAdapter } from '../store';
 import { evolve } from './evolve';
 
@@ -36,113 +28,6 @@ export interface MigrateResult {
     rejected?: boolean;
     /** Human-readable rejection reason when rejected. */
     rejectionReason?: string;
-}
-
-/**
- * Resolve and read skill sources, returning parsed frontmatter + body for each.
- *
- * Uses `resolveContentPath` (F007 / content/identity.ts) — the canonical content-IO
- * path resolver. Throws an ENOENT-tagged error if any source cannot be resolved,
- * which `runOperation` maps to exit 2 (R6).
- */
-function loadSources(sources: string[]): ParsedFrontmatter[] {
-    const parsed: ParsedFrontmatter[] = [];
-    for (const source of sources) {
-        const path = resolveContentPath('skill', source);
-        if (!path || !existsSync(path)) {
-            throw Object.assign(new Error(`Skill not found: ${source}`), { code: 'ENOENT' });
-        }
-        const content = readFileSync(path, 'utf-8');
-        parsed.push(parseFrontmatter(content));
-    }
-    return parsed;
-}
-
-/**
- * Deduplicate an array of primitives, preserving first-occurrence order.
- */
-function dedupeArray(values: unknown[]): unknown[] {
-    const seen = new Set<unknown>();
-    const result: unknown[] = [];
-    for (const v of values) {
-        if (!seen.has(v)) {
-            seen.add(v);
-            result.push(v);
-        }
-    }
-    return result;
-}
-
-/**
- * Merge frontmatter from multiple parsed sources.
- *
- * Conflict policy (documented, deterministic):
- * - `name` → dest-derived canonical name (`resolveContentName(dest)`).
- * - Array values → union with dedup, preserving first-source order.
- * - Scalar conflicts → first source wins (sources are ordered).
- * - All keys from all sources appear in the output (union).
- */
-function mergeFrontmatter(sources: ParsedFrontmatter[], destName: string): Record<string, unknown> {
-    const merged: Record<string, unknown> = {};
-    for (const { data } of sources) {
-        for (const [key, value] of Object.entries(data)) {
-            if (!(key in merged)) {
-                merged[key] = value;
-            } else {
-                const existing = merged[key];
-                if (Array.isArray(existing) && Array.isArray(value)) {
-                    merged[key] = dedupeArray([...existing, ...value]);
-                }
-                // Scalar conflict: first source wins (already in merged).
-            }
-        }
-    }
-    merged.name = destName;
-    return merged;
-}
-
-/**
- * Merge bodies from multiple parsed sources.
- *
- * Bodies are concatenated in source order, separated by a blank line.
- * Identical lines (exact match including whitespace) are collapsed to their
- * first occurrence. Runs of blank lines are collapsed to a single blank line.
- */
-function mergeBodies(sources: ParsedFrontmatter[]): string {
-    const bodies = sources.map((s) => s.body.replace(/^\n+/, '').replace(/\n+$/, ''));
-    const concatenated = bodies.join('\n\n');
-    return dedupeLines(concatenated);
-}
-
-/**
- * Collapse exact-duplicate lines (first occurrence kept) and consecutive blank lines.
- */
-function dedupeLines(text: string): string {
-    const seen = new Set<string>();
-    const out: string[] = [];
-    let prevBlank = false;
-    for (const line of text.split('\n')) {
-        if (line === '') {
-            if (!prevBlank) out.push('');
-            prevBlank = true;
-            continue;
-        }
-        prevBlank = false;
-        if (!seen.has(line)) {
-            seen.add(line);
-            out.push(line);
-        }
-    }
-    while (out.length > 0 && out[out.length - 1] === '') out.pop();
-    return out.join('\n');
-}
-
-/**
- * Serialize merged frontmatter + body into a skill markdown file.
- */
-function serializeSkill(frontmatter: Record<string, unknown>, body: string): string {
-    const yamlStr = stringify(frontmatter);
-    return `---\n${yamlStr}---\n\n${body}\n`;
 }
 
 /**
@@ -185,15 +70,7 @@ export async function migrateSkills(sources: string[], dest: string, opts?: Migr
     }
 
     // 1. Deterministic merge core (R3, R5) — usable alone, no Phase 4 dependency.
-    const parsed = loadSources(sources);
-    const destName = resolveContentName(dest);
-    const mergedFm = mergeFrontmatter(parsed, destName);
-    const mergedBody = mergeBodies(parsed);
-    const mergedContent = serializeSkill(mergedFm, mergedBody);
-
-    const destDir = dirname(dest);
-    if (!existsSync(destDir)) mkdirSync(destDir, { recursive: true });
-    writeFileSync(dest, mergedContent);
+    migrateSkillsDeterministic(sources, dest);
 
     // 2. Refinement layer (R4, R8) — routes through the generation seam, no bespoke rewrite.
     if (opts?.refine) {

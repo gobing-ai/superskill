@@ -223,12 +223,32 @@ Phase 1 — the no-behavior-change move — is complete. Scope delivered this ru
 | Tests | PASS | 729 pass / 0 fail (baseline was 726; +3 from new boundary tests + closing-gate now scans core quality). No skipped tests. |
 | Coverage | PASS | 99.57% functions / 98.35% lines aggregate (threshold: 90%/90%). Moved modules retain equivalent or better coverage. |
 | Build | PASS | `bun run build` → `dist/index.js` 3.40 MB, 761 modules, exit 0. |
-| Install pipeline | PASS | 39 install/integration tests pass (marketplace→mapper→pipeline→rulesync→dispatch end-to-end through the extracted core). |
+| Install pipeline | PASS | Install/integration tests pass through marketplace → mapper → pipeline → rulesync → dispatch using extracted core. |
 | Package boundary | PASS | `packages/core/tests/package-boundary.test.ts` asserts no core→app imports, no `process.exit`/stdout/stderr/console in core. No deep relative imports from CLI into core (all use `@gobing-ai/superskill-core`). |
 | Anti-drift constraints | PASS | No command/flag/exit-code/output-contract change. No new runtime/pm/linter/formatter/framework. No circular imports. `.rulesync/` intermediate behavior unchanged. |
-| Git hygiene | PASS | `git mv` preserved rename history (46 renames). Change set is intentional (M/A/R only); untracked items are new package files + test-generated `.opencode/.pi/.rulesync` artifacts under `apps/cli/` (pre-existing test-output pattern, root-anchored gitignore doesn't cover `apps/cli/` subdir). |
 
 **Scoped note.** This verdict covers Phase 1 only. Phases 2–3 (operation splitting, store decision) remain; the task is non-terminal until they land. Transitioning to `Done` now would misrepresent the full refactor as complete.
+
+---
+
+**Forced re-verification — 2026-06-19 17:51 PDT (`rd3-dev-verify 0043 --auto --fix all --force`): PARTIAL overall.**
+
+No new SECU findings. No fix pass was needed. Phase 1 remains verified and green; task-level verdict stays PARTIAL because Requirements/Plan intentionally still include pending Phases 2–3.
+
+**Requirements traceability**
+
+| Req | Status | Evidence |
+|-----|--------|----------|
+| Preserve CLI behavior and command surfaces | MET for Phase 1 | Built CLI smoke: `--version` → `0.1.3`; `--help` lists existing command tree. |
+| Keep CLI surface in `apps/cli` | MET for Phase 1 | `apps/cli/src/commands/*` still own Commander surfaces; commands import package APIs where extracted. |
+| Move reusable core to `packages/core` | MET for Phase 1 | `packages/core/src/{content,quality,pipeline}` plus `targets.ts`, `marketplace.ts`, `mapper.ts`, `rulesync.ts`. |
+| Split operations into core APIs + CLI adapters | PARTIAL / pending | Operation modules still live in `apps/cli/src/operations`; task explicitly defers this to Phase 2. |
+| Defer store extraction unless justified | MET | `apps/cli/src/store/*` remains app-owned; task records Phase 3 decision point. |
+| Phased migration with tests after each phase | MET for Phase 1 | Full lint/test/build gate re-run clean; boundary test present. |
+| Docs synchronized | MET for Phase 1 | Task artifacts list ADR/architecture/AGENTS updates from Phase 1. |
+| No surface drift without explicit doc update | MET | No command/flag/default/output drift found in this verification. |
+
+**Current git hygiene note.** Earlier Phase 1 review text mentioned test-generated untracked artifacts. Current re-verification does not see those artifacts; `git status --short --untracked-files=all` shows only `M .spur/rules/structure/test-location.yaml`, which is outside this verification scope and was not modified here.
 
 
 ### Testing
@@ -264,6 +284,16 @@ Phase 1 — the no-behavior-change move — is complete. Scope delivered this ru
 - Boundary: `packages/core/tests/package-boundary.test.ts` (3 assertions) passes — no core→app imports, no process/stdout/console coupling in core.
 - Fixes applied during test: `evaluate-ingest.test.ts` rubric path updated to `packages/core/src/rubrics/agent.yaml`; `phase4-closing-gate.test.ts` quality-dir scan repointed to `../../../packages/core/src/quality`.
 - Next action: none for Phase 1. Phases 2–3 (operation splitting, store decision) are follow-up work.
+
+**Forced re-verification evidence (2026-06-19 17:51 PDT)**
+
+- `tasks check 0043`: PASS.
+- `bun run lint`: PASS — Biome checked 122 files; typecheck passed for both `@gobing-ai/superskill-core` and `@gobing-ai/superskill`.
+- `bun test packages/core/tests/package-boundary.test.ts`: PASS — 3 pass / 0 fail.
+- `bun run test`: PASS — 729 pass / 0 fail / 1787 expect() calls / 53 files; coverage 99.57% funcs / 98.35% lines.
+- `bun run build`: PASS — bundled 761 modules, `dist/index.js` 3.40 MB.
+- Built CLI smoke: `bun apps/cli/dist/index.js --version` → `0.1.3`.
+- Built CLI smoke: `bun apps/cli/dist/index.js --help` exits 0 and lists install/type commands.
 
 
 ### Artifacts
