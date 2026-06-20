@@ -15,6 +15,9 @@ Coding agents (Claude Code, Codex, Pi, OpenCode, Antigravity, Hermes, omp) each 
 
 ```bash
 npm i -g @gobing-ai/superskill
+
+# or go with bun
+bun add -g @gobing-ai/superskill
 ```
 
 From source (contributors):
