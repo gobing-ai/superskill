@@ -20,6 +20,7 @@ metadata:
     - evaluate
     - refine
     - evolve
+---
 
 # cc-commands: Universal Command Creator
 
