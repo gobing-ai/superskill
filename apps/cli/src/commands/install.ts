@@ -71,6 +71,8 @@ interface InstallOptions {
 
 interface InstallDependencies {
     runRulesync?: typeof runRulesync;
+    /** Spawn `claude plugin marketplace add` + `claude plugin install`. Mockable for tests. */
+    runClaudeInstall?: (marketplaceRoot: string, marketplaceName: string, plugin: string) => Promise<void>;
 }
 
 interface InstallResultCounts {
@@ -78,6 +80,13 @@ interface InstallResultCounts {
     commandsCount: number;
     subagentsCount: number;
     hooksCount: number;
+}
+
+/** Result of plugin resolution — includes marketplace metadata for Claude target. */
+export interface PluginResolution {
+    pluginRoot: string;
+    marketplaceRoot?: string;
+    marketplaceName?: string;
 }
 
 /** Execute the full install flow: resolve → map → pipeline → rulesync → dispatch. */
@@ -88,11 +97,13 @@ export async function executeInstall(
     dependencies: InstallDependencies = {},
 ): Promise<void> {
     const runRulesyncImpl = dependencies.runRulesync ?? runRulesync;
+    const runClaudeInstallImpl = dependencies.runClaudeInstall ?? defaultRunClaudeInstall;
 
     if (options.verbose) echo(`Resolving plugin '${plugin}'...`);
 
-    // Step 1: Resolve plugin root
-    const pluginRoot = resolvePluginRoot(plugin, options.marketplacePath);
+    // Step 1: Resolve plugin root (+ marketplace metadata for Claude target)
+    const resolution = resolvePluginRoot(plugin, options.marketplacePath);
+    const pluginRoot = resolution.pluginRoot;
 
     if (options.verbose) echo(`Plugin root: ${pluginRoot}`);
 
@@ -161,13 +172,11 @@ export async function executeInstall(
     const hookEmitResults: EmitHooksResult[] = [];
     for (const target of targets) {
         if (target === 'claude') {
-            if (options.verbose) echo('Claude Code: plugin marketplace update...');
+            if (options.verbose) echo('Claude Code: registering marketplace and installing plugin...');
             if (!options.dryRun) {
-                const proc = Bun.spawn(['claude', 'plugin', 'install', `${plugin}@local`, '--path', pluginRoot], {
-                    stdout: 'inherit',
-                    stderr: 'inherit',
-                });
-                await proc.exited;
+                const marketplaceName = resolution.marketplaceName ?? 'superskill';
+                const marketplaceRoot = resolution.marketplaceRoot ?? process.cwd();
+                await runClaudeInstallImpl(marketplaceRoot, marketplaceName, plugin);
             }
         }
 
@@ -232,6 +241,31 @@ export async function executeInstall(
     }
 }
 
+/**
+ * Default Claude Code installer — registers the local marketplace then installs
+ * the plugin. Exposed as a dependency so tests can mock the spawn calls.
+ */
+async function defaultRunClaudeInstall(
+    marketplaceRoot: string,
+    marketplaceName: string,
+    plugin: string,
+): Promise<void> {
+    // Register the local marketplace (idempotent — if already registered,
+    // claude CLI exits 0 with a notice).
+    const addProc = Bun.spawn(['claude', 'plugin', 'marketplace', 'add', marketplaceRoot], {
+        stdout: 'inherit',
+        stderr: 'inherit',
+    });
+    await addProc.exited;
+
+    // Install the plugin from the registered marketplace.
+    const installProc = Bun.spawn(['claude', 'plugin', 'install', `${plugin}@${marketplaceName}`], {
+        stdout: 'inherit',
+        stderr: 'inherit',
+    });
+    await installProc.exited;
+}
+
 /** Parse a comma-separated targets string. Returns all targets when undefined or "all". Throws on unknown targets. */
 export function parseTargets(raw: string | undefined): Target[] {
     if (!raw) return [...TARGETS];
@@ -246,17 +280,35 @@ export function parseTargets(raw: string | undefined): Target[] {
 }
 
 /**
- * Resolve a plugin to its root directory.
+ * Resolve a plugin to its root directory and marketplace metadata.
  *
  * Tries the marketplace manifest first (via {@link resolvePlugin}), then falls
  * back to `plugins/<name>/plugin.json`. Throws when neither resolves.
+ *
+ * Returns {@link PluginResolution} which includes `marketplaceRoot` and
+ * `marketplaceName` when resolved via a marketplace manifest — needed by the
+ * Claude target to register the local marketplace before installing.
  */
-export function resolvePluginRoot(plugin: string, marketplacePath?: string): string {
+export function resolvePluginRoot(plugin: string, marketplacePath?: string): PluginResolution {
     const resolved = resolvePlugin(marketplacePath, plugin);
-    if (resolved) return resolved.pluginRoot;
+    if (resolved) {
+        const manifestRoot = resolved.marketplaceRoot;
+        const manifestPath = join(manifestRoot, '.claude-plugin', 'marketplace.json');
+        let marketplaceName: string | undefined;
+        if (existsSync(manifestPath)) {
+            try {
+                const raw = readFileSync(manifestPath, 'utf-8');
+                const parsed = JSON.parse(raw) as { name?: string };
+                marketplaceName = parsed.name;
+            } catch {
+                // Non-fatal — fallback to 'superskill' in executeInstall
+            }
+        }
+        return { pluginRoot: resolved.pluginRoot, marketplaceRoot: manifestRoot, marketplaceName };
+    }
 
     const fallback = join('plugins', plugin);
-    if (existsSync(join(fallback, 'plugin.json'))) return fallback;
+    if (existsSync(join(fallback, 'plugin.json'))) return { pluginRoot: fallback };
 
     const available = listResolvablePlugins(marketplacePath);
     const msg =

@@ -140,7 +140,7 @@ describe('executeInstall', () => {
 
         const output = stdout.mock.calls.map((call) => String(call[0])).join('');
         expect(output).toContain('Mapping plugin to .rulesync/ canonical layout');
-        expect(output).toContain('Claude Code: plugin marketplace update');
+        expect(output).toContain('Claude Code: registering marketplace and installing plugin');
         expect(output).toContain('Copying to Hermes');
         expect(output).toContain('Copying to omp');
         expect(output).toContain('[DRY-RUN] No files were written.');
@@ -315,6 +315,86 @@ describe('executeInstall', () => {
                 verbose: false,
             }),
         ).rejects.toThrow("Plugin 'missing' not found. Available: available");
+    });
+
+    it('calls runClaudeInstall with marketplace metadata for non-dry-run claude target', async () => {
+        const workspace = createTempWorkspace();
+        createPlugin(workspace, 'market');
+        mkdirSync(join(workspace, '.claude-plugin'), { recursive: true });
+        writeFileSync(
+            join(workspace, '.claude-plugin', 'marketplace.json'),
+            JSON.stringify({
+                name: 'test-marketplace',
+                plugins: [{ name: 'market', source: './plugins/market' }],
+            }),
+        );
+
+        // volCapturedArgs is mutated in the runClaudeInstall callback, so
+        // TypeScript can't narrow its type through control flow. Use a
+        // volatile wrapper that the callback mutates, then unwrap for checks.
+        const volArg: { args: { root: string; name: string; plugin: string } | null } = { args: null };
+        process.chdir(workspace);
+
+        await executeInstall(
+            'market',
+            ['claude'],
+            { marketplacePath: join(workspace, '.claude-plugin'), global: false, dryRun: false, verbose: false },
+            {
+                runClaudeInstall: async (root, name, plugin) => {
+                    volArg.args = { root, name, plugin };
+                },
+            },
+        );
+
+        const args = volArg.args;
+        expect(args).not.toBeNull();
+        // guard after .not.toBeNull() since TS can't track the assertion
+        if (!args) throw new Error('expected captured args to be non-null');
+        expect(args.plugin).toBe('market');
+        expect(args.name).toBe('test-marketplace');
+        expect(args.root).toBe(workspace);
+    });
+
+    it('spawns claude marketplace add and install when using default runClaudeInstall', async () => {
+        const workspace = createTempWorkspace();
+        createPlugin(workspace, 'market');
+        mkdirSync(join(workspace, '.claude-plugin'), { recursive: true });
+        writeFileSync(
+            join(workspace, '.claude-plugin', 'marketplace.json'),
+            JSON.stringify({
+                name: 'test-mkp',
+                plugins: [{ name: 'market', source: './plugins/market' }],
+            }),
+        );
+        const spawnCalls: { cmd: string[]; options: Record<string, unknown> }[] = [];
+        const origSpawn = Bun.spawn;
+        Bun.spawn = ((cmd: string[], options: Record<string, unknown>) => {
+            spawnCalls.push({ cmd: [...cmd], options });
+            return { exited: Promise.resolve(0) };
+        }) as typeof Bun.spawn;
+
+        process.chdir(workspace);
+        await executeInstall('market', ['claude'], {
+            marketplacePath: join(workspace, '.claude-plugin'),
+            global: false,
+            dryRun: false,
+            verbose: false,
+        });
+
+        Bun.spawn = origSpawn;
+
+        expect(spawnCalls.length).toBe(2);
+        const c0 = spawnCalls[0];
+        const c1 = spawnCalls[1];
+        if (!c0 || !c1) throw new Error('expected 2 spawn calls');
+        expect(c0.cmd[0]).toBe('claude');
+        expect(c0.cmd[1]).toBe('plugin');
+        expect(c0.cmd[2]).toBe('marketplace');
+        expect(c0.cmd[3]).toBe('add');
+        expect(c1.cmd[0]).toBe('claude');
+        expect(c1.cmd[1]).toBe('plugin');
+        expect(c1.cmd[2]).toBe('install');
+        expect(c1.cmd[3]).toBe('market@test-mkp');
     });
 });
 

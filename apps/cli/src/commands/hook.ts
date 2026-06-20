@@ -105,7 +105,7 @@ async function emitHook(
     const outputRoot = global ? homedir() : process.cwd();
 
     // Step 1: Resolve plugin root (shared with `superskill install`)
-    const pluginRoot = resolvePluginRoot(name);
+    const pluginRoot = resolvePluginRoot(name).pluginRoot;
 
     // Step 2: Map plugin → .rulesync/ canonical (single shared input)
     const outputDir = '.rulesync';
