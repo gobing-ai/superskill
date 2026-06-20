@@ -92,24 +92,7 @@ export async function executeInstall(
     if (options.verbose) echo(`Resolving plugin '${plugin}'...`);
 
     // Step 1: Resolve plugin root
-    let pluginRoot: string;
-    const resolved = resolvePlugin(options.marketplacePath, plugin);
-    if (resolved) {
-        pluginRoot = resolved.pluginRoot;
-    } else {
-        // Fallback: scan plugins/<name>/
-        const fallback = join('plugins', plugin);
-        if (existsSync(join(fallback, 'plugin.json'))) {
-            pluginRoot = fallback;
-        } else {
-            const available = listResolvablePlugins(options.marketplacePath);
-            const msg =
-                available.length > 0
-                    ? `Available: ${available.join(', ')}`
-                    : 'No marketplace manifest found and no plugins/<name>/ directory.';
-            throw new Error(`Plugin '${plugin}' not found. ${msg}`);
-        }
-    }
+    const pluginRoot = resolvePluginRoot(plugin, options.marketplacePath);
 
     if (options.verbose) echo(`Plugin root: ${pluginRoot}`);
 
@@ -130,7 +113,7 @@ export async function executeInstall(
         targetInputRoots.set(target, targetInputRoot);
     }
 
-    // Step 3: Run rulesync for supported targets. Include surrogate targets:
+    // Step 4: Run rulesync for supported targets. Include surrogate targets:
     // omp reuses pi's rulesync output, hermes reuses opencode's (see ADR-010).
     const rulesyncFeatures = ['skills', 'commands', 'subagents', 'hooks', 'mcp'] as const;
     const rulesyncTargets = targets.filter((t) => t !== 'claude' && t !== 'hermes' && t !== 'omp');
@@ -260,6 +243,27 @@ export function parseTargets(raw: string | undefined): Target[] {
         }
     }
     return requested as Target[];
+}
+
+/**
+ * Resolve a plugin to its root directory.
+ *
+ * Tries the marketplace manifest first (via {@link resolvePlugin}), then falls
+ * back to `plugins/<name>/plugin.json`. Throws when neither resolves.
+ */
+export function resolvePluginRoot(plugin: string, marketplacePath?: string): string {
+    const resolved = resolvePlugin(marketplacePath, plugin);
+    if (resolved) return resolved.pluginRoot;
+
+    const fallback = join('plugins', plugin);
+    if (existsSync(join(fallback, 'plugin.json'))) return fallback;
+
+    const available = listResolvablePlugins(marketplacePath);
+    const msg =
+        available.length > 0
+            ? `Available: ${available.join(', ')}`
+            : 'No marketplace manifest found and no plugins/<name>/ directory.';
+    throw new Error(`Plugin '${plugin}' not found. ${msg}`);
 }
 
 /** Prepares a target-transformed rulesync input layout — copies source into

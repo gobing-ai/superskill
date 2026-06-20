@@ -1,13 +1,6 @@
-import { existsSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
-import {
-    listResolvablePlugins,
-    mapPluginToRulesync,
-    resolvePlugin,
-    runRulesync,
-    type Target,
-} from '@gobing-ai/superskill-core';
+import { mapPluginToRulesync, runRulesync, type Target } from '@gobing-ai/superskill-core';
 import { echo, echoError } from '@gobing-ai/ts-utils';
 import type { Command } from 'commander';
 import { evaluate, formatEvaluationReport } from '../operations/evaluate';
@@ -28,7 +21,7 @@ import {
     resolveTarget,
     runOperation,
 } from './helpers';
-import { emitHooksForSurrogateTarget, prepareTargetRulesyncInput } from './install';
+import { emitHooksForSurrogateTarget, prepareTargetRulesyncInput, resolvePluginRoot } from './install';
 
 // ── Inner Operation Functions ─────────────────────────────────────────────
 
@@ -111,24 +104,8 @@ async function emitHook(
     const dryRun = opts.dryRun === true;
     const outputRoot = global ? homedir() : process.cwd();
 
-    // Step 1: Resolve plugin root (same path as `superskill install`)
-    let pluginRoot: string;
-    const resolved = resolvePlugin(undefined, name);
-    if (resolved) {
-        pluginRoot = resolved.pluginRoot;
-    } else {
-        const fallback = join('plugins', name);
-        if (existsSync(join(fallback, 'plugin.json'))) {
-            pluginRoot = fallback;
-        } else {
-            const available = listResolvablePlugins(undefined);
-            const msg =
-                available.length > 0
-                    ? `Available: ${available.join(', ')}`
-                    : 'No marketplace manifest found and no plugins/<name>/ directory.';
-            throw new Error(`Plugin '${name}' not found. ${msg}`);
-        }
-    }
+    // Step 1: Resolve plugin root (shared with `superskill install`)
+    const pluginRoot = resolvePluginRoot(name);
 
     // Step 2: Map plugin → .rulesync/ canonical (single shared input)
     const outputDir = '.rulesync';

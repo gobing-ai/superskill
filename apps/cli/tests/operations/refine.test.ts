@@ -3,6 +3,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'no
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
+    applyAutoFixes,
     classifyFix,
     generateAutoChange,
     RefineAbortedError,
@@ -136,6 +137,68 @@ describe('generateAutoChange', () => {
             '---\nname: test\n---\n\nbody',
         );
         expect((c as { value: unknown }).value).toBe('TODO');
+    });
+
+    it('generates trim change for trailing whitespace', () => {
+        const c = generateAutoChange(
+            { severity: 'warning', field: 'name', message: "'name' has trailing whitespace" },
+            '---\nname: test   \ndescription: d\n---\n\nbody',
+        );
+        expect(c?.kind).toBe('frontmatter');
+        expect((c as { key: string }).key).toBe('name');
+        expect((c as { value: unknown }).value).toBe('test');
+    });
+});
+
+// ── applyAutoFixes ───────────────────────────────────────────────────────────
+
+describe('applyAutoFixes', () => {
+    it('applies auto-apply fixes and returns modified content', () => {
+        const content = '---\nname: "test   "\ndescription: d\n---\n\nbody';
+        const findings = [
+            {
+                finding: { severity: 'warning', field: 'name', message: "'name' has trailing whitespace" } as Finding,
+                strategy: 'auto-apply' as const,
+            },
+        ];
+        const result = applyAutoFixes(findings, content);
+        expect(result.fixesApplied.length).toBe(1);
+        expect(result.fixesSkipped.length).toBe(0);
+        expect(result.content).not.toContain('test   ');
+    });
+
+    it('skips auto-apply findings when generateAutoChange returns null', () => {
+        const content = '---\nname: test\ndescription: d\n---\n\nbody';
+        const findings = [
+            {
+                finding: {
+                    severity: 'warning',
+                    field: 'tags',
+                    message: '\'tags\' is deprecated. Use "labels" instead.',
+                } as Finding,
+                strategy: 'auto-apply' as const,
+            },
+        ];
+        const result = applyAutoFixes(findings, content);
+        expect(result.fixesApplied.length).toBe(0);
+        expect(result.fixesSkipped.length).toBe(1);
+    });
+
+    it('skips suggest and flag findings', () => {
+        const content = '---\nname: test\ndescription: d\n---\n\nbody';
+        const findings = [
+            {
+                finding: { severity: 'warning', field: 'description', message: 'Too short' } as Finding,
+                strategy: 'suggest' as const,
+            },
+            {
+                finding: { severity: 'warning', field: 'skill-linkage', message: 'merge' } as Finding,
+                strategy: 'flag' as const,
+            },
+        ];
+        const result = applyAutoFixes(findings, content);
+        expect(result.fixesApplied.length).toBe(0);
+        expect(result.fixesSkipped.length).toBe(2);
     });
 });
 
@@ -347,8 +410,7 @@ name: minimal
 description: ok
 ---
 
-
-Short body.`;
+This is a short skill body that is long enough to pass strict checks.`;
         const file = createTempFile(content, tmpDir);
         const r = await refine('skill', file, { auto: true });
         expect(r.preScore).toBeGreaterThan(0);
@@ -379,6 +441,27 @@ It uses clear, imperative language with must, should, never, and always keywords
         writeFileSync(`${file}.bak`, 'stale backup');
         const r = await refine('skill', file, { auto: true });
         expect(r.preScore).toBeGreaterThan(0);
+    });
+
+    it('classifies deprecated field warnings as auto-apply in --auto mode', async () => {
+        const content = `---
+name: deprecated-test
+description: A skill that uses a deprecated field for testing auto-apply classification
+tags: [review]
+---
+
+## Overview
+This skill uses the deprecated 'tags' field, which should be classified as auto-apply.
+`;
+        const file = createTempFile(content, tmpDir);
+        const r = await refine('skill', file, { auto: true });
+        expect(r.preScore).toBeGreaterThan(0);
+        // The deprecated 'tags' field warning is classified as auto-apply but
+        // generateAutoChange returns null (no handler for deprecated fields),
+        // so it's recorded as skipped, not applied.
+        expect(r.fixesApplied.length + r.fixesSkipped.length).toBeGreaterThan(0);
+        const autoApplyFindings = [...r.fixesApplied, ...r.fixesSkipped].filter((f) => f.strategy === 'auto-apply');
+        expect(autoApplyFindings.length).toBeGreaterThan(0);
     });
 });
 // ── refine — file not found ──────────────────────────────────────────────────

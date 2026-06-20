@@ -134,6 +134,20 @@ export function generateAutoChange(finding: Finding, content: string): Change | 
         }
     }
 
+    // Trailing whitespace in frontmatter value → trim it
+    if (finding.message.includes('trailing whitespace')) {
+        let currentValue: unknown;
+        try {
+            const parsed = parseFrontmatter(content);
+            currentValue = parsed.data[finding.field];
+        } catch {
+            return null;
+        }
+        if (typeof currentValue === 'string') {
+            return { kind: 'frontmatter', key: finding.field, value: currentValue.trimEnd() };
+        }
+    }
+
     return null;
 }
 
@@ -230,6 +244,58 @@ export async function runInteractive(
     return { newContent: currentContent, fixesApplied, fixesSkipped };
 }
 
+/**
+ * Apply all auto-apply strategy findings without user interaction.
+ *
+ * Suggest/flag findings are recorded as skipped. For auto-apply findings,
+ * {@link generateAutoChange} is called; if it returns a change, it's applied
+ * to the content and recorded in `fixesApplied`. Otherwise it's skipped.
+ *
+ * @returns Updated content (with fixes applied) and fix records.
+ */
+export function applyAutoFixes(
+    findings: { finding: Finding; strategy: FixStrategy }[],
+    content: string,
+): { content: string; fixesApplied: FixRecord[]; fixesSkipped: FixRecord[] } {
+    let currentContent = content;
+    const fixesApplied: FixRecord[] = [];
+    const fixesSkipped: FixRecord[] = [];
+
+    for (const { finding, strategy } of findings) {
+        if (strategy === 'auto-apply') {
+            const change = generateAutoChange(finding, currentContent);
+            if (change) {
+                currentContent = applyChange(currentContent, change);
+                fixesApplied.push({
+                    severity: finding.severity,
+                    field: finding.field,
+                    message: finding.message,
+                    strategy,
+                    applied: true,
+                });
+            } else {
+                fixesSkipped.push({
+                    severity: finding.severity,
+                    field: finding.field,
+                    message: finding.message,
+                    strategy,
+                    applied: false,
+                });
+            }
+        } else {
+            fixesSkipped.push({
+                severity: finding.severity,
+                field: finding.field,
+                message: finding.message,
+                strategy,
+                applied: false,
+            });
+        }
+    }
+
+    return { content: currentContent, fixesApplied, fixesSkipped };
+}
+
 // ── Core ─────────────────────────────────────────────────────────────────────
 
 /**
@@ -250,7 +316,10 @@ export async function refine(type: ContentType, nameOrPath: string, opts?: Refin
     const resolvedTarget = opts?.target ?? 'claude';
 
     // Step 1: Validate
-    const validation = await validate(type, resolvedPath ?? nameOrPath, { target: resolvedTarget });
+    const validation = await validate(type, resolvedPath ?? nameOrPath, {
+        target: resolvedTarget,
+        strict: opts?.auto === true,
+    });
     if (!validation.valid) {
         for (const f of validation.findings) {
             if (f.severity === 'error') {
@@ -316,17 +385,14 @@ export async function refine(type: ContentType, nameOrPath: string, opts?: Refin
 
     try {
         if (opts?.auto) {
-            // Auto mode: record all findings as skipped. Dimension notes are suggestions;
-            // validation warnings may carry any strategy but are not applied automatically.
-            // Validation errors cause early return above (L274).
-            for (const { finding, strategy } of findings) {
-                fixesSkipped.push({
-                    severity: finding.severity,
-                    field: finding.field,
-                    message: finding.message,
-                    strategy,
-                    applied: false,
-                });
+            // Auto mode: apply low-risk (auto-apply) fixes without prompting.
+            // Suggest/flag findings are recorded as skipped; validation errors
+            // cause early return above (L261).
+            const result = applyAutoFixes(findings, content);
+            fixesApplied = result.fixesApplied;
+            fixesSkipped = result.fixesSkipped;
+            if (fixesApplied.length > 0) {
+                await Bun.write(resolvedPath ?? nameOrPath, result.content);
             }
         } else {
             const result = await runInteractive(findings, content, resolvedPath ?? nameOrPath, backupPath);
