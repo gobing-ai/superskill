@@ -324,7 +324,130 @@ No subtask decomposition needed. Phases 1–2 are a single cohesive relocation; 
 
 ### Review
 
+
 **Verdict: PARTIAL** — Phases 1–2 complete and verified; Phases 3–4 blocked on Spur-side data-threading gap; Phase 5-full blocked by Phase 4.
+
+### Requirements traceability
+
+| Req | Status | Evidence |
+|-----|--------|----------|
+| R1.1 prose-only skill folder | ✅ PASS | `find plugins/cc/skills/anti-hallucination -name '*.ts'` → empty |
+| R1.2 paths updated | ✅ PASS | All `plugins/sp/...` → `plugins/cc/...`; 5 references + SKILL.md updated |
+| R1.3 remove from Spur | ⏸ BLOCKED | Phase 3 — depends on Phase 4 (enforcement gap) |
+| R2.1 engine in plugin scripts/ | ✅ PASS | `plugins/cc/scripts/anti-hallucination/{ah_guard,validate_response,logger}.ts` |
+| R2.2 engine pure, dep-free | ✅ PASS | Only import: `./logger`; no platform code |
+| R2.3 tests in superskill gate | ✅ PASS | 724 pass, 0 fail; engine coverage counted (98.35% aggregate) |
+| R3.1 Stop-hook re-homed | ✅ PASS | `plugins/cc/hooks/hooks.json` → `bun ${CLAUDE_PLUGIN_ROOT}/scripts/anti-hallucination/ah_guard.ts` |
+| R3.2 hook registered in cc | ✅ PASS | `hooks.json` Stop event wired (nested matcher-group format) |
+| R4 spur workflow | ⏸ BLOCKED | Phase 4 — Spur data-threading gap (ADR-015) |
+| R5.1 single-source engine | ✅ PASS | Engine single-sourced in superskill `plugins/cc/scripts/` |
+| R5.2 consumption seam | ⏸ BLOCKED | Phase 5-full — depends on Phase 4 |
+| R6.1 ADR entry | ✅ PASS | ADR-015 added (`docs/00_ADR.md:190`) |
+| R6.2 DESIGN/FEATURES | ✅ PASS | Both updated with surface + status |
+| R6.3 Spur doc supersede | ⏸ BLOCKED | Companion task (Spur side) |
+
+### SECU review
+
+- **Security**: Stop-hook command uses `${CLAUDE_PLUGIN_ROOT}` (Claude runtime var, not user-controlled). Engine reads `$ARGUMENTS` (Claude hook payload), `JSON.parse` wrapped in try/catch. No `eval`, no exec/shell, no dynamic code execution. Regex-only pattern matching (red-flag patterns use `.match()`, safe with `g` flag). No issues.
+- **Errors**: Engine fails open (exit 0) on empty/invalid context — correct for a Stop-hook (a crash must not block the user). Edge cases covered by tests + smoke run.
+- **Correctness**: Engine verbatim from Spur (well-tested, 95%+); only import paths changed. Tests pass. Smoke test confirms exit 0/1 verdicts match pre-migration behavior.
+- **Understanding**: `main()` is a thin adapter; engine functions pure and documented.
+
+### Verification gate
+
+- `bun run lint` (biome + typecheck): ✅ clean (117 files)
+- `bun run test`: ✅ 724 pass, 0 fail, 99.55% funcs / 98.35% lines
+- `bun run build`: ✅ bundled successfully
+- Stop-hook smoke test: ✅ exit 0 (compliant/short/empty/invalid-JSON), exit 1 (non-compliant API claim)
+
+### Blocker (Phase 4)
+
+Spur companion task 0087 (Done) delivered `agent.run` capture + `response.validate`, but the engine's template resolver only supports `${vars.*}`/`${env.*}`/`${builtins}` — not `{{ steps.* }}` Mustache. The captured answer (`data.answer`) is unreachable by the validate action. No executable test runs the spike to terminal. Per R4.5, superskill consumes Spur outputs; it does not implement them. Three unblock options identified (see Design); all Spur-side or engine-side.
+
+---
+
+## Re-verification — 2026-06-19 (dev-verify --force --fix all)
+
+Re-audit of a `Testing`-status task with uncommitted Phase 1–2 work on disk. `--force` bypassed the status guard. Phase 7 SECU + Phase 8 traceability re-run inline against on-disk state.
+
+- **Phase 7 SECU** — clean. No eval/exec/shell (the two `${...}` hits in `ah_guard.ts` are message-building template literals, not commands), no `any`, no `biome-ignore`. Engine is pure + fail-open.
+- **Phase 8 traceability** — all Phase-1/2/5-partial requirements MET against real artifacts; all BLOCKED requirements correctly attributed to the Spur data-threading gap (R4.5 scopes that out of this task). Layout verified: zero `.ts` under `skills/anti-hallucination/` (R1.1); engine + 2 tests under plugin-level `scripts/anti-hallucination/` (R2.1); `logger.ts` exists exactly once (dedup'd).
+- **Gates** — lint clean (117 files); 724 pass / 0 fail; build succeeds; engine coverage 100% funcs (ah_guard/logger/validate_response). Smoke test: all 4 sampled verdicts (short→0, non-compliant→1, empty→0, invalid-JSON→0) match documented behavior.
+
+**Findings (2, both P3 doc-accuracy — FIXED under `--fix all`):**
+1. `logger.ts` JSDoc had stale provenance ("moved verbatim from rd3… run in the sp plugin") — corrected to "migrated verbatim from Spur (task 0041)… run in the cc plugin".
+2. Design-section Stop-hook snippet used a flat `"stop"` shape with `"timeout": 10000` — corrected to the actual Claude Code nested matcher-group format with `"timeout": 10` (seconds). The shipped `hooks.json` was already correct; only the illustrative doc snippet drifted.
+
+Both mechanical, no behavior change; gates re-confirmed green after.
+
+**Re-verification verdict: PARTIAL** (unchanged — correct for the deliberate phase scoping). Two P3 doc findings fixed; no blocking findings on the landed work. **Phase 4 remains Spur-blocked.** Status stays `Testing` until the Spur gap closes and Phases 3–5 complete (do NOT transition to Done — the PARTIAL verdict and Phase-4 block are real).
+
+
+### Requirements traceability
+
+| Req | Status | Evidence |
+|-----|--------|----------|
+| R1.1 prose-only skill folder | ✅ PASS | `find plugins/cc/skills/anti-hallucination -name '*.ts'` → empty |
+| R1.2 paths updated | ✅ PASS | All `plugins/sp/...` → `plugins/cc/...`; 5 references + SKILL.md updated |
+| R1.3 remove from Spur | ⏸ BLOCKED | Phase 3 — depends on Phase 4 (enforcement gap) |
+| R2.1 engine in plugin scripts/ | ✅ PASS | `plugins/cc/scripts/anti-hallucination/{ah_guard,validate_response,logger}.ts` |
+| R2.2 engine pure, dep-free | ✅ PASS | Only import: `./logger`; no platform code |
+| R2.3 tests in superskill gate | ✅ PASS | 724 pass, 0 fail; engine coverage counted (98.35% aggregate) |
+| R3.1 Stop-hook re-homed | ✅ PASS | `plugins/cc/hooks/hooks.json` → `bun ${CLAUDE_PLUGIN_ROOT}/scripts/anti-hallucination/ah_guard.ts` |
+| R3.2 hook registered in cc | ✅ PASS | `hooks.json` Stop event wired |
+| R4 spur workflow | ⏸ BLOCKED | Phase 4 — Spur data-threading gap (ADR-015) |
+| R5.1 single-source engine | ✅ PASS | Engine single-sourced in superskill `plugins/cc/scripts/` |
+| R5.2 consumption seam | ⏸ BLOCKED | Phase 5-full — depends on Phase 4 |
+| R6.1 ADR entry | ✅ PASS | ADR-015 added |
+| R6.2 DESIGN/FEATURES | ✅ PASS | Both updated with surface + status |
+| R6.3 Spur doc supersede | ⏸ BLOCKED | Companion task (Spur side) |
+
+### SECU review
+
+- **Security**: Stop-hook command uses `${CLAUDE_PLUGIN_ROOT}` (Claude runtime var, not user-controlled). Engine reads `$ARGUMENTS` (Claude hook payload). No `eval`, no dynamic code execution, no shell interpolation. Regex-only pattern matching. No issues.
+- **Errors**: Engine fails open (exit 0) on empty/invalid context — correct for a Stop-hook (crash shouldn't block). Edge cases covered by tests.
+- **Correctness**: Engine is verbatim from Spur (well-tested, 95%+); only import paths changed. Tests pass. No behavior change.
+- **Understanding**: Code well-commented; `main()` is thin adapter; engine functions are pure and documented.
+
+### Verification gate
+
+- `bun run lint` (biome + typecheck): ✅ clean
+- `bun run test`: ✅ 724 pass, 0 fail, 99.55% funcs / 98.35% lines
+- `bun run build`: ✅ bundled successfully
+- Stop-hook smoke test: ✅ exit 0 (compliant/short), exit 1 (non-compliant API claim)
+- `git status`: only intentional changes
+
+### Blocker (Phase 4)
+
+Spur companion task 0087 (Done) delivered `agent.run` capture + `response.validate`, but the engine's template resolver only supports `${vars.*}`/`${env.*}`/`${builtins}` — not `{{ steps.* }}` Mustache. The captured answer (`data.answer`) is unreachable by the validate action (actions only see `vars`; `agent.run` only sets `__agentSession` in setVars, not the answer). No executable test runs the spike to terminal. Three unblock options identified (see Design section); all require Spur-side or engine-side work.
+
+---
+
+**Re-verification — 2026-06-19 16:10 PDT (`rd3-dev-verify 0041 --auto --fix all --force`): PARTIAL.**
+No new findings. Forced re-audit confirmed the prior result against the current clean workspace:
+Phase 1–2/partial-5 artifacts remain correct, Phase 4 remains blocked on the Spur data-threading
+gap, and no fix pass was needed. Gates re-run clean: `bun run lint` (117 files + typecheck),
+`bun run test` (724 pass, 0 fail, 99.55% funcs / 98.35% lines), `bun run build` (758 modules),
+and Stop-hook smoke checks (no context → 0, non-compliant API claim → 1, compliant cited claim → 0).
+`git status` was clean before recording this verification note.
+
+
+
+---
+
+**Re-verification — 2026-06-20 (post-commit bookkeeping check): PARTIAL (unchanged).**
+
+The earlier "code-changes-exist" Completion Blocker is now stale and resolved: Phase 1–2 work is
+committed (`ead9d8b`, consolidated in `f00408b`), working tree clean (`git status` empty). Gates
+re-confirmed on the committed state: `bun run lint` clean (127 files + typecheck), `bun run test`
+748 pass / 0 fail / 0 skipped (engine: ah_guard 100% funcs / 98.79% lines, logger 100/100,
+validate_response 100% funcs / 95.24% lines), `bun run build` succeeds (765 modules).
+
+Nothing remains to fix within superskill's scope. The verdict stays PARTIAL because Phases 3–5
+remain blocked on the **Spur-side** data-threading gap (R4.5 scopes that out of this task). Task
+correctly stays in `Testing`; do NOT transition to `Done` until the Spur gap closes and Phases 3–5
+land.
+
 
 ### Requirements traceability
 
