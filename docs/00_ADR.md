@@ -198,3 +198,15 @@ Reversals = new entries naming what they supersede. Burned numbers get a `Skippe
 **Why.** The protocol governs how any agent should respond — it is epistemic discipline, not a software-development workflow. That is superskill's charter (home for agentic assets). Keeping it in Spur (a dev-workflow harness) was a misfiling from when `cc-agents` was the single source repo. Plugin-level `scripts/` dedupes the engine across skills and avoids per-skill copies (the `cc-agents` anti-pattern where `logger.ts` was duplicated).
 
 **Detail.** Phases 1–2 landed (engine + prose relocation, Stop-hook re-homed in `plugins/cc/hooks/hooks.json`). Phase 3 (delete from Spur) and Phase 4 (re-develop cross-agent launchers as `spur workflow` + `spur agent`) are blocked: the Spur-side companion task (0087, Done) delivered `agent.run` answer capture and `response.validate`, but a data-threading gap remains — the engine's template resolver only supports `${vars.*}`/`${env.*}`/`${builtins}`, not the `{{ steps.* }}` Mustache syntax the spike fixture uses, so the captured answer never reaches the validate action. Phase 5 (full single-source seam) depends on Phase 4. See task 0041.
+
+---
+
+## ADR-016: `runCliApplication` available but deferred for CLI entry point
+
+**Status:** Accepted · **Date:** 2026-06-20
+
+**Decision.** A `runCliApplication` convenience bootstrap was added to `@gobing-ai/ts-infra` (subpath `@gobing-ai/ts-infra/application-cli`, ts-libs commit `6a36621`). It wraps `runNodeApplication` with exit-code mapping and `process.exit`. superskill's CLI entry point (`apps/cli/src/index.ts`) does **not** adopt it yet. The CLI continues to use the direct `createProgram().parse()` pattern with per-command `process.exit` via `runOperation`.
+
+**Why.** The current CLI is a 6-line fire-and-forget Commander dispatcher with no diagnostic logging, no startup DB, no telemetry, and no config file. `runCliApplication` provides exit-code normalization and service lifecycle (logger, telemetry, DB cleanup) — none of which the CLI uses today. Commander's action callbacks call `process.exit` directly inside `runOperation`, so the exit-code mapping in `runCliApplication`'s `start` would never be reached without refactoring all 6 command actions to return codes instead of exiting. That refactor is real work touching the command layer for zero functional gain. `runCliApplication` earns its keep when superskill grows a service that needs lifecycle management (diagnostic logging in evaluate/evolve ops, a persistent store opened at startup, or telemetry/audit logging).
+
+**Detail.** ts-libs: `packages/infra/src/application-cli.ts` (100% coverage, 10 tests). When superskill adopts it, the prerequisite is removing `process.exit` from `runOperation` (`apps/cli/src/commands/helpers.ts:72-82`) and the 6 command action callbacks, letting each return an exit code that Commander's action propagates up to `runCliApplication`'s `start`. This decision may be revisited when Phase 2+ adds diagnostic logging or a startup-opened store.
