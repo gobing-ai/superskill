@@ -42,5 +42,8 @@ rules:
       - "packages/**/src/quality/agent.ts"
       - "packages/**/src/quality/hook.ts"
       - "packages/**/src/quality/magent.ts"
+      - "apps/**/src/operations/package.ts"
+      - "apps/**/src/operations/scaffold.ts"
+      - "apps/**/src/operations/validate.ts"
       - "**/node_modules/**"
       - "**/tests/**"
