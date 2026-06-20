@@ -254,11 +254,11 @@ Phase 1 — the no-behavior-change move — is complete. Scope delivered this ru
 - Command adapter tests should assert command names, flags, defaults, output, and exit-code behavior.
 - Install/mapping tests must continue covering path-safety and marketplace source validation.
 
-**Phase 1 testing evidence (2026-06-19)**
+**Phase 1 testing evidence (2026-06-20T00:26:34Z)**
 
 - Command: `bun run lint && bun run test && bun run build` (+ targeted `bun test tests/commands/install*.test.ts`).
 - Scope: full workspace — `@gobing-ai/superskill-core` (typecheck + 13 moved test files + boundary test) and `@gobing-ai/superskill` (all CLI integration/operation/command tests).
-- Result: PASS. `bun run lint` clean (biome + typecheck both workspaces). `bun run test` → 729 pass / 0 fail / 1787 expect() calls / 53 files. `bun run build` → exit 0, `dist/index.js` 3.40 MB. Install suite → 39 pass / 0 fail.
+- Result: PASS (Ran at 2026-06-20T00:26:34Z). `bun run lint` clean (biome + typecheck both workspaces). `bun run test` → 729 pass / 0 fail / 1787 expect() calls / 53 files. `bun run build` → exit 0, `dist/index.js` 3.40 MB. Install suite → 39 pass / 0 fail.
 - Coverage: 99.57% functions / 98.35% lines aggregate (≥ 90%/90% threshold). Moved modules retain 90–100% line coverage.
 - Smoke: `bun apps/cli/dist/index.js --version` → `0.1.3`; `--help` → identical command tree to baseline.
 - Boundary: `packages/core/tests/package-boundary.test.ts` (3 assertions) passes — no core→app imports, no process/stdout/console coupling in core.
