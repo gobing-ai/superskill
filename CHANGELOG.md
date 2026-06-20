@@ -4,7 +4,7 @@ All notable changes to `@gobing-ai/superskill` are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Conventional Commits](https://www.conventionalcommits.org/).
 
-## [0.1.4] - 2026-06-19
+## [0.1.4] - 2026-06-20
 
 ### New Features
 
@@ -33,13 +33,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 - **Anti-hallucination skill + guard engine**: Migrated from Spur. Prose-only skill in `plugins/cc/skills/anti-hallucination/`, guard engine in `plugins/cc/scripts/anti-hallucination/`, Claude Code Stop-hook wired in `hooks.json`.
 - **`validate` hidden**: The standalone `validate` command is now hidden behind the `evaluate`/`refine`/`evolve` gate. CLI surface is 16 commands.
 
-#### CLI
+#### CLI & Architecture
 
 - **Binary on PATH verification**: Build output path fixed to `dist/index.js` (matching the `bin` target). `scripts/builder.ts` postbuild is now idempotent. Phase 3 exit gate passes all 7 blocks.
+- **Core package extraction**: Reusable domain logic (content, quality, pipeline, rubrics, targets, marketplace, mapper, rulesync) moved from `apps/cli` to a new `@gobing-ai/superskill-core` workspace package at `packages/core`. CLI imports switched to the workspace alias. Package-boundary test enforces core never imports from app, never calls `process.exit`, and never writes to stdout/stderr. Enables independent reuse of the domain logic.
+- **ts-libs 0.3.21**: Upgraded `@gobing-ai/ts-*` dependencies from 0.3.19 to 0.3.21. `omp`, `hermes`, and `antigravity-cli` are now canonical `AgentName` values — slash-command dialect translation maps 1:1 instead of proxying through `pi`/`opencode`. Only `antigravity-ide` still bridges through `opencode`.
 
 ### Improvements
 
 - **Adapt gap audit closed**: Verified that the 4-stage install conversion pipeline (`rewriteColonRefs`, `translateSlashCommands`, `normalizeFrontmatter`, `convertToPiSubagent`) covers all transforms previously handled by the deleted `adapt.ts`/`adapters/` code. 15-test parity regression test (`adapt-parity.test.ts`) locks this in.
+- **Pi-subagent parser hardened**: Replaced hand-rolled `parseFrontmatter` with the canonical parser from `content/frontmatter.ts` (ADR-012), fixing block-style YAML array and nested-value matching bugs.
+- **Hook event dedup**: `KNOWN_HOOK_EVENTS` is now exported once from `quality/hook.ts` and imported by `operations/validate.ts` instead of being defined in both.
+- **Plugin resolution dedup**: Extracted `resolvePluginRoot()` helper shared by `install` and `hook emit`, replacing duplicate 18-line blocks.
+- **`refine --auto` mode fixed**: Was skipping all findings instead of applying auto-apply fixes. Now applies auto-classified findings via `applyAutoFixes()`, with trailing-whitespace handling and strict validation enabled.
 
 ### Bug Fixes
 
