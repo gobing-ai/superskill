@@ -4,6 +4,7 @@ import { parseFrontmatter } from '../content/frontmatter';
 import { resolveContentPath } from '../content/identity';
 import type { ContentType } from '../content/types';
 import { REQUIRED_FIELDS } from '../quality/dimensions';
+import { KNOWN_HOOK_EVENTS } from '../quality/hook';
 import type { Target } from '../targets';
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -75,18 +76,6 @@ const FIELD_TYPES: Record<ContentType, Record<string, FieldTypeDef>> = {
         platforms: { type: 'array' },
     },
 };
-
-const KNOWN_HOOK_EVENTS = [
-    'PreToolUse',
-    'PostToolUse',
-    'Stop',
-    'SubagentStop',
-    'SessionStart',
-    'SessionEnd',
-    'UserPromptSubmit',
-    'PreCompact',
-    'Notification',
-] as const;
 
 /** Field names that are deprecated across all content types. */
 const DEPRECATED_FIELDS: Record<string, string> = {

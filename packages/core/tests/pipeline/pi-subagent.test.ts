@@ -144,4 +144,27 @@ Use rd3:dev-run for task execution.`;
         const input = 'Plain text without frontmatter.';
         expect(convertToPiSubagent(input)).toBe(input);
     });
+
+    it('handles block-style YAML array for tools', () => {
+        const input = `---
+name: test-agent
+description: A test agent
+tools:
+  - Read
+  - Write
+  - Bash
+---
+
+You are a test agent.`;
+
+        const result = convertToPiSubagent(input);
+        expect(result).toContain('tools: read, write, bash');
+    });
+
+    it('returns content unchanged when frontmatter is malformed', () => {
+        const input = `---
+name: test-agent
+description: Missing closer`;
+        expect(convertToPiSubagent(input)).toBe(input);
+    });
 });

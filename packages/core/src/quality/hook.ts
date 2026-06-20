@@ -11,7 +11,8 @@ import {
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
-const KNOWN_HOOK_EVENTS = [
+/** The canonical set of hook event names recognised by Claude Code and other supported agents. */
+export const KNOWN_HOOK_EVENTS = [
     'PreToolUse',
     'PostToolUse',
     'Stop',
@@ -21,7 +22,7 @@ const KNOWN_HOOK_EVENTS = [
     'UserPromptSubmit',
     'PreCompact',
     'Notification',
-];
+] as const;
 
 // ── Dimension scorers ─────────────────────────────────────────────────────────
 
@@ -33,7 +34,7 @@ function scoreCorrectness(data: Record<string, unknown>): DimensionScore {
 
     if (typeof raw === 'string' && raw.trim().length > 0) {
         const event = raw.trim();
-        if (KNOWN_HOOK_EVENTS.includes(event)) {
+        if (KNOWN_HOOK_EVENTS.includes(event as (typeof KNOWN_HOOK_EVENTS)[number])) {
             base = 1.0;
             note = `Valid event: ${event}`;
         } else {

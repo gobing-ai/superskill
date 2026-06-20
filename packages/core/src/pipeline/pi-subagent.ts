@@ -1,3 +1,5 @@
+import { parseFrontmatter } from '../content/frontmatter';
+
 /** Map Claude Code tool names to Pi tool names. Some expand to multiple tokens. */
 const PI_TOOL_MAP: Record<string, string> = {
     Read: 'read',
@@ -60,31 +62,11 @@ export function extractSkillsFromBody(body: string): string[] {
     return [...skills];
 }
 
-interface FrontmatterResult {
-    fields: Record<string, unknown>;
-    body: string;
-}
-
-/** Parse YAML frontmatter delimited by `---`. */
-function parseFrontmatter(content: string): FrontmatterResult | null {
-    const start = content.indexOf('---');
-    if (start !== 0) return null;
-    const end = content.indexOf('---', 3);
-    if (end === -1) return null;
-
-    const fmBlock = content.slice(3, end).trim();
-    const body = content.slice(end + 3).trim();
-
-    const fields: Record<string, unknown> = {};
-    for (const line of fmBlock.split('\n')) {
-        const colonIdx = line.indexOf(':');
-        if (colonIdx === -1) continue;
-        const key = line.slice(0, colonIdx).trim();
-        const value = line.slice(colonIdx + 1).trim();
-        if (key) fields[key] = value;
-    }
-
-    return { fields, body };
+/** Coerce a frontmatter value to string. Handles flow-style arrays (`[Read, Write]` → `"Read, Write"`). */
+function asString(value: unknown): string {
+    if (typeof value === 'string') return value;
+    if (Array.isArray(value)) return value.join(', ');
+    return '';
 }
 
 /** Build Pi runtime adaptation notes based on detected tools. */
@@ -130,40 +112,47 @@ function buildPiRuntimeNotes(rawTools: string[], skillsCsv: string): string {
  * Convert a Skills 2.0 subagent file to the Pi native agent YAML format.
  */
 export function convertToPiSubagent(content: string): string {
-    const fm = parseFrontmatter(content);
-    if (!fm) return content;
+    let data: Record<string, unknown>;
+    let body: string;
+    try {
+        const fm = parseFrontmatter(content);
+        data = fm.data;
+        body = fm.body.trim();
+    } catch {
+        return content;
+    }
 
-    // Extract tools → Pi CSV
-    const rawToolsStr = (fm.fields.tools as string) ?? '';
+    // Extract tools → Pi CSV (handles both flow-style `[Read, Write]` and block-style arrays)
+    const rawToolsStr = asString(data.tools);
     const rawTools = parseToolsList(rawToolsStr);
     const piTools = rawTools.map(expandPiTool).filter(Boolean).join(', ');
 
     // Extract skills from frontmatter → normalise colons
-    const rawSkillsStr = (fm.fields.skills as string) ?? (fm.fields.skill as string) ?? '';
+    const rawSkillsStr = asString(data.skills) || asString(data.skill);
     const explicitSkills = rawSkillsStr ? rawSkillsStr.split(',').map((s) => s.trim().replace(':', '-')) : [];
 
     // Fallback: scan body for skill references
     let skillsList = explicitSkills;
     if (skillsList.length === 0) {
-        skillsList = extractSkillsFromBody(fm.body);
+        skillsList = extractSkillsFromBody(body);
     }
     const skillsCsv = skillsList.join(', ');
 
     // Model: drop "inherit"
-    let model = (fm.fields.model as string) ?? '';
+    let model = asString(data.model);
     if (model === 'inherit') model = '';
 
     // Build Pi-native YAML frontmatter
     const piFields: string[] = [];
-    piFields.push(`name: ${fm.fields.name ?? ''}`);
-    if (fm.fields.description) piFields.push(`description: ${fm.fields.description}`);
+    piFields.push(`name: ${asString(data.name)}`);
+    if (data.description) piFields.push(`description: ${asString(data.description)}`);
     if (piTools) piFields.push(`tools: ${piTools}`);
     if (skillsCsv) piFields.push(`skill: ${skillsCsv}`);
     if (model) piFields.push(`model: ${model}`);
 
     // Runtime notes
     const runtimeNotes = buildPiRuntimeNotes(rawTools, skillsCsv);
-    const body = runtimeNotes ? `${fm.body}\n\n${runtimeNotes}` : fm.body;
+    const finalBody = runtimeNotes ? `${body}\n\n${runtimeNotes}` : body;
 
-    return `---\n${piFields.join('\n')}\n---\n\n${body}\n`;
+    return `---\n${piFields.join('\n')}\n---\n\n${finalBody}\n`;
 }
