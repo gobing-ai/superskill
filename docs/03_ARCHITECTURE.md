@@ -2,10 +2,10 @@
 doc: 03_ARCHITECTURE
 owns: HOW — module boundaries, data flow, runtime model, invariants
 authority: derived
-version: 2.4.0
+version: 2.5.0
 derived_from: [00_ADR, 01_PRD]
 owner: Robin Min
-updated_at: 2026-06-19
+updated_at: 2026-06-20
 read_before: cross-module, seam, or schema work
 edit_rules: 99 §6.4
 sync: [T1]
@@ -27,7 +27,7 @@ sync: [T1]
 
 ## High-Level Architecture
 
-The superskill CLI is structured around clear separation between the CLI app (`apps/cli`) and reusable domain logic (`packages/core`). The CLI owns command handling, operation adapters, output formatting, and persistence; core owns content editing, quality scoring, conversion pipeline, target taxonomy, marketplace resolution, plugin mapping, and the rulesync wrapper. `apps/cli` imports `@gobing-ai/superskill-core`; core never depends on the app.
+The superskill CLI is structured around clear separation between the CLI app (`apps/cli`) and reusable domain logic (`packages/core`). The CLI owns command handling, operation adapters, output formatting, persistence, and store-backed workflows; core owns content editing, quality scoring, conversion pipeline, target taxonomy, marketplace resolution, plugin mapping, the rulesync wrapper, and reusable operation APIs that have no app dependency. `apps/cli` imports `@gobing-ai/superskill-core`; core never depends on the app.
 
 ```mermaid
 graph TD
@@ -37,6 +37,7 @@ graph TD
     STORE["Data Store & DAOs (store/)"]
 
     CORE["@gobing-ai/superskill-core (packages/core)"]
+    CORE_OPS["Reusable Operation APIs (operations/)"]
     QUAL["Quality Evaluators (quality/)"]
     PIPE["Conversion Pipeline (pipeline/)"]
     CONTENT["Content Primitives (content/)"]
@@ -51,6 +52,7 @@ graph TD
     CMDS --> CORE
     OPS --> CORE
     STORE --> CORE
+    CORE --> CORE_OPS
     CORE --> QUAL
     CORE --> PIPE
     CORE --> CONTENT
@@ -96,6 +98,12 @@ packages/core/src/                # ── Reusable domain logic (@gobing-ai/sup
 │   ├── rewrite-colons.ts         # Rewrite colon syntax references
 │   └── slash-command.ts          # Slash-dialect translation mappings
 │
+├── operations/                   # ── Reusable operation APIs with no app dependency ──
+│   ├── migrate.ts                # Deterministic skill merge/migration core
+│   ├── package.ts                # Package content for distribution
+│   ├── scaffold.ts               # Scaffold content files from templates
+│   └── validate.ts               # Syntax and layout verification engine
+│
 ├── targets.ts                    # Target mapping registries and conversions
 ├── marketplace.ts                # Local plugin/marketplace manifest resolution (ADR-011)
 ├── mapper.ts                     # Mappings from plugin structure to rulesync canonical
@@ -112,14 +120,14 @@ apps/cli/src/                     # ── CLI app (@gobing-ai/superskill) ─�
 │   ├── magent.ts                 # superskill magent subcommands
 │   └── skill.ts                  # superskill skill subcommands
 │
-├── operations/                   # ── Core platform operations (CLI adapters over core APIs) ──
-│   ├── evaluate.ts               # Score content across dimensions and persist reports
+├── operations/                   # ── CLI adapters and store-backed workflows ──
+│   ├── evaluate.ts               # App-owned scoring workflow: CLI envelope output + store persistence
 │   ├── evolve.ts                 # Self-evolution loop using historical evaluations
-│   ├── migrate.ts                # Cross-format migration operation
-│   ├── package.ts                # Package content for distribution
+│   ├── migrate.ts                # CLI migration adapter; delegates deterministic merge to core
+│   ├── package.ts                # Thin re-export adapter over core package API
 │   ├── refine.ts                 # Evaluate-and-fix automation pipeline
-│   ├── scaffold.ts               # Scaffolding content files from templates
-│   └── validate.ts               # Syntax and layout verification engine
+│   ├── scaffold.ts               # Thin re-export adapter over core scaffold API
+│   └── validate.ts               # Thin re-export adapter over core validate API
 │
 ├── store/                        # ── Persistence database layer (app-owned; ADR-014) ──
 │   ├── db.ts                     # Database connection initialization and migrations (re-exports getDBPath from core)
@@ -134,12 +142,12 @@ apps/cli/src/                     # ── CLI app (@gobing-ai/superskill) ─�
 └── index.ts                      # Executable entrypoint
 ```
 
-**Package boundary rules:** `apps/cli` imports `@gobing-ai/superskill-core`; `packages/core` never imports from `apps/cli`, never calls `process.exit`, and never writes to stdout/stderr. Cross-package access uses the `@gobing-ai/superskill-core` alias only — no deep relative imports across sibling packages. `store/` remains app-owned until a second consumer or independent library surface justifies extraction (deferred per task 0043 Phase 3).
+**Package boundary rules:** `apps/cli` imports `@gobing-ai/superskill-core`; `packages/core` never imports from `apps/cli`, never calls `process.exit`, and never writes to stdout/stderr. Cross-package access uses the `@gobing-ai/superskill-core` alias only — no deep relative imports across sibling packages. `store/` remains app-owned because persisted evaluations/proposals still have no second consumer and require the CLI-local data-root/store seam.
 
 ### Workspace packages
 
 - [apps/cli/](file:///Users/robin/xprojects/superskill/apps/cli): Commander CLI binary — command registration, option parsing, output formatting, exit-code mapping, operation adapters, and the persistence layer.
-- [packages/core/](file:///Users/robin/xprojects/superskill/packages/core): Reusable domain logic — content editing, quality scoring, conversion pipeline, target taxonomy, marketplace resolution, plugin mapping, rulesync wrapper. Consumed by the CLI via `@gobing-ai/superskill-core`.
+- [packages/core/](file:///Users/robin/xprojects/superskill/packages/core): Reusable domain logic — content editing, quality scoring, conversion pipeline, target taxonomy, marketplace resolution, plugin mapping, rulesync wrapper, and no-app operation APIs. Consumed by the CLI via `@gobing-ai/superskill-core`.
 ## Data flow
 
 ### Phase 1: Distribution

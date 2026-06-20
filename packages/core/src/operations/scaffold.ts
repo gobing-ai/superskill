@@ -73,8 +73,8 @@ function resolveTemplate(type: ContentType): string {
     if (existsSync(devPath)) {
         return readFileSync(devPath, 'utf-8');
     }
-    // Production: templates are copied alongside the binary at the package root
-    const prodPath = join(import.meta.dir, '..', '..', 'templates', type, 'default.md');
+    // Production: the CLI build copies templates beside dist/ under apps/cli/templates.
+    const prodPath = join(import.meta.dir, '..', 'templates', type, 'default.md');
     return readFileSync(prodPath, 'utf-8');
 }
 

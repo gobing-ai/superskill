@@ -15,7 +15,7 @@ Bun + TypeScript + Biome CLI built on Commander, with shared workspace packages.
 apps/
   cli/          # Commander-based CLI entry (the binary); imports @gobing-ai/superskill-core
 packages/
-  core/         # reusable domain logic (content, quality, pipeline, targets, marketplace, mapper, rulesync)
+  core/         # reusable domain logic and no-app operation APIs
 tooling/
   typescript/   # shared tsconfig presets
 turbo.json      # Turborepo task graph
