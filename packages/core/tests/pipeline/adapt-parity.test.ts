@@ -84,7 +84,7 @@ description: Run a task.
             expect(result).toContain('/skill:rd3-dev-run');
         });
 
-        it('translates /rd3:cmd to omp (pi dialect via TARGET_TO_AGENT_NAME)', () => {
+        it('translates /rd3:cmd to omp (omp speaks pi slash dialect)', () => {
             const cmd = `---
 description: Run a task.
 ---

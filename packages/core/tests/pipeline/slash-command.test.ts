@@ -12,11 +12,11 @@ describe('translateSlashCommands', () => {
         expect(translateSlashCommands('/rd3:dev-run 0003', 'pi')).toBe('/skill:rd3-dev-run 0003');
     });
 
-    it('uses TARGET_TO_AGENT_NAME so omp speaks Pi dialect', () => {
+    it('omp speaks Pi slash dialect via canonical AgentName', () => {
         expect(translateSlashCommands('/rd3:dev-run 0003', 'omp')).toBe('/skill:rd3-dev-run 0003');
     });
 
-    it('uses default slash dialect for non-claude/codex/pi bridge targets', () => {
+    it('uses default slash dialect for antigravity-cli and hermes', () => {
         expect(translateSlashCommands('/rd3:dev-run 0003', 'antigravity-cli')).toBe('/rd3-dev-run 0003');
         expect(translateSlashCommands('/rd3:dev-run 0003', 'hermes')).toBe('/rd3-dev-run 0003');
     });

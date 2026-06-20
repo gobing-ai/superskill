@@ -29,18 +29,18 @@ export const TARGET_TO_RULESYNC: Partial<Record<Target, ToolTarget>> = {
  * Bridge every superskill `Target` to a `@gobing-ai/ts-ai-runner` `AgentName`
  * for slash-command dialect translation via `translateSlashCommand`.
  *
- * The two enums are disjoint on four new targets:
- * - `omp` → `pi` (speaks Pi's `/skill:` dialect)
- * - `antigravity-cli`, `antigravity-ide`, `hermes` → `opencode`
- *   (non-claude/codex/pi → falls to default `/plugin-command` dialect)
+ * Since ts-ai-runner 0.3.21, `AgentName` includes `omp`, `hermes`, and
+ * `antigravity-cli` as canonical ids, so those targets map 1:1. Only
+ * `antigravity-ide` (not in `AgentName`) still bridges to `opencode`
+ * (falls to `translateSlashCommand`'s default `/plugin-command` dialect).
  */
 export const TARGET_TO_AGENT_NAME: Record<Target, AgentName> = {
     claude: 'claude',
     codex: 'codex',
     pi: 'pi',
-    omp: 'pi',
+    omp: 'omp',
     opencode: 'opencode',
-    'antigravity-cli': 'opencode',
+    'antigravity-cli': 'antigravity-cli',
     'antigravity-ide': 'opencode',
-    hermes: 'opencode',
+    hermes: 'hermes',
 };

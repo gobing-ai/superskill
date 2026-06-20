@@ -23,7 +23,7 @@
         "typecheck": "tsc --noEmit"
     },
     "dependencies": {
-        "@gobing-ai/ts-ai-runner": "^0.3.19",
+        "@gobing-ai/ts-ai-runner": "^0.3.21",
         "rulesync": "^8.28.1",
         "yaml": "^2.9.0",
         "zod": "^3.25.0"

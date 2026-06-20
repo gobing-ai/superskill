@@ -35,20 +35,21 @@ describe('targets', () => {
         }
     });
 
-    it('omp maps to pi AgentName (speaks Pi slash dialect)', () => {
-        expect(TARGET_TO_AGENT_NAME.omp).toBe('pi');
+    it('omp maps to canonical omp AgentName (speaks Pi slash dialect)', () => {
+        expect(TARGET_TO_AGENT_NAME.omp).toBe('omp');
     });
 
-    it('new targets not in ts-ai-runner AgentName map to a fallback', () => {
-        expect(TARGET_TO_AGENT_NAME['antigravity-cli']).toBe('opencode');
-        expect(TARGET_TO_AGENT_NAME['antigravity-ide']).toBe('opencode');
-        expect(TARGET_TO_AGENT_NAME.hermes).toBe('opencode');
-    });
-
-    it('existing AgentName targets map 1:1', () => {
+    it('targets with canonical AgentName ids map 1:1', () => {
         expect(TARGET_TO_AGENT_NAME.claude).toBe('claude');
         expect(TARGET_TO_AGENT_NAME.codex).toBe('codex');
         expect(TARGET_TO_AGENT_NAME.pi).toBe('pi');
+        expect(TARGET_TO_AGENT_NAME.omp).toBe('omp');
         expect(TARGET_TO_AGENT_NAME.opencode).toBe('opencode');
+        expect(TARGET_TO_AGENT_NAME['antigravity-cli']).toBe('antigravity-cli');
+        expect(TARGET_TO_AGENT_NAME.hermes).toBe('hermes');
+    });
+
+    it('antigravity-ide (not in AgentName) bridges to opencode fallback', () => {
+        expect(TARGET_TO_AGENT_NAME['antigravity-ide']).toBe('opencode');
     });
 });
