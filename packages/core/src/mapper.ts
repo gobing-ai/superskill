@@ -30,16 +30,30 @@ export function mapPluginToRulesync(pluginPath: string, pluginName: string, outp
 
     const result: MapResult = { skills: 0, commands: 0, subagents: 0, hooks: false, mcp: false };
 
-    // Skills: each .md → skills/<plugin>-<name>/SKILL.md
+    // Skills: two layouts are supported — flat (`skills/<name>.md`) and the
+    // Claude Code standard directory layout (`skills/<name>/SKILL.md`).
     const skillsDir = join(pluginPath, 'skills');
     if (existsSync(skillsDir)) {
         const skillsOut = join(outputDir, 'skills');
         for (const entry of readdirSync(skillsDir)) {
-            if (!entry.endsWith('.md')) continue;
-            const skillName = entry.replace(/\.md$/, '');
+            const flatPath = join(skillsDir, entry);
+            const dirSkillPath = join(skillsDir, entry, 'SKILL.md');
+            let skillName: string | null = null;
+            let sourcePath: string | null = null;
+
+            if (entry.endsWith('.md')) {
+                skillName = entry.replace(/\.md$/, '');
+                sourcePath = flatPath;
+            } else if (existsSync(dirSkillPath)) {
+                skillName = entry;
+                sourcePath = dirSkillPath;
+            }
+
+            if (!skillName || !sourcePath) continue;
+
             const dir = join(skillsOut, `${pluginName}-${skillName}`);
             mkdirSync(dir, { recursive: true });
-            writeFileSync(join(dir, 'SKILL.md'), readFileSync(join(skillsDir, entry)));
+            writeFileSync(join(dir, 'SKILL.md'), readFileSync(sourcePath));
             result.skills++;
         }
     }
@@ -70,15 +84,20 @@ export function mapPluginToRulesync(pluginPath: string, pluginName: string, outp
         }
     }
 
-    // hooks.json
-    const hooksPath = join(pluginPath, 'hooks.json');
+    // hooks.json — check both the plugin root and the Claude Code standard
+    // `hooks/hooks.json` location.
+    const hooksRootPath = join(pluginPath, 'hooks.json');
+    const hooksSubdirPath = join(pluginPath, 'hooks', 'hooks.json');
+    const hooksPath = existsSync(hooksRootPath) ? hooksRootPath : hooksSubdirPath;
     if (existsSync(hooksPath)) {
         deepMergeJsonFile(hooksPath, join(outputDir, 'hooks.json'));
         result.hooks = true;
     }
 
-    // mcp.json
-    const mcpPath = join(pluginPath, 'mcp.json');
+    // mcp.json — check both the plugin root and `mcp/mcp.json` for symmetry.
+    const mcpRootPath = join(pluginPath, 'mcp.json');
+    const mcpSubdirPath = join(pluginPath, 'mcp', 'mcp.json');
+    const mcpPath = existsSync(mcpRootPath) ? mcpRootPath : mcpSubdirPath;
     if (existsSync(mcpPath)) {
         deepMergeJsonFile(mcpPath, join(outputDir, 'mcp.json'));
         result.mcp = true;

@@ -194,4 +194,44 @@ describe('mapPluginToRulesync', () => {
         expect(() => mapPluginToRulesync(FIXTURE_DIR, '../escape', outDir)).toThrow('single path segment');
         expect(() => mapPluginToRulesync(FIXTURE_DIR, 'nested/name', outDir)).toThrow('single path segment');
     });
+
+    // ── Directory layout (Claude Code standard) ──
+
+    const DIR_FIXTURE_DIR = join(import.meta.dir, 'fixtures', 'plugin-dir');
+
+    it('maps directory-layout skills (skills/<name>/SKILL.md)', () => {
+        tmpDir = mkdtempSync('superskill-mapper-');
+        const outDir = join(tmpDir, '.rulesync');
+        const result = mapPluginToRulesync(DIR_FIXTURE_DIR, 'demo', outDir);
+
+        expect(result.skills).toBe(2);
+        expect(existsSync(join(outDir, 'skills', 'demo-alpha', 'SKILL.md'))).toBe(true);
+        expect(existsSync(join(outDir, 'skills', 'demo-beta', 'SKILL.md'))).toBe(true);
+
+        const alpha = readFileSync(join(outDir, 'skills', 'demo-alpha', 'SKILL.md'), 'utf-8');
+        expect(alpha).toContain('# alpha');
+        expect(alpha).toContain('This is skill Alpha in directory layout.');
+    });
+
+    it('maps hooks from hooks/hooks.json subdirectory', () => {
+        tmpDir = mkdtempSync('superskill-mapper-');
+        const outDir = join(tmpDir, '.rulesync');
+        const result = mapPluginToRulesync(DIR_FIXTURE_DIR, 'demo', outDir);
+
+        expect(result.hooks).toBe(true);
+        const hooks = JSON.parse(readFileSync(join(outDir, 'hooks.json'), 'utf-8'));
+        expect(hooks.hooks.Stop).toBeDefined();
+        expect(hooks.hooks.Stop[0].hooks[0].command).toBe('echo stop');
+    });
+
+    it('maps directory-layout commands and agents', () => {
+        tmpDir = mkdtempSync('superskill-mapper-');
+        const outDir = join(tmpDir, '.rulesync');
+        const result = mapPluginToRulesync(DIR_FIXTURE_DIR, 'demo', outDir);
+
+        expect(result.commands).toBe(1);
+        expect(result.subagents).toBe(1);
+        expect(existsSync(join(outDir, 'commands', 'demo-run.md'))).toBe(true);
+        expect(existsSync(join(outDir, 'subagents', 'demo-coder.md'))).toBe(true);
+    });
 });

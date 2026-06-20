@@ -1,0 +1,5 @@
+{
+    "name": "demo-dir",
+    "version": "0.1.0",
+    "description": "Hermetic test fixture for directory-layout mapper tests"
+}
