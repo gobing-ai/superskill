@@ -150,6 +150,7 @@ dist
 /apps/cli/.pi
 /.wolf
 /docs/.ftree
+/vendors
 
 # npm publish staging artifacts copied into apps/cli/ by prepublishOnly
 /apps/cli/README.md
