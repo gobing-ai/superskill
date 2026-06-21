@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'bun:test';
-
-import type { ContentType, QualityReport } from '../../src/quality/dimensions';
 import { evaluate } from '../../src/quality/evaluate';
+import type { ContentType, QualityReport } from '../../src/quality/types';
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 

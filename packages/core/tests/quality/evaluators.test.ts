@@ -1,12 +1,13 @@
 import { describe, expect, it } from 'bun:test';
 import { evaluateAgent } from '../../src/quality/agent';
 import { evaluateCommand } from '../../src/quality/command';
-import type { ContentType, QualityReport } from '../../src/quality/dimensions';
-import { computeAggregate, DIMENSION_REGISTRY, REQUIRED_FIELDS, scorePresence } from '../../src/quality/dimensions';
 import { evaluate } from '../../src/quality/evaluate';
+import { scorePresence } from '../../src/quality/heuristics';
 import { evaluateHook } from '../../src/quality/hook';
 import { evaluateMagent } from '../../src/quality/magent';
 import { evaluateSkill } from '../../src/quality/skill';
+import type { ContentType, QualityReport } from '../../src/quality/types';
+import { computeAggregate, DIMENSION_REGISTRY, REQUIRED_FIELDS } from '../../src/quality/types';
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 

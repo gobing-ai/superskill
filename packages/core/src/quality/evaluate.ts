@@ -1,10 +1,10 @@
 import type { ContentType } from '../content/types';
 import { evaluateAgent } from './agent';
 import { evaluateCommand } from './command';
-import type { QualityReport } from './dimensions';
 import { evaluateHook } from './hook';
 import { evaluateMagent } from './magent';
 import { evaluateSkill } from './skill';
+import type { QualityReport } from './types';
 
 /** A heuristic evaluator: scores content for one content type. */
 export type Evaluator = (content: string, target: string) => QualityReport;

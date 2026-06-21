@@ -14,7 +14,7 @@ export * from './content/frontmatter';
 export * from './content/hash';
 export * from './content/identity';
 export * from './content/paths';
-// ContentType is defined in content/types and re-exported by quality/dimensions;
+// ContentType is defined in content/types and re-exported by quality/types;
 // `export *` treats the duplicate as ambiguous, so re-export it explicitly.
 export type { ContentType } from './content/types';
 export * from './content/types';
@@ -37,12 +37,13 @@ export * from './pipeline/slash-command';
 // ── Quality ──────────────────────────────────────────────────────────────────
 export * from './quality/agent';
 export * from './quality/command';
-export * from './quality/dimensions';
 export * from './quality/evaluate';
+export * from './quality/heuristics';
 export * from './quality/hook';
 export * from './quality/magent';
 export * from './quality/rubric';
 export * from './quality/skill';
+export * from './quality/types';
 export * from './rulesync';
 // ── Targets / marketplace / mapper / rulesync ────────────────────────────────
 export * from './targets';

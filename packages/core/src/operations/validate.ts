@@ -3,8 +3,8 @@ import { dirname } from 'node:path';
 import { parseFrontmatter } from '../content/frontmatter';
 import { resolveContentPath } from '../content/identity';
 import type { ContentType } from '../content/types';
-import { REQUIRED_FIELDS } from '../quality/dimensions';
 import { KNOWN_HOOK_EVENTS } from '../quality/hook';
+import { REQUIRED_FIELDS } from '../quality/types';
 import type { Target } from '../targets';
 
 // ── Types ────────────────────────────────────────────────────────────────────

@@ -1,14 +1,11 @@
-import type { ContentType, DimensionScore, QualityReport } from './dimensions';
+import { clamp, extractBody, keywordDensity, parseErrorNote, parseFrontmatterSafe, scoreLength } from './heuristics';
 import {
-    clamp,
+    type ContentType,
     computeAggregate,
     DIMENSION_REGISTRY,
-    extractBody,
-    keywordDensity,
-    parseErrorNote,
-    parseFrontmatterSafe,
-    scoreLength,
-} from './dimensions';
+    type DimensionScore,
+    type QualityReport,
+} from './types';
 
 const MAGENT_SECTIONS = [/^## IDENTITY/m, /^## SOUL/m, /^## AGENTS/m, /^## USER/m];
 

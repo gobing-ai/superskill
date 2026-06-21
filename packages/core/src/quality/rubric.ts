@@ -3,7 +3,7 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { parse } from 'yaml';
 import { z } from 'zod';
-import { type ContentType, DIMENSION_REGISTRY } from './dimensions';
+import { type ContentType, DIMENSION_REGISTRY } from './types';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 

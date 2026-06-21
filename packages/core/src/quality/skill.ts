@@ -1,18 +1,15 @@
 import {
     clamp,
-    computeAggregate,
-    type DimensionScore,
     extractBody,
     hasPattern,
     keywordDensity,
     parseErrorNote,
     parseFrontmatterSafe,
-    type QualityReport,
-    REQUIRED_FIELDS,
     scoreClarityFromDensities,
     scoreLength,
     scorePresence,
-} from './dimensions';
+} from './heuristics';
+import { computeAggregate, type DimensionScore, type QualityReport, REQUIRED_FIELDS } from './types';
 
 // ── Public API ─────────────────────────────────────────────────────────────────
 

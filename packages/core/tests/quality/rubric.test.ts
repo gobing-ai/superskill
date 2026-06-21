@@ -2,8 +2,8 @@ import { afterAll, beforeAll, describe, expect, it } from 'bun:test';
 import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
-import { type ContentType, DIMENSION_REGISTRY } from '../../src/quality/dimensions';
 import { loadRubric, RubricError, RubricSchema } from '../../src/quality/rubric';
+import { type ContentType, DIMENSION_REGISTRY } from '../../src/quality/types';
 
 // ── Fixtures ──────────────────────────────────────────────────────────────────
 

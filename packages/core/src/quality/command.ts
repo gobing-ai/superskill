@@ -1,14 +1,5 @@
-import {
-    clamp,
-    computeAggregate,
-    type DimensionScore,
-    extractBody,
-    parseFrontmatterSafe,
-    type QualityReport,
-    REQUIRED_FIELDS,
-    scoreClarityFromDensities,
-    scorePresence,
-} from './dimensions';
+import { clamp, extractBody, parseFrontmatterSafe, scoreClarityFromDensities, scorePresence } from './heuristics';
+import { computeAggregate, type DimensionScore, type QualityReport, REQUIRED_FIELDS } from './types';
 
 // ── Dimension Scorers ──────────────────────────────────────────────────────────
 

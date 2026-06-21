@@ -1,13 +1,5 @@
-import {
-    clamp,
-    computeAggregate,
-    type DimensionScore,
-    extractBody,
-    keywordDensity,
-    parseErrorNote,
-    parseFrontmatterSafe,
-    type QualityReport,
-} from './dimensions';
+import { clamp, extractBody, keywordDensity, parseErrorNote, parseFrontmatterSafe } from './heuristics';
+import { computeAggregate, type DimensionScore, type QualityReport } from './types';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 

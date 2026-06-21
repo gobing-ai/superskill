@@ -1,16 +1,15 @@
 import { describe, expect, it } from 'bun:test';
 import {
     clamp,
-    computeAggregate,
     extractBody,
     hasPattern,
     keywordDensity,
     parseErrorNote,
     parseFrontmatterSafe,
-    REQUIRED_FIELDS,
     scoreLength,
     scorePresence,
-} from '../../src/quality/dimensions';
+} from '../../src/quality/heuristics';
+import { computeAggregate, REQUIRED_FIELDS } from '../../src/quality/types';
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
