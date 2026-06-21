@@ -373,15 +373,48 @@ default `/skill-evaluate` alias to cc until B1-B4 are merged and green.
 
 ### Review
 
-**Verdict: PASS (code) — one deployment action remains (P1#1).** All code-fixable findings from the
-prior verification are resolved; gates green (`bun run lint` PASS · `bun run test` 918 pass / 0 fail ·
-`bun run build` PASS). The built `apps/cli/dist/index.js` carries every fix and evaluates a directory to
-PASS/Grade B/0.89 (≈ rd3's score). The stale global binary is the only thing still failing — a
-publish/relink action, not a code defect.
+**Verdict: PASS** — re-verification of committed state (253a2b8). All code findings from prior passes
+are fixed and committed; full SECU + traceability clean. Only the deployment action (P1#1) remains, which
+is an operator release step, not a code defect.
 
-**Scope:** task 0047 fix pass (follow-up to verification)
-**Focus:** correctness, usability
-**Gate:** `bun run lint` PASS · `bun run test` 918/0 · `bun run build` PASS
+**Scope:** task 0047 — committed (253a2b8), working tree clean
+**Focus:** security, efficiency, correctness, usability (full SECU) + Phase 8 traceability
+**Mode:** verify, --channel current, --force, --fix all
+**Gate:** lint PASS · test 918 pass / 0 fail (no skips) · build PASS
+**Coverage:** evaluate.ts 100% func / 99.57% line; validate.ts paths covered
+
+### Phase 7 — SECU (changed surface)
+
+- **Security:** clean. No secrets/unsafe input handling in changed .ts. The adapter.exec(createTableSql) hits are test-only constant DDL (not user input). checkBodyLinks regex is bounded (no ReDoS); file ops are read-only existsSync (no write).
+- **Efficiency:** clean. No N+1, no unbounded growth; link scan is a single bounded pass.
+- **Correctness:** clean. applyRubricWeightingAndVerdict extraction preserves behavior; no-rubric fallback guarded by try/catch; (!filePart) continue handles empty-target edge cases.
+- **Usability:** improved. --history columns now padEnd-aligned; default report carries verdict+grade+findings.
+
+### Findings ledger (all resolved or operator-owned)
+
+| # | Title | Status |
+|---|-------|--------|
+| P1#1 | Stale global binary — built dist correct, global published pkg stale | OPEN (operator: publish/relink — NOT code) |
+| P2#2 | Dead if-rubric guard | FIXED + committed |
+| P2#3 | Envelope baseline vs default weighting mismatch | FIXED (shared helper); baseline 0.89 == default 0.89 |
+| P3#4 | Body-link checker missed anchor/query/scheme prefixes | FIXED + 2 regression tests |
+| P3#5 | ../tasks/ cross-skill link | RESOLVED (B2 purge; all 18 SKILL.md links resolve; validate Valid) |
+| P4#6 | --history column misalignment | FIXED (padEnd) |
+
+### Phase 8 — Requirements traceability (functional, committed code)
+
+- B1 dir to SKILL.md: PASS (no read error)
+- B2 doc purge: PASS (no 10-dim/scripts/scope leftovers; validate Valid)
+- B3 scoring: PASS (0.89, conciseness no longer auto-zeroed)
+- B4 command wrapper: PASS (dir arg, no json flag, save = store)
+- E5 verdict+grade+findings: PASS (Verdict PASS, Grade B)
+- E6 body-link integrity: PASS (validate reports broken links; anchors handled)
+- E7 history: PASS (aligned columns, 2 rows)
+
+**Net:** 7/7 requirements MET, 5/6 findings FIXED in code, 1 finding (P1#1) is an operator release action.
+Recommend: commit is verification-clean; close 0047 once the global superskill binary is published/relinked
+so the slash command (which calls the global) carries the fix.
+
 
 ### P1 — Blockers
 
