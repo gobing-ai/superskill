@@ -144,6 +144,47 @@ describe('executeInstall', () => {
             { marketplacePath, global: false, dryRun: true, verbose: false },
             { runRulesync: mockRunRulesync },
         );
+        // plugin-min has no mcp.json, so 'mcp' is omitted — requesting it would make
+        // rulesync log a per-target ENOENT for the missing .rulesync/mcp.json.
+        expect(capturedFeatures).toEqual(['skills', 'hooks']);
+    });
+
+    it("includes 'mcp' feature only when the plugin actually ships an mcp.json", async () => {
+        const { marketplacePath, pluginDir } = setupPluginDir();
+        // Add an mcp.json so the mapper reports mcp: true
+        writeFileSync(join(pluginDir, 'mcp.json'), JSON.stringify({ mcpServers: {} }));
+
+        let capturedFeatures: string[] = [];
+        const mockRunRulesync = async (_targets: Target[], features: string[]) => {
+            capturedFeatures = features;
+            return {
+                rulesCount: 0,
+                rulesPaths: [],
+                ignoreCount: 0,
+                ignorePaths: [],
+                mcpCount: 0,
+                mcpPaths: [],
+                commandsCount: 0,
+                commandsPaths: [],
+                subagentsCount: 0,
+                subagentsPaths: [],
+                skillsCount: 0,
+                skillsPaths: [],
+                hooksCount: 0,
+                hooksPaths: [],
+                permissionsCount: 0,
+                permissionsPaths: [],
+                skills: [],
+                hasDiff: false,
+            };
+        };
+
+        await executeInstall(
+            'demo',
+            ['codex'],
+            { marketplacePath, global: false, dryRun: true, verbose: false },
+            { runRulesync: mockRunRulesync },
+        );
         expect(capturedFeatures).toEqual(['skills', 'hooks', 'mcp']);
     });
 

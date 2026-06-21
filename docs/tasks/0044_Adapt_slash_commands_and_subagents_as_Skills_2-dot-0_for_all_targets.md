@@ -343,22 +343,45 @@ See **Implementation Phases** section above. Phases A (adaptation modules), B (m
 
 ### Review
 
-**Verdict: PASS**
+**Verdict: PARTIAL** — Implementation is correct and all 7 refinements are MET, but one P1 leaky-abstraction (`outputRoot` not threaded into rulesync) and one P2 (mcp.json error-log noise) should be fixed before marking truly Done.
 
-**R1:** MET. Mapper adapts commands/subagents into skills. E2E: 27 skills to codex, 0 commands, 0 subagents.
-**R2:** MET. `rewriteSkillReferences(content, pluginPrefix)` scoped. `cc:foo`→`cc-foo`, `node:fs` preserved. 0 surviving `cc:` refs.
-**R3:** MET. Claude cache clearing keyed on `resolution.marketplaceName` (install.ts:178-182).
-**R4:** MET. Pi subagent field order pinned (name, description, tools, model, skill). Skill filtering tested.
-**R5:** MET. `disable-model-invocation: true` on commands only; subagents stay model-invocable.
-**R6:** MET. Per-target isolation, slash translation, hook emission preserved.
-**R7:** MET. `rulesyncFeatures = ['skills','hooks','mcp']`. Both assertion sites updated.
-**A1-A5:** MET. lint clean, 820 tests pass, build succeeds, e2e verified.
+Dev-verify 2026-06-20 · Phase 7 (SECU) + Phase 8 (refinement traceability) · channel: current · scope: commit `32b4ffe` (19 files) · Gate: `bun run lint` ✅ · `bun run test` ✅ 820 pass / 0 fail / coverage ≥90% on all new modules.
 
-## Notes
+**Empirical validation (real install of `cc` plugin):** mapResult = 6 skills + 16 commands + 5 subagents → 27 skill dirs delivered to `~/.agents/skills/`; 5 Pi native agents to `.pi/agent/agents/`. Command-as-skills carry `disable-model-invocation: true`; subagent-as-skills do NOT (Refinement #6 ✅). Zero `cc:` refs survive — all rewritten to `cc-` (Refinement #1 ✅).
 
-- This task replaces the previous 0044. **Correction:** rulesync does NOT reliably support commands/subagents across targets — empirical `generate` runs (rulesync 8.29.0) show only `skills` has uniform coverage; `commands`/`subagents` drop silently on several targets and land in heterogeneous formats (TOML agents, prompts, workflows). The "downgrade as skill" design is therefore required, not merely preferred — and it matches the old `cc-agents/scripts/` approach.
-- The adapter functions mirror the old bash scripts' awk logic in TypeScript
-- Pi tools normalization table: `common.sh:189-213`
-- Reference rewriting: `common.sh:88-101`
-- The `disable-model-invocation: true` flag is critical for **command-as-skills only** (Refinement #6) — prevents the LLM from being invoked when loading command definitions. Subagent-as-skills must NOT carry this flag.
-- Empirical note: rulesync 8.29.0 per-feature/per-target coverage was verified by direct `generate` runs (see corrected "Current flow" matrix). Only `skills` is uniform; `commands`/`subagents` drop silently on several targets. This — not "checking the wrong output directories" — is the real reason the downgrade-to-skills design is required.
+### P1 — Blockers
+
+| # | Title | Dimension | Location | Recommendation |
+|---|-------|-----------|----------|----------------|
+| 1 | `outputRoot` is a leaky abstraction — not threaded into rulesync | Correctness/Usability | apps/cli/src/commands/install.ts:169 + packages/core/src/rulesync.ts:64 | `executeInstall`'s `outputRoot` redirects surrogate/pi-agent writes but NOT rulesync skill writes (rulesync hardcodes `outputRoots:[homedir()/cwd()]`). Real installs work (skills land in `~/.agents/skills/`), but the override is silently ignored for the main payload — so the integration test's `outputRoot` isolation is partial, and any caller passing `outputRoot` gets surprising `$HOME` writes. Thread `outputRoot` through `runRulesync` → `outputRoots`, OR rename/document the param as surrogate-only. Add an integration assertion that rulesync skills land under the override root. |
+
+### P2 — Warnings
+
+| # | Title | Dimension | Location | Recommendation |
+|---|-------|-----------|----------|----------------|
+| 2 | `mcp.json` ENOENT logged on every install | Correctness/Usability | packages/core/src/rulesync.ts (rulesync generate) + mapper.ts:130-137 | When a plugin has no `mcp.json`, the mapper writes none, but rulesync per-target input still probes for it and logs `Failed to load a Rulesync MCP file (.rulesync/mcp.json): ENOENT` once per rulesync target. Harmless (install continues) but alarming noise. Either drop `'mcp'` from `rulesyncFeatures` when `mapResult.mcp === false`, or write an empty `mcp.json` stub, or filter the log. |
+
+### P3 — Info
+
+| # | Title | Dimension | Location | Recommendation |
+|---|-------|-----------|----------|----------------|
+| 3 | `--no-global` (project-mode) install crashes on missing parent dir | Correctness | apps/cli/src/commands/install.ts (real run) | Running `install cc --no-global` from a dir without `.agents/skills/` threw `ENOENT: mkdir '.agents/skills/cc-agent-add'`. rulesync expects the parent to exist in project mode. Pre-create target parents or catch+mkdir. Lower severity since global mode (the default) works. |
+| 4 | `adaptSubagentToPi` does FS I/O (`existsSync`) inside a "pipeline" module | Correctness/Testability | packages/core/src/pipeline/adapt-subagent.ts:173-191 | The skill-existence filter reads the filesystem from within an otherwise-pure pipeline fn, coupling it to disk layout and requiring `pluginPath` plumbing. Acceptable (mirrors old bash), but consider injecting a `skillExists(name)` predicate so the fn stays unit-testable without a real plugin dir. |
+
+### P4 — Suggestions
+
+| # | Title | Dimension | Location | Recommendation |
+|---|-------|-----------|----------|----------------|
+| 5 | `rewriteColonRefs` legacy fn retained (deprecated) | Maintainability | packages/core/src/pipeline/rewrite-colons.ts | Still used by `adapt-parity.test.ts` and the per-target `transformMarkdownDirectory` skill pass. Once all call sites move to `rewriteSkillReferences`, delete it. Currently both run (mapper uses scoped, transform uses legacy) — harmless double-pass but worth consolidating. |
+
+**Refinement traceability (Phase 8) — all 7 MET:**
+- R#1 plugin-scoped colon rewrite → MET: rewrite-references.ts:10-17 + parity test asserts `node:fs` preserved, `rd3:` not rewritten under `cc`.
+- R#2 no regression of slash/isolation/hooks → MET: install.ts:384-408 keeps `translateSlashCommands`; pi/omp/hermes hook emission intact.
+- R#3 omp/hermes get everything (self-heal) → MET: all entities are skills now; surrogate copy of `skills/` carries commands+subagents.
+- R#4 Pi skill filter + field order → MET: adapt-subagent.ts:96-193, order `name,description,tools,model,skill`, body-scan filtered to existing skill dirs.
+- R#5 Claude cache keyed on marketplaceName → MET: install.ts:180-181 uses resolved name, guarded by `existsSync`.
+- R#6 disable-model-invocation commands-only → MET: adapt-command.ts sets it; adapt-subagent.ts does not. Empirically confirmed.
+- R#7 features=[skills,hooks,mcp] both sites → MET: install.ts:127; install.integration.test.ts updated.
+
+**Fix-pass 2026-06-20 (dev-verify --fix all):** P2 #2 FIXED — `rulesyncFeatures` now omits `'mcp'` when `mapResult.mcp === false` (install.ts:127-132); added integration test `includes 'mcp' feature only when the plugin ships an mcp.json`. Gate: lint ✅, 821 tests pass. P1 #1 (outputRoot→rulesync threading) and P3 #3 (project-mode mkdir) DEFERRED to the new refinement task — they touch ADR-010 (`outputRoots` derivation) and the public `RulesyncOptions` shape, which is an architectural change that should not be auto-applied to a Done task. P3 #4 and P4 #5 deferred (non-blocking, captured in new task).
+

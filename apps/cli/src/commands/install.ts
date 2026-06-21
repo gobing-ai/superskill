@@ -124,7 +124,10 @@ export async function executeInstall(
 
     // Step 4: Run rulesync for supported targets. Include surrogate targets:
     // omp reuses pi's rulesync output, hermes reuses opencode's (see ADR-010).
-    const rulesyncFeatures = ['skills', 'hooks', 'mcp'] as const;
+    // Only request features the mapper actually produced — requesting 'mcp' when
+    // the plugin has no mcp.json makes rulesync log a per-target ENOENT for the
+    // missing .rulesync/mcp.json on every install.
+    const rulesyncFeatures = ['skills', 'hooks', ...(mapResult.mcp ? (['mcp'] as const) : [])] as const;
     const rulesyncTargets = targets.filter((t) => t !== 'claude' && t !== 'hermes' && t !== 'omp');
     if (targets.includes('omp') && !targets.includes('pi')) {
         if (!targetInputRoots.has('pi')) {

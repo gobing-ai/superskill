@@ -1,9 +1,9 @@
 ---
 name: Migrate anti-hallucination skill from Spur and re-develop its launchers as a spur workflow + spur agent solution
 description: Migrate anti-hallucination skill from Spur and re-develop its launchers as a spur workflow + spur agent solution
-status: Testing
+status: Done
 created_at: 2026-06-18T06:47:35.813Z
-updated_at: 2026-06-19T22:36:42.869Z
+updated_at: 2026-06-21T04:21:39.862Z
 folder: docs/tasks
 type: task
 feature-id: ""
