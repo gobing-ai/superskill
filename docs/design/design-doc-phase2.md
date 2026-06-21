@@ -157,6 +157,13 @@ Options:
   --propose-only        Generate proposal without applying
   --accept <id>         Accept a specific proposal by ID
   --reject <id>         Reject a specific proposal
+  --analyze             Print analysis summary (trends, score, data sources) without writing a proposal
+  --history             List applied proposal versions from the store
+  --rollback <id>       Restore a prior version by proposal_id (requires --confirm)
+  --confirm             Confirm a destructive operation (required for --rollback)
+  --ingest <file>       Agent-authored proposal JSON (ingest-in mode)
+  --json                Output machine-readable JSON (envelope-out with --propose-only)
+  --margin <n>          Δ-margin gate threshold for accept (default 0.05)
 ```
 
 The self-evolution loop:

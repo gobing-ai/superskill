@@ -41,6 +41,14 @@ export interface EvolveOptions {
     ingest?: string;
     /** Δ-margin gate threshold: post must exceed baseline by at least this (default 0.05). */
     margin?: number;
+    /** Print analysis summary (trend table + score/grade + data sources) without writing a proposal. */
+    analyze?: boolean;
+    /** List applied proposal versions from the store. */
+    history?: boolean;
+    /** Rollback to a prior version by proposal_id (requires --confirm). */
+    rollback?: string;
+    /** Confirm a destructive operation (required for --rollback). */
+    confirm?: boolean;
     /** Inject an already-open DbAdapter for testing. */
     adapter?: DbAdapter;
 }
@@ -514,6 +522,9 @@ async function ingestProposal(
             ingestedAnchorHash: parsed.anchor_hash,
             skeptic: parsed.skeptic,
         });
+        if (!verdict.rejected && verdict.backupPath) {
+            await persistVersionSnapshot(verdict.backupPath, resolvedPath, proposalId);
+        }
         return {
             baselineScore,
             postScore: verdict.postScore,
@@ -580,7 +591,7 @@ async function stepPropose(
     db: DbAdapter,
     type: ContentType,
     name: string,
-    _report: QualityReport,
+    report: QualityReport,
     trends: TrendEntry[],
     evaluations: Evaluation[],
     baselineScore: number,
@@ -592,7 +603,7 @@ async function stepPropose(
     changes: ProposedChange[];
     proposalRecord: Proposal;
 }> {
-    const changes: ProposedChange[] = []; // F023: placeholder generation removed — changes come via --ingest
+    const changes = generateChanges(report, trends);
     const proposalDao = new ProposalDao(db);
 
     const existingProposals = await proposalDao.getProposals(type, name);
@@ -820,7 +831,7 @@ async function stepVerify(
     opts: EvolveOptions | undefined,
     db: DbAdapter,
     gate?: GateContext,
-): Promise<{ postScore: number; delta: number; rejected?: boolean; reason?: string }> {
+): Promise<{ postScore: number; delta: number; rejected?: boolean; reason?: string; backupPath?: string }> {
     let postScore = baselineScore;
     let postReport: QualityReport | undefined;
     try {
@@ -879,17 +890,73 @@ async function stepVerify(
         echoError('Cannot link verify evaluation.');
     }
 
-    // R6: on a clean pass, delete the pre-apply backup so no residue remains.
-    if (gate) {
-        rmSync(gate.backupPath, { force: true });
-    }
+    // R6: on a clean pass, keep the backup as a version snapshot for --rollback.
+    // The caller renames it to a versioned path after linking the verify evaluation.
+    const survivingBackupPath = gate?.backupPath;
 
     const pctStr = baselineScore > 0 ? `, ${delta >= 0 ? '+' : ''}${((delta / baselineScore) * 100).toFixed(1)}%` : '';
     echo(
         `Score: ${baselineScore.toFixed(2)} → ${postScore.toFixed(2)} (${delta >= 0 ? '+' : ''}${delta.toFixed(2)}${pctStr})`,
     );
 
-    return { postScore, delta };
+    return { postScore, delta, ...(survivingBackupPath ? { backupPath: survivingBackupPath } : {}) };
+}
+
+// ── Analyze / History / Rollback (G2/G3) ─────────────────────────────────────
+
+/** Map an aggregate score (0–1) to a letter grade, mirroring evaluate.ts. */
+function scoreToGrade(score: number): string {
+    if (score >= 0.9) return 'A';
+    if (score >= 0.75) return 'B';
+    if (score >= 0.6) return 'C';
+    if (score >= 0.45) return 'D';
+    return 'F';
+}
+
+/** Format the analysis summary for --analyze (no file mutation, no proposal write). */
+function formatAnalyze(name: string, analysis: AnalyzeResult): string {
+    const { trends, baselineScore, baselineDate, evaluations } = analysis;
+    const grade = scoreToGrade(baselineScore);
+    const verdict = baselineScore >= 0.7 ? 'PASS' : 'FAIL';
+    const gitAvailable = existsSync(join(process.cwd(), '.git'));
+
+    const lines: string[] = [];
+    lines.push('=== Evolution Analysis ===');
+    lines.push(`Target: ${name}   Score: ${(baselineScore * 100).toFixed(0)}% (${grade})   Status: ${verdict}`);
+    lines.push(
+        `Available data sources: evaluation-history (${evaluations.length}) · git-history (${gitAvailable ? '✓' : '✗'})`,
+    );
+
+    if (trends.length > 0) {
+        lines.push('');
+        lines.push('| Dimension | Earliest | Latest | Trend |');
+        lines.push('|-----------|----------|--------|-------|');
+        for (const t of trends) {
+            const arrow = t.trend === 'improving' ? '↑' : t.trend === 'declining' ? '↓' : '→';
+            lines.push(`| ${t.dimension} | ${t.earliest.toFixed(2)} | ${t.latest.toFixed(2)} | ${arrow} ${t.trend} |`);
+        }
+    }
+
+    const declining = trends.filter((t) => t.trend === 'declining');
+    const flatLow = trends.filter((t) => t.trend === 'flat' && t.latest < 0.7);
+    if (declining.length > 0) {
+        lines.push(`Patterns: [warning] declining dimensions: ${declining.map((t) => t.dimension).join(', ')}`);
+    } else if (flatLow.length > 0) {
+        lines.push(`Patterns: [warning] flat-low dimensions: ${flatLow.map((t) => t.dimension).join(', ')}`);
+    } else {
+        lines.push(`Patterns: [success] ${name} is currently stable at ${(baselineScore * 100).toFixed(0)}%`);
+    }
+
+    lines.push(`Baseline date: ${baselineDate}`);
+    return lines.join('\n');
+}
+
+/** Rename a transient backup to a versioned snapshot for --rollback. */
+async function persistVersionSnapshot(backupPath: string, resolvedPath: string, proposalId: string): Promise<string> {
+    const versionPath = `${resolvedPath}.version-${proposalId}`;
+    await Bun.write(versionPath, Bun.file(backupPath));
+    rmSync(backupPath, { force: true });
+    return versionPath;
 }
 
 // ── Core ─────────────────────────────────────────────────────────────────────
@@ -923,6 +990,48 @@ export async function evolve(type: ContentType, name: string, opts?: EvolveOptio
         return { baselineScore: 0, postScore: 0, delta: 0, changesApplied: 0, proposalPath: '' };
     }
 
+    // --history: list applied proposal versions (no evaluation needed).
+    if (opts?.history) {
+        const proposals = await new ProposalDao(db).getProposals(type, contentName);
+        const accepted = proposals.filter((p) => p.status === 'accepted');
+        if (accepted.length === 0) {
+            echo(`No applied versions found for ${type}/${contentName}.`);
+            return { baselineScore: 0, postScore: 0, delta: 0, changesApplied: 0, proposalPath: '' };
+        }
+        const lines: string[] = [];
+        lines.push(`=== Version History: ${contentName} ===`);
+        lines.push('');
+        lines.push('| Version | Applied At | Snapshot |');
+        lines.push('|---------|------------|----------|');
+        for (const p of accepted) {
+            const json = typeof p.proposal_json === 'string' ? JSON.parse(p.proposal_json) : p.proposal_json;
+            const proposalId = (json as Record<string, unknown>)?.proposal_id as string | undefined;
+            const versionId = proposalId ?? `#${p.id}`;
+            const appliedAt = p.applied_at ?? 'unknown';
+            const versionPath = `${resolvedPath}.version-${versionId}`;
+            const hasSnapshot = existsSync(versionPath) ? '✓' : '✗';
+            lines.push(`| ${versionId} | ${appliedAt} | ${hasSnapshot} |`);
+        }
+        echo(lines.join('\n'));
+        return { baselineScore: 0, postScore: 0, delta: 0, changesApplied: 0, proposalPath: '' };
+    }
+
+    // --rollback <ver>: restore from a version snapshot (requires --confirm).
+    if (opts?.rollback) {
+        if (!opts.confirm) {
+            echoError('--rollback requires --confirm to proceed.');
+            return { baselineScore: 0, postScore: 0, delta: 0, changesApplied: 0, proposalPath: '' };
+        }
+        const versionPath = `${resolvedPath}.version-${opts.rollback}`;
+        if (!existsSync(versionPath)) {
+            echoError(`Version snapshot not found: ${opts.rollback}`);
+            return { baselineScore: 0, postScore: 0, delta: 0, changesApplied: 0, proposalPath: '' };
+        }
+        await Bun.write(resolvedPath, Bun.file(versionPath));
+        echo(`Rolled back ${contentName} to version ${opts.rollback}.`);
+        return { baselineScore: 0, postScore: 0, delta: 0, changesApplied: 0, proposalPath: '' };
+    }
+
     // Step 1: ANALYZE
     let analysis: AnalyzeResult;
     try {
@@ -934,6 +1043,12 @@ export async function evolve(type: ContentType, name: string, opts?: EvolveOptio
     }
 
     const { trends, baselineScore, baselineDate, evaluations } = analysis;
+
+    // --analyze: print analysis summary and exit (no proposal, no file mutation).
+    if (opts?.analyze) {
+        echo(formatAnalyze(contentName, analysis));
+        return { baselineScore, postScore: baselineScore, delta: 0, changesApplied: 0, proposalPath: '' };
+    }
 
     // Single evaluation edge case
     if (evaluations.length < 2) {
@@ -1013,6 +1128,9 @@ export async function evolve(type: ContentType, name: string, opts?: EvolveOptio
             ingestedAnchorHash: storedAnchorHash,
             skeptic: storedSkeptic,
         });
+        if (!verdict.rejected && verdict.backupPath) {
+            await persistVersionSnapshot(verdict.backupPath, resolvedPath, opts.acceptId);
+        }
         return {
             baselineScore,
             postScore: verdict.postScore,
@@ -1024,7 +1142,7 @@ export async function evolve(type: ContentType, name: string, opts?: EvolveOptio
     }
 
     // Step 2: PROPOSE (interactive and --propose-only paths create a fresh draft).
-    const { proposalDbId, proposalPath, changes } = await stepPropose(
+    const { proposalId, proposalDbId, proposalPath, changes } = await stepPropose(
         db,
         type,
         contentName,
@@ -1044,7 +1162,8 @@ export async function evolve(type: ContentType, name: string, opts?: EvolveOptio
     // Interactive mode
     const { accepted: acceptedChanges } = await interactiveReview(changes, trends);
 
-    // Step 4: APPLY
+    // Step 4: APPLY (with backup for version history)
+    const backupPath = await backupFile(resolvedPath);
     const changesApplied = await stepApply(acceptedChanges, resolvedPath, proposalDbId, db);
 
     // Step 5: VERIFY
@@ -1057,6 +1176,9 @@ export async function evolve(type: ContentType, name: string, opts?: EvolveOptio
         opts,
         db,
     );
+
+    // Persist version snapshot for --rollback
+    await persistVersionSnapshot(backupPath, resolvedPath, proposalId);
 
     return { baselineScore, postScore, delta, changesApplied, proposalPath };
 }

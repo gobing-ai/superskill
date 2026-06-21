@@ -16,7 +16,7 @@ export function addScaffoldOptions(cmd: Command): Command {
         .option('--force', 'Overwrite existing file if present');
 }
 
-/** Add evolve-specific options (F023: --json/--ingest; F024: --margin for the Δ-margin gate). */
+/** Add evolve-specific options (F023: --json/--ingest; F024: --margin; G2/G3: --analyze/--history/--rollback/--confirm). */
 export function addEvolveOptions(cmd: Command): Command {
     return cmd
         .option('-t, --target <agent>', 'Target agent platform', 'claude')
@@ -26,7 +26,11 @@ export function addEvolveOptions(cmd: Command): Command {
         .option('--reject <id>', 'Reject a specific proposal')
         .option('--json', 'Output machine-readable JSON (envelope-out with --propose-only)')
         .option('--ingest <file>', 'Agent-authored proposal JSON (ingest-in mode)')
-        .option('--margin <n>', 'Δ-margin gate threshold for accept (default 0.05)', Number.parseFloat, 0.05);
+        .option('--margin <n>', 'Δ-margin gate threshold for accept (default 0.05)', Number.parseFloat, 0.05)
+        .option('--analyze', 'Print analysis summary (trends, score, data sources) without writing a proposal')
+        .option('--history', 'List applied proposal versions from the store')
+        .option('--rollback <id>', 'Rollback to a prior version by proposal_id (requires --confirm)')
+        .option('--confirm', 'Confirm a destructive operation (required for --rollback)');
 }
 
 /** Add --json option. */

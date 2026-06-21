@@ -292,14 +292,14 @@ describe('evolve — orchestrator', () => {
         expect(r.proposalPath).toBe('');
     });
 
-    it('--propose-only writes a proposal file with no placeholder changes (F023 R5)', async () => {
+    it('--propose-only seeds heuristic changes for declining dimensions (G1/A1)', async () => {
         await seedHistory(adapter, [0.9, 0.5]); // declining clarity
         const r = await evolve('skill', 'widget', { adapter, proposeOnly: true });
         expect(r.proposalPath).not.toBe('');
-        // F023 R5: no [Improve placeholder in the proposal file
+        // G1/A1: propose-only now seeds heuristic changes via generateChanges for declining dims.
         const proposalContent = readFileSync(r.proposalPath, 'utf-8');
-        expect(proposalContent).not.toContain('[Improve');
-        expect(proposalContent).not.toContain('Fix clarity');
+        expect(proposalContent).toContain('[Improve clarity]');
+        expect(proposalContent).toContain('Fix clarity');
         expect(r.changesApplied).toBe(0);
         // Proposal persisted as draft.
         const props = await new ProposalDao(adapter).getProposals('skill', 'widget');
@@ -492,6 +492,140 @@ describe('evolve — orchestrator', () => {
         const r = await evolve('skill', 'widget', { adapter, acceptId: pid });
         // Gate may pass or reject; verify either outcome is clean (no throw)
         expect([true, undefined]).toContain(r.rejected);
+    });
+
+    // ── G1/A1: seeded proposals ───────────────────────────────────────────────
+
+    it('--propose-only yields no changes for a perfect agent (G1/A1)', async () => {
+        await seedHistory(adapter, [0.95, 0.95]); // flat, high — no declining/flat-low dims
+        const r = await evolve('skill', 'widget', { adapter, proposeOnly: true });
+        expect(r.proposalPath).not.toBe('');
+        const proposalContent = readFileSync(r.proposalPath, 'utf-8');
+        // No proposed changes because all dims are high and flat (not declining, not flat-low < 0.7)
+        expect(proposalContent).not.toContain('[Improve');
+        expect(proposalContent).not.toContain('Fix clarity');
+    });
+
+    it('--propose-only seeds changes for flat-low dimensions (G1/A1)', async () => {
+        await seedHistory(adapter, [0.5, 0.5]); // flat, low (< 0.7)
+        const r = await evolve('skill', 'widget', { adapter, proposeOnly: true });
+        const proposalContent = readFileSync(r.proposalPath, 'utf-8');
+        expect(proposalContent).toContain('[Improve clarity]');
+    });
+
+    // ── G2/A2: --analyze ───────────────────────────────────────────────────────
+
+    it('--analyze prints trend table, score/grade, and data sources without writing a proposal (G2/A2)', async () => {
+        await seedHistory(adapter, [0.9, 0.5]); // declining clarity
+        const writes: string[] = [];
+        const spy = spyOn(process.stdout, 'write').mockImplementation((data) => {
+            writes.push(typeof data === 'string' ? data : data.toString());
+            return true;
+        });
+        const r = await evolve('skill', 'widget', { adapter, analyze: true });
+        spy.mockRestore();
+        const output = writes.join('');
+        expect(output).toContain('=== Evolution Analysis ===');
+        expect(output).toContain('Score:');
+        expect(output).toContain('declining');
+        expect(output).toContain('evaluation-history');
+        // No proposal written
+        expect(r.proposalPath).toBe('');
+        expect(r.changesApplied).toBe(0);
+    });
+
+    it('--analyze works with a single evaluation (G2/A2)', async () => {
+        await seedHistory(adapter, [0.85]);
+        const writes: string[] = [];
+        const spy = spyOn(process.stdout, 'write').mockImplementation((data) => {
+            writes.push(typeof data === 'string' ? data : data.toString());
+            return true;
+        });
+        const r = await evolve('skill', 'widget', { adapter, analyze: true });
+        spy.mockRestore();
+        const output = writes.join('');
+        expect(output).toContain('=== Evolution Analysis ===');
+        expect(r.proposalPath).toBe('');
+    });
+
+    // ── G3/A3: --history ───────────────────────────────────────────────────────
+
+    it('--history reports no applied versions when none exist (G3/A3)', async () => {
+        const writes: string[] = [];
+        const spy = spyOn(process.stdout, 'write').mockImplementation((data) => {
+            writes.push(typeof data === 'string' ? data : data.toString());
+            return true;
+        });
+        const r = await evolve('skill', 'widget', { adapter, history: true });
+        spy.mockRestore();
+        const output = writes.join('');
+        expect(output).toContain('No applied versions');
+        expect(r.changesApplied).toBe(0);
+    });
+
+    it('--history lists an applied version after --accept (G3/A3)', async () => {
+        await seedHistory(adapter, [0.9, 0.5]);
+        // Create and accept a proposal.
+        await evolve('skill', 'widget', { adapter, proposeOnly: true });
+        const draft = (await new ProposalDao(adapter).getProposals('skill', 'widget'))[0];
+        const pid = ((draft?.proposal_json as Record<string, unknown>)?.proposal_id as string) ?? '';
+        await evolve('skill', 'widget', { adapter, acceptId: pid, margin: -1 });
+
+        // Query history.
+        const writes: string[] = [];
+        const spy = spyOn(process.stdout, 'write').mockImplementation((data) => {
+            writes.push(typeof data === 'string' ? data : data.toString());
+            return true;
+        });
+        const r = await evolve('skill', 'widget', { adapter, history: true });
+        spy.mockRestore();
+        const output = writes.join('');
+        expect(output).toContain('=== Version History: widget ===');
+        expect(output).toContain(pid);
+        expect(output).toContain('✓'); // snapshot exists
+        expect(r.changesApplied).toBe(0);
+    });
+
+    // ── G3/A3: --rollback ──────────────────────────────────────────────────────
+
+    it('--rollback requires --confirm (G3/A3)', async () => {
+        await seedHistory(adapter, [0.9, 0.5]);
+        const r = await evolve('skill', 'widget', { adapter, rollback: 'some-id' });
+        expect(r.changesApplied).toBe(0);
+        // No file mutation occurred
+    });
+
+    it('--rollback restores byte-identical content after an applied evolve (G3/A3)', async () => {
+        await seedHistory(adapter, [0.9, 0.5]);
+        const originalContent = readFileSync(join(dir, 'widget.md'), 'utf-8');
+
+        // Create and accept a proposal (this modifies the file and creates a version snapshot).
+        await evolve('skill', 'widget', { adapter, proposeOnly: true });
+        const draft = (await new ProposalDao(adapter).getProposals('skill', 'widget'))[0];
+        const pid = ((draft?.proposal_json as Record<string, unknown>)?.proposal_id as string) ?? '';
+        await evolve('skill', 'widget', { adapter, acceptId: pid, margin: -1 });
+
+        // File should now be different from original.
+        const modifiedContent = readFileSync(join(dir, 'widget.md'), 'utf-8');
+        expect(modifiedContent).not.toBe(originalContent);
+
+        // Rollback to the pre-apply version.
+        const r = await evolve('skill', 'widget', { adapter, rollback: pid, confirm: true });
+        expect(r.changesApplied).toBe(0);
+
+        // File should be byte-identical to the original.
+        const restoredContent = readFileSync(join(dir, 'widget.md'), 'utf-8');
+        expect(restoredContent).toBe(originalContent);
+    });
+
+    it('--rollback errors when the version snapshot does not exist (G3/A3)', async () => {
+        await seedHistory(adapter, [0.9, 0.5]);
+        const r = await evolve('skill', 'widget', {
+            adapter,
+            rollback: 'nonexistent-version',
+            confirm: true,
+        });
+        expect(r.changesApplied).toBe(0);
     });
 });
 
