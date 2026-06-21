@@ -5,6 +5,33 @@ All notable changes to `@gobing-ai/superskill` are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Conventional Commits](https://www.conventionalcommits.org/).
 
 
+## [0.1.8] - 2026-06-21
+
+### New Features
+
+#### Hook Evaluation — Safety-First Scoring for hooks.json
+
+- **New `/cc:hook-evaluate` command**: Evaluates `hooks.json` directly against 4 quality dimensions: correctness (command/type/matcher validity), event-coverage (lifecycle event breadth across 9 canonical events), safety (dangerous-command pattern scan), and pattern-match-quality (matcher specificity, timeout presence, path portability). Safety is weighted highest (0.35) — hooks run arbitrary shell commands and deserve the most scrutiny. (`plugins/cc/commands/hook-evaluate.md`)
+- **Dangerous command detection**: The safety dimension scans for `rm -rf`, `curl | sh`, `--no-verify` bypasses, `eval`, `sudo`, `chmod 777`, unquoted command substitution, and backtick execution. Each dangerous pattern is named in findings with the hook event and truncated command string.
+
+### Improvements
+
+#### Evaluate — Parity Polish Across All Content Types
+
+- **Skill evaluator findings/recommendations** (task 0047): Low-scoring dimensions now emit specific, actionable `findings` and `recommendations` — not just a one-line note. The shared formatter renders them as `Findings:` and `Recommendations:` blocks in human output. Same enrichment applies to agent, command, magent, and hook evaluators.
+- **Agent evaluator readiness** (task 0048): All 5 agent dimensions (completeness, role-clarity, tool-selection, skill-linkage, model-fit) emit findings and recommendations for sub-perfect scores. Command wrapper aligned (D1 flag boundary, `--save` description). Weighted-aggregate test added — agent rubric weights (role-clarity 0.25 dominant) confirmed to produce different aggregates from equal-weight mean.
+- **Magent evaluator — plain-markdown configs supported** (task 0050): AGENTS.md / CLAUDE.md / GEMINI.md are plain markdown by design. The magent evaluator now detects governance sections (project, commands, verification, conventions, safety, docs) via flexible regex matching rather than requiring YAML frontmatter. Body-based platform detection fallback for frontmatter-less configs. No more "Frontmatter parse error" on valid main-agent configs.
+
+### Bug Fixes
+
+- **Command evaluator scored wrong schema** (P1, task 0049): The command evaluator required a fictional `name` frontmatter field and an `arguments[]` array that don't exist in Claude Code commands. Every valid command (16 `plugins/cc/commands/*.md`) scored 0.43 FAIL/Grade F. Fixed `REQUIRED_FIELDS.command` to `['description']`, rewrote `scoreArgumentHints` for the real `argument-hint` string convention, and made `scoreToolReferences` read `allowed-tools` from frontmatter. All 16 commands now score 0.88 PASS/Grade B.
+- **Magent bare-name resolution doubled `.md` extension** (P1, task 0050): `magent evaluate AGENTS.md` looked for `AGENTS.md.md` and returned "File not found." Fixed `resolveContentPath` to check the name as-is before appending `.md`. Extension-less names (e.g. `my-config`) still fall through to the `.md` append.
+
+### Security
+
+- **Hook safety scanning in evaluate**: The new `hook evaluate` command scans every `command` string in `hooks.json` for dangerous shell patterns before hooks are deployed. This is defense-in-depth: `hook validate` already checks schema, but `hook evaluate` catches what the commands actually do.
+
+
 ## [0.1.7] - 2026-06-21
 
 ### Bug Fixes
