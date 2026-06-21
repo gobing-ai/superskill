@@ -10,11 +10,11 @@ feature-id: ""
 priority: high
 tags: ["cc-commands","evolve","dogfood","migration","rd3-parity"]
 impl_progress:
-  planning: pending
-  design: pending
-  implementation: pending
-  review: pending
-  testing: pending
+  planning: complete
+  design: complete
+  implementation: complete
+  review: complete
+  testing: complete
 ---
 
 ## 0053. Make cc command-evolve ready to replace rd3 command-evolve
@@ -92,35 +92,28 @@ No engine changes; no alias flip. Start commit: acae535.
 
 ### Review
 
-**Verdict: PASS** — all three work items (C1–C3) and the Acceptance criteria met.
+## Re-verify — 2026-06-21 (--force, dev-verify --fix all)
 
-**SECU lens:**
-- **S(E)ecurity:** No new I/O, no shell exec, no secret surface. `--rollback` mutates a `.md` file but is
-  gated behind `--confirm` (engine-level, 0052). No injection vector introduced — flags pass through to
-  the existing vetted `evolve()` orchestrator unchanged.
-- **E(C)orrectness:** Flag pass-through verified by `toHaveBeenCalledWith('command', ..., {analyze,
-  history, rollback, confirm, ...})` (command.test.ts:149). Commander registration verified by option
-  `.long` inspection (command.test.ts:288). File-based command resolution reuses the shared
-  `resolveContentPath('command', name)` path — no new path logic.
-- **C(U)omprehensibility:** Wrapper now mirrors agent-evolve.md exactly (same argument-hint format, same
-  Arguments table columns, same Examples block ordering). Drift claims removed: no more "rollback via
-  saved version history" / "backup and rollback support" fabrications; `--accept p1234` replaced with
-  real id `command-evolve-2026-06-21-001`.
-- **U(Usability):** `--analyze`/`--history`/`--rollback`/`--confirm` now discoverable via
-  `superskill command evolve --help` (option long flags present).
+**Status:** 0 findings · **Verdict: PASS**
+**Scope:** apps/cli/src/commands/command.ts, plugins/cc/commands/command-evolve.md (tests: command.test.ts, evolve.test.ts)
+**Mode:** verify (Phase 7 SECU + Phase 8 traceability) · **Channel:** inline
+**Gate:** `bun run lint` clean · `bun run test` 974 pass / 0 fail / 0 skip · `bun run build` exit 0 (3.43 MB) · git clean
 
-**Traceability (Acceptance → Evidence):**
+### SECU (Phase 7)
+- Security: 0 — no new I/O/exec/secrets; `--rollback` gated on `--confirm` (evolve.ts:1021).
+- Efficiency: 0 — pure flag forwarding, no loops/allocations.
+- Correctness: 0 — command.ts signatures align with EvolveOptions (evolve.ts:44-51) + addEvolveOptions (helpers.ts:33-36); lint noExplicitAny clean.
+- Usability: 0 — wrapper mirrors agent-evolve; real id shape, no fabricated claims.
 
-| Acceptance | Evidence |
-|------------|---------|
-| `command evolve <cmd.md> --propose-only` → non-empty Proposed changes | `evolve.test.ts:654` C3/G1 — `expect(proposalContent).toContain('[Improve clarity]')` on declining-clarity command history |
-| `--analyze` prints summary | `evolve.test.ts:676` C3/G2 — `expect(output).toContain('=== Evolution Analysis ===')`, `proposalPath === ''` |
-| apply → history → rollback restores byte-identical | `evolve.test.ts:711` C3/G3 (history lists pid) + `evolve.test.ts:730` C3/G3 (`restoredContent === originalContent`) |
-| Gates green | lint clean; 974/974 tests pass (coverage 99.69% funcs / 98.63% lines); build 3.43 MB exit 0 |
-| Wrapper claims match reality | `plugins/cc/commands/command-evolve.md` rewritten; every claim maps to a registered flag |
+### Traceability (Phase 8) — all MET
+- C1 flags registered: command.ts:232; verified command.test.ts:288 + :149.
+- propose-only non-empty: evolve.test.ts:683.
+- --analyze summary: evolve.test.ts:695,705.
+- apply→history→rollback byte-identical: evolve.test.ts:711,731,750.
+- C2 wrapper claims match reality: command-evolve.md Arguments table ↔ registered flags.
 
-**Do-not-drift honored:** zero engine changes (evolve.ts untouched), no alias flip. Only command.ts
-wiring + wrapper + tests touched.
+**Fix-pass 2026-06-21:** 0 fixed, 0 failed, 0 skipped (verdict PASS — no findings to fix).
+
 
 ### Testing
 
