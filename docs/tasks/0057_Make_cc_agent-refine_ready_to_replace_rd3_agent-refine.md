@@ -231,32 +231,33 @@ Coordinate alias flip + deployment with 0058-0060.
 
 _2026-06-21_
 
-**Status:** 1 finding (addressed inline)
+**Status:** 1 finding (P4, fixed) — re-verification (`--force`, dev-verify full, auto)
 **Scope:** `apps/cli/src/operations/refine.ts`, `apps/cli/src/commands/agent.ts`, `apps/cli/src/commands/helpers.ts`, `plugins/cc/commands/agent-refine.md`
-**Mode:** verify (inline, channel=current)
-**Gate:** `bun run lint` pass · `bun run test` 959 pass / 0 fail · `bun run build` pass
+**Mode:** verify (inline, channel=current, --force re-audit of Done task)
+**Gate:** `bun run lint` pass · `bun run test` 959 pass / 0 fail · `bun run build` pass · `refine.ts` 100% line / 94.15% func coverage
 
-#### SECU analysis
+#### SECU analysis (Phase 7)
 
-Security: no new attack surface. `--dry-run` writes nothing; inserted defaults route through `applyFrontmatterChange` (yaml `doc.set`), so values are escaped — no frontmatter/template injection. No secrets, no shell/eval, no `any`.
+Security: no new attack surface. `--dry-run` writes nothing; defaults route through `applyChange`→yaml `doc.set` (escaped) — no frontmatter/template injection. No secrets, no shell/eval, no `any`. Efficiency: `dryRunPreview` does one `applyAutoFixes` + two in-memory evaluates, no I/O, no N+1. Correctness: prior monotonic-restore P3 confirmed fixed (`refine.ts:506` records rolled-back fixes as skipped). Usability: helpers carry JSDoc; wrapper now honest.
 
 | # | Title | Dimension | Location | Recommendation | P |
 |---|-------|-----------|----------|----------------|---|
-| 1 | Monotonic-restore guard left stale `fixesApplied` records after rollback | Correctness | `operations/refine.ts:501` | Move rolled-back fixes to `fixesSkipped` with `applied:false`; clear `fixesApplied` | P3 — **FIXED** |
+| 1 | Wrapper `--target` default listed as `claude-code`; canonical token is `claude` (`targets.ts:6`) | Usability | `plugins/cc/commands/agent-refine.md:26` | Change default to `claude` to match the resolved CLI default | P4 — **FIXED** |
 
-Finding #1 addressed in the same engine commit: the defensive restore branch now records reverted fixes honestly as skipped, so `RefineResult` never claims success for a rolled-back change (R12).
+#### Requirements traceability (Phase 8)
 
-#### Requirements traceability
+| Req | Status | Evidence |
+|-----|--------|----------|
+| R1 — structural auto-apply reachable before validation exit | **MET** | apply phase `refine.ts:444-469` runs before the re-validate bail `:471-485`; built-CLI smoke: missing-`description`/`model` agent fixed in one step, no early-return (0.15→0.52) |
+| R2 — `--dry-run` preview, no write | **MET** | `RefineOptions.dryRun` + `dryRunPreview()` `:547`; registered via `addDryRunOption` `helpers.ts:64` on `agent refine` `agent.ts:227`; smoke: byte-identical file, no `.bak`, projected 0.14→0.56 |
+| R3 — real defaults, never TODO; monotonic-or-neutral | **MET** | `getDefaultForField` schema-aware `:104` (`model`→`inherit`, `tools`→`[]`, `description`/`name` content-derived, unknown→null); monotonic guard `:501`; smoke inserted real values, zero placeholders, post ≥ pre |
+| R5 — wrapper matches reality | **MET** | LLM-content claim dropped; `--save`→"evaluation store"; `--dry-run` in hint + table; `--target` default corrected to `claude` (this pass) |
+| R4 — content-quality suggest/flag dims | **OUT OF SCOPE** (documented) | Knowingly deferred; refine stays mechanical/structural |
 
-| Req | Text | Status | Evidence |
------|------|--------|----------|
-| R1 | Structural auto-apply reachable before validation-error exit | **MET** | `refine.ts` apply phase (Step 6) runs before the re-validate bail (Step 7); missing-description agent fixed in one step — smoke test 0.49→0.74 |
-| R2 | `--dry-run` preview, no write | **MET** | `RefineOptions.dryRun` + `dryRunPreview()` in-memory projection; registered on `agent refine`; byte-identical test + smoke test |
-| R3 | Real defaults, never TODO/placeholder; monotonic-or-neutral | **MET** | `getDefaultForField` schema-aware (`model`→`inherit`, `tools`→`[]`, `description`/`name` content-derived, unknown→null); monotonic guard restores backup on regression; post ≥ pre in all tests |
-| R5 | Wrapper matches reality | **MET** | `agent-refine.md` LLM-content claim dropped, `--save`→"evaluation store", `--dry-run` added to hint + table |
-| R4 | Content-quality suggest/flag dims | **OUT OF SCOPE** (documented) | Knowingly deferred — requires LLM content rewriting, explicitly excluded by R5's "refine stays mechanical/structural" |
+**Re-verdict: PASS** — all in-scope requirements MET; the one P4 doc finding fixed; gate green. Confirms the prior PASS.
 
-**Verdict: PASS** — all in-scope requirements met; P3 finding fixed; gate green.
+**Fix-pass 2026-06-21:** 1 fixed (P4 wrapper `--target` default), 0 failed, 0 skipped.
+
 
 ### Testing
 
