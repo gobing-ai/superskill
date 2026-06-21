@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { z } from 'zod';
 
@@ -120,10 +120,22 @@ export function resolvePlugin(marketplacePath: string | undefined, pluginName: s
     const pluginRootBase = manifest.metadata?.pluginRoot ?? '';
     const pluginRoot = resolve(marketplaceRoot, pluginRootBase, source);
 
-    if (!existsSync(join(pluginRoot, 'plugin.json'))) {
-        throw new Error(`plugin.json not found in resolved plugin root: ${pluginRoot}`);
+    let dirents: string[];
+    try {
+        dirents = readdirSync(pluginRoot);
+    } catch {
+        throw new Error(`Plugin root not found: ${pluginRoot}`);
     }
-
+    const hasSkills = dirents.includes('skills');
+    const hasCommands = dirents.includes('commands');
+    const hasAgents = dirents.includes('agents');
+    const hasHooksDir = dirents.includes('hooks');
+    const hasHooksFile = dirents.includes('hooks.json');
+    if (!(hasSkills || hasCommands || hasAgents || hasHooksDir || hasHooksFile)) {
+        throw new Error(
+            `No recognizable plugin content (skills/, commands/, agents/, hooks/, hooks.json) in: ${pluginRoot}`,
+        );
+    }
     return { pluginRoot, marketplaceRoot, source };
 }
 
