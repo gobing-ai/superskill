@@ -1,9 +1,9 @@
 ---
 name: Make cc command-evolve ready to replace rd3 command-evolve
 description: Make cc command-evolve ready to replace rd3 command-evolve
-status: Testing
+status: Done
 created_at: 2026-06-21T20:55:48.450Z
-updated_at: 2026-06-21T23:37:36.739Z
+updated_at: 2026-06-21T23:39:51.460Z
 folder: docs/tasks
 type: task
 feature-id: ""
