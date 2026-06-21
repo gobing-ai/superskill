@@ -148,10 +148,16 @@ export async function executeInstall(
     if (rulesyncTargets.length > 0) {
         // R2: pre-create per-target skills parent dirs before rulesync writes.
         // rulesync mkdirs the leaf non-recursively; in project mode from a clean
-        // cwd the parent may not exist → ENOENT. Only in non-dry-run (dry-run
-        // writes nothing). Root matches the rulesync root (outputRoot or ADR-010 derivation).
-        if (!options.dryRun) {
-            const rulesyncRoot = options.outputRoot ?? (options.global ? homedir() : process.cwd());
+        // cwd the parent may not exist → ENOENT. TARGET_SKILLS_RELDIR holds the
+        // PROJECT-mode reldirs, so this only applies when rulesync uses the
+        // project-mode layout: real project installs (!global), or any install
+        // with an explicit outputRoot override (which forces rulesync global:false,
+        // see runRulesync). A real global install writes to $HOME with different
+        // global reldirs where parents already exist — skip it there to avoid
+        // creating empty junk dirs. Non-dry-run only (dry-run writes nothing).
+        const usesProjectLayout = !options.global || options.outputRoot !== undefined;
+        if (!options.dryRun && usesProjectLayout) {
+            const rulesyncRoot = options.outputRoot ?? process.cwd();
             for (const target of rulesyncTargets) {
                 const reldir = TARGET_SKILLS_RELDIR[target];
                 if (reldir) mkdirSync(join(rulesyncRoot, reldir), { recursive: true });

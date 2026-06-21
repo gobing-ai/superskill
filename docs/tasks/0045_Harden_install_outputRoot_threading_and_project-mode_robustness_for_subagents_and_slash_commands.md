@@ -152,27 +152,66 @@ Ordered, each step independently verifiable. Run `bun run lint && bun run test` 
 
 ### Review
 
-**Verdict: PASS** (SECU self-review + requirements traceability, 2026-06-21)
+**Verdict: PASS (after fix)** — Initial verify found R1 PARTIAL (global-mode leak persisted despite the 0045 implementation); fixed + re-verified empirically this pass. All 5 requirements MET. Gate: `bun run lint` ✅, `bun run test` ✅ 821 pass / 0 fail.
 
-All five requirements MET. Implementation followed the Design/Plan ordering (R3→R4→R1→R2→R5).
+Dev-verify 2026-06-21 · Phase 7 (SECU) + Phase 8 (traceability) · channel: current · scope: commit `bea8e07` (15 files) + this pass's fixes.
 
-**Requirements traceability:**
+**The P1 that 0045 missed (caught by real e2e test):** R1 forwarded `outputRoot` to `generate({ outputRoots:[root], global })` — but rulesync 8.29.0's `global:true` IGNORES `outputRoots` and forces `$HOME`. So `install cc --global --outputRoot=X` wrote 27 skills to the real `~/.agents/skills/`, 0 to X. The 0045 R1 test only asserted the argument was forwarded (mocked `generate`), never wrote files, never tested global mode → passed green while the leak was live (R8 violation).
 
-- **R1 — outputRoot threads into rulesync: MET.** `RulesyncOptions.outputRoot?: string` added (`packages/core/src/rulesync.ts:14`); `runRulesync` resolves `const root = options.outputRoot ?? (options.global ? homedir() : process.cwd())` (`rulesync.ts:64`); `executeInstall` forwards `options.outputRoot` into the `runRulesyncImpl` call (`apps/cli/src/commands/install.ts:158`). Unit tests assert the `outputRoots` arg (`rulesync.test.ts:69-72` fallback test `:106-111`). Integration test with real rulesync asserts skills land under the custom root and nothing leaks to cwd (`install.integration.test.ts:346-368`). Smoke test: 27 cc skills delivered to all 5 targets via `outputRoot`, zero `$HOME` leak.
-- **R2 — project-mode robustness: MET.** `TARGET_SKILLS_RELDIR` empirically verified against rulesync 8.29.0 (2026-06-21) and encoded in `packages/core/src/targets.ts:38-44`. `executeInstall` pre-creates `join(rulesyncRoot, reldir)` with `recursive:true` before the rulesync loop (`install.ts:149-159`). Regression test reproduces the clean-cwd scenario and asserts no ENOENT (`install.integration.test.ts:370-389`).
-- **R3 — injectable FS predicate: MET.** `adaptSubagentToPi` 4th param changed from `pluginPath: string` to `skillExists: (bareName: string) => boolean` (`adapt-subagent.ts:101`); `resolvePiSkills` uses the injected predicate (`adapt-subagent.ts:188`); `import { existsSync } from 'node:fs'` and `join` removed from the pipeline module. Caller in `install.ts:246` supplies the default FS implementation. Two new pure-predicate tests exercise both branches with zero filesystem (`adapt-subagent.test.ts:214-242`).
-- **R4 — colon consolidation: MET.** `transformRulesyncMarkdown` and `transformMarkdownDirectory` thread `pluginName` and apply `rewriteSkillReferences(content, pluginName)` as a scoped safety net (`install.ts:392-419`). `adapt-parity.test.ts` migrated from `rewriteColonRefs` to `rewriteSkillReferences(content, PLUGIN)`. `rewrite-colons.ts`, `rewrite-colons.test.ts`, and the `index.ts` export deleted. Static guard: `rg 'rewriteColonRefs' apps packages` returns zero matches. No `cc:`/`sp:` ref can survive any pass — the scoped rewriter catches all refs for the installed plugin prefix.
-- **R5 — no regression: MET.** `bun run lint` clean (Biome + typecheck). `bun run test`: 820 pass, 0 fail. Coverage: 99.71% funcs / 98.40% lines aggregate; every touched file ≥90% (`rulesync.ts` 100/100, `targets.ts` 100/100, `adapt-subagent.ts` 100%/97.39%, `install.ts` 94.44%/96.15%, `rewrite-references.ts` 100/100). `bun run build` succeeds. Real smoke: `executeInstall('cc', ['codex','pi','opencode','omp','hermes'], {outputRoot})` delivered 27 skills to all 5 targets + 5 Pi native agents, zero real-`$HOME` leak.
+### P1 — Blockers (FIXED)
 
-**SECU review:**
+| # | Title | Dimension | Location | Recommendation |
+|---|-------|-----------|----------|----------------|
+| 1 | rulesync `global:true` ignores `outputRoots` → outputRoot override leaks to `$HOME` | Correctness | packages/core/src/rulesync.ts:64 | FIXED: when `options.outputRoot` set, force `global:false` into the rulesync call so it honors `outputRoots`. Production global installs (no outputRoot) keep `global:true`→`$HOME`. Added a real (non-mocked) regression test asserting physical landing + 0 `$HOME` leak. Re-verified: 81 files under override root (27×3), 0 in `$HOME`. |
 
-- **Security:** No new external input surfaces. `outputRoot` is an optional programmatic parameter (not a CLI flag); production install never sets it. No secrets, credentials, or untrusted-input handling added. `mkdirSync(..., {recursive:true})` is safe — creates only the intended target dirs.
-- **Error handling:** `outputRoot ??` fallback preserves the ADR-010 derivation when omitted. `TARGET_SKILLS_RELDIR` is a `Partial<Record>` — targets without a mapping (claude/hermes/omp) are skipped by the `if (reldir)` guard. No silent swallow.
-- **Compatibility:** The optional `outputRoot` field widens `RulesyncOptions` without breaking existing callers (all omit it → unchanged behavior). `prepareTargetRulesyncInput` signature gained a required `pluginName` param — all 6 callers (4 in install.ts, 2 in hook.ts) updated. `adaptSubagentToPi` signature changed — the single caller updated.
-- **Untested branches:** `install.ts:256-262` (Claude target `runClaudeInstallImpl`) and `install.ts:401-402` (dry-run surrogate copy) are pre-existing uncovered branches, not introduced by this task.
-- **Risk:** Low. All changes are surgical; no public API breakage (optional field + internal signature changes with all callers updated). ADR-010 amendment added per AGENTS.md doc-map rules.
+### P3 — Info (FIXED)
 
-**ADR compliance:** ADR-010 amendment added (`docs/00_ADR.md:144`) documenting the optional `outputRoot` override. Widens, does not replace, the original decision.
+| # | Title | Dimension | Location | Recommendation |
+|---|-------|-----------|----------|----------------|
+| 2 | `TARGET_SKILLS_RELDIR` pre-create made empty junk dirs in global mode | Correctness | apps/cli/src/commands/install.ts:153-159 | FIXED: gated the pre-create to `usesProjectLayout = !global || outputRoot !== undefined` — the only cases rulesync uses the project-mode reldirs. Real global installs (writing to `$HOME` with different global reldirs) no longer create empty unused project-reldir dirs. Re-verified: project-mode install pre-creates correct reldirs and lands 62 skills; no crash. |
+
+### P4 — Suggestions
+
+| # | Title | Dimension | Location | Recommendation |
+|---|-------|-----------|----------|----------------|
+| 3 | No direct unit test asserting parent-dir pre-creation | Testability | packages/core/src/targets.ts:38 | Low priority — the integration test (project-mode no-ENOENT) covers the outcome end-to-end. |
+
+**Requirements traceability (Phase 8) — all MET:**
+- R1 outputRoot redirects rulesync skills → **MET (after fix)**: rulesync.ts global-coercion + real e2e test (81 files under root, 0 leak).
+- R2 project-mode no ENOENT crash → **MET**: TARGET_SKILLS_RELDIR pre-create + regression test.
+- R3 injectable skillExists predicate → **MET**: adapt-subagent.ts:97-102, no node:fs import; both branches unit-tested.
+- R4 rewriteColonRefs removed → **MET**: file deleted, `rg rewriteColonRefs` empty, parity migrated to scoped API.
+- R5 no regression → **MET**: 821 pass / 0 fail, coverage ≥90, 0044's 7 refinements intact.
+
+**Fix-pass 2026-06-21 (dev-verify --fix all):** P1 #1 + P3 #2 FIXED (rulesync.ts global coercion + install.ts pre-create gating + real regression test). P4 #3 left as a non-blocking note. Gate green; HOME-leak verified 0.
+
+
+### P1 — Blockers (FIXED this pass)
+
+| # | Title | Dimension | Location | Recommendation |
+|---|-------|-----------|----------|----------------|
+| 1 | rulesync `global:true` ignores `outputRoots` → outputRoot override leaks skills to `$HOME` | Correctness | packages/core/src/rulesync.ts:64 | FIXED: when `options.outputRoot` is set, force `global:false` into the rulesync call (`const rulesyncGlobal = options.outputRoot ? false : options.global`) so rulesync honors `outputRoots`. Production global installs (no outputRoot) keep `global:true`→`$HOME`. Added a real (non-mocked) integration test that writes and asserts skills land under outputRoot with 0 `$HOME` leak — re-verified: 81 files under override root (27×3 targets), 0 in `$HOME`. |
+
+### P3 — Info
+
+| # | Title | Dimension | Location | Recommendation |
+|---|-------|-----------|----------|----------------|
+| 2 | `TARGET_SKILLS_RELDIR` pre-create runs in global mode with project-mode reldirs | Correctness | apps/cli/src/commands/install.ts:154-158 | The R2 pre-create loop uses `rulesyncRoot = outputRoot ?? (global?homedir():cwd())` but `TARGET_SKILLS_RELDIR` is documented as project-mode paths. In a real global install it mkdir's e.g. `~/.pi/skills` (project reldir) which differs from rulesync's actual global path. Harmless (creates an empty unused dir; the R2 crash only occurs in project mode where reldirs are correct) but misleading. Consider gating the pre-create to `!options.global || options.outputRoot` since that's the only case it's load-bearing. |
+
+### P4 — Suggestions
+
+| # | Title | Dimension | Location | Recommendation |
+|---|-------|-----------|----------|----------------|
+| 3 | `TARGET_SKILLS_RELDIR` lacks a test asserting parent-dir pre-creation | Testability | packages/core/src/targets.ts:38 | R2 has a behavioral regression test (project-mode install no ENOENT) but no direct assertion that each target's reldir parent is created. Low priority — the integration test covers the outcome. |
+
+**Requirements traceability (Phase 8):**
+- R1 outputRoot redirects rulesync skills → **MET (after fix)**: rulesync.ts global-coercion + real e2e test (81 files under root, 0 leak).
+- R2 project-mode no ENOENT crash → **MET**: TARGET_SKILLS_RELDIR pre-create (install.ts:153-159) + regression test.
+- R3 injectable skillExists predicate → **MET**: adapt-subagent.ts:97-102 takes predicate, no node:fs import; unit tests cover both branches.
+- R4 rewriteColonRefs removed → **MET**: file deleted, `rg rewriteColonRefs` empty, adapt-parity migrated to scoped API.
+- R5 no regression → **MET**: 821 pass, 0 fail, coverage ≥90, 7 refinements of 0044 intact.
+
+**Fix-pass 2026-06-21 (dev-verify --fix all):** P1 #1 FIXED (rulesync.ts global coercion + real regression test in rulesync.test.ts). P3 #2 / P4 #3 left as follow-up notes (non-blocking; #2 is cosmetic dead-dir, #3 is covered indirectly). Changes uncommitted in working tree pending user review. Gate green.
 
 
 ### Testing
