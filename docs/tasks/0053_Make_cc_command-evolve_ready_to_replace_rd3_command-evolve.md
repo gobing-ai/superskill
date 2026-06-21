@@ -129,7 +129,7 @@ wiring + wrapper + tests touched.
   commandEvolve flag pass-through + registerCommand flag registration; 5 in evolve.test.ts command-type
   regression block).
 - **Result:** PASS. 974 pass / 0 fail / 0 skip. Coverage 99.69% functions / 98.63% lines (gate 90/90).
-  command.ts: 100% / 100%. evolve.ts: 97.78% / 96.38%. Build exit 0, 3.43 MB. Date: 2026-06-21T23:35:00Z.
+  command.ts: 100% / 100%. evolve.ts: 97.78% / 96.38%. Build exit 0, 3.43 MB. Date: 2026-06-21T23:39:30Z.
 - **Evidence:**
   - `command.test.ts:149` — `evolve` called with `analyze/history/rollback/confirm` for command type
   - `command.test.ts:288` — evolve subcommand registers `--analyze/--history/--rollback/--confirm`
