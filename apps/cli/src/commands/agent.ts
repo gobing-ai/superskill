@@ -7,6 +7,7 @@ import { scaffold } from '../operations/scaffold';
 import { formatValidationResult, validate } from '../operations/validate';
 import {
     addAutoOption,
+    addDryRunOption,
     addEvaluateOptions,
     addEvolveOptions,
     addJsonOption,
@@ -83,9 +84,10 @@ export async function agentRefine(opts: {
     target?: string;
     auto?: boolean;
     save?: boolean;
+    dryRun?: boolean;
 }): Promise<number | undefined> {
     const target = resolveTarget(opts);
-    await refine('agent', opts.nameOrPath, { target, auto: opts.auto, save: opts.save });
+    await refine('agent', opts.nameOrPath, { target, auto: opts.auto, save: opts.save, dryRun: opts.dryRun });
     return undefined;
 }
 
@@ -162,6 +164,7 @@ export async function handleAgentRefine(opts: {
     target?: string;
     auto?: boolean;
     save?: boolean;
+    dryRun?: boolean;
 }): Promise<void> {
     await runOperation(() => agentRefine(opts));
 }
@@ -221,13 +224,17 @@ export function registerAgent(program: Command): void {
         },
     );
 
-    addSaveOption(
-        addTargetOption(
-            addAutoOption(cmd.command('refine <nameOrPath>').description('Evaluate and auto-fix an agent')),
+    addDryRunOption(
+        addSaveOption(
+            addTargetOption(
+                addAutoOption(cmd.command('refine <nameOrPath>').description('Evaluate and auto-fix an agent')),
+            ),
         ),
-    ).action(async (nameOrPath: string, opts: { target?: string; auto?: boolean; save?: boolean }) => {
-        await handleAgentRefine({ nameOrPath, ...opts });
-    });
+    ).action(
+        async (nameOrPath: string, opts: { target?: string; auto?: boolean; save?: boolean; dryRun?: boolean }) => {
+            await handleAgentRefine({ nameOrPath, ...opts });
+        },
+    );
 
     addEvolveOptions(
         cmd.command('evolve <name>').description('Longitudinal improvement from evaluation history'),

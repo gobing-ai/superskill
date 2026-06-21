@@ -131,12 +131,69 @@ describe('generateAutoChange', () => {
         ).toBeNull();
     });
 
-    it('returns TODO default for unknown missing field', () => {
+    it('skips unknown missing fields rather than inserting a TODO placeholder (R3)', () => {
         const c = generateAutoChange(
             { severity: 'error', field: 'unknown-field', message: 'Missing required field' },
             '---\nname: test\n---\n\nbody',
         );
-        expect((c as { value: unknown }).value).toBe('TODO');
+        expect(c).toBeNull();
+    });
+
+    it('uses inherit as the model default (recognized alias, never the penalised "default")', () => {
+        const c = generateAutoChange(
+            { severity: 'error', field: 'model', message: 'Missing required field' },
+            '---\nname: test\ndescription: d\n---\n\nbody',
+        );
+        expect((c as { value: unknown }).value).toBe('inherit');
+    });
+
+    it('uses an empty array for a missing tools field (unblocks validation, score-neutral)', () => {
+        const c = generateAutoChange(
+            { severity: 'error', field: 'tools', message: 'Missing required field' },
+            '---\nname: test\ndescription: d\n---\n\nbody',
+        );
+        expect(Array.isArray((c as { value: unknown }).value)).toBe(true);
+        expect((c as { value: unknown[] }).value).toHaveLength(0);
+    });
+
+    it('derives a description default from the name field (non-TODO, humanized)', () => {
+        const c = generateAutoChange(
+            { severity: 'error', field: 'description', message: 'Missing required field' },
+            '---\nname: code-reviewer\n---\n\nbody',
+        );
+        expect((c as { value: unknown }).value).toBe('Code Reviewer');
+    });
+
+    it('derives a description default from the first body H1 when name is absent', () => {
+        const c = generateAutoChange(
+            { severity: 'error', field: 'description', message: 'Missing required field' },
+            '---\n---\n\n# Code Reviewer\n\nbody',
+        );
+        expect((c as { value: unknown }).value).toBe('Code Reviewer');
+    });
+
+    it('skips a missing description when no name and no H1 are available (never TODO)', () => {
+        const c = generateAutoChange(
+            { severity: 'error', field: 'description', message: 'Missing required field' },
+            '---\n---\n\nbody with no heading',
+        );
+        expect(c).toBeNull();
+    });
+
+    it('derives a missing name from the first body H1 (slugified)', () => {
+        const c = generateAutoChange(
+            { severity: 'error', field: 'name', message: 'Missing required field' },
+            '---\ndescription: d\n---\n\n# Code Reviewer\n\nbody',
+        );
+        expect((c as { value: unknown }).value).toBe('code-reviewer');
+    });
+
+    it('skips a missing name when no H1 is available', () => {
+        const c = generateAutoChange(
+            { severity: 'error', field: 'name', message: 'Missing required field' },
+            '---\ndescription: d\n---\n\nbody with no heading',
+        );
+        expect(c).toBeNull();
     });
 
     it('generates trim change for trailing whitespace', () => {
@@ -384,12 +441,18 @@ describe('refine — auto mode', () => {
         expect(typeof r.delta).toBe('number');
     });
 
-    it('exits early with zero scores on validation error', async () => {
+    it('fixes a missing-description skill instead of exiting early (R1+R3)', async () => {
         const file = createTempFile(MISSING_DESC, tmpDir);
         const r = await refine('skill', file, { auto: true });
-        expect(r.preScore).toBe(0);
-        expect(r.postScore).toBe(0);
-        expect(r.delta).toBe(0);
+        // R1: the auto-apply path is now reachable — a structural fix is applied,
+        // not a pre-fix-loop early return with hollow zero scores.
+        expect(r.fixesApplied.length).toBeGreaterThan(0);
+        // R3: the inserted value is a real, schema-aware default — never TODO.
+        const after = readFileSync(file, 'utf8');
+        expect(after).toContain('description:');
+        expect(after).not.toContain('TODO');
+        // Refine is monotonic-or-neutral: the score never drops.
+        expect(r.postScore).toBeGreaterThanOrEqual(r.preScore);
     });
 
     it('runs with --save flag', async () => {
@@ -462,6 +525,91 @@ This skill uses the deprecated 'tags' field, which should be classified as auto-
         expect(r.fixesApplied.length + r.fixesSkipped.length).toBeGreaterThan(0);
         const autoApplyFindings = [...r.fixesApplied, ...r.fixesSkipped].filter((f) => f.strategy === 'auto-apply');
         expect(autoApplyFindings.length).toBeGreaterThan(0);
+    });
+
+    it('raises the score on a missing-field agent (monotonic, delta > 0)', async () => {
+        // Agent completeness is presence-based (no structure multiplier), so
+        // inserting missing required fields strictly raises the aggregate —
+        // exercising the score-changed delta display branch.
+        const content = `---
+name: code-reviewer
+tools:
+  - Read
+  - Bash
+---
+
+# Code Reviewer
+
+You are a code review specialist. You review code for quality and security.
+`;
+        const file = createTempFile(content, tmpDir);
+        const r = await refine('agent', file, { auto: true });
+        expect(r.fixesApplied.length).toBeGreaterThan(0);
+        expect(r.postScore).toBeGreaterThan(r.preScore);
+        expect(r.delta).toBeGreaterThan(0);
+        const after = readFileSync(file, 'utf8');
+        expect(after).toContain('model: inherit');
+        expect(after).not.toContain('TODO');
+    });
+
+    it('aborts when unfixable validation errors remain after structural fixes', async () => {
+        // Empty frontmatter with a heading-less body: name and description are
+        // both required-and-missing, but neither has a derivable default (no
+        // name, no H1), so generateAutoChange skips them. Re-validation still
+        // fails → refine reports the remaining errors and aborts (R1: only bail
+        // when errors REMAIN, never before).
+        const content = `---
+---
+
+body with no heading`;
+        const file = createTempFile(content, tmpDir);
+        const r = await refine('skill', file, { auto: true });
+        // Aborted before re-evaluation: post-score mirrors pre-score (no degradation).
+        expect(r.postScore).toBe(r.preScore);
+        expect(r.delta).toBe(0);
+    });
+});
+
+// ── refine — dry-run ─────────────────────────────────────────────────────────
+
+describe('refine — dry-run', () => {
+    let tmpDir: string;
+
+    beforeEach(() => {
+        tmpDir = mkdtempSync(join(tmpdir(), 'superskill-refine-dry-'));
+        spyOn(process.stdout, 'write').mockImplementation(() => true);
+        spyOn(process.stderr, 'write').mockImplementation(() => true);
+    });
+
+    afterEach(() => {
+        if (tmpDir) rmSync(tmpDir, { recursive: true, force: true });
+    });
+
+    it('leaves the file byte-identical (writes nothing, no backup residue)', async () => {
+        const file = createTempFile(MISSING_DESC, tmpDir);
+        const before = readFileSync(file, 'utf8');
+        const r = await refine('skill', file, { auto: true, dryRun: true });
+        expect(readFileSync(file, 'utf8')).toBe(before);
+        // No backup created in dry-run.
+        expect(existsSync(`${file}.bak`)).toBe(false);
+        // Nothing is applied; all findings surface as skipped in the preview.
+        expect(r.fixesApplied).toHaveLength(0);
+        expect(r.fixesSkipped.length).toBeGreaterThan(0);
+    });
+
+    it('classifies structural fixes as auto-apply even on an invalid file (R1 reachable in preview)', async () => {
+        const file = createTempFile(MISSING_DESC, tmpDir);
+        const r = await refine('skill', file, { auto: true, dryRun: true });
+        const structural = r.fixesSkipped.filter((f) => f.field === 'description');
+        expect(structural.length).toBeGreaterThan(0);
+    });
+
+    it('does not persist when --dry-run is combined with --save', async () => {
+        const file = createTempFile(GOOD_SKILL, tmpDir);
+        const before = readFileSync(file, 'utf8');
+        await refine('skill', file, { auto: true, dryRun: true, save: true });
+        // Dry-run short-circuits before the save step: file untouched.
+        expect(readFileSync(file, 'utf8')).toBe(before);
     });
 });
 // ── refine — file not found ──────────────────────────────────────────────────

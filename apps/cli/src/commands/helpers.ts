@@ -60,6 +60,11 @@ export function addAutoOption(cmd: Command): Command {
     return cmd.option('--auto', 'Apply low-risk fixes automatically');
 }
 
+/** Add --dry-run option (refine): preview fixes without writing. */
+export function addDryRunOption(cmd: Command): Command {
+    return cmd.option('--dry-run', 'Preview classified fixes and projected delta without writing');
+}
+
 /** Resolve --target against TARGETS, defaulting to 'claude'. */
 export function resolveTarget(opts: { target?: string }): Target {
     const raw = opts.target || 'claude';
