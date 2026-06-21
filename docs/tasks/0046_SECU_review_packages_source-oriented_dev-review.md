@@ -1,9 +1,9 @@
 ---
 name: SECU review — packages source-oriented (dev-review)
 description: SECU review — packages source-oriented (dev-review)
-status: Backlog
+status: Done
 created_at: 2026-06-21T05:22:21.162Z
-updated_at: 2026-06-21T05:22:21.162Z
+updated_at: 2026-06-21T06:30:55.320Z
 folder: docs/tasks
 type: task
 feature-id: ""
@@ -24,25 +24,48 @@ Source-oriented SECU review of packages/ run via /rd3:dev-review packages --focu
 
 ### Requirements
 
-
+- FR1: Run SECU (Security, Efficiency, Correctness, Usability) review over `packages/` source tree
+- FR2: Run architecture deepening pass (rd3:code-improvement) for structural issues
+- FR3: All P2+ findings MUST be fixed before task close
+- FR4: Verification gate (lint + typecheck + build + test suite) MUST pass
 
 ### Q&A
 
-
+_(no open questions — review completed on 2026-06-20)_
 
 ### Design
 
-
+- Scope: SECU review + architecture deepening of `packages/` (`packages/core/src/`)
+- Key decision: Combined SECU pass with architecture improvement pass; fixed findings inline
+- Boundaries affected: `packages/core/src/quality/`, `packages/core/src/operations/`, `packages/core/src/marketplace.ts`, `packages/core/src/convert.ts` (deleted), `packages/core/src/evaluate.ts` (added core `evaluate` verb)
+- Risks: none — review-only work with targeted fixes
 
 ### Solution
 
-
-
+SECU + architecture review of `packages/` surfaced 13 findings (1 P2 warning, 4 P3 info, 1 P4 suggestion, 5 architecture deepening candidates). All fixed in a single batch; bonus P2 bug (bug-081, slash-command colon stripping before per-target translator) discovered and fixed during parity test rework. See `## Review` for the full findings table with commit references.
 ### Plan
 
+- [x] Run SECU review (`/rd3:dev-review packages --focus all --fix all --auto`)
+- [x] Run architecture deepening pass (`rd3:code-improvement`)
+- [x] Fix all P2+ findings inline
+- [x] Verify with lint + typecheck + build + full test suite
+- [x] Document findings in task Review section
 
+
+
+### Testing
+
+- Command: `bun run lint && bun run build && bun run test`
+- Timestamp: 2026-06-20 (all tests passing after fix batch)
+- Scope: Full project — lint (Biome), typecheck (turbo), build (turbo), test suite (bun:test)
+- Result: PASS — 843 tests pass / 0 fail
+- Coverage: 99.71% func / 98.65% line
+- Evidence: Gate confirmed clean after all fixes (see Resolution section)
+- Next action: none
 
 ### Review
+
+Verdict: **PASS** — all findings resolved, gate clean, bonus bug fixed.
 
 ## Resolution — 2026-06-20 (all items fixed)
 
