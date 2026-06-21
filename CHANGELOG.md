@@ -51,6 +51,58 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 - **fix(skill)**: Use `echo()` over `stdout.write` in skill package handler to satisfy spur violations; renamed test file to `package.test.ts` for clarity.
 
+
+---
+
+## [0.1.6] - 2026-06-21
+
+### New Features
+
+#### Skills 2.0 — Unified Entity Distribution
+
+- **Commands and subagents adapted as skills for non-Claude targets**: `superskill install` now converts Claude Code plugin commands and subagents into Skills 2.0 skill directories via `pipeline/adapt-command.ts` and `pipeline/adapt-subagent.ts`. Commands become non-invocable skill entries (`disable-model-invocation: true`); subagents remain model-invocable with preserved trigger examples, tools, skills, and color. Pi additionally receives native agent format via `pipeline/pi-subagent.ts`. Every target now receives a uniform skill-based layout — omp and hermes no longer receive zero commands/subagents.
+- **Plugin-scoped colon reference rewriting**: Replaced the hardcoded `/(rd3|wt):/` allowlist with plugin-prefix-scoped `pluginPrefix:name` → `pluginPrefix-name` rewriting (`pipeline/rewrite-references.ts`). The rewriter threads the plugin name through the install pipeline, correctly handling `cc:`, `sp:`, and any other plugin prefix while preserving non-plugin colons (`node:fs`, `bun:test`, etc.).
+- **Pi subagent discovery filtered to existing skills**: `convertToPiSubagent` now verifies the skill directory exists before emitting `skill:` entries, matching the old shell-script behavior. Eliminates phantom skill references.
+
+#### Claude Code Native Plugin Install
+
+- Claude Code targets now use the native `claude plugin marketplace add` + `claude plugin install` flow. Cache clearing is defensive and marketplace-name-scoped. Replaces the broken `--path` flag approach.
+
+#### Meta Agent Skills
+
+- All five meta-agent skills (`cc-agents`, `cc-commands`, `cc-hooks`, `cc-magents`, `cc-skills`) now ship with full `references/` documentation (workflows, platform compatibility, evaluation frameworks, troubleshooting), `metadata.openclaw` platform metadata, and `agents/openai.yaml` Codex platform config. Each skill is a self-contained knowledge module ready for multi-platform distribution.
+
+### Improvements
+
+#### Quality System
+
+- **Shared keyword lists**: Imperative verb and vague-term lists extracted into shared constants — no more 4× duplication across command/skill evaluators.
+- **Unified clarity scoring**: Command and skill evaluators now share one `scoreClarityFromDensities` formula, making quality scores comparable across entity types.
+- **Tightened tool-reference heuristic**: Backtick token regex no longer matches arbitrary inline-code spans (`json`, `true`). Now matches actual tool names and `tool(s):` frontmatter.
+- **Split `dimensions.ts`**: Registry (`types.ts`) separated from heuristics (`heuristics.ts`). Single `evaluate(type, ...)` dispatch replaces duplicated `evaluate<Agent>`, `evaluate<Command>`, etc. functions.
+- **Documented `computeAggregate`**: Explicit doc-comment notes the unweighted-mean design for heuristic path (rubric weights apply only on `--ingest`).
+
+#### Pipeline
+
+- **Shared frontmatter walker**: `walkFrontmatter` extracted as a single implementation shared by `adapt-command` and `adapt-subagent`. Replaces two near-identical inline walkers.
+- **Removed dead `ConversionPipeline`**: Unused class deleted; `docs/03` aligned.
+
+#### Install Robustness
+
+- **`outputRoot` threaded through rulesync**: Global-mode skills now land in correct directories. Project-mode parent directories pre-created to prevent ENOENT on fresh workspaces.
+- **`..` traversal guard tightened**: Replaced substring `.includes('..')` check with path-segment regex matching actual `../` traversal patterns, fixing false rejections for legitimate paths like `./a..b/plugin`.
+
+#### Documentation
+
+- **Entity location tables**: Added verified global and project-level entity paths for all 9 target agents (Claude Code, Codex, Pi, omp, OpenCode, Antigravity IDE/CLI, Hermes, OpenClaw). Each path verified against the agent's source code in `vendors/`.
+- **Help docs refreshed**: `cmd_install.md` updated with current pipeline modules and workspace-refactored source paths. Plugin README updated with Skills 2.0 adaptation design notes.
+
+### Bug Fixes
+
+- **`dedupeLines` content corruption** (P2): Merging two skills that shared a heading, list item, or code fence silently deleted later occurrences. Fixed to scope deduplication to heading blocks — content preservation confirmed across 843 tests.
+- **Backtick token score inflation** (P3): Any inline-code span with ≥2 backtick tokens saturated the tool-reference score to 1.0. Now matches only known tool names.
+- **Slash-command colon swallowed before translation** (P2, bug-081): `rewriteSkillReferences` was stripping the slash-command colon before the per-target slash translator ran, causing codex/pi dialect translation to silently no-op in real installs. Fixed: slash-command lines are now preserved for the translator. Integration assertion tightened to require the `$` prefix.
+- **Parity test normalization bug**: Deleted dead `normalizeFrontmatter` function that was silently swallowing block-style YAML arrays. Reworked parity test to use the canonical frontmatter parser (ADR-012).
 ---
 
 ## [0.1.3] - 2026-06-17
