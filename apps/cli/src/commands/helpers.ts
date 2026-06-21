@@ -13,6 +13,9 @@ export function addScaffoldOptions(cmd: Command): Command {
         .option('-d, --description <text>', 'Content description')
         .option('-t, --target <agent>', 'Target agent platform', 'claude')
         .option('-o, --output <dir>', 'Output directory (default: cwd)')
+        .option('--template <tier>', 'Template tier (e.g. minimal / standard / specialist)')
+        .option('--skills <list>', 'Comma-separated skill names to pre-populate frontmatter')
+        .option('--tools <list>', 'Comma-separated tool names to pre-populate frontmatter')
         .option('--force', 'Overwrite existing file if present');
 }
 

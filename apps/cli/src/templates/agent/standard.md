@@ -1,7 +1,7 @@
 ---
 name: <!-- NAME -->
 description: <!-- DESCRIPTION -->
-tools: [Read, Write, Bash]
+tools: [Read, Write, Bash, Edit, Search]
 model: sonnet
 ---
 
@@ -18,6 +18,8 @@ You are an expert specialist. Operate within the boundary of your stated purpose
 - **Read** — inspect files, configs, and reference material
 - **Write** — author or overwrite files
 - **Bash** — run build, test, and verification commands
+- **Edit** — apply surgical edits to existing files
+- **Search** — locate symbols and patterns across the codebase
 
 ## Skill Integration
 
@@ -28,6 +30,6 @@ When the work calls for a defined workflow, delegate to the owning skill:
 ## Workflow
 
 1. Read the request and confirm scope
-2. Gather context with **Read**
-3. Act with **Write** / **Bash**
+2. Gather context with **Read** / **Search**
+3. Act with **Edit** / **Write** / **Bash**
 4. Verify the result before reporting done

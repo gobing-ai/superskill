@@ -27,6 +27,9 @@ export async function agentScaffold(opts: {
     target?: string;
     output?: string;
     force?: boolean;
+    template?: string;
+    skills?: string;
+    tools?: string;
 }): Promise<number | undefined> {
     const target = resolveTarget(opts);
     const createdPath = await scaffold('agent', opts.name, {
@@ -34,6 +37,9 @@ export async function agentScaffold(opts: {
         target,
         output: opts.output,
         force: opts.force,
+        template: opts.template,
+        skills: opts.skills,
+        tools: opts.tools,
     });
     echo(`Created: ${createdPath}`);
     return undefined;
@@ -132,6 +138,9 @@ export async function handleAgentScaffold(opts: {
     target?: string;
     output?: string;
     force?: boolean;
+    template?: string;
+    skills?: string;
+    tools?: string;
 }): Promise<void> {
     await runOperation(() => agentScaffold(opts));
 }
@@ -192,7 +201,18 @@ export function registerAgent(program: Command): void {
     const cmd = program.command('agent').description('Manage agent definitions');
 
     addScaffoldOptions(cmd.command('scaffold <name>').description('Create a new agent from template')).action(
-        async (name: string, opts: { description?: string; target?: string; output?: string; force?: boolean }) => {
+        async (
+            name: string,
+            opts: {
+                description?: string;
+                target?: string;
+                output?: string;
+                force?: boolean;
+                template?: string;
+                skills?: string;
+                tools?: string;
+            },
+        ) => {
             await handleAgentScaffold({ name, ...opts });
         },
     );

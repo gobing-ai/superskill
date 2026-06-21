@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { scaffold } from '../../src/operations/scaffold';
@@ -145,5 +145,118 @@ describe('scaffold', () => {
         // File should be created in tmpDir (our explicit output)
         expect(existsSync(filePath)).toBe(true);
         expect(readFileSync(filePath, 'utf-8')).toContain('name: cwd-test');
+    });
+    // ── A5: template tier, --skills/--tools, and scaffold→evaluate regressions ──
+
+    it('resolves a named template tier (--template specialist)', async () => {
+        const filePath = await scaffold('agent', 'tiered-agent', {
+            description: 'Specialist agent',
+            output: tmpDir,
+            template: 'specialist',
+        });
+
+        const content = readFileSync(filePath, 'utf-8');
+        // specialist.md is the only tier that ships model: opus
+        expect(content).toContain('model: opus');
+        expect(content).toContain('Persona');
+    });
+
+    it('falls back to default.md when no --template is given', async () => {
+        const filePath = await scaffold('agent', 'default-agent', {
+            description: 'Default agent',
+            output: tmpDir,
+        });
+
+        const content = readFileSync(filePath, 'utf-8');
+        // default.md ships model: sonnet (same as standard, but distinct from specialist)
+        expect(content).toContain('model: sonnet');
+    });
+
+    it('errors clearly on an unknown template tier', async () => {
+        await expect(
+            scaffold('agent', 'bad-tier', {
+                description: 'x',
+                output: tmpDir,
+                template: 'nonexistent-tier',
+            }),
+        ).rejects.toThrow('Unknown template tier "nonexistent-tier"');
+    });
+
+    it('pre-populates frontmatter tools from --tools', async () => {
+        const filePath = await scaffold('agent', 'tooled-agent', {
+            description: 'Tooled agent',
+            output: tmpDir,
+            tools: 'Read,Write,Bash',
+        });
+
+        const content = readFileSync(filePath, 'utf-8');
+        expect(content).toContain('tools: [Read, Write, Bash]');
+    });
+
+    it('pre-populates frontmatter skills from --skills', async () => {
+        const filePath = await scaffold('agent', 'skilled-agent', {
+            description: 'Skilled agent',
+            output: tmpDir,
+            skills: 'cc-router,cc-reviewer',
+        });
+
+        const content = readFileSync(filePath, 'utf-8');
+        expect(content).toContain('skills: [cc-router, cc-reviewer]');
+    });
+
+    it('accepts --tools/--skills as arrays as well as comma-strings', async () => {
+        const filePath = await scaffold('agent', 'array-agent', {
+            description: 'Array inputs',
+            output: tmpDir,
+            tools: ['Read', 'Write', ' Edit ', ''],
+            skills: ['cc-router', 'cc-reviewer'],
+        });
+
+        const content = readFileSync(filePath, 'utf-8');
+        // Array path trims and drops empties
+        expect(content).toContain('tools: [Read, Write, Edit]');
+        expect(content).toContain('skills: [cc-router, cc-reviewer]');
+    });
+
+    it('resolves a user-override template tier from ~/.superskill/templates', async () => {
+        const originalHome = process.env.HOME;
+        process.env.HOME = tmpDir;
+        const userTierDir = join(tmpDir, '.superskill', 'templates', 'agent');
+        try {
+            mkdirSync(userTierDir, { recursive: true });
+            writeFileSync(
+                join(userTierDir, 'custom.md'),
+                '---\nname: <!-- NAME -->\ndescription: <!-- DESCRIPTION -->\nmodel: haiku\ntools: [Read]\n---\n\ncustom-tier body skill: link\n',
+            );
+
+            const filePath = await scaffold('agent', 'custom-tier-agent', {
+                description: 'Custom tier',
+                output: tmpDir,
+                template: 'custom',
+            });
+
+            const content = readFileSync(filePath, 'utf-8');
+            expect(content).toContain('custom-tier body');
+            expect(content).toContain('model: haiku');
+        } finally {
+            rmSync(join(tmpDir, '.superskill', 'templates'), { recursive: true, force: true });
+            process.env.HOME = originalHome ?? '';
+        }
+    });
+
+    it('passes its own evaluator for every agent tier (scaffold→evaluate ≥ 0.7)', async () => {
+        const { evaluateAgent } = await import('../../src/quality/agent');
+        const tiers = ['default', 'minimal', 'standard', 'specialist'] as const;
+        for (const tier of tiers) {
+            const filePath = await scaffold('agent', `eval-${tier}`, {
+                description: `Evaluation target for ${tier} tier`,
+                output: tmpDir,
+                template: tier === 'default' ? undefined : tier,
+                force: true,
+            });
+            const content = readFileSync(filePath, 'utf-8');
+            const report = evaluateAgent(content, filePath);
+            expect(report.aggregate).toBeGreaterThanOrEqual(0.7);
+        }
     });
 });
