@@ -262,7 +262,7 @@ Finding #1 addressed in the same engine commit: the defensive restore branch now
 
 - **Command:** `bun run lint && bun run test && bun run build` (full gate) + functional smoke tests
 - **Scope:** `apps/cli/tests/operations/refine.test.ts` (52 tests); functional CLI runs against a missing-`description`/`model` agent
-- **Result:** 2026-06-21 — lint clean · 959 tests pass / 0 fail · build OK. `refine.ts` coverage 94.15% lines / 100% funcs (≥90% threshold).
+- **Result:** 2026-06-21T22:51:47Z — lint clean · 959 tests pass / 0 fail · build OK. `refine.ts` coverage 94.15% lines / 100% funcs (≥90% threshold).
 - **Evidence:**
   - Unit: `fixes a missing-description skill instead of exiting early` — applies a real fix, no early-return, post ≥ pre.
   - Unit: `raises the score on a missing-field agent` — `postScore > preScore`, `delta > 0`, inserts `model: inherit` (not TODO).
