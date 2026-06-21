@@ -91,11 +91,13 @@ packages/core/src/                # ── Reusable domain logic (@gobing-ai/sup
 │   ├── magent.yaml
 │   └── skill.yaml
 │
-├── pipeline/                     # ── Conversion transformations (pure stages) ──
-│   ├── convert.ts                # Transformation pipeline orchestration
-│   ├── frontmatter.ts            # Frontmatter normalization stages
+├── pipeline/                     # ── Conversion transformations (pure stage functions) ──
+│   ├── adapt-command.ts          # Adapt Claude command .md → Skills 2.0 skill entry
+│   ├── adapt-subagent.ts         # Adapt Claude subagent .md → skill entry / Pi native agent
+│   ├── frontmatter.ts            # Frontmatter name-injection normalization
 │   ├── pi-subagent.ts            # pi subagent conversion stage
-│   ├── rewrite-colons.ts         # Rewrite colon syntax references
+│   ├── pi-tools.ts               # Claude → Pi tool-name normalization
+│   ├── rewrite-references.ts     # Rewrite scoped plugin:name colon references
 │   └── slash-command.ts          # Slash-dialect translation mappings
 │
 ├── operations/                   # ── Reusable operation APIs with no app dependency ──
@@ -162,7 +164,9 @@ plugins/<name>/                  .rulesync/             ~/.agents/skills/
   hooks.json      ──mapper──►     hooks.json             ...
   mcp.json        ──mapper──►     mcp.json
                         │
-                  ConversionPipeline (per-target, pure stages)
+                  Per-target stage chain (pure functions, applied in order):
+                  translateSlashCommands ─► rewriteSkillReferences
+                  (frontmatter adaptation already applied by the mapper)
                         │
                   rulesync.generate({ outputRoots, global, ... })
                         │   writes <outputRoot>/<relativeDirPath> per rulesync
@@ -333,7 +337,7 @@ sequenceDiagram
     participant CLI as Command Handler (install.ts)
     participant Marketplace as Marketplace Resolver (marketplace.ts)
     participant Mapper as Mapper (mapper.ts)
-    participant Pipe as Conversion Pipeline
+    participant Pipe as Per-target stage chain (install.ts)
     participant Rulesync as Rulesync Wrapper (rulesync.ts)
     participant Upstream as Target Agents / Local Paths
 
@@ -341,10 +345,11 @@ sequenceDiagram
     CLI->>Marketplace: resolvePlugin(plugin)
     Marketplace-->>CLI: pluginRoot path
     CLI->>Mapper: mapPluginToRulesync(pluginRoot)
+    Note over Mapper: Adapts commands/subagents into skill entries<br/>(frontmatter injection) before writing .rulesync/
     Mapper-->>CLI: Mapped .rulesync/ files
     loop Each Target
         CLI->>Pipe: transformRulesyncMarkdown(root, target)
-        Note over Pipe: Normalizes frontmatter, translates slash commands,<br/>rewrites colons, converts to Pi subagent format
+        Note over Pipe: translateSlashCommands → rewriteSkillReferences<br/>(pure stage functions, applied in order)
         Pipe-->>CLI: Transformed files in target directories
     end
     CLI->>Rulesync: runRulesync(targets)
@@ -582,6 +587,6 @@ sequenceDiagram
 2. **Idempotent output.** Running install twice with unchanged input produces identical output files.
 3. **No silent data loss.** If a target path is unwritable, the command fails before touching any target.
 4. **rulesync owns format knowledge.** superskill never hardcodes a target's file format — it delegates to `rulesync.generate()`.
-5. **Pipeline stages are pure functions.** `(content: string, target: Target, options?: ConvertOptions) => string` — no side effects, no filesystem access.
+5. **Pipeline stages are pure functions.** Each transform is a pure `(content: string, …) => string` function (e.g. `translateSlashCommands(content, target)`, `rewriteSkillReferences(content, pluginPrefix)`) — no side effects, no filesystem access. install.ts composes them in order per target.
 6. **Closed evolve loop.** Every accepted evolution proposal triggers a verification evaluation — every change has a measured outcome.
 7. **Marketplace-relative resolution.** A relative plugin `source` resolves against the marketplace root (the dir containing `.claude-plugin/`), never against `.claude-plugin/` or CWD. A `source` escaping the marketplace root (`../`) or using an object form is rejected, not silently resolved.

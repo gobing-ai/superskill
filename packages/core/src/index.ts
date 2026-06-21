@@ -28,7 +28,6 @@ export * from './operations/validate';
 // ── Pipeline ─────────────────────────────────────────────────────────────────
 export * from './pipeline/adapt-command';
 export * from './pipeline/adapt-subagent';
-export * from './pipeline/convert';
 export * from './pipeline/frontmatter';
 export * from './pipeline/pi-subagent';
 export * from './pipeline/pi-tools';
