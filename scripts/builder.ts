@@ -11,7 +11,7 @@
  *   bun scripts/builder.ts postbuild <outfile>           prepend bun shebang to a bundle
  */
 
-import { readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { $ } from 'bun';
 
@@ -34,17 +34,56 @@ async function bumpVersion(ver: string) {
         fail(`Invalid version: ${ver}. Use semver (e.g. 0.1.0, 0.2.0-beta.1).`);
     }
 
+    const pathsToAdd: string[] = [];
+
+    // 1. apps/cli/package.json
     const pkg = JSON.parse(readFileSync(PKG_PATH, 'utf-8'));
     const oldVer = pkg.version;
 
     pkg.version = ver;
-    // 4-space indent to match biome.json (indentWidth 4); 2 spaces fails `bun run lint`.
     writeFileSync(PKG_PATH, `${JSON.stringify(pkg, null, 4)}\n`);
+    pathsToAdd.push(PKG_PATH);
+
+    console.log(`Bumped ${PKG_NAME}: ${oldVer} → ${ver}`);
+
+    // 2. .claude-plugin/marketplace.json — update version for each plugin entry
+    const marketplacePath = resolve(ROOT, '.claude-plugin/marketplace.json');
+    if (existsSync(marketplacePath)) {
+        const marketplace = JSON.parse(readFileSync(marketplacePath, 'utf-8'));
+        const plugins: Array<{ name: string; version: string; source: string }> = marketplace.plugins ?? [];
+        let mpUpdated = false;
+        for (const entry of plugins) {
+            if (entry.version !== ver) {
+                entry.version = ver;
+                mpUpdated = true;
+            }
+        }
+        if (mpUpdated) {
+            writeFileSync(marketplacePath, `${JSON.stringify(marketplace, null, 4)}\n`);
+            pathsToAdd.push(marketplacePath);
+            console.log(`Bumped marketplace plugins to ${ver}`);
+        }
+
+        // 3. plugins/<name>/plugin.json — update version in each plugin's own manifest
+        for (const entry of plugins) {
+            const pluginJsonPath = resolve(ROOT, entry.source, 'plugin.json');
+            if (!existsSync(pluginJsonPath)) {
+                console.warn(`  ⚠ plugin.json not found at ${pluginJsonPath} — skipping`);
+                continue;
+            }
+            const pluginJson = JSON.parse(readFileSync(pluginJsonPath, 'utf-8'));
+            if (pluginJson.version !== ver) {
+                pluginJson.version = ver;
+                writeFileSync(pluginJsonPath, `${JSON.stringify(pluginJson, null, 4)}\n`);
+                pathsToAdd.push(pluginJsonPath);
+                console.log(`Bumped ${entry.source}/plugin.json to ${ver}`);
+            }
+        }
+    }
 
     const tag = `${PKG_NAME}-v${ver}`;
 
-    console.log(`Bumped ${PKG_NAME}: ${oldVer} → ${ver}`);
-    await $`git add ${PKG_PATH}`;
+    await $`git add ${pathsToAdd}`;
     await $`git commit -m ${`chore: release ${PKG_NAME} v${ver}`}`;
     await $`git tag -a ${tag} -m ${`${PKG_NAME} v${ver}`}`;
 
