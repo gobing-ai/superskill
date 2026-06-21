@@ -230,41 +230,48 @@ G1 heuristic-seed+ingest; G2/G3 build analyze/history/rollback.
 
 ### Review
 
-**Verdict: PASS**
+## Review — 2026-06-21 (dev-verify re-audit, --force)
 
-**Scope:** Task 0052 — make cc agent-evolve ready to replace rd3 agent-evolve. Shared engine fix in `apps/cli/src/operations/evolve.ts` (A1/A2/A3), flag registration in `apps/cli/src/commands/helpers.ts` + `agent.ts`, wrapper fix in `plugins/cc/commands/agent-evolve.md`, docs sync in `docs/design/design-doc-phase2.md`, regression tests in `apps/cli/tests/operations/evolve.test.ts`.
+**Status:** 4 findings (0×P1, 0×P2, 2×P3, 2×P4)
+**Scope:** `apps/cli/src/operations/evolve.ts`, `apps/cli/src/commands/agent.ts`, `apps/cli/src/commands/helpers.ts`, `apps/cli/tests/operations/evolve.test.ts`, `docs/design/design-doc-phase2.md`, `plugins/cc/commands/agent-evolve.md`
+**Mode:** verify (Phase 7 SECU + Phase 8 traceability)
+**Channel:** inline (current)
+**Gate:** `bun run lint` → pass · `bun run test` → 947/947 pass (0 skips) · `bun run build` → pass · `git status` → clean
+**Verdict:** PASS-with-cleanup — re-audit confirms the original PASS. All 4 findings are non-blocking (P3/P4); A1–A5 are correctly implemented and traced. `--fix all` applied the two mechanical fixes (F1 wrapper table, F2 left as behavioral — see notes).
 
-**Changes reviewed:**
-- `apps/cli/src/operations/evolve.ts`: A1 revived `generateChanges()` in `stepPropose` (was unused, propose-only shipped empty changes). A2 added `--analyze` path (formatAnalyze + scoreToGrade helpers, reuses stepAnalyze/computeTrends). A3 added `--history` (lists accepted proposals + snapshot status) and `--rollback <id> --confirm` (restores byte-identical from version snapshot). Backup lifecycle changed: on successful apply, backup persisted as `${resolvedPath}.version-${proposalId}` instead of deleted. `stepVerify` return type extended with `backupPath?`.
-- `apps/cli/src/commands/helpers.ts`: `addEvolveOptions` extended with `--analyze`, `--history`, `--rollback <id>`, `--confirm` (shared across all content types).
-- `apps/cli/src/commands/agent.ts`: `agentEvolve` + `handleAgentEvolve` + action handler pass through new opts.
-- `plugins/cc/commands/agent-evolve.md`: G4 wrapper drift fixed — real capabilities, real id shape (`agent-evolve-2026-06-21-001`), synced argument-hint, complete arguments table.
-- `docs/design/design-doc-phase2.md`: evolve command surface updated with new flags.
-- `apps/cli/tests/operations/evolve.test.ts`: 8 new regression tests + 1 updated test.
+### P1 — Blockers
+| # | Title | Dimension | Location | Recommendation |
+|---|-------|-----------|----------|----------------|
+| — | none | — | — | — |
 
-**SECU findings:**
-- Security: `--rollback` gated behind `--confirm` (destructive operation guard). No new external input surfaces. Version snapshot files are local-only (`${resolvedPath}.version-*`).
-- Correctness: `generateChanges` reuse is additive — `--ingest` override intact. Backup persistence is opt-out-free (all apply paths create version snapshots). `restoreFromBackup` not used for `--rollback` (would delete the snapshot); direct `Bun.write` preserves the snapshot for future rollbacks.
-- Architecture: shared engine fix lands once in `evolve.ts`; per-type tasks (0053-0055) inherit via `addEvolveOptions`. No per-type branching in the engine. `scoreToGrade` mirrors `evaluate.ts` grading logic (local copy — acceptable per do-not-drift guardrails).
-- No new `biome-ignore` suppressions. No tests skipped.
+### P2 — Warnings
+| # | Title | Dimension | Location | Recommendation |
+|---|-------|-----------|----------|----------------|
+| — | none | — | — | — |
 
-**Requirements traceability:**
-- G1/A1: `--propose-only` seeds heuristic changes for declining/flat-low dims; perfect agent yields no changes. ✅ (3 tests + functional smoke test)
-- G2/A2: `--analyze` prints trend table + score/grade + data-source inventory + pattern summary; no file mutation. ✅ (2 tests + functional smoke test)
-- G3/A3: `--history` lists applied versions; `--rollback <ver> --confirm` restores byte-identical. ✅ (5 tests + functional smoke test)
-- G4/A4: wrapper claims match real capabilities; examples use real id shapes. ✅
-- Gates: `bun run lint` clean, `bun run test` 947/947 pass (no skips), `bun run build` PASS, `git status` clean. ✅
+### P3 — Info
+| # | Title | Dimension | Location | Recommendation |
+|---|-------|-----------|----------|----------------|
+| 1 | Wrapper Arguments table missing header/separator row | Usability | `plugins/cc/commands/agent-evolve.md:22` | A4 rebuilt the table but omitted the header + `\|---\|` separator; rows won't render as a table. **FIXED** — header + separator added. |
+| 2 | `--analyze` git-history signal is cwd-relative, not content-relative | Correctness | `apps/cli/src/operations/evolve.ts:921` | `existsSync(join(process.cwd(), '.git'))` reports git presence of the invocation dir, not the agent file's repo. Cosmetic inventory line; misleading if invoked outside a repo against a tracked file. Matches rd3 parity scope — defer. **Not auto-fixed (behavioral, out of mechanical scope).** |
 
-**Risks:**
-- Backup files accumulate on disk (one per applied version). No cleanup mechanism. Acceptable for now — a `--prune-versions` flag could be a future enhancement.
-- Other content types (command/magent/skill/hook) have flags registered via `addEvolveOptions` but handlers don't pass them through yet. Tasks 0053-0055 will complete the pass-through. Running `--analyze` on those types currently silently no-ops (flag parsed but not forwarded to `evolve()`).
+### P4 — Suggestions
+| # | Title | Dimension | Location | Recommendation |
+|---|-------|-----------|----------|----------------|
+| 3 | Version snapshots accumulate with no prune path | Efficiency | `apps/cli/src/operations/evolve.ts:955` `persistVersionSnapshot` | One `.version-<id>` file per applied proposal, unbounded. Original Review already noted a future `--prune-versions`. Low impact; defer. |
+| 4 | `--rollback` is one-way — no snapshot of rolled-back-from state | Usability | `apps/cli/src/operations/evolve.ts:1030` | After rollback the live file has no snapshot of its pre-rollback content (no "redo" forward). By design — direct `Bun.write` preserves the target snapshot for repeat rollbacks. Documented; no change. |
 
-**Functional verification (smoke test):**
-- `agent evolve <target> --propose-only` → non-empty "Proposed changes" with `[Improve skill-linkage]` etc. ✅
-- `agent evolve <target> --analyze` → prints `=== Evolution Analysis ===`, score/grade, data sources, trend table, patterns. ✅
-- `agent evolve <target> --accept <id> --margin -1` → applies proposal, file modified. ✅
-- `agent evolve <target> --history` → lists version with ✓ snapshot. ✅
-- `agent evolve <target> --rollback <id> --confirm` → restores byte-identical (md5 match). ✅
+### Phase 8 — Requirements traceability
+
+All work items MET with code + test evidence:
+
+- **A1/G1** — seed heuristic proposals in `stepPropose`: **MET** · `evolve.ts:606 generateChanges(report, trends)` (was `_report`, now wired). Tests: `evolve.test.ts:295` (declining → `[Improve clarity]`), `:509` (flat-low), `:499` (perfect → empty).
+- **A2/G2** — `--analyze`: **MET** · `evolve.ts:1048` analyze branch + `formatAnalyze()` `:917`; flag `helpers.ts:30`, forwarded `agent.ts:118`. Tests: `evolve.test.ts:518`, `:537`.
+- **A3/G3** — `--history` + `--rollback <id> --confirm`: **MET** · history `evolve.ts:994`, rollback `:1020`, snapshot persist `:955`. Tests: `evolve.test.ts:553` `:566` `:591` `:598` `:621`.
+- **A4/G4** — wrapper drift fix: **MET** (with F1 caveat now fixed) · real id `agent-evolve-2026-06-21-001`, synced `argument-hint`, all flags documented.
+- **A5** — regression tests: **MET** · 8 new + 1 updated in `evolve.test.ts`, all green within the 947-test suite.
+
+**Scope-drift check:** The cross-type gap (command/magent/skill/hook evolve handlers register `--analyze/--history/--rollback` via shared `addEvolveOptions` but do NOT forward them — they silently no-op) is **correctly deferred to 0053–0055** per the documented execution plan, NOT a 0052 defect. The agent path (0052 scope) forwards all flags correctly. No untraced code in scope.
 
 
 ### Testing
