@@ -1,9 +1,9 @@
 ---
 name: Make cc agent-evolve ready to replace rd3 agent-evolve
 description: Make cc agent-evolve ready to replace rd3 agent-evolve
-status: WIP
+status: Testing
 created_at: 2026-06-21T20:55:48.410Z
-updated_at: 2026-06-21T21:47:13.193Z
+updated_at: 2026-06-21T22:03:42.799Z
 folder: docs/tasks
 type: task
 feature-id: ""
@@ -221,10 +221,54 @@ G1 heuristic-seed+ingest; G2/G3 build analyze/history/rollback.
 
 ### Review
 
+**Verdict: PASS**
+
+**Scope:** Task 0052 — make cc agent-evolve ready to replace rd3 agent-evolve. Shared engine fix in `apps/cli/src/operations/evolve.ts` (A1/A2/A3), flag registration in `apps/cli/src/commands/helpers.ts` + `agent.ts`, wrapper fix in `plugins/cc/commands/agent-evolve.md`, docs sync in `docs/design/design-doc-phase2.md`, regression tests in `apps/cli/tests/operations/evolve.test.ts`.
+
+**Changes reviewed:**
+- `apps/cli/src/operations/evolve.ts`: A1 revived `generateChanges()` in `stepPropose` (was unused, propose-only shipped empty changes). A2 added `--analyze` path (formatAnalyze + scoreToGrade helpers, reuses stepAnalyze/computeTrends). A3 added `--history` (lists accepted proposals + snapshot status) and `--rollback <id> --confirm` (restores byte-identical from version snapshot). Backup lifecycle changed: on successful apply, backup persisted as `${resolvedPath}.version-${proposalId}` instead of deleted. `stepVerify` return type extended with `backupPath?`.
+- `apps/cli/src/commands/helpers.ts`: `addEvolveOptions` extended with `--analyze`, `--history`, `--rollback <id>`, `--confirm` (shared across all content types).
+- `apps/cli/src/commands/agent.ts`: `agentEvolve` + `handleAgentEvolve` + action handler pass through new opts.
+- `plugins/cc/commands/agent-evolve.md`: G4 wrapper drift fixed — real capabilities, real id shape (`agent-evolve-2026-06-21-001`), synced argument-hint, complete arguments table.
+- `docs/design/design-doc-phase2.md`: evolve command surface updated with new flags.
+- `apps/cli/tests/operations/evolve.test.ts`: 8 new regression tests + 1 updated test.
+
+**SECU findings:**
+- Security: `--rollback` gated behind `--confirm` (destructive operation guard). No new external input surfaces. Version snapshot files are local-only (`${resolvedPath}.version-*`).
+- Correctness: `generateChanges` reuse is additive — `--ingest` override intact. Backup persistence is opt-out-free (all apply paths create version snapshots). `restoreFromBackup` not used for `--rollback` (would delete the snapshot); direct `Bun.write` preserves the snapshot for future rollbacks.
+- Architecture: shared engine fix lands once in `evolve.ts`; per-type tasks (0053-0055) inherit via `addEvolveOptions`. No per-type branching in the engine. `scoreToGrade` mirrors `evaluate.ts` grading logic (local copy — acceptable per do-not-drift guardrails).
+- No new `biome-ignore` suppressions. No tests skipped.
+
+**Requirements traceability:**
+- G1/A1: `--propose-only` seeds heuristic changes for declining/flat-low dims; perfect agent yields no changes. ✅ (3 tests + functional smoke test)
+- G2/A2: `--analyze` prints trend table + score/grade + data-source inventory + pattern summary; no file mutation. ✅ (2 tests + functional smoke test)
+- G3/A3: `--history` lists applied versions; `--rollback <ver> --confirm` restores byte-identical. ✅ (5 tests + functional smoke test)
+- G4/A4: wrapper claims match real capabilities; examples use real id shapes. ✅
+- Gates: `bun run lint` clean, `bun run test` 947/947 pass (no skips), `bun run build` PASS, `git status` clean. ✅
+
+**Risks:**
+- Backup files accumulate on disk (one per applied version). No cleanup mechanism. Acceptable for now — a `--prune-versions` flag could be a future enhancement.
+- Other content types (command/magent/skill/hook) have flags registered via `addEvolveOptions` but handlers don't pass them through yet. Tasks 0053-0055 will complete the pass-through. Running `--analyze` on those types currently silently no-ops (flag parsed but not forwarded to `evolve()`).
+
+**Functional verification (smoke test):**
+- `agent evolve <target> --propose-only` → non-empty "Proposed changes" with `[Improve skill-linkage]` etc. ✅
+- `agent evolve <target> --analyze` → prints `=== Evolution Analysis ===`, score/grade, data sources, trend table, patterns. ✅
+- `agent evolve <target> --accept <id> --margin -1` → applies proposal, file modified. ✅
+- `agent evolve <target> --history` → lists version with ✓ snapshot. ✅
+- `agent evolve <target> --rollback <id> --confirm` → restores byte-identical (md5 match). ✅
 
 
 ### Testing
 
+**Command:** `bun run lint && bun run test && bun run build`
+**Scope:** Full project — 947 tests across 58 files, coverage gate (90/90), Biome lint, TypeScript typecheck, Bun bundle build.
+**Result:** PASS — 947/947 tests pass, 0 failures, 0 skips. Aggregate coverage 99.69% funcs / 98.55% lines. evolve.ts at 97.78% funcs / 96.41% lines. Lint clean. Build succeeds (3.43 MB bundle).
+**Evidence:**
+- `bun run lint` — Biome check + typecheck both exit 0.
+- `bun run test` — 947 pass, 0 fail, 2352 expect() calls. 8 new regression tests + 1 updated test in `evolve.test.ts` (45 total in that file, all pass).
+- `bun run build` — Bundled 768 modules, exit 0.
+- Functional smoke test: `--propose-only` → non-empty Proposed changes; `--analyze` → trend table + score/grade + data sources; `--accept` → applies + creates version snapshot; `--history` → lists version with ✓; `--rollback --confirm` → restores byte-identical (md5 match).
+**Next action:** None — all gates pass.
 
 
 ### Artifacts
