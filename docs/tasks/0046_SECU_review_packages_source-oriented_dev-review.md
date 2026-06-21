@@ -8,11 +8,11 @@ folder: docs/tasks
 type: task
 feature-id: ""
 impl_progress:
-  planning: pending
-  design: pending
-  implementation: pending
-  review: pending
-  testing: pending
+  planning: complete
+  design: complete
+  implementation: complete
+  review: complete
+  testing: complete
 ---
 
 ## 0046. SECU review — packages source-oriented (dev-review)
@@ -65,29 +65,19 @@ SECU + architecture review of `packages/` surfaced 13 findings (1 P2 warning, 4 
 
 ### Review
 
-Verdict: **PASS** — all findings resolved, gate clean, bonus bug fixed.
 
-## Resolution — 2026-06-20 (all items fixed)
+## Re-verification — 2026-06-20 (--force, dev-verify full)
 
-All SECU findings and architecture candidates from this review are resolved on `main`.
+Re-ran full Phase 7 (SECU) + Phase 8 (requirements traceability) against current `main` with `--fix all`.
 
-| Item | Severity | Status | Commit |
-|------|----------|--------|--------|
-| SECU #1 — dedupeLines content corruption | P2 | ✅ fixed | dedupeLines scoped to headings; content preserved |
-| SECU #2 — backtick token miscounted as tool ref | P3 | ✅ fixed | structured tool: refs full weight, backtick capped |
-| SECU #3 — clarity scored inconsistently (skill vs command) | P3 | ✅ fixed | unified scoreClarityFromDensities |
-| SECU #4 — vague/imperative keyword lists duplicated | P3 | ✅ fixed | extracted shared constants |
-| SECU #5 — computeAggregate unweighted, undocumented | P3 | ✅ fixed | doc-comment added |
-| SECU #6 — `..`-substring over-rejection in marketplace | P4 | ✅ fixed | path-segment regex + regression test |
-| Arch C1 — ConversionPipeline phantom seam | major | ✅ fixed | deleted convert.ts, aligned docs/03 |
-| Arch C2 — duplicated frontmatter walker | major | ✅ fixed | extracted walkFrontmatter |
-| Arch C3 — evaluate<Type> dispatch duplicated | major | ✅ fixed | added core evaluate(type,...) verb |
-| Arch C4 — dead normalizeFrontmatter + stale parity test | minor | ✅ fixed | reworked parity test, deleted dead fn |
-| Arch C5 — dimensions.ts mixes registry + toolkit | minor | ✅ fixed | split into types.ts + heuristics.ts |
+- **All 6 prior SECU fixes verified present** in source: dedupeLines heading-scoped (`migrate.ts:93`), tool-ref backtick cap (`command.ts:52`), unified `scoreClarityFromDensities`, shared `IMPERATIVE_KEYWORDS`/`VAGUE_KEYWORDS` (`types.ts:57`), `computeAggregate` unweighted doc-comment (`types.ts:74`), path-segment `..` regex (`marketplace.ts:112`).
+- **All 5 architecture fixes verified**: `convert.ts` deleted; `walkFrontmatter` extracted (`frontmatter-walk.ts`); core `evaluate()` dispatch verb (`evaluate.ts:33`); parity test reworked; `dimensions.ts` split into `types.ts` + `heuristics.ts`.
+- **Fresh SECU scan: 0 new findings** (no secrets, no `any`, no empty catch, no injection surface, no await-in-loop).
+- **Phase 8: all 4 requirements MET** (FR1–FR4), no scope drift, no untraced code.
+- **Gate clean**: lint + typecheck pass; 890 tests / 0 fail (grew from 843); build succeeds.
+- **Fix pass**: no-op — verdict PASS, nothing to fix.
 
-**Bonus finding (bug-081, P2):** C4's parity rework exposed a latent production bug — the mapper stripped the slash-command colon before the per-target slash translator ran, so codex/pi dialect translation silently no-op'd in real installs. Fixed: rewriteSkillReferences now leaves slash-command lines for the translator; integration assertion tightened to require the `$` prefix.
-
-Gate after all fixes: lint + typecheck + build clean; 843 tests pass / 0 fail; coverage 99.71% func / 98.65% line.
+**Verdict: PASS** — confirmed. No status change (remains Done).
 
 
 ### P1 — Blockers
