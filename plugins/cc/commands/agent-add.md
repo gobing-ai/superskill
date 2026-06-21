@@ -1,6 +1,6 @@
 ---
 description: Create a new agent with scaffolding and templates
-argument-hint: "<agent-name> [--description <text>] [--target <platform>] [--output <dir>] [--force]"
+argument-hint: "<agent-name> [--description <text>] [--target <platform>] [--output <dir>] [--template <tier>] [--skills <list>] [--tools <list>] [--force]"
 allowed-tools: ["Read", "Write", "Glob", "Bash", "Skill"]
 ---
 
@@ -14,6 +14,7 @@ Scaffold a new subagent file from a tiered template. Delegates to **cc:cc-agents
 
 - Create a new agent from scratch
 - Initialize an agent with proper structure
+- Pick a template tier (minimal / standard / specialist) matching the agent's scope
 
 ## Arguments
 
@@ -23,7 +24,18 @@ Scaffold a new subagent file from a tiered template. Delegates to **cc:cc-agents
 | `--description` | Free-text description of the agent's purpose | auto-generated |
 | `--target` | Target platform | claude-code |
 | `--output` | Output directory | ./agents |
+| `--template` | Template tier: `minimal`, `standard`, or `specialist` | standard |
+| `--skills` | Comma-separated skill names to pre-populate frontmatter | (none) |
+| `--tools` | Comma-separated tool names to pre-populate frontmatter | (tier default) |
 | `--force` | Overwrite existing file | false |
+
+## Template Tiers
+
+- **minimal** — compact persona + tools + skill link; for thin wrappers
+- **standard** — role, tools, skill integration, workflow sections; the common default
+- **specialist** — senior-persona, richer toolset, boundaries; for high-autonomy specialists
+
+A freshly scaffolded agent PASSes the project's own evaluator (`superskill agent evaluate`) out of the box.
 
 ## Examples
 
@@ -32,6 +44,10 @@ Scaffold a new subagent file from a tiered template. Delegates to **cc:cc-agents
 /cc:agent-add my-coder
 # Scaffold with a description of its purpose
 /cc:agent-add expert-foo --description "Thin wrapper for cc-foo skill"
+# Scaffold a high-autonomy specialist with explicit tools
+/cc:agent-add sec-reviewer --template specialist --tools Read,Grep,Bash,Edit
+# Scaffold a minimal wrapper linked to a skill
+/cc:agent-add router --template minimal --skills cc-router
 ```
 
 ## Implementation
