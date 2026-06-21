@@ -131,7 +131,8 @@ superskill skill refine <name|path> [options]
 Options:
   --target <agent>      Refine for a specific agent
   --auto                Apply low-risk fixes automatically (default: interactive)
-  --save                Persist evaluation result
+  --save                Persist the evaluation to the evaluation store
+  --dry-run             Preview classified fixes and projected delta without writing
 ```
 
 Runs `evaluate` on the content, then applies fixes for each finding:
@@ -142,7 +143,9 @@ Runs `evaluate` on the content, then applies fixes for each finding:
 | Suggest | Content improvements (rewrite ambiguous descriptions, de-duplicate trigger phrases) |
 | Flag | Requires human judgment (architecture-level changes, scope decisions) |
 
-In `--auto` mode, only auto-apply fixes are made. In interactive mode (default), the user reviews each suggestion before it's applied.
+In `--auto` mode, only auto-apply fixes are made. In interactive mode (default), the user reviews each suggestion before it's applied. Structural auto-apply fixes (missing required fields) run BEFORE any validation-error early-return: a missing-`description` file is fixed in one step rather than refused. Missing-field defaults are schema-aware and content-derived (`model`→`inherit`, `tools`→`[]`, `description` humanized from `name`), never `TODO`/`default` placeholders — refine is monotonic-or-neutral (post-score ≥ pre-score; if a fix would lower the score, the backup is restored).
+
+`--dry-run` classifies findings and projects the score delta in-memory (no write, no backup); combine with `--auto` to preview the auto-apply set.
 
 After refinements, re-evaluates and shows the score delta.
 
@@ -462,6 +465,9 @@ superskill skill evaluate my-skill --json --save
 # refine (auto)
 superskill skill refine my-skill --auto --save
 # → Applies structural fixes → re-evaluates → shows delta → exit 0
+# refine (dry-run preview)
+superskill skill refine my-skill --dry-run
+# → Lists classified fixes + projected delta → writes nothing → exit 0
 
 # evolve (full loop)
 superskill skill evolve my-skill
