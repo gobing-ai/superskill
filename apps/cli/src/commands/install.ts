@@ -15,7 +15,9 @@ import {
     listResolvablePlugins,
     mapPluginToRulesync,
     resolvePlugin,
+    rewriteSkillReferences,
     runRulesync,
+    TARGET_SKILLS_RELDIR,
     TARGETS,
     type Target,
     translateSlashCommands,
@@ -118,7 +120,7 @@ export async function executeInstall(
     // Step 3: Build target-specific rulesync inputs through the conversion pipeline.
     const targetInputRoots = new Map<Target, string>();
     for (const target of targets) {
-        const targetInputRoot = prepareTargetRulesyncInput(outputDir, target);
+        const targetInputRoot = prepareTargetRulesyncInput(outputDir, target, plugin);
         targetInputRoots.set(target, targetInputRoot);
     }
 
@@ -131,19 +133,30 @@ export async function executeInstall(
     const rulesyncTargets = targets.filter((t) => t !== 'claude' && t !== 'hermes' && t !== 'omp');
     if (targets.includes('omp') && !targets.includes('pi')) {
         if (!targetInputRoots.has('pi')) {
-            targetInputRoots.set('pi', prepareTargetRulesyncInput(outputDir, 'pi'));
+            targetInputRoots.set('pi', prepareTargetRulesyncInput(outputDir, 'pi', plugin));
         }
         rulesyncTargets.push('pi');
     }
     if (targets.includes('hermes') && !targets.includes('opencode')) {
         if (!targetInputRoots.has('opencode')) {
-            targetInputRoots.set('opencode', prepareTargetRulesyncInput(outputDir, 'opencode'));
+            targetInputRoots.set('opencode', prepareTargetRulesyncInput(outputDir, 'opencode', plugin));
         }
         rulesyncTargets.push('opencode');
     }
     const resultCounts: InstallResultCounts = { skillsCount: 0, commandsCount: 0, subagentsCount: 0, hooksCount: 0 };
 
     if (rulesyncTargets.length > 0) {
+        // R2: pre-create per-target skills parent dirs before rulesync writes.
+        // rulesync mkdirs the leaf non-recursively; in project mode from a clean
+        // cwd the parent may not exist → ENOENT. Only in non-dry-run (dry-run
+        // writes nothing). Root matches the rulesync root (outputRoot or ADR-010 derivation).
+        if (!options.dryRun) {
+            const rulesyncRoot = options.outputRoot ?? (options.global ? homedir() : process.cwd());
+            for (const target of rulesyncTargets) {
+                const reldir = TARGET_SKILLS_RELDIR[target];
+                if (reldir) mkdirSync(join(rulesyncRoot, reldir), { recursive: true });
+            }
+        }
         if (options.verbose) echo(`Running rulesync for ${rulesyncTargets.join(', ')}...`);
         for (const target of rulesyncTargets) {
             const result = await runRulesyncImpl(
@@ -154,6 +167,7 @@ export async function executeInstall(
                     global: options.global,
                     dryRun: options.dryRun,
                     verbose: options.verbose,
+                    outputRoot: options.outputRoot,
                 },
             );
             resultCounts.skillsCount += result.skillsCount;
@@ -243,7 +257,8 @@ export async function executeInstall(
                     const agentName = entry.replace(/\.md$/, '');
                     const expectedName = `${plugin}-${agentName}`;
                     const source = readFileSync(join(agentsDir, entry), 'utf-8');
-                    const adapted = adaptSubagentToPi(source, expectedName, plugin, pluginRoot);
+                    const skillExists = (bare: string) => existsSync(join(pluginRoot, 'skills', bare));
+                    const adapted = adaptSubagentToPi(source, expectedName, plugin, skillExists);
                     writeFileSync(join(piAgentsDir, `${expectedName}.md`), adapted);
                 }
                 if (options.verbose) echo(`  Pi agents: dispatched to ${piAgentsDir}`);
@@ -342,13 +357,16 @@ export function resolvePluginRoot(plugin: string, marketplacePath?: string): Plu
 
 /** Prepares a target-transformed rulesync input layout — copies source into
  * `$sourceRoot/.targets/$target/.rulesync` and applies markdown transforms.
- * Returns the target root path consumed by {@link runRulesync}. */
-export function prepareTargetRulesyncInput(sourceRoot: string, target: Target): string {
+ * Returns the target root path consumed by {@link runRulesync}.
+ *
+ * @param pluginName  Plugin prefix (e.g. `cc`) for scoped colon-reference
+ *                   rewriting (`pluginName:foo` → `pluginName-foo`). */
+export function prepareTargetRulesyncInput(sourceRoot: string, target: Target, pluginName: string): string {
     const targetRoot = join(sourceRoot, '.targets', target);
     const targetRulesyncRoot = join(targetRoot, '.rulesync');
     rmSync(targetRoot, { recursive: true, force: true });
     copyDirectory(sourceRoot, targetRulesyncRoot, { skipDirectoryNames: new Set(['.targets']) });
-    transformRulesyncMarkdown(targetRulesyncRoot, target);
+    transformRulesyncMarkdown(targetRulesyncRoot, target, pluginName);
     return targetRoot;
 }
 
@@ -384,28 +402,32 @@ export function emitHooksForSurrogateTarget(
     return null;
 }
 
-function transformRulesyncMarkdown(root: string, target: Target): void {
+function transformRulesyncMarkdown(root: string, target: Target, pluginName: string): void {
     // Only skills/ exists now — commands and subagents are adapted into skill
-    // directories by the mapper. Slash-command dialect translation still applies.
-    transformMarkdownDirectory(join(root, 'skills'), target);
+    // directories by the mapper. Slash-command dialect translation and scoped
+    // reference rewriting apply on the per-target pass.
+    transformMarkdownDirectory(join(root, 'skills'), target, pluginName);
 }
 
-function transformMarkdownDirectory(dir: string, target: Target): void {
+function transformMarkdownDirectory(dir: string, target: Target, pluginName: string): void {
     if (!existsSync(dir)) return;
 
     for (const entry of readdirSync(dir)) {
         const path = join(dir, entry);
         const stats = statSync(path);
         if (stats.isDirectory()) {
-            transformMarkdownDirectory(path, target);
+            transformMarkdownDirectory(path, target, pluginName);
             continue;
         }
         if (!entry.endsWith('.md')) continue;
 
         const content = readFileSync(path, 'utf-8');
-        // Translate slash commands to the target dialect. Reference rewriting
-        // and frontmatter adaptation are already applied by the mapper.
-        const transformed = translateSlashCommands(content, target);
+        // Translate slash commands to the target dialect, then apply scoped
+        // reference rewriting as a safety net (the mapper already rewrites most
+        // refs; this catches any residual `plugin:name` colons). Frontmatter
+        // adaptation is already applied by the mapper.
+        const slashTranslated = translateSlashCommands(content, target);
+        const transformed = rewriteSkillReferences(slashTranslated, pluginName);
         writeFileSync(path, transformed);
     }
 }

@@ -1,5 +1,3 @@
-import { existsSync } from 'node:fs';
-import { join } from 'node:path';
 import { parseFrontmatter } from '../content/frontmatter';
 import { normalizePiToolList, parseToolsList } from './pi-tools';
 import { rewriteSkillReferences } from './rewrite-references';
@@ -86,18 +84,21 @@ function normalizeSubagentFrontmatter(content: string, expectedName: string): st
  *
  * Mirrors `subagents.sh:452-510`. Field order is pinned: `name, description, tools,
  * model, skill` (Refinement #4). Skills discovered from the body are filtered to
- * those that actually exist in `pluginPath/skills/<name>` to prevent phantom entries.
+ * those that actually exist (per `skillExists`) to prevent phantom entries.
  *
  * @param source         Raw subagent markdown content
  * @param expectedName   The `cc-<name>` canonical name
  * @param pluginPrefix   Plugin prefix (e.g. `cc`) for reference rewriting
- * @param pluginPath     Absolute path to the plugin dir (for skill-existence filtering)
+ * @param skillExists    Predicate returning true when a bare skill name resolves
+ *                       to a real skill directory in the plugin (filters phantom
+ *                       body-discovered skills). Callers supply the default FS
+ *                       implementation; tests inject a pure predicate.
  */
 export function adaptSubagentToPi(
     source: string,
     expectedName: string,
     pluginPrefix: string,
-    pluginPath: string,
+    skillExists: (bareName: string) => boolean,
 ): string {
     let data: Record<string, unknown>;
     let body: string;
@@ -122,8 +123,8 @@ export function adaptSubagentToPi(
     let model = asString(data.model);
     if (model === 'inherit') model = '';
 
-    // Skills: explicit frontmatter first, then body scan (filtered to existing dirs)
-    const skillsList = resolvePiSkills(data, body, pluginPrefix, pluginPath);
+    // Skills: explicit frontmatter first, then body scan (filtered to existing skills)
+    const skillsList = resolvePiSkills(data, body, pluginPrefix, skillExists);
     const skillsCsv = skillsList.join(', ');
 
     // Build Pi-native YAML frontmatter — field order: name, description, tools, model, skill
@@ -145,13 +146,15 @@ export function adaptSubagentToPi(
  *
  * 1. Explicit frontmatter `skills`/`skill` field (colon→hyphen normalized)
  * 2. Fallback: scan body for `plugin:name` references, filter to skills that
- *    actually exist under `pluginPath/skills/<bare-name>` (Refinement #4).
+ *    pass `skillExists(bareName)` (Refinement #4). The predicate decouples this
+ *    pipeline module from the filesystem so both branches are unit-testable
+ *    without a real plugin directory.
  */
 function resolvePiSkills(
     data: Record<string, unknown>,
     body: string,
     pluginPrefix: string,
-    pluginPath: string,
+    skillExists: (bareName: string) => boolean,
 ): string[] {
     const rawSkillsStr = asString(data.skills) || asString(data.skill);
     if (rawSkillsStr) {
@@ -169,8 +172,7 @@ function resolvePiSkills(
         return out;
     }
 
-    // Body scan — filter to existing skill directories (Refinement #4)
-    const skillsDir = join(pluginPath, 'skills');
+    // Body scan — filter to skills that exist per the injected predicate (Refinement #4)
     const prefix = `${pluginPrefix}:`;
     const seen = new Set<string>();
     const out: string[] = [];
@@ -183,7 +185,7 @@ function resolvePiSkills(
             // Old subagents.sh:365-383 checks plugins/<plugin>/skills/<normalized#${PLUGIN}->
             // i.e. strip the plugin prefix from the full ref to get the bare skill dir name
             const dirName = fullRef.startsWith(`${pluginPrefix}-`) ? fullRef.slice(pluginPrefix.length + 1) : fullRef;
-            if (existsSync(join(skillsDir, dirName))) {
+            if (skillExists(dirName)) {
                 seen.add(fullRef);
                 out.push(fullRef);
             }

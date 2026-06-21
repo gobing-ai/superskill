@@ -342,4 +342,49 @@ describe('executeInstall', () => {
 
         expect(writeCalls.join('')).toContain('[DRY-RUN]');
     });
+
+    it('R1: rulesync skills land under a custom outputRoot, not $HOME/cwd', async () => {
+        const { marketplacePath } = setupPluginDir();
+        const outRoot = join(tmpDir, 'r1-out');
+
+        // Real rulesync (no mock) — project mode, codex target. Plugin 'demo'
+        // ships skills/demo-a and demo-b (from the plugin-min fixture).
+        await executeInstall('demo', ['codex'], {
+            marketplacePath,
+            global: false,
+            dryRun: false,
+            verbose: false,
+            outputRoot: outRoot,
+        });
+
+        // Skills MUST land under the custom outputRoot (R1 acceptance)
+        // codex project-mode reldir is .agents/skills (verified empirically)
+        expect(existsSync(join(outRoot, '.agents', 'skills', 'demo-a', 'SKILL.md'))).toBe(true);
+        expect(existsSync(join(outRoot, '.agents', 'skills', 'demo-b', 'SKILL.md'))).toBe(true);
+
+        // Anti-pollution: nothing written to the real $HOME or cwd
+        // (tmpDir is isolated; outRoot is under tmpDir, so this proves no leak outside outRoot)
+        expect(existsSync(join(tmpDir, '.agents'))).toBe(false);
+    });
+
+    it('R2: project-mode install from a clean cwd does not crash with ENOENT', async () => {
+        const { marketplacePath } = setupPluginDir();
+        const outRoot = join(tmpDir, 'r2-clean'); // no pre-existing .agents/skills/
+
+        // Before R2, this threw: ENOENT mkdir '.agents/skills/...' because rulesync
+        // mkdirs the leaf non-recursively and the parent didn't exist in project mode.
+        // executeInstall now pre-creates per-target parents via TARGET_SKILLS_RELDIR.
+        await expect(
+            executeInstall('demo', ['codex'], {
+                marketplacePath,
+                global: false,
+                dryRun: false,
+                verbose: false,
+                outputRoot: outRoot,
+            }),
+        ).resolves.toBeUndefined();
+
+        // Skill exists — the install actually completed, not just survived
+        expect(existsSync(join(outRoot, '.agents', 'skills', 'demo-a', 'SKILL.md'))).toBe(true);
+    });
 });

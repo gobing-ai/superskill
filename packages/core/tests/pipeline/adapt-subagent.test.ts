@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'bun:test';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { adaptSubagentToPi, adaptSubagentToSkill } from '../../src/pipeline/adapt-subagent';
 
@@ -55,18 +55,18 @@ describe('adaptSubagentToPi', () => {
         if (tmpPluginDir) rmSync(tmpPluginDir, { recursive: true, force: true });
     });
 
-    function setupPluginWithSkills(skillNames: string[]): string {
+    function setupPluginWithSkills(skillNames: string[]): (bareName: string) => boolean {
         tmpPluginDir = mkdtempSync('superskill-pi-test-');
         const skillsDir = join(tmpPluginDir, 'skills');
         for (const name of skillNames) {
             mkdirSync(join(skillsDir, name), { recursive: true });
             writeFileSync(join(skillsDir, name, 'SKILL.md'), `---\nname: ${name}\n---\nbody`);
         }
-        return tmpPluginDir;
+        return (bareName: string) => existsSync(join(skillsDir, bareName));
     }
 
     it('produces Pi-native YAML with pinned field order: name, description, tools, model, skill', () => {
-        const pluginPath = setupPluginWithSkills(['cc-agents']);
+        const skillExists = setupPluginWithSkills(['cc-agents']);
         const source = [
             '---',
             'name: expert-agent',
@@ -79,7 +79,7 @@ describe('adaptSubagentToPi', () => {
             'Body text.',
         ].join('\n');
 
-        const result = adaptSubagentToPi(source, 'cc-expert-agent', 'cc', pluginPath);
+        const result = adaptSubagentToPi(source, 'cc-expert-agent', 'cc', skillExists);
 
         // Field order: name before description before tools before model before skill
         const nameIdx = result.indexOf('name:');
@@ -95,24 +95,24 @@ describe('adaptSubagentToPi', () => {
     });
 
     it('normalizes tools to Pi format (Read→read, Glob→find, ls)', () => {
-        const pluginPath = setupPluginWithSkills([]);
+        const skillExists = setupPluginWithSkills([]);
         const source = '---\nname: test\ndescription: Test\ntools: [Read, Glob]\nmodel: sonnet\n---\n\nBody.';
-        const result = adaptSubagentToPi(source, 'cc-test', 'cc', pluginPath);
+        const result = adaptSubagentToPi(source, 'cc-test', 'cc', skillExists);
 
         expect(result).toContain('tools: read, find, ls');
     });
 
     it('drops model: inherit', () => {
-        const pluginPath = setupPluginWithSkills([]);
+        const skillExists = setupPluginWithSkills([]);
         const source = '---\nname: test\ndescription: Test\ntools: [Read]\nmodel: inherit\n---\n\nBody.';
-        const result = adaptSubagentToPi(source, 'cc-test', 'cc', pluginPath);
+        const result = adaptSubagentToPi(source, 'cc-test', 'cc', skillExists);
 
         expect(result).not.toContain('model:');
     });
 
     it('filters body-discovered skills to existing skill dirs for skill: field (Refinement #4)', () => {
         // Only cc-agents exists; cc-nonexistent does not
-        const pluginPath = setupPluginWithSkills(['cc-agents']);
+        const skillExists = setupPluginWithSkills(['cc-agents']);
         const source = [
             '---',
             'name: expert-agent',
@@ -123,7 +123,7 @@ describe('adaptSubagentToPi', () => {
             'Uses cc:cc-agents and cc:cc-nonexistent.',
         ].join('\n');
 
-        const result = adaptSubagentToPi(source, 'cc-expert-agent', 'cc', pluginPath);
+        const result = adaptSubagentToPi(source, 'cc-expert-agent', 'cc', skillExists);
 
         // skill: field should only contain existing skills (cc-cc-agents, not cc-cc-nonexistent)
         const skillLine = result.split('\n').find((l) => l.startsWith('skill:'));
@@ -134,7 +134,7 @@ describe('adaptSubagentToPi', () => {
     });
 
     it('emits no phantom skill: entries when no skills exist (Refinement #4)', () => {
-        const pluginPath = setupPluginWithSkills([]); // no skills at all
+        const skillExists = setupPluginWithSkills([]); // no skills at all
         const source = [
             '---',
             'name: expert-agent',
@@ -145,69 +145,99 @@ describe('adaptSubagentToPi', () => {
             'References cc:cc-agents but no skill dir exists.',
         ].join('\n');
 
-        const result = adaptSubagentToPi(source, 'cc-expert-agent', 'cc', pluginPath);
+        const result = adaptSubagentToPi(source, 'cc-expert-agent', 'cc', skillExists);
 
         expect(result).not.toContain('skill:');
     });
 
     it('rewrites plugin:skill references in body text', () => {
-        const pluginPath = setupPluginWithSkills(['cc-agents']);
+        const skillExists = setupPluginWithSkills(['cc-agents']);
         const source =
             '---\nname: test\ndescription: Uses cc:cc-agents\ntools: [Read]\n---\n\nDelegates to cc:cc-agents.';
-        const result = adaptSubagentToPi(source, 'cc-test', 'cc', pluginPath);
+        const result = adaptSubagentToPi(source, 'cc-test', 'cc', skillExists);
 
         expect(result).toContain('cc-cc-agents');
         expect(result).not.toMatch(/\bcc:cc-agents\b/);
     });
 
     it('includes Pi Runtime Adaptation section when relevant tools present', () => {
-        const pluginPath = setupPluginWithSkills([]);
+        const skillExists = setupPluginWithSkills([]);
         const source = '---\nname: test\ndescription: Test\ntools: [Read, Glob, Agent]\n---\n\nBody.';
-        const result = adaptSubagentToPi(source, 'cc-test', 'cc', pluginPath);
+        const result = adaptSubagentToPi(source, 'cc-test', 'cc', skillExists);
 
         expect(result).toContain('## Pi Runtime Adaptation');
         expect(result).toContain('subagent'); // Agent → subagent mapping note
     });
 
     it('includes Skill notes when Skill tool and skills present', () => {
-        const pluginPath = setupPluginWithSkills(['cc-agents']);
+        const skillExists = setupPluginWithSkills(['cc-agents']);
         const source = '---\nname: test\ndescription: Test\ntools: [Skill]\nskills: [cc:cc-agents]\n---\n\nBody.';
-        const result = adaptSubagentToPi(source, 'cc-test', 'cc', pluginPath);
+        const result = adaptSubagentToPi(source, 'cc-test', 'cc', skillExists);
         expect(result).toContain('injected into this prompt');
     });
 
     it('includes Task notes when Task tool present', () => {
-        const pluginPath = setupPluginWithSkills([]);
+        const skillExists = setupPluginWithSkills([]);
         const source = '---\nname: test\ndescription: Test\ntools: [Task]\n---\n\nBody.';
-        const result = adaptSubagentToPi(source, 'cc-test', 'cc', pluginPath);
+        const result = adaptSubagentToPi(source, 'cc-test', 'cc', skillExists);
         expect(result).toContain('Task tool reference');
     });
 
     it('includes WebSearch notes when WebSearch tool present', () => {
-        const pluginPath = setupPluginWithSkills([]);
+        const skillExists = setupPluginWithSkills([]);
         const source = '---\nname: test\ndescription: Test\ntools: [WebSearch]\n---\n\nBody.';
-        const result = adaptSubagentToPi(source, 'cc-test', 'cc', pluginPath);
+        const result = adaptSubagentToPi(source, 'cc-test', 'cc', skillExists);
         expect(result).toContain('web-access style tools');
     });
 
     it('includes WebSearch notes when mcp__ tool present', () => {
-        const pluginPath = setupPluginWithSkills([]);
+        const skillExists = setupPluginWithSkills([]);
         const source = '---\nname: test\ndescription: Test\ntools: [mcp__github]\n---\n\nBody.';
-        const result = adaptSubagentToPi(source, 'cc-test', 'cc', pluginPath);
+        const result = adaptSubagentToPi(source, 'cc-test', 'cc', skillExists);
         expect(result).toContain('web-access style tools');
     });
 
     it('includes AskUserQuestion notes when present', () => {
-        const pluginPath = setupPluginWithSkills([]);
+        const skillExists = setupPluginWithSkills([]);
         const source = '---\nname: test\ndescription: Test\ntools: [AskUserQuestion]\n---\n\nBody.';
-        const result = adaptSubagentToPi(source, 'cc-test', 'cc', pluginPath);
+        const result = adaptSubagentToPi(source, 'cc-test', 'cc', skillExists);
         expect(result).toContain('AskUserQuestion-style step');
     });
 
     it('handles malformed frontmatter gracefully', () => {
-        const pluginPath = setupPluginWithSkills([]);
+        const skillExists = setupPluginWithSkills([]);
         const source = 'Plain text with no frontmatter at all.';
-        const result = adaptSubagentToPi(source, 'cc-test', 'cc', pluginPath);
+        const result = adaptSubagentToPi(source, 'cc-test', 'cc', skillExists);
         expect(result).toContain('name: cc-test');
+    });
+
+    it('skillExists=()=>true keeps a body-discovered skill (zero filesystem, R3)', () => {
+        const source = [
+            '---',
+            'name: expert-agent',
+            'description: Expert',
+            'tools: [Read]',
+            '---',
+            '',
+            'Uses cc:cc-agents here.',
+        ].join('\n');
+        const result = adaptSubagentToPi(source, 'cc-expert-agent', 'cc', () => true);
+        const skillLine = result.split('\n').find((l) => l.startsWith('skill:'));
+        expect(skillLine).toBeDefined();
+        expect(skillLine).toContain('cc-cc-agents');
+    });
+
+    it('skillExists=()=>false drops body-discovered skills (zero filesystem, R3)', () => {
+        const source = [
+            '---',
+            'name: expert-agent',
+            'description: Expert',
+            'tools: [Read]',
+            '---',
+            '',
+            'Uses cc:cc-agents here.',
+        ].join('\n');
+        const result = adaptSubagentToPi(source, 'cc-expert-agent', 'cc', () => false);
+        expect(result).not.toContain('skill:');
     });
 });

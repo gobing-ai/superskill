@@ -9,6 +9,9 @@ export interface RulesyncOptions {
     global: boolean;
     dryRun: boolean;
     verbose: boolean;
+    /** Override the root rulesync writes into. When omitted, falls back to the
+     *  ADR-010 derivation: global → homedir(), project → process.cwd(). */
+    outputRoot?: string;
 }
 
 /**
@@ -20,7 +23,8 @@ export interface RulesyncOptions {
  *
  * `outputRoots` is MANDATORY (ADR-010). rulesync writes to
  * `<outputRoot>/<relativeDirPath>`; the `global` flag only swaps the
- * relative subdir. Omitting `outputRoots` defaults to `process.cwd()`.
+ * relative subdir. When `options.outputRoot` is set it overrides the root;
+ * otherwise the root derives from `global` (→ homedir) vs project (→ cwd).
  */
 export async function runRulesync(
     targets: Target[],
@@ -57,11 +61,12 @@ export async function runRulesync(
         };
     }
 
+    const root = options.outputRoot ?? (options.global ? homedir() : process.cwd());
     return rulesyncGenerate({
         targets: mappedTargets,
         features,
         inputRoot,
-        outputRoots: [options.global ? homedir() : process.cwd()],
+        outputRoots: [root],
         global: options.global,
         dryRun: options.dryRun,
         verbose: options.verbose,

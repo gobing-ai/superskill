@@ -3,9 +3,8 @@
  *
  * Scoped to a single plugin prefix so `node:fs`, `bun:test`, `ts:*`, and placeholder
  * `plugin:command` colons from *other* contexts are never mangled. Mirrors the old
- * `common.sh:95-97` `PLUGIN_PREFIX` path.
- *
- * Use this instead of the legacy {@link rewriteColonRefs} which hardcodes `/(rd3|wt):/`.
+ * `common.sh:95-97` `PLUGIN_PREFIX` path. Replaces the legacy hardcoded `/(rd3|wt):/`
+ * rewriter deleted in task 0045 R4.
  */
 export function rewriteSkillReferences(content: string, pluginPrefix: string): string {
     if (!pluginPrefix || !content) return content;

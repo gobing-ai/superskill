@@ -141,6 +141,8 @@ Reversals = new entries naming what they supersede. Burned numbers get a `Skippe
 
 **Detail:** see 03 §Target taxonomy and §Data flow; 04 §Target taxonomy. Verified against `rulesync@8.28.1`: `Config.getOutputRoots()` defaults to `process.cwd()`; zero `os.homedir()` references in `src/`; `PiSkill`/`AntigravitySharedSkill`/`CodexCliSkill` `getSettablePaths({ global })` return relative subdirs only (e.g. Pi global → `.pi/agent/skills`, antigravity-cli global → `.gemini/antigravity-cli/skills`). Supersedes the hand-authored global-path tables previously in design-doc-phase1 and 04.
 
+**Amendment (2026-06-21, task 0045 R1).** `RulesyncOptions` gains an optional `outputRoot?: string` that overrides the root rulesync writes into. When omitted, the original ADR-010 derivation holds (`global ? homedir() : process.cwd()`). This widens — does not replace — the original decision: production install never sets `outputRoot` (global → `$HOME` is correct), but tests and a future `--output <dir>` flag can isolate writes to a temp root. The override is threaded uniformly into `runRulesync`, surrogate copies (hermes/omp), and Pi native-agent dispatch, closing the gap where the rulesync skill payload silently ignored `outputRoot` and leaked to `$HOME`/`cwd`. Additionally, `executeInstall` pre-creates per-target skills parent dirs (via `TARGET_SKILLS_RELDIR`, project mode) before rulesync writes, preventing an `ENOENT mkdir` crash on `install --no-global` from a clean cwd (task 0045 R2).
+
 ---
 
 ## ADR-011: plugin resolution via Claude Code marketplace manifest

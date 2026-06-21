@@ -116,7 +116,7 @@ async function emitHook(
     // then runRulesync writes native hook config and returns hooksCount.
     // Surrogates (pi/omp/hermes) are handled below.
     if (target !== 'pi' && target !== 'omp' && target !== 'hermes') {
-        const targetInputRoot = prepareTargetRulesyncInput(outputDir, target);
+        const targetInputRoot = prepareTargetRulesyncInput(outputDir, target, name);
         const result = await runRulesync([target], ['hooks'], targetInputRoot, { global, dryRun, verbose: false });
         return {
             count: result.hooksCount,
@@ -131,7 +131,7 @@ async function emitHook(
     // directly. omp reuses pi's mapped input; hermes reuses opencode's (ADR-010).
     // prepareTargetRulesyncInput transforms the markdown for the surrogate source.
     const surrogateSourceTarget: Target = target === 'hermes' ? 'opencode' : 'pi';
-    const surrogateInputRoot = prepareTargetRulesyncInput(outputDir, surrogateSourceTarget);
+    const surrogateInputRoot = prepareTargetRulesyncInput(outputDir, surrogateSourceTarget, name);
     const surrogateSourceDir = join(surrogateInputRoot, '.rulesync');
     const hookResult = emitHooksForSurrogateTarget(target, surrogateSourceDir, outputRoot, { dryRun, global });
     if (!hookResult) {

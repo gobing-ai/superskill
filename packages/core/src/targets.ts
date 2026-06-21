@@ -26,6 +26,24 @@ export const TARGET_TO_RULESYNC: Partial<Record<Target, ToolTarget>> = {
 };
 
 /**
+ * Per-target relative skills output directory in PROJECT mode (global=false).
+ * Used by `executeInstall` to pre-create parent dirs before rulesync writes,
+ * preventing ENOENT on `install --no-global` from a clean cwd (task 0045 R2).
+ *
+ * Verified empirically against rulesync 8.29.0 (2026-06-21) by running
+ * `generate({ features:['skills'], global:false })` per target. Global-mode
+ * paths differ (e.g. pi→`.pi/agent/skills`, opencode→`.config/opencode/skills`)
+ * but global installs land under `$HOME` where the parent typically exists.
+ */
+export const TARGET_SKILLS_RELDIR: Partial<Record<Target, string>> = {
+    codex: '.agents/skills',
+    pi: '.pi/skills',
+    opencode: '.opencode/skills',
+    'antigravity-cli': '.agents/skills',
+    'antigravity-ide': '.agents/skills',
+};
+
+/**
  * Bridge every superskill `Target` to a `@gobing-ai/ts-ai-runner` `AgentName`
  * for slash-command dialect translation via `translateSlashCommand`.
  *

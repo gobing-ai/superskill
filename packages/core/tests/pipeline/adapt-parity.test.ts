@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'bun:test';
 import { normalizeFrontmatter } from '../../src/pipeline/frontmatter';
 import { convertToPiSubagent } from '../../src/pipeline/pi-subagent';
-import { rewriteColonRefs } from '../../src/pipeline/rewrite-colons';
+import { rewriteSkillReferences } from '../../src/pipeline/rewrite-references';
 import { translateSlashCommands } from '../../src/pipeline/slash-command';
 import type { Target } from '../../src/targets';
 
@@ -12,27 +12,35 @@ import type { Target } from '../../src/targets';
  * The deleted adapters (cc-{agents,commands,skills}/scripts/adapt.ts) were
  * removed in Phase 3 §2.1 with disposition "fold into superskill install
  * conversion pipeline." This test asserts that the 4 pipeline stages —
- * rewriteColonRefs, translateSlashCommands, normalizeFrontmatter,
+ * rewriteSkillReferences (scoped), translateSlashCommands, normalizeFrontmatter,
  * convertToPiSubagent — fully cover the deleted-adapter behavior.
  *
- * Wiring (commands/install.ts:306-339 transformMarkdownDirectory):
- * - skills:    rewriteColonRefs
- * - commands:  normalizeFrontmatter → translateSlashCommands → rewriteColonRefs
- * - subagents: normalizeFrontmatter → rewriteColonRefs → convertToPiSubagent (pi/omp only)
+ * Wiring (commands/install.ts transformMarkdownDirectory):
+ * - skills:    translateSlashCommands → rewriteSkillReferences(content, plugin)
+ * - commands:  normalizeFrontmatter → translateSlashCommands → rewriteSkillReferences (via mapper + per-target pass)
+ * - subagents: normalizeFrontmatter → rewriteSkillReferences → convertToPiSubagent (pi/omp only)
+ *
+ * Reference rewriting is now plugin-scoped (task 0045 R4): rewriteSkillReferences
+ * only rewrites `<plugin>:<name>` for the plugin currently being installed,
+ * so `node:fs`, `bun:test`, and other-plugin refs survive untouched. The legacy
+ * hardcoded `/(rd3|wt):/` rewriter was deleted.
  */
+
+/** The plugin prefix these parity tests install under. */
+const PLUGIN = 'rd3';
 
 /** Simulate the install pipeline wiring for a command file. */
 function applyCommandPipeline(content: string, name: string, target: Target): string {
     let result = normalizeFrontmatter(content, name);
     result = translateSlashCommands(result, target);
-    result = rewriteColonRefs(result);
+    result = rewriteSkillReferences(result, PLUGIN);
     return result;
 }
 
 /** Simulate the install pipeline wiring for a subagent file (pi/omp). */
 function applySubagentPipeline(content: string, name: string, target: Target): string {
     let result = normalizeFrontmatter(content, name);
-    result = rewriteColonRefs(result);
+    result = rewriteSkillReferences(result, PLUGIN);
     if (target === 'pi' || target === 'omp') {
         result = convertToPiSubagent(result);
     }
@@ -41,14 +49,15 @@ function applySubagentPipeline(content: string, name: string, target: Target): s
 
 /** Simulate the install pipeline wiring for a skill file. */
 function applySkillPipeline(content: string): string {
-    return rewriteColonRefs(content);
+    return rewriteSkillReferences(content, PLUGIN);
 }
 
 describe('adapt parity — deleted adapter transforms covered by pipeline', () => {
     describe('colon reference rewriting (all targets, all content types)', () => {
-        it('rewrites rd3: and wt: colon refs to hyphenated form in skills', () => {
+        it('rewrites rd3: colon refs to hyphenated form, preserves other-plugin refs (scoped)', () => {
             const skill = 'Use rd3:dev-run and wt:publish-to-x for distribution.';
-            expect(applySkillPipeline(skill)).toBe('Use rd3-dev-run and wt-publish-to-x for distribution.');
+            // Plugin is 'rd3' (PLUGIN const) — rd3: rewritten, wt: preserved (scoped, not allowlist)
+            expect(applySkillPipeline(skill)).toBe('Use rd3-dev-run and wt:publish-to-x for distribution.');
         });
 
         it('rewrites colon refs in commands after name injection and slash translation', () => {
@@ -194,12 +203,12 @@ See wt:publish-to-x for publishing.`;
             expect(result).toContain('name: runner');
             // Slash translated (codex dialect)
             expect(result).toContain('$rd3-dev-run');
-            // Colon refs rewritten in prose
+            // Colon refs rewritten in prose (scoped to PLUGIN='rd3')
             expect(result).toContain('rd3-dev-run');
-            expect(result).toContain('wt-publish-to-x');
-            // No colon refs remain
+            // wt: refs are NOT rewritten when installing rd3 plugin (scoped behavior, task 0045 R4)
+            expect(result).toContain('wt:publish-to-x');
+            // rd3: colon refs do not remain
             expect(result).not.toContain('rd3:dev-run');
-            expect(result).not.toContain('wt:publish-to-x');
         });
 
         it('applies name injection → colon rewrite → Pi conversion for pi subagents', () => {
@@ -219,14 +228,14 @@ You are a helper. Use rd3:dev-run.`;
         it('all 4 pipeline stages exist and are pure functions', () => {
             // This test documents the parity: the 4 stages cover all deleted adapter transforms.
             // If any stage is removed, this test fails — surfacing the gap.
-            expect(typeof rewriteColonRefs).toBe('function');
+            expect(typeof rewriteSkillReferences).toBe('function');
             expect(typeof translateSlashCommands).toBe('function');
             expect(typeof normalizeFrontmatter).toBe('function');
             expect(typeof convertToPiSubagent).toBe('function');
 
             // Pure: same input → same output, no side effects
             const input = 'Use rd3:dev-run';
-            expect(rewriteColonRefs(input)).toBe(rewriteColonRefs(input));
+            expect(rewriteSkillReferences(input, PLUGIN)).toBe(rewriteSkillReferences(input, PLUGIN));
             expect(normalizeFrontmatter(input, 'test')).toBe(normalizeFrontmatter(input, 'test'));
         });
     });
