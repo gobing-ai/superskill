@@ -19,6 +19,7 @@ include:
   - "packages/**/tests/**/*.test.ts"
 exclude:
   - "**/node_modules/**"
+  - "**/vendors/**"
   - "**/dist/**"
 
 rules:

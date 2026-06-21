@@ -21,6 +21,7 @@ rules:
             - "packages/**/src/**/*.ts"
           exclude:
             - "**/node_modules/**"
+            - "**/vendors/**"
             - "**/tests/**"
             - "apps/**/src/store/**"
 
@@ -44,6 +45,7 @@ rules:
             - "packages/**/src/**/*.ts"
           exclude:
             - "**/node_modules/**"
+            - "**/vendors/**"
             - "**/tests/**"
             - "apps/**/src/store/**"
 
@@ -60,6 +62,7 @@ rules:
       - "packages/**/src/**/*.ts"
     exclude:
       - "**/node_modules/**"
+      - "**/vendors/**"
       - "**/tests/**"
 
   - id: no-hand-written-ddl-for-drizzle-tables
@@ -76,6 +79,7 @@ rules:
       - "packages/**/src/**/*.ts"
     exclude:
       - "**/node_modules/**"
+      - "**/vendors/**"
       - "**/tests/**"
 
   - id: raw-sql-only-in-domain
@@ -92,6 +96,7 @@ rules:
       - "packages/**/src/**/*.ts"
     exclude:
       - "**/node_modules/**"
+      - "**/vendors/**"
       - "**/tests/**"
       - "**/db/**"
 
@@ -109,4 +114,5 @@ rules:
       - "packages/**/src/**/*.ts"
     exclude:
       - "**/node_modules/**"
+      - "**/vendors/**"
       - "**/tests/**"

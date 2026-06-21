@@ -9,6 +9,7 @@ include:
   - "packages/**/tests/**/*.test.ts"
 exclude:
   - "**/node_modules/**"
+  - "**/vendors/**"
 rules:
   - id: no-focused-or-skipped-tests
     description: >

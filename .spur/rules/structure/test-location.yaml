@@ -20,6 +20,7 @@ rules:
       - "packages/**/tests/**/*.test.ts"
     exclude:
       - "**/node_modules/**"
+      - "**/vendors/**"
 
   - id: require-corresponding-test
     description: "Every source file must have a corresponding test."
@@ -47,3 +48,4 @@ rules:
       - "apps/**/src/operations/validate.ts"
       - "**/node_modules/**"
       - "**/tests/**"
+      - "**/vendors/**"

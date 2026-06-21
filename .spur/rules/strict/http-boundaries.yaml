@@ -9,6 +9,7 @@ exclude:
   - "**/*.test.ts"
   - "**/node_modules/**"
   - "**/dist/**"
+  - "**/vendors/**"
 
 rules:
   - id: no-direct-fetch
@@ -58,3 +59,4 @@ rules:
             - "**/tests/**"
             - "**/*.test.ts"
             - "**/dist/**"
+            - "**/vendors/**"

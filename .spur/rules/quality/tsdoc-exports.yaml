@@ -7,6 +7,7 @@ include:
   - "packages/**/src/**/*.ts"
 exclude:
   - "**/node_modules/**"
+  - "**/vendors/**"
   - "**/dist/**"
   - "**/tests/**"
 rules:

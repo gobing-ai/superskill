@@ -24,6 +24,7 @@ rules:
             - "**/tests/**"
             - "**/*.test.ts"
             - "**/dist/**"
+            - "**/vendors/**"
 
   - id: no-direct-fs-io
     description: "Prefer a FileSystem seam for fs IO. Light direct fs at app edges is allowlisted."
@@ -44,3 +45,4 @@ rules:
             - "**/tests/**"
             - "**/*.test.ts"
             - "**/dist/**"
+            - "**/vendors/**"

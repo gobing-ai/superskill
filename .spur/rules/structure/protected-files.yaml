@@ -19,6 +19,7 @@ rules:
             - ".test.ts"
             - "/node_modules/"
             - "/dist/"
+            - "**/vendors/**"
 
   - id: no-unsafe-git-commands
     description: "Unsafe git commands (force-push, hard reset) can overwrite history or cause data loss (AGENTS.md CRITICAL safety)."
@@ -45,3 +46,4 @@ rules:
     exclude:
       - "**/.env.example"
       - "**/node_modules/**"
+      - "**/vendors/**"

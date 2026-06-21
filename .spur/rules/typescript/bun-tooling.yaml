@@ -7,6 +7,7 @@ include:
   - ".spur/**/*.yaml"
 exclude:
   - "**/node_modules/**"
+  - "**/vendors/**"
   - "**/dist/**"
 
 rules:
@@ -25,6 +26,7 @@ rules:
       - "**/*.yaml"
     exclude:
       - ".spur/rules/**"
+      - "**/vendors/**"
 
   - id: enforce-bun-test
     description: "Unit/integration tests must use bun:test, not Jest or Mocha."
