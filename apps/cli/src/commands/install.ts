@@ -351,7 +351,11 @@ export function resolvePluginRoot(plugin: string, marketplacePath?: string): Plu
     }
 
     const fallback = join('plugins', plugin);
-    if (existsSync(join(fallback, 'plugin.json'))) return { pluginRoot: fallback };
+    if (
+        existsSync(fallback) &&
+        readdirSync(fallback).some((d) => ['skills', 'commands', 'agents', 'hooks', 'hooks.json'].includes(d))
+    )
+        return { pluginRoot: fallback };
 
     const available = listResolvablePlugins(marketplacePath);
     const msg =
