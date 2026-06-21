@@ -1,9 +1,9 @@
 ---
 name: Make cc agent-refine ready to replace rd3 agent-refine
 description: Make cc agent-refine ready to replace rd3 agent-refine
-status: Backlog
+status: Testing
 created_at: 2026-06-21T21:05:31.607Z
-updated_at: 2026-06-21T21:05:31.607Z
+updated_at: 2026-06-21T22:39:42.302Z
 folder: docs/tasks
 type: task
 feature-id: ""
@@ -171,7 +171,31 @@ lowers the score (post ≥ pre); suggest/flag dims surfaced but not silently mut
 
 ### Solution
 
+Shared engine `apps/cli/src/operations/refine.ts` restructured so the single fix-apply phase
+runs BEFORE any validation-error early-return (A1). `getDefaultForField` becomes schema-aware
+and content-derived (A3/R3): `model`→`'inherit'`, `tools`→`[]` (unblocks validation, score-neutral),
+`description` derived from the `name` frontmatter field (humanized) or first body H1, `name`
+derived from body H1; unknown fields return `null` (skip) — never a `TODO`/`default` placeholder.
+Missing-field insertion is always presence 0→1, so it is monotonic-or-neutral on every content
+type's `completeness` dimension.
 
+A `--dry-run` option (A2) is added to `RefineOptions`: validate + evaluate (baseline) + classify +
+project the fixed content in-memory via the core content evaluator (`evaluate(type, content,
+target)`), then print the classified fix list + projected delta. Writes nothing; needs no backup.
+
+Monotonic guard: in `--auto`, if the post-score would fall below the pre-score, restore the backup
+and report neutral (defensive — real defaults make this unreachable). Interactive mode warns on a
+drop without overriding an explicit user accept.
+
+`agent.ts` registers `--dry-run` via a new `addDryRunOption` helper and threads `dryRun` through
+`agentRefine`→`refine`. `plugins/cc/commands/agent-refine.md` is corrected: drop the false
+"LLM content improvement" claim, reword `--save` to "evaluation store", add `--dry-run` to the
+argument-hint + Arguments table (A3/R5).
+
+Tests (A4): the existing "exits early with zero scores on validation error" test is inverted — a
+missing-`description` agent now gets a real fix (non-TODO), no early-return, post ≥ pre. New tests:
+`--dry-run` leaves the file byte-identical; `getDefaultForField` skips unknown fields; refine never
+lowers the score.
 
 ### Plan
 
@@ -205,12 +229,49 @@ Coordinate alias flip + deployment with 0058-0060.
 
 ### Review
 
+_2026-06-21_
 
+**Status:** 1 finding (addressed inline)
+**Scope:** `apps/cli/src/operations/refine.ts`, `apps/cli/src/commands/agent.ts`, `apps/cli/src/commands/helpers.ts`, `plugins/cc/commands/agent-refine.md`
+**Mode:** verify (inline, channel=current)
+**Gate:** `bun run lint` pass · `bun run test` 959 pass / 0 fail · `bun run build` pass
+
+#### SECU analysis
+
+Security: no new attack surface. `--dry-run` writes nothing; inserted defaults route through `applyFrontmatterChange` (yaml `doc.set`), so values are escaped — no frontmatter/template injection. No secrets, no shell/eval, no `any`.
+
+| # | Title | Dimension | Location | Recommendation | P |
+|---|-------|-----------|----------|----------------|---|
+| 1 | Monotonic-restore guard left stale `fixesApplied` records after rollback | Correctness | `operations/refine.ts:501` | Move rolled-back fixes to `fixesSkipped` with `applied:false`; clear `fixesApplied` | P3 — **FIXED** |
+
+Finding #1 addressed in the same engine commit: the defensive restore branch now records reverted fixes honestly as skipped, so `RefineResult` never claims success for a rolled-back change (R12).
+
+#### Requirements traceability
+
+| Req | Text | Status | Evidence |
+-----|------|--------|----------|
+| R1 | Structural auto-apply reachable before validation-error exit | **MET** | `refine.ts` apply phase (Step 6) runs before the re-validate bail (Step 7); missing-description agent fixed in one step — smoke test 0.49→0.74 |
+| R2 | `--dry-run` preview, no write | **MET** | `RefineOptions.dryRun` + `dryRunPreview()` in-memory projection; registered on `agent refine`; byte-identical test + smoke test |
+| R3 | Real defaults, never TODO/placeholder; monotonic-or-neutral | **MET** | `getDefaultForField` schema-aware (`model`→`inherit`, `tools`→`[]`, `description`/`name` content-derived, unknown→null); monotonic guard restores backup on regression; post ≥ pre in all tests |
+| R5 | Wrapper matches reality | **MET** | `agent-refine.md` LLM-content claim dropped, `--save`→"evaluation store", `--dry-run` added to hint + table |
+| R4 | Content-quality suggest/flag dims | **OUT OF SCOPE** (documented) | Knowingly deferred — requires LLM content rewriting, explicitly excluded by R5's "refine stays mechanical/structural" |
+
+**Verdict: PASS** — all in-scope requirements met; P3 finding fixed; gate green.
 
 ### Testing
 
-
-
+- **Command:** `bun run lint && bun run test && bun run build` (full gate) + functional smoke tests
+- **Scope:** `apps/cli/tests/operations/refine.test.ts` (52 tests); functional CLI runs against a missing-`description`/`model` agent
+- **Result (2026-06-21):** lint clean · 959 tests pass / 0 fail · build OK. `refine.ts` coverage 94.15% lines / 100% funcs (≥90% threshold).
+- **Evidence:**
+  - Unit: `fixes a missing-description skill instead of exiting early` — applies a real fix, no early-return, post ≥ pre.
+  - Unit: `raises the score on a missing-field agent` — `postScore > preScore`, `delta > 0`, inserts `model: inherit` (not TODO).
+  - Unit: `aborts when unfixable validation errors remain` — empty-frontmatter/heading-less skill → skips, aborts, post == pre.
+  - Unit: `--dry-run` leaves the file byte-identical, no `.bak` residue, `fixesApplied` empty.
+  - Unit: schema-aware defaults (`model`→`inherit`, `tools`→`[]`, `description`→humanized name/H1, unknown→null).
+  - Smoke (built binary): `agent refine /tmp/broken-agent.md --dry-run` → projects 0.34→0.64, file byte-identical.
+  - Smoke (source): `agent refine /tmp/broken-agent2.md --auto` → 0.49→0.74, inserts `description: Code Reviewer` + `model: inherit`.
+- **Next action:** none — gate green.
 ### Artifacts
 
 | Type | Path | Agent | Date |
