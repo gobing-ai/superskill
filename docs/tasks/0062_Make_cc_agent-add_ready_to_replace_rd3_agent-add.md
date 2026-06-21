@@ -1,9 +1,9 @@
 ---
 name: Make cc agent-add ready to replace rd3 agent-add
 description: Make cc agent-add ready to replace rd3 agent-add
-status: Testing
+status: Done
 created_at: 2026-06-21T21:14:01.172Z
-updated_at: 2026-06-21T23:22:52.122Z
+updated_at: 2026-06-21T23:25:06.892Z
 folder: docs/tasks
 type: task
 feature-id: ""
