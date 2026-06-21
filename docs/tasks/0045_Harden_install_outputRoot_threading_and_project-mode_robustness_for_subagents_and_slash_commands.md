@@ -1,9 +1,9 @@
 ---
 name: Harden install outputRoot threading and project-mode robustness for subagents and slash commands
 description: Harden install outputRoot threading and project-mode robustness for subagents and slash commands
-status: Backlog
+status: Done
 created_at: 2026-06-21T04:31:04.959Z
-updated_at: 2026-06-21T04:31:04.959Z
+updated_at: 2026-06-21T04:59:37.795Z
 folder: docs/tasks
 type: task
 feature-id: 
