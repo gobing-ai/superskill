@@ -44,26 +44,27 @@ Source-oriented SECU review of packages/ run via /rd3:dev-review packages --focu
 
 ### Review
 
-## Follow-up — deferred architecture item (2026-06-20)
+## Resolution — 2026-06-20 (all items fixed)
 
-**Candidate 4 (deferred): `normalizeFrontmatter` is production-dead but test-load-bearing.**
+All SECU findings and architecture candidates from this review are resolved on `main`.
 
-`packages/core/src/pipeline/frontmatter.ts` `normalizeFrontmatter` has no production caller — the live install path (`apps/cli/src/commands/install.ts` `transformMarkdownDirectory`) runs only `translateSlashCommands → rewriteSkillReferences`; frontmatter injection is done by the mapper's `adaptCommandToSkill` / `adaptSubagentToSkill`. The function is kept alive by `packages/core/tests/pipeline/adapt-parity.test.ts`, which *simulates* the install wiring with `normalizeFrontmatter` (a different function than production uses) and `frontmatter.test.ts`.
+| Item | Severity | Status | Commit |
+|------|----------|--------|--------|
+| SECU #1 — dedupeLines content corruption | P2 | ✅ fixed | dedupeLines scoped to headings; content preserved |
+| SECU #2 — backtick token miscounted as tool ref | P3 | ✅ fixed | structured tool: refs full weight, backtick capped |
+| SECU #3 — clarity scored inconsistently (skill vs command) | P3 | ✅ fixed | unified scoreClarityFromDensities |
+| SECU #4 — vague/imperative keyword lists duplicated | P3 | ✅ fixed | extracted shared constants |
+| SECU #5 — computeAggregate unweighted, undocumented | P3 | ✅ fixed | doc-comment added |
+| SECU #6 — `..`-substring over-rejection in marketplace | P4 | ✅ fixed | path-segment regex + regression test |
+| Arch C1 — ConversionPipeline phantom seam | major | ✅ fixed | deleted convert.ts, aligned docs/03 |
+| Arch C2 — duplicated frontmatter walker | major | ✅ fixed | extracted walkFrontmatter |
+| Arch C3 — evaluate<Type> dispatch duplicated | major | ✅ fixed | added core evaluate(type,...) verb |
+| Arch C4 — dead normalizeFrontmatter + stale parity test | minor | ✅ fixed | reworked parity test, deleted dead fn |
+| Arch C5 — dimensions.ts mixes registry + toolkit | minor | ✅ fixed | split into types.ts + heuristics.ts |
 
-The parity test's wiring comment (adapt-parity.test.ts:18-21) is stale — it claims `commands: normalizeFrontmatter → …` but production uses `adaptCommandToSkill`.
+**Bonus finding (bug-081, P2):** C4's parity rework exposed a latent production bug — the mapper stripped the slash-command colon before the per-target slash translator ran, so codex/pi dialect translation silently no-op'd in real installs. Fixed: rewriteSkillReferences now leaves slash-command lines for the translator; integration assertion tightened to require the `$` prefix.
 
-**Scoped fix (its own task):**
-1. Rewrite `applyCommandPipeline`/`applySubagentPipeline` in `adapt-parity.test.ts` to simulate via the real mapper functions (`adaptCommandToSkill`, `adaptSubagentToSkill`).
-2. Update the stale wiring comment.
-3. Delete `normalizeFrontmatter`, its barrel export (`index.ts`), and `frontmatter.test.ts`.
-4. Run full suite to confirm parity still holds.
-
-Deferred from the 2026-06-20 review pass to keep the ConversionPipeline removal surgical (R3) — it touches the parity contract, not a trivial dead-export delete.
-
-**Other architecture candidates (surveyed, not actioned):**
-- C2 (major): duplicated frontmatter walker across `adapt-command.ts` / `adapt-subagent.ts`.
-- C3 (major): `evaluate<Type>` dispatch duplicated 5×; no single `evaluate(type, …)` verb in core.
-- C5 (minor): `dimensions.ts` mixes registry + heuristic toolkit.
+Gate after all fixes: lint + typecheck + build clean; 843 tests pass / 0 fail; coverage 99.71% func / 98.65% line.
 
 
 ### P1 — Blockers
