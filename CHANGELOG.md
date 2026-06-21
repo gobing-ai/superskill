@@ -4,6 +4,19 @@ All notable changes to `@gobing-ai/superskill` are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Conventional Commits](https://www.conventionalcommits.org/).
 
+
+## [0.1.7] - 2026-06-21
+
+### Bug Fixes
+
+- **Pi/omp hooks silently dropped on install**: Two issues in the canonical-to-Pi hook converter prevented hooks from being emitted for `pi` and `omp` targets. (1) Claude Code uses PascalCase event names (`Stop`, `PreToolUse`) while the canonical mapping expected camelCase (`stop`, `preToolUse`) — fixed by normalizing the first character to lowercase before lookup. (2) Claude Code wraps hooks in a nested matcher structure (`{matcher: "*", hooks: [{type, command, timeout}]}`) that the converter didn't flatten — fixed by walking `def.hooks[]` when present. Pi and omp now correctly receive hook configuration.
+
+### Improvements
+
+- **`bun run bump-ver` now keeps marketplace and plugin manifests in sync**: The version bump script previously only updated `apps/cli/package.json`, leaving `.claude-plugin/marketplace.json` and `plugins/cc/plugin.json` stale. This caused Claude Code to skip installs because the plugin version appeared unchanged. The script now iterates all marketplace plugin entries, updates their `version` field, then updates each plugin's own `plugin.json` via the `source` path. All files are committed together.
+
+---
+
 ## [0.1.4] - 2026-06-20
 
 ### New Features
