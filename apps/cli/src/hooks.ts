@@ -20,11 +20,19 @@ const CANONICAL_TO_PI_EVENT: Partial<Record<string, string>> = {
     preCompact: 'session_before_compact',
 };
 
-interface CanonicalHookDefinition {
+interface CanonicalHookEntry {
     type?: string;
     command?: string;
-    matcher?: string;
     timeout?: number;
+    [k: string]: unknown;
+}
+interface CanonicalHookDefinition {
+    matcher?: string;
+    hooks?: CanonicalHookEntry[];
+    type?: string;
+    command?: string;
+    timeout?: number;
+    [k: string]: unknown;
 }
 
 interface CanonicalHooksConfig {
@@ -50,14 +58,25 @@ export function convertCanonicalToPiHooks(config: CanonicalHooksConfig): Record<
     const canonicalHooks = config.hooks ?? {};
 
     for (const [canonicalEvent, definitions] of Object.entries(canonicalHooks)) {
-        const piEvent = CANONICAL_TO_PI_EVENT[canonicalEvent];
+        const normalized = canonicalEvent.charAt(0).toLowerCase() + canonicalEvent.slice(1);
+        const piEvent = CANONICAL_TO_PI_EVENT[normalized];
         if (!piEvent) continue;
 
         const commands: PiHookEntry[] = [];
         for (const def of definitions) {
-            if (def.type && def.type !== 'command') continue;
-            if (!def.command) continue;
-            commands.push(def.timeout ? { command: def.command, timeout: def.timeout } : def.command);
+            // Claude Code format: matcher wraps a nested hooks array
+            if (def.hooks) {
+                for (const entry of def.hooks) {
+                    if (entry.type && entry.type !== 'command') continue;
+                    if (!entry.command) continue;
+                    commands.push(entry.timeout ? { command: entry.command, timeout: entry.timeout } : entry.command);
+                }
+            } else {
+                // Flat canonical format: type/command/timeout directly on the definition
+                if (def.type && def.type !== 'command') continue;
+                if (!def.command) continue;
+                commands.push(def.timeout ? { command: def.command, timeout: def.timeout } : def.command);
+            }
         }
 
         if (commands.length > 0) {

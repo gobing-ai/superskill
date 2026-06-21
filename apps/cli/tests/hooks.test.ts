@@ -139,6 +139,53 @@ describe('convertCanonicalToPiHooks', () => {
         expect(result.session_start).toBeUndefined();
         expect(result.agent_end).toEqual(['echo kept']);
     });
+
+    it('normalizes PascalCase Claude Code event names to camelCase', () => {
+        const result = convertCanonicalToPiHooks({
+            hooks: {
+                Stop: [{ type: 'command', command: 'echo stop' }],
+                PreToolUse: [{ type: 'command', command: 'echo pre' }],
+                SessionStart: [{ type: 'command', command: 'echo start' }],
+            },
+        });
+
+        expect(result.agent_end).toEqual(['echo stop']);
+        expect(result.tool_call).toEqual(['echo pre']);
+        expect(result.session_start).toEqual(['echo start']);
+    });
+
+    it('flattens nested matcher hooks (Claude Code Stop format)', () => {
+        const result = convertCanonicalToPiHooks({
+            hooks: {
+                Stop: [
+                    {
+                        matcher: '*',
+                        hooks: [{ type: 'command', command: 'echo guard', timeout: 10 }],
+                    },
+                ],
+            },
+        });
+
+        expect(result.agent_end).toEqual([{ command: 'echo guard', timeout: 10 }]);
+    });
+
+    it('skips non-command entries inside matcher hooks', () => {
+        const result = convertCanonicalToPiHooks({
+            hooks: {
+                Stop: [
+                    {
+                        matcher: '*',
+                        hooks: [
+                            { type: 'prompt', prompt: 'skip me' },
+                            { type: 'command', command: 'echo kept' },
+                        ],
+                    },
+                ],
+            },
+        });
+
+        expect(result.agent_end).toEqual(['echo kept']);
+    });
 });
 
 describe('readCanonicalHooks', () => {
