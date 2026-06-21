@@ -19,6 +19,8 @@ Analyze agent quality over time, draft heuristic proposals for declining/flat-lo
 
 ## Arguments
 
+| Argument | Description | Default |
+|----------|-------------|---------|
 | `agent-name` | Name of the agent | (required) |
 | `--analyze` | Print trend table, score/grade, data-source inventory, and pattern summary | false |
 | `--from <date>` | Analyze evaluations since date (ISO 8601) | latest |
