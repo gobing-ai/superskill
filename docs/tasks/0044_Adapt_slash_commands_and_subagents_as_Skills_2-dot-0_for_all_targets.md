@@ -1,3 +1,15 @@
+---
+name: Adapt slash commands and subagents as Skills 2.0 for all targets
+description: Adapt slash commands and subagents as Skills 2.0 for all targets
+status: Done
+created_at: 2026-06-20T00:00:00.000Z
+updated_at: 2026-06-21T03:50:20.942Z
+folder: docs/tasks
+type: task
+feature-id: ""
+preset: complex
+---
+
 # Task 0044: Comprehensive install — unify entity distribution for all targets
 
 | Field | Value |
@@ -285,6 +297,62 @@ After `superskill install cc --targets all`:
 - `bun run lint` clean
 - `bun run test` all pass, coverage ≥ 90%
 - `bun run build` succeeds
+
+### Background
+
+The superskill CLI installs Claude Code plugins to all target coding agents (codex, pi, opencode, antigravity, omp, hermes). The current install pipeline emits separate `.rulesync/{skills,commands,subagents}/` directories and passes `['skills','commands','subagents','hooks','mcp']` to rulesync. Empirically verified against rulesync 8.29.0: only the `skills` feature has uniform target coverage — `commands` and `subagents` drop silently on several targets (codex, antigravity-cli, antigravity-ide) and land in 5 heterogeneous path/format shapes when they do emit (TOML agents, prompts, workflows). This is a dogfood blocker: the shipped `cc` plugin's 16 commands and 5 subagents do not reach most targets.
+
+Additionally, `rewrite-colons.ts` is hardcoded to `/(rd3|wt):/`, silently skipping the 244 live `cc:` references in the dogfood plugin. The omp/hermes surrogate copy only copies `skills/`, so they receive zero commands/subagents. The Pi subagent converter emits phantom `skill:` entries without verifying skill directories exist.
+
+### Requirements
+
+- **R1:** All entities (skills, commands, subagents) installed for all 8 targets via the "downgrade to skills" design — commands and subagents adapted into skill directories, distributed via rulesync `--features skills` (uniform coverage) instead of the unreliable per-feature emit.
+- **R2:** Reference rewriting (`plugin:name` → `plugin-name`) scoped to the plugin prefix being installed (not hardcoded allowlist), preserving `node:fs`/`bun:test`/`ts:*` colons intact.
+- **R3:** Claude install clears the plugin cache keyed on the resolved marketplace name (not hardcoded `superskill`).
+- **R4:** Pi subagent native format (`~/.pi/agent/agents/`) with correct field order (`name, description, tools, model, skill`), skill-existence filtering, and tool normalization.
+- **R5:** `disable-model-invocation: true` on command-as-skills ONLY; subagent-as-skills remain model-invocable.
+- **R6:** No regression: per-target input isolation, slash-command dialect translation, hook emission (pi/omp/hermes) preserved.
+- **R7:** `rulesyncFeatures` reduced to `['skills','hooks','mcp']`; both test assertion sites updated.
+
+### Design
+
+See **Architecture Changes** and **Design Rules** sections above for the full design (R1–R5 rules, target coverage matrix, current vs target flow, component change table). Key decisions: keep rulesync as the distribution engine (R5 rule), drop only the `commands`/`subagents` features, adapt entities in the mapper via new pipeline modules (`adapt-command.ts`, `adapt-subagent.ts`, `rewrite-references.ts`, `pi-tools.ts`).
+
+### Solution
+
+Implemented per the Implementation Phases. Five new pipeline modules in `packages/core/src/pipeline/`:
+- `adapt-command.ts` — `adaptCommandToSkill()`: injects name, disable-model-invocation, normalizes argument-hint/allowed-tools
+- `adapt-subagent.ts` — `adaptSubagentToSkill()` + `adaptSubagentToPi()`: skill adaptation + Pi native format with pinned field order and skill-existence filtering
+- `rewrite-references.ts` — `rewriteSkillReferences(content, pluginPrefix)`: plugin-scoped reference rewriting (Refinement #1)
+- `pi-tools.ts` — `expandPiToolName()`, `normalizePiToolList()`, `rewriteAllowedToolsForPi()`: extracted from pi-subagent.ts
+
+Mapper refactored: all entities (skills + commands + subagents) mapped into `.rulesync/skills/`. Install dispatch updated: features reduced to `['skills','hooks','mcp']`, Claude cache clearing keyed on marketplace name, Pi subagent native dispatch added. `rewrite-colons.ts` deprecated in favor of `rewrite-references.ts`.
+
+
+### Plan
+
+See **Implementation Phases** section above. Phases A (adaptation modules), B (mapper), C (install dispatch), E (cleanup), F (tests).
+
+### Testing
+
+- Unit tests for each adaptation module (`adapt-command`, `adapt-subagent`, `rewrite-references`, `pi-tools`) including a `rewriteSkillReferences` test proving `cc:foo`→`cc-foo` while `node:fs`/`bun:test` survive (Refinement #1).
+- Mapper tests: commands/subagents mapped as skills, counts updated.
+- Install tests: `rulesyncFeatures` = `['skills','hooks','mcp']` at both assertion sites (Refinement #7), Pi subagent dispatch.
+- Pi subagent golden-file test: field order + skill-existence filtering (Refinement #4).
+- Integration tests: end-to-end verify all entities land for all targets.
+
+### Review
+
+**Verdict: PASS**
+
+**R1:** MET. Mapper adapts commands/subagents into skills. E2E: 27 skills to codex, 0 commands, 0 subagents.
+**R2:** MET. `rewriteSkillReferences(content, pluginPrefix)` scoped. `cc:foo`→`cc-foo`, `node:fs` preserved. 0 surviving `cc:` refs.
+**R3:** MET. Claude cache clearing keyed on `resolution.marketplaceName` (install.ts:178-182).
+**R4:** MET. Pi subagent field order pinned (name, description, tools, model, skill). Skill filtering tested.
+**R5:** MET. `disable-model-invocation: true` on commands only; subagents stay model-invocable.
+**R6:** MET. Per-target isolation, slash translation, hook emission preserved.
+**R7:** MET. `rulesyncFeatures = ['skills','hooks','mcp']`. Both assertion sites updated.
+**A1-A5:** MET. lint clean, 820 tests pass, build succeeds, e2e verified.
 
 ## Notes
 

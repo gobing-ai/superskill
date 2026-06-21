@@ -22,22 +22,26 @@ describe('mapPluginToRulesync', () => {
         expect(existsSync(join(outDir, 'skills', 'demo-b', 'SKILL.md'))).toBe(true);
     });
 
-    it('maps commands → .rulesync/commands/<plugin>-<name>.md', () => {
+    it('maps commands → .rulesync/skills/<plugin>-<name>/SKILL.md (adapted as skill)', () => {
         tmpDir = mkdtempSync('superskill-mapper-');
         const outDir = join(tmpDir, '.rulesync');
         const result = mapPluginToRulesync(FIXTURE_DIR, 'demo', outDir);
 
         expect(result.commands).toBe(1);
-        expect(existsSync(join(outDir, 'commands', 'demo-run.md'))).toBe(true);
+        expect(existsSync(join(outDir, 'skills', 'demo-run', 'SKILL.md'))).toBe(true);
+        // No separate commands/ directory
+        expect(existsSync(join(outDir, 'commands'))).toBe(false);
     });
 
-    it('maps agents → .rulesync/subagents/<plugin>-<name>.md', () => {
+    it('maps agents → .rulesync/skills/<plugin>-<name>/SKILL.md (adapted as skill)', () => {
         tmpDir = mkdtempSync('superskill-mapper-');
         const outDir = join(tmpDir, '.rulesync');
         const result = mapPluginToRulesync(FIXTURE_DIR, 'demo', outDir);
 
         expect(result.subagents).toBe(1);
-        expect(existsSync(join(outDir, 'subagents', 'demo-coder.md'))).toBe(true);
+        expect(existsSync(join(outDir, 'skills', 'demo-coder', 'SKILL.md'))).toBe(true);
+        // No separate subagents/ directory
+        expect(existsSync(join(outDir, 'subagents'))).toBe(false);
     });
 
     it('returns zero counts for missing hooks.json and mcp.json', () => {
@@ -173,18 +177,19 @@ describe('mapPluginToRulesync', () => {
         expect(skillA).toContain('# demo-a');
         expect(skillA).toContain('This is skill A.');
 
-        const cmd = readFileSync(join(outDir, 'commands', 'demo-run.md'), 'utf-8');
+        // Commands are now adapted as skills — content preserved in skills/ dir
+        const cmd = readFileSync(join(outDir, 'skills', 'demo-run', 'SKILL.md'), 'utf-8');
         expect(cmd).toContain('Run a task.');
     });
-
     it('preserves plugin prefix in canonical names', () => {
         tmpDir = mkdtempSync('superskill-mapper-');
         const outDir = join(tmpDir, '.rulesync');
         mapPluginToRulesync(FIXTURE_DIR, 'rd3', outDir);
 
         expect(existsSync(join(outDir, 'skills', 'rd3-a', 'SKILL.md'))).toBe(true);
-        expect(existsSync(join(outDir, 'commands', 'rd3-run.md'))).toBe(true);
-        expect(existsSync(join(outDir, 'subagents', 'rd3-coder.md'))).toBe(true);
+        // Commands and agents now live in skills/ with adapted frontmatter
+        expect(existsSync(join(outDir, 'skills', 'rd3-run', 'SKILL.md'))).toBe(true);
+        expect(existsSync(join(outDir, 'skills', 'rd3-coder', 'SKILL.md'))).toBe(true);
     });
 
     it('rejects plugin names that are not a single path segment', () => {
@@ -224,14 +229,40 @@ describe('mapPluginToRulesync', () => {
         expect(hooks.hooks.Stop[0].hooks[0].command).toBe('echo stop');
     });
 
-    it('maps directory-layout commands and agents', () => {
+    it('maps directory-layout commands and agents as skills', () => {
         tmpDir = mkdtempSync('superskill-mapper-');
         const outDir = join(tmpDir, '.rulesync');
         const result = mapPluginToRulesync(DIR_FIXTURE_DIR, 'demo', outDir);
 
         expect(result.commands).toBe(1);
         expect(result.subagents).toBe(1);
-        expect(existsSync(join(outDir, 'commands', 'demo-run.md'))).toBe(true);
-        expect(existsSync(join(outDir, 'subagents', 'demo-coder.md'))).toBe(true);
+        // Commands and agents now adapted into skills/ directories
+        expect(existsSync(join(outDir, 'skills', 'demo-run', 'SKILL.md'))).toBe(true);
+        expect(existsSync(join(outDir, 'skills', 'demo-coder', 'SKILL.md'))).toBe(true);
+    });
+
+    it('copies skill subdirectories (references/) with reference rewriting', () => {
+        tmpDir = mkdtempSync('superskill-mapper-');
+        const pluginDir = join(tmpDir, 'plugin');
+        const skillDir = join(pluginDir, 'skills', 'my-skill');
+        mkdirSync(join(skillDir, 'references'), { recursive: true });
+        mkdirSync(join(skillDir, 'scripts', 'nested'), { recursive: true });
+        writeFileSync(join(skillDir, 'SKILL.md'), '---\nname: my-skill\n---\nUses cc:cc-skills here.');
+        writeFileSync(join(skillDir, 'references', 'guide.md'), 'See cc:cc-agents for details.');
+        writeFileSync(join(skillDir, 'scripts', 'nested', 'helper.ts'), 'console.log("cc:cc-hooks");');
+
+        const outDir = join(tmpDir, '.rulesync');
+        const result = mapPluginToRulesync(pluginDir, 'cc', outDir);
+
+        expect(result.skills).toBe(1);
+        // SKILL.md rewritten
+        const skill = readFileSync(join(outDir, 'skills', 'cc-my-skill', 'SKILL.md'), 'utf-8');
+        expect(skill).toContain('cc-cc-skills');
+        // references/ subdir copied and rewritten
+        const ref = readFileSync(join(outDir, 'skills', 'cc-my-skill', 'references', 'guide.md'), 'utf-8');
+        expect(ref).toContain('cc-cc-agents');
+        // scripts/ subdir (nested) copied and rewritten
+        const script = readFileSync(join(outDir, 'skills', 'cc-my-skill', 'scripts', 'nested', 'helper.ts'), 'utf-8');
+        expect(script).toContain('cc-cc-hooks');
     });
 });

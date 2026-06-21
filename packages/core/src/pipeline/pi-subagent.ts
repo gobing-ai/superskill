@@ -1,56 +1,13 @@
 import { parseFrontmatter } from '../content/frontmatter';
+import { expandPiToolName, normalizePiToolList, parseToolsList } from './pi-tools';
 
-/** Map Claude Code tool names to Pi tool names. Some expand to multiple tokens. */
-const PI_TOOL_MAP: Record<string, string> = {
-    Read: 'read',
-    read: 'read',
-    Write: 'write',
-    write: 'write',
-    Edit: 'edit',
-    edit: 'edit',
-    Bash: 'bash',
-    bash: 'bash',
-    Grep: 'grep',
-    grep: 'grep',
-    Glob: 'find, ls',
-    glob: 'find, ls',
-    Find: 'find',
-    find: 'find',
-    Ls: 'ls',
-    LS: 'ls',
-    ls: 'ls',
-    Agent: 'subagent',
-    agent: 'subagent',
-    subagent: 'subagent',
-    WebSearch: 'web_search, fetch_content, get_search_content',
-    WebFetch: 'web_search, fetch_content, get_search_content',
-    web_search: 'web_search',
-    fetch_content: 'fetch_content',
-    get_search_content: 'get_search_content',
-    mcp: 'mcp',
-};
-
-/** Claude tools that have no Pi equivalent and are dropped. */
-const DROPPED_TOOLS = new Set(['Skill', 'skill', 'Task', 'task', 'AskUserQuestion', 'askuserquestion']);
-
-/** Expand a single Claude tool name to a deduplicated, comma-separated Pi tool list. */
+/** @deprecated Use {@link expandPiToolName} from `pi-tools.ts` instead. Kept for backward compatibility. */
 export function expandPiTool(raw: string): string {
-    const trimmed = raw.trim().replace(/^["']|["']$/g, '');
-    if (DROPPED_TOOLS.has(trimmed)) return '';
-    if (trimmed.startsWith('mcp__') || trimmed.startsWith('mcp:')) return 'mcp';
-    return PI_TOOL_MAP[trimmed] ?? '';
+    return expandPiToolName(raw);
 }
 
-/** Parse a YAML list value (e.g. `[Read, Write]`) into an array of trimmed strings. */
-export function parseToolsList(raw: string): string[] {
-    const trimmed = raw.trim();
-    const cleaned = trimmed.replace(/^\[|\]$/g, '');
-    if (!cleaned.trim()) return [];
-    return cleaned
-        .split(',')
-        .map((t) => t.trim())
-        .filter(Boolean);
-}
+/** Re-export from the canonical `pi-tools.ts` for backward compatibility. */
+export { parseToolsList };
 
 /** Extract colon-separated skill references from prose text. */
 export function extractSkillsFromBody(body: string): string[] {
@@ -122,10 +79,10 @@ export function convertToPiSubagent(content: string): string {
         return content;
     }
 
-    // Extract tools → Pi CSV (handles both flow-style `[Read, Write]` and block-style arrays)
+    // Extract tools → Pi CSV (uses the canonical normalizer from pi-tools.ts)
     const rawToolsStr = asString(data.tools);
     const rawTools = parseToolsList(rawToolsStr);
-    const piTools = rawTools.map(expandPiTool).filter(Boolean).join(', ');
+    const piTools = normalizePiToolList(rawToolsStr);
 
     // Extract skills from frontmatter → normalise colons
     const rawSkillsStr = asString(data.skills) || asString(data.skill);
@@ -142,13 +99,13 @@ export function convertToPiSubagent(content: string): string {
     let model = asString(data.model);
     if (model === 'inherit') model = '';
 
-    // Build Pi-native YAML frontmatter
+    // Build Pi-native YAML frontmatter — pinned field order: name, description, tools, model, skill
     const piFields: string[] = [];
     piFields.push(`name: ${asString(data.name)}`);
     if (data.description) piFields.push(`description: ${asString(data.description)}`);
     if (piTools) piFields.push(`tools: ${piTools}`);
-    if (skillsCsv) piFields.push(`skill: ${skillsCsv}`);
     if (model) piFields.push(`model: ${model}`);
+    if (skillsCsv) piFields.push(`skill: ${skillsCsv}`);
 
     // Runtime notes
     const runtimeNotes = buildPiRuntimeNotes(rawTools, skillsCsv);

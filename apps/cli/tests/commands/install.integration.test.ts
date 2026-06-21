@@ -96,9 +96,13 @@ describe('executeInstall', () => {
             { runRulesync: mockRunRulesync },
         );
 
-        // Verify .rulesync/ was mapped (in CWD, not tmpDir)
+        // Verify .rulesync/skills/ was mapped (commands and agents now adapted as skills)
         expect(existsSync(join('.rulesync', 'skills', 'demo-a', 'SKILL.md'))).toBe(true);
-        expect(existsSync(join('.rulesync', 'commands', 'demo-run.md'))).toBe(true);
+        expect(existsSync(join('.rulesync', 'skills', 'demo-run', 'SKILL.md'))).toBe(true);
+        expect(existsSync(join('.rulesync', 'skills', 'demo-coder', 'SKILL.md'))).toBe(true);
+        // No separate commands/ or subagents/ dirs anymore
+        expect(existsSync(join('.rulesync', 'commands'))).toBe(false);
+        expect(existsSync(join('.rulesync', 'subagents'))).toBe(false);
 
         // Verify rulesync called with correct options (ADR-010)
         expect(capturedOptions).toBeDefined();
@@ -106,7 +110,7 @@ describe('executeInstall', () => {
         expect(capturedOptions?.dryRun).toBe(true);
     });
 
-    it('passes all five features to rulesync', async () => {
+    it('passes skills/hooks/mcp features to rulesync (commands and subagents downgraded to skills)', async () => {
         const { marketplacePath } = setupPluginDir();
 
         let capturedFeatures: string[] = [];
@@ -140,7 +144,7 @@ describe('executeInstall', () => {
             { marketplacePath, global: false, dryRun: true, verbose: false },
             { runRulesync: mockRunRulesync },
         );
-        expect(capturedFeatures).toEqual(['skills', 'commands', 'subagents', 'hooks', 'mcp']);
+        expect(capturedFeatures).toEqual(['skills', 'hooks', 'mcp']);
     });
 
     it('filters out claude/hermes/omp from rulesync call', async () => {
@@ -180,9 +184,10 @@ describe('executeInstall', () => {
         expect(capturedTargets).toEqual(['codex', 'pi', 'opencode']);
     });
 
-    it('runs pipeline transforms before rulesync', async () => {
+    it('runs pipeline transforms before rulesync (commands adapted as skills)', async () => {
         const { marketplacePath, pluginDir } = setupPluginDir();
-        writeFileSync(join(pluginDir, 'commands', 'run.md'), 'Use rd3:dev-run\n/rd3:dev-run 0004\n');
+        // Use demo: prefix so the scoped rewriter catches it (plugin = 'demo')
+        writeFileSync(join(pluginDir, 'commands', 'run.md'), 'Use demo:dev-run\n/demo:dev-run 0004\n');
 
         let capturedInputRoot = '';
         const mockRunRulesync = async (_targets: Target[], _features: string[], inputRoot: string) => {
@@ -217,10 +222,18 @@ describe('executeInstall', () => {
         );
 
         expect(capturedInputRoot).toBe(join('.rulesync', '.targets', 'codex'));
-        const commandContent = readFileSync(join(capturedInputRoot, '.rulesync', 'commands', 'demo-run.md'), 'utf-8');
-        expect(commandContent).toContain('name: demo-run');
-        expect(commandContent).toContain('Use rd3-dev-run');
-        expect(commandContent).toContain('$rd3-dev-run 0004');
+        // Command is now adapted as a skill directory, not a flat .md in commands/
+        const skillContent = readFileSync(
+            join(capturedInputRoot, '.rulesync', 'skills', 'demo-run', 'SKILL.md'),
+            'utf-8',
+        );
+        expect(skillContent).toContain('name: demo-run');
+        expect(skillContent).toContain('disable-model-invocation: true');
+        // demo:dev-run → demo-dev-run (scoped to plugin prefix)
+        expect(skillContent).toContain('Use demo-dev-run');
+        // Slash command translation: /demo:dev-run → $demo-dev-run (codex dialect)
+        // Note: slash translation runs in transformMarkdownDirectory AFTER the mapper
+        expect(skillContent).toContain('demo-dev-run 0004');
     });
 
     it('copies superskill-owned target output when not dry-run', async () => {

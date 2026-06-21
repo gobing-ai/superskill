@@ -9,14 +9,12 @@ import {
     writeFileSync,
 } from 'node:fs';
 import { homedir } from 'node:os';
-import { basename, join } from 'node:path';
+import { join } from 'node:path';
 import {
-    convertToPiSubagent,
+    adaptSubagentToPi,
     listResolvablePlugins,
     mapPluginToRulesync,
-    normalizeFrontmatter,
     resolvePlugin,
-    rewriteColonRefs,
     runRulesync,
     TARGETS,
     type Target,
@@ -126,7 +124,7 @@ export async function executeInstall(
 
     // Step 4: Run rulesync for supported targets. Include surrogate targets:
     // omp reuses pi's rulesync output, hermes reuses opencode's (see ADR-010).
-    const rulesyncFeatures = ['skills', 'commands', 'subagents', 'hooks', 'mcp'] as const;
+    const rulesyncFeatures = ['skills', 'hooks', 'mcp'] as const;
     const rulesyncTargets = targets.filter((t) => t !== 'claude' && t !== 'hermes' && t !== 'omp');
     if (targets.includes('omp') && !targets.includes('pi')) {
         if (!targetInputRoots.has('pi')) {
@@ -176,6 +174,11 @@ export async function executeInstall(
             if (!options.dryRun) {
                 const marketplaceName = resolution.marketplaceName ?? 'superskill';
                 const marketplaceRoot = resolution.marketplaceRoot ?? process.cwd();
+                // Clear the plugin cache keyed on the resolved marketplace name (Refinement #5).
+                // marketplace add is idempotent, so this is defensive — but bound it to the
+                // correct name so we never rm -rf the wrong directory.
+                const cacheDir = join(homedir(), '.claude', 'plugins', 'cache', marketplaceName);
+                if (existsSync(cacheDir)) rmSync(cacheDir, { recursive: true, force: true });
                 await runClaudeInstallImpl(marketplaceRoot, marketplaceName, plugin);
             }
         }
@@ -226,6 +229,22 @@ export async function executeInstall(
             );
             hookEmitResults.push(hookResult);
             if (options.verbose) echo(`  ${hookResult.message}`);
+
+            // Pi native agent dispatch: adapt each subagent to Pi format → ~/.pi/agent/agents/
+            const agentsDir = join(pluginRoot, 'agents');
+            if (existsSync(agentsDir) && !options.dryRun) {
+                const piAgentsDir = join(outputRoot, '.pi', 'agent', 'agents');
+                mkdirSync(piAgentsDir, { recursive: true });
+                for (const entry of readdirSync(agentsDir)) {
+                    if (!entry.endsWith('.md')) continue;
+                    const agentName = entry.replace(/\.md$/, '');
+                    const expectedName = `${plugin}-${agentName}`;
+                    const source = readFileSync(join(agentsDir, entry), 'utf-8');
+                    const adapted = adaptSubagentToPi(source, expectedName, plugin, pluginRoot);
+                    writeFileSync(join(piAgentsDir, `${expectedName}.md`), adapted);
+                }
+                if (options.verbose) echo(`  Pi agents: dispatched to ${piAgentsDir}`);
+            }
         }
     }
 
@@ -363,37 +382,28 @@ export function emitHooksForSurrogateTarget(
 }
 
 function transformRulesyncMarkdown(root: string, target: Target): void {
+    // Only skills/ exists now — commands and subagents are adapted into skill
+    // directories by the mapper. Slash-command dialect translation still applies.
     transformMarkdownDirectory(join(root, 'skills'), target);
-    transformMarkdownDirectory(join(root, 'commands'), target, { normalizeName: true, translateSlash: true });
-    transformMarkdownDirectory(join(root, 'subagents'), target, {
-        normalizeName: true,
-        piSubagent: target === 'pi' || target === 'omp',
-    });
 }
 
-function transformMarkdownDirectory(
-    dir: string,
-    target: Target,
-    options: { normalizeName?: boolean; translateSlash?: boolean; piSubagent?: boolean } = {},
-): void {
+function transformMarkdownDirectory(dir: string, target: Target): void {
     if (!existsSync(dir)) return;
 
     for (const entry of readdirSync(dir)) {
         const path = join(dir, entry);
         const stats = statSync(path);
         if (stats.isDirectory()) {
-            transformMarkdownDirectory(path, target, options);
+            transformMarkdownDirectory(path, target);
             continue;
         }
         if (!entry.endsWith('.md')) continue;
 
-        const name = entry === 'SKILL.md' ? basename(dir) : entry.replace(/\.md$/, '');
-        let content = readFileSync(path, 'utf-8');
-        if (options.normalizeName) content = normalizeFrontmatter(content, name);
-        if (options.translateSlash) content = translateSlashCommands(content, target);
-        content = rewriteColonRefs(content);
-        if (options.piSubagent) content = convertToPiSubagent(content);
-        writeFileSync(path, content);
+        const content = readFileSync(path, 'utf-8');
+        // Translate slash commands to the target dialect. Reference rewriting
+        // and frontmatter adaptation are already applied by the mapper.
+        const transformed = translateSlashCommands(content, target);
+        writeFileSync(path, transformed);
     }
 }
 

@@ -167,4 +167,39 @@ name: test-agent
 description: Missing closer`;
         expect(convertToPiSubagent(input)).toBe(input);
     });
+
+    it('injects Skill runtime notes when Skill tool and skills present', () => {
+        const input = `---
+name: test-agent
+tools: [Skill]
+skills: [cc:cc-agents]
+---
+
+Body.`;
+        const result = convertToPiSubagent(input);
+        expect(result).toContain('## Pi Runtime Adaptation');
+        expect(result).toContain('injected into this prompt');
+    });
+
+    it('injects Agent runtime notes when Agent tool present', () => {
+        const input = `---
+name: test-agent
+tools: [Agent]
+---
+
+Body.`;
+        const result = convertToPiSubagent(input);
+        expect(result).toContain("Pi's `subagent` tool");
+    });
+
+    it('injects AskUserQuestion runtime notes when present', () => {
+        const input = `---
+name: test-agent
+tools: [AskUserQuestion]
+---
+
+Body.`;
+        const result = convertToPiSubagent(input);
+        expect(result).toContain('AskUserQuestion-style step');
+    });
 });

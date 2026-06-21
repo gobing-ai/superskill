@@ -230,4 +230,31 @@ You are a helper. Use rd3:dev-run.`;
             expect(normalizeFrontmatter(input, 'test')).toBe(normalizeFrontmatter(input, 'test'));
         });
     });
+
+    describe('new Skills 2.0 architecture — mapper-level adaptation (task 0044)', () => {
+        it('adaptCommandToSkill, adaptSubagentToSkill, rewriteSkillReferences are pure functions', async () => {
+            const { adaptCommandToSkill } = await import('../../src/pipeline/adapt-command');
+            const { adaptSubagentToSkill } = await import('../../src/pipeline/adapt-subagent');
+            const { rewriteSkillReferences } = await import('../../src/pipeline/rewrite-references');
+
+            expect(typeof adaptCommandToSkill).toBe('function');
+            expect(typeof adaptSubagentToSkill).toBe('function');
+            expect(typeof rewriteSkillReferences).toBe('function');
+
+            // Pure: same input → same output
+            const cmd = '---\nargument-hint: <task>\n---\nUse cc:cc-skills';
+            expect(adaptCommandToSkill(cmd, 'cc-test', 'cc')).toBe(adaptCommandToSkill(cmd, 'cc-test', 'cc'));
+            expect(rewriteSkillReferences('cc:foo', 'cc')).toBe(rewriteSkillReferences('cc:foo', 'cc'));
+        });
+
+        it('rewriteSkillReferences is plugin-scoped (not hardcoded allowlist)', async () => {
+            const { rewriteSkillReferences } = await import('../../src/pipeline/rewrite-references');
+            // cc: refs rewritten when installing cc plugin
+            expect(rewriteSkillReferences('cc:cc-agents', 'cc')).toBe('cc-cc-agents');
+            // rd3: refs NOT rewritten when installing cc plugin (scoped, not allowlist)
+            expect(rewriteSkillReferences('rd3:dev-run', 'cc')).toBe('rd3:dev-run');
+            // node:fs preserved (Refinement #1)
+            expect(rewriteSkillReferences("import 'node:fs'", 'cc')).toBe("import 'node:fs'");
+        });
+    });
 });
