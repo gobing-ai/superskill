@@ -16,7 +16,7 @@ describe('resolvePlugin', () => {
         mkdirSync(claudePluginDir, { recursive: true });
         const pluginDir = join(tmpDir, 'plugins', 'demo');
         mkdirSync(pluginDir, { recursive: true });
-        writeFileSync(join(pluginDir, 'plugin.json'), '{"name":"demo"}');
+        mkdirSync(join(pluginDir, 'skills'), { recursive: true });
         writeFileSync(
             join(claudePluginDir, 'marketplace.json'),
             JSON.stringify({
@@ -39,7 +39,7 @@ describe('resolvePlugin', () => {
         mkdirSync(claudePluginDir, { recursive: true });
         const pluginDir = join(tmpDir, 'plugins', 'demo');
         mkdirSync(pluginDir, { recursive: true });
-        writeFileSync(join(pluginDir, 'plugin.json'), '{"name":"demo"}');
+        mkdirSync(join(pluginDir, 'skills'), { recursive: true });
         writeFileSync(
             join(claudePluginDir, 'marketplace.json'),
             JSON.stringify({
@@ -139,9 +139,9 @@ describe('resolvePlugin', () => {
             JSON.stringify({ plugins: [{ name: 'demo', source: './a..b' }] }),
         );
 
-        // ./a..b has '..' only as a substring, not a path segment — it must clear
-        // the escape guard and fail later on the missing plugin.json instead.
-        expect(() => resolvePlugin(join(claudePluginDir, 'marketplace.json'), 'demo')).toThrow('plugin.json');
+        // ./a..b has '..' only as a substring, not a path segment — it clears
+        // the escape guard and fails on the non-existent plugin root.
+        expect(() => resolvePlugin(join(claudePluginDir, 'marketplace.json'), 'demo')).toThrow('Plugin root not found');
     });
 
     it('throws when marketplace manifest is missing', () => {
