@@ -283,3 +283,62 @@ describe('RubricSchema', () => {
         expect(RubricSchema.safeParse(invalid).success).toBe(false);
     });
 });
+
+// ── Weighted aggregate tests ───────────────────────────────────────────────────
+
+describe('weighted aggregate', () => {
+    it('agent rubric weights produce different result from equal-weight mean', () => {
+        const rubric = loadRubric('agent');
+        // 5 dimensions with different scores; role-clarity (weight 0.25) dominates
+        const scores: Record<string, { score: number }> = {
+            completeness: { score: 1.0 },
+            'role-clarity': { score: 0.5 },
+            'tool-selection': { score: 1.0 },
+            'skill-linkage': { score: 1.0 },
+            'model-fit': { score: 1.0 },
+        };
+
+        // Equal-weight: (1.0+0.5+1.0+1.0+1.0)/5 = 0.90
+        const equalWeight = Object.values(scores).reduce((a, s) => a + s.score, 0) / 5;
+        expect(equalWeight).toBeCloseTo(0.9, 2);
+
+        // Weighted: 0.20*1.0 + 0.25*0.5 + 0.20*1.0 + 0.20*1.0 + 0.15*1.0
+        // = 0.20 + 0.125 + 0.20 + 0.20 + 0.15 = 0.875
+        let weightedSum = 0;
+        for (const dim of rubric.dimensions) {
+            const entry = scores[dim.name];
+            if (entry) weightedSum += entry.score * dim.weight;
+        }
+        expect(weightedSum).toBeCloseTo(0.875, 2);
+
+        // Weighted ≠ equal-weight (role-clarity weight dominance pulls it down)
+        expect(weightedSum).not.toBeCloseTo(equalWeight, 2);
+    });
+
+    it('agent rubric weights: role-clarity dominates (0.25)', () => {
+        const rubric = loadRubric('agent');
+        const rcd = rubric.dimensions.find((d) => d.name === 'role-clarity');
+        expect(rcd).toBeDefined();
+        expect(rcd?.weight).toBe(0.25);
+
+        // Verify no other dimension exceeds role-clarity
+        for (const dim of rubric.dimensions) {
+            expect(dim.weight).toBeLessThanOrEqual(0.25);
+        }
+    });
+
+    it('all default rubrics compute stable weighted aggregates', () => {
+        const types: ContentType[] = ['agent', 'skill', 'command', 'hook', 'magent'];
+        for (const type of types) {
+            const rubric = loadRubric(type);
+            const allOnes: Record<string, { score: number }> = {};
+            for (const dim of rubric.dimensions) allOnes[dim.name] = { score: 1.0 };
+            let weightedSum = 0;
+            for (const dim of rubric.dimensions) {
+                weightedSum += (allOnes[dim.name]?.score ?? 0) * dim.weight;
+            }
+            // All-1.0 should yield 1.0 since weights sum to 1.0
+            expect(weightedSum).toBeCloseTo(1.0, 2);
+        }
+    });
+});

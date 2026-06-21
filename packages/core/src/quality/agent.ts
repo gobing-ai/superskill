@@ -8,9 +8,15 @@ function scoreCompleteness(data: Record<string, unknown>): DimensionScore {
     const required = REQUIRED_FIELDS.agent;
     const score = scorePresence(fieldsPresent, required);
     const missing = required.filter((f) => !fieldsPresent.includes(f));
-    const note = missing.length > 0 ? `Missing: ${missing.join(', ')}` : 'All required fields present';
+    const findings = missing.length > 0 ? [`Missing required fields: ${missing.join(', ')}`] : undefined;
+    const recs = missing.length > 0 ? ['Add the missing frontmatter fields'] : undefined;
 
-    return { score: clamp(score), note };
+    return {
+        score: clamp(score),
+        note: missing.length > 0 ? `Missing: ${missing.join(', ')}` : 'All required fields present',
+        findings,
+        recommendations: recs,
+    };
 }
 
 function scoreRoleClarity(body: string): DimensionScore {
@@ -49,7 +55,16 @@ function scoreRoleClarity(body: string): DimensionScore {
               ? 'Role definition vague/generic'
               : 'No role definition found';
 
-    return { score, note };
+    const findings: string[] | undefined =
+        matchCount < 2 ? ['Role definition is vague, generic, or absent'] : undefined;
+    const recs: string[] | undefined =
+        matchCount === 0
+            ? ['Add a role statement (e.g. "You are a ... specialist")']
+            : matchCount === 1
+              ? ['Add more role signals (specialist, persona, role scope)']
+              : undefined;
+
+    return { score, note, findings, recommendations: recs };
 }
 
 function scoreToolSelection(data: Record<string, unknown>): DimensionScore {
@@ -65,7 +80,15 @@ function scoreToolSelection(data: Record<string, unknown>): DimensionScore {
         score = 0.1;
     }
 
-    return { score, note: `${count} tools selected` };
+    const findings: string[] | undefined = count < 3 ? [`Only ${count} tool(s) selected — 3+ recommended`] : undefined;
+    const recs: string[] | undefined =
+        count === 0
+            ? ['Add at least 3 tools to the agent frontmatter']
+            : count < 3
+              ? ['Add more tools to cover the agent workflow']
+              : undefined;
+
+    return { score, note: `${count} tools selected`, findings, recommendations: recs };
 }
 
 function scoreSkillLinkage(body: string): DimensionScore {
@@ -90,7 +113,17 @@ function scoreSkillLinkage(body: string): DimensionScore {
         note = 'No skill references';
     }
 
-    return { score, note };
+    let findings: string[] | undefined;
+    let recs: string[] | undefined;
+    if (score < 1.0) {
+        findings = ['Skill linkage is weak or missing'];
+        recs =
+            score === 0.5
+                ? ['Use structured skill references (skill: or skills:) in the agent body']
+                : ['Add skill references to the agent body for delegated workflows'];
+    }
+
+    return { score, note, findings, recommendations: recs };
 }
 
 function scoreModelFit(data: Record<string, unknown>): DimensionScore {
@@ -117,7 +150,17 @@ function scoreModelFit(data: Record<string, unknown>): DimensionScore {
         note = 'Model: missing';
     }
 
-    return { score, note };
+    let findings: string[] | undefined;
+    let recs: string[] | undefined;
+    if (score < 0.5) {
+        findings = ['Model field is missing or unrecognized'];
+        recs = ['Specify a valid model (e.g. inherit, claude-sonnet-4, claude-opus-4)'];
+    } else if (score === 0.5) {
+        findings = ['Model name appears ambiguous'];
+        recs = ['Use a recognized model alias (inherit, sonnet, opus, haiku) or well-formed name (claude-sonnet-4)'];
+    }
+
+    return { score, note, findings, recommendations: recs };
 }
 
 // ── Public API ─────────────────────────────────────────────────────────────────

@@ -1,6 +1,6 @@
 ---
 description: Check agent quality score and identify weaknesses
-argument-hint: "<agent-path> [--json] [--save] [--target <platform>]"
+argument-hint: "<agent-path> [--save] [--target <platform>]"
 allowed-tools: ["Read", "Write", "Glob", "Bash", "Skill"]
 ---
 
@@ -21,8 +21,7 @@ Score agent quality across 10 dimensions. **Evaluate only — make NO changes.**
 | Argument | Description | Default |
 |----------|-------------|---------|
 | `agent-path` | Path to the agent .md file | (required) |
-| `--json` | Output results as JSON | text |
-| `--save` | Save evaluation results to file | false |
+| `--save` | Persist the evaluation to the evaluation store (enables evolve trend analysis) | false |
 | `--target` | Target platform | claude-code |
 
 ## Examples
@@ -30,8 +29,8 @@ Score agent quality across 10 dimensions. **Evaluate only — make NO changes.**
 ```bash
 # Full evaluation
 /cc:agent-evaluate ./agents/my-agent.md
-# Save results as JSON
-/cc:agent-evaluate ./agents/my-agent.md --json --save
+# Save results to the evaluation store
+/cc:agent-evaluate ./agents/my-agent.md --save
 ```
 
 ## Implementation
