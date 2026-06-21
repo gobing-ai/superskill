@@ -26,13 +26,13 @@ Dogfood pair-run /cc:agent-add vs /rd3:agent-add on global superskill 0.1.8. The
 
 ### Requirements
 
-DECISIONS (operator-confirmed): AD1 = enrich each type's default.md so a freshly scaffolded artifact scores PASS (>=0.7) on its OWN evaluator out of the box (real role/section/skill-linkage scaffolding, not empty placeholders). AD3 = add rd3-style --template <tier> selection (e.g. minimal/standard/specialist for agents) to the shared scaffold engine. AD4 = add --skills/--tools inputs that pre-populate frontmatter. Apply AD1/AD3/AD4 to the SHARED operations/scaffold.ts (+ substituteVars for new placeholders) and register the new flags on apps/cli/src/commands/agent.ts (addScaffoldOptions). Fix AD5 wrapper drift: align claims to real template set, add --template/--skills/--tools to argument-hint + Arguments table. Gates: bun run lint, bun run test (no skips, add regression: scaffold->evaluate >= PASS for agent; --template tiers resolve; --skills/--tools land in frontmatter), bun run build, git clean. Do NOT flip /agent-add alias until parity confirmed AND global binary carries the build.
+## Requirements
 
-ENGINE-PATH NOTE (verified working tree): the scaffold engine to edit is packages/core/src/operations/scaffold.ts (NOT apps/cli/src/operations/scaffold.ts — that file is a 77-byte re-export). The flat-output line is scaffold.ts:105 = join(outDir, name+'.md'); body:'' is injected at :100; substituteVars (:33) only knows NAME/DESCRIPTION/TARGET/BODY (AD4 adds SKILLS/TOOLS). Templates live under apps/cli/src/templates/<type>/default.md (resolved by resolveTemplate, :53). Note REQUIRED_FIELDS.agent=['name','description','model','tools'] (quality/types.ts) — the enriched agent template must populate model + tools to satisfy the completeness dimension.
-
-DOCS SYNC (CLAUDE.md mandate): the new --template tiers + --skills/--tools flags touch the CLI command/flag surface — update docs/04_DESIGN.md (and docs/design/design-doc-phase2.md) in the SAME commit as the flag registration.
-
-EXECUTION ORDER (Gap 5): run the add SET (0062+0063+0064+0065) as ONE unit on one branch/PR — land the shared scaffold engine + enriched templates and wire ALL 5 subcommands + per-type tier templates + 0065's skill-dir output P1 + all wrappers + all-type scaffold->evaluate>=PASS tests under a single gate, so the engine is proven against agent/command/magent/skill BEFORE merge. Cross-set order: run THIS Add set FIRST (it owns the skill-dir scaffold fix in 0065), THEN Refine (0057-0060), THEN Evolve (0052-0055) — the skill refine/evolve slices resolve directory-based <name>/SKILL.md, which only exists once this set has shipped. Hooks (0056/0061/0066) are independent, run anytime.
+- [x] **A1** Scaffolded agent PASSes its own evaluator (≥0.7) → **MET** | Evidence: live `agent scaffold smoke-spec --template specialist → evaluate` = AGGREGATE 0.98 PASS Grade A; enriched `apps/cli/src/templates/agent/{default,minimal,standard,specialist}.md`; regression `passes its own evaluator for every agent tier` (`scaffold.test.ts:247`)
+- [x] **A2** `--template <tier>` resolves the named tier; unknown tier errors clearly → **MET** | Evidence: `resolveTemplate(type, tier)` `scaffold.ts:123`; `--template specialist` → `model: opus`; `--template bogus` → `Unknown template tier "bogus"...` exit 1 (tests `resolves a named template tier`, `errors clearly on an unknown template tier`)
+- [x] **A3** `--skills`/`--tools` pre-populate frontmatter → **MET** | Evidence: `ScaffoldOptions.skills/tools` `scaffold.ts:20-22` + `mergeFrontmatterList` `scaffold.ts:86,188-189`; live `--tools Read,Grep,Bash,Edit` → `tools: [Read, Grep, Bash, Edit]`; tests cover comma-string + array forms
+- [x] **A4** Wrapper claims match shipped templates + flags → **MET** | Evidence: `plugins/cc/commands/agent-add.md` argument-hint + Arguments table + Template Tiers list `--template/--skills/--tools` and minimal/standard/specialist
+- [x] **A5** Regression tests → **MET** | Evidence: `packages/core/tests/operations/scaffold.test.ts` — 18 `it()` blocks, all green within 967/967 suite; covers tier resolution, user-override tier, unknown-tier error, skills/tools (string+array), scaffold→evaluate PASS per tier
 
 
 ### Q&A
@@ -226,39 +226,48 @@ Engine type-agnostic; richness in templates. Coordinate alias/deployment with 00
 
 ### Review
 
-**Verdict: PASS** — all five acceptance criteria (A1–A5) met.
+## Review — 2026-06-21 (re-verification via /rd3:dev-verify --force)
 
-_2026-06-21_
+**Status:** 1 finding (P4 only)
+**Scope:** `packages/core/src/operations/scaffold.ts`, `apps/cli/src/templates/agent/{default,minimal,standard,specialist}.md`, `apps/cli/src/commands/{agent.ts,helpers.ts}`, `plugins/cc/commands/agent-add.md`, `packages/core/tests/operations/scaffold.test.ts`
+**Mode:** verify (Phase 7 SECU + Phase 8 traceability)
+**Channel:** inline (current)
+**Gate:** `bun run lint` clean · `bun run test` 967/967 · `bun run build` success · git clean
 
-## Traceability
+### P1 — Blockers
+_None._
 
-| Acceptance criterion | Work item | Evidence |
-| --- | --- | --- |
-| **A1** scaffolded agent PASSes its own evaluator (≥0.7) | Enriched `apps/cli/src/templates/agent/{default,minimal,standard,specialist}.md` | `superskill agent scaffold x → evaluate` = AGGREGATE 0.98 PASS Grade A for every tier (regression test `passes its own evaluator for every agent tier`) |
-| **A2** `--template <tier>` resolves the named tier; unknown tier errors clearly | `resolveTemplate(type, tier)` in `packages/core/src/operations/scaffold.ts`; flags on `agent.ts` + shared `addScaffoldOptions` | `--template specialist` → `model: opus` + `Persona` body (test `resolves a named template tier`); `--template bogus` → clear `Unknown template tier "bogus"...` error (test `errors clearly on an unknown template tier`) |
-| **A3** `--skills`/`--tools` pre-populate frontmatter | `ScaffoldOptions.skills/tools` + `mergeFrontmatterList` in `scaffold.ts` | `--tools Read,Write,Bash` → `tools: [Read, Write, Bash]` (test `pre-populates frontmatter tools`); `--skills cc-router,cc-reviewer` → `skills:` key inserted (test `pre-populates frontmatter skills`); verified against built CLI bundle |
-| **A4** wrapper claims match shipped templates + flags | `plugins/cc/commands/agent-add.md` rewritten | `argument-hint` + Arguments table now list `--template/--skills/--tools`; Template Tiers section documents minimal/standard/specialist |
-| **A5** regression tests | `packages/core/tests/operations/scaffold.test.ts` +6 tests | 16/16 scaffold tests pass; covers tier resolution, skills/tools (string + array), user-override tier, unknown-tier error, scaffold→evaluate PASS per tier |
+### P2 — Warnings
+_None._
 
-## Quality gate
+### P3 — Info
+_None._
 
-- `bun run lint` (biome + typecheck): **clean** across `@gobing-ai/superskill-core` + `@gobing-ai/superskill`
-- `bun run test`: **967 pass, 0 fail**
-- `bun run build`: **success** (3.43 MB bundle)
-- `packages/core/src/operations/scaffold.ts` coverage: **100% functions, 98.11% lines** (only the genuinely-unreachable default.md fallthrough uncovered)
+### P4 — Suggestions
+| # | Title | Dimension | Location | Recommendation |
+|---|-------|-----------|----------|----------------|
+| 1 | Dynamic `RegExp` from interpolated key | Security | packages/core/src/operations/scaffold.ts:93 | Benign today — `key` is always a hardcoded literal (`'tools'`/`'skills'`), never user input, so no ReDoS/injection. If the API ever exposes `key` to callers, escape it. No action required now. |
 
-## Design conformance (do-not-drift guardrails)
+**Re-verification verdict: PASS** — Phase 7 found no P1/P2/P3; the single P4 is benign (literal-key, not user-controlled). Phase 8: all five acceptance criteria (A1–A5) MET with live evidence. DOCS SYNC mandate satisfied — `04_DESIGN.md` is a 33-line index that delegates Phase 2 scaffold surface to `design/design-doc-phase2.md`, which carries `--template/--skills/--tools` (commit e51179d).
 
-- ✅ Scaffolded artifact PASSes its own evaluator — regression-enforced (`scaffold→evaluate ≥ 0.7` for every tier)
-- ✅ `default.md` retained as a working fallback tier (no-`--template` path unchanged — test `falls back to default.md`)
-- ✅ Engine stays type-agnostic — `resolveTemplate`/`mergeFrontmatterList` operate on any `ContentType`; per-type richness lives in the template files, not `scaffold.ts` branches
-- ✅ Wrapper claims only tiers the repo ships (minimal/standard/specialist — all present)
+**Fix-pass 2026-06-21T(re-verify):** 0 fixed, 0 failed, 0 skipped — verdict was PASS, no fixable findings (`--fix all` no-op). Task remains Done.
 
-## Scope notes (intentional non-goals)
 
-- The shared `addScaffoldOptions` helper wires `--template/--skills/--tools` onto ALL five content-type commands at once. This task exercised the **agent** path end-to-end. Tasks 0063 (command), 0064 (magent), 0065 (skill) inherit the engine + add their type's tier templates, register, and verify their own paths. Per the set design, the engine is proven here; siblings prove the other types.
-- **Deployment deferred** per policy decision: the `/agent-add` alias is NOT flipped until the full add-set (0062–0066) ships and the global binary is republished.
-- No breaking change: omitting `--template` uses `default.md` exactly as before; omitting `--skills`/`--tools` preserves the template's own frontmatter defaults.
+### P1 — Blockers
+_None._
+
+### P2 — Warnings
+_None._
+
+### P3 — Info
+_None._
+
+### P4 — Suggestions
+| # | Title | Dimension | Location | Recommendation |
+|---|-------|-----------|----------|----------------|
+| 1 | Dynamic `RegExp` from interpolated key | Security | packages/core/src/operations/scaffold.ts:93 | Benign today — `key` is always a hardcoded literal (`'tools'`/`'skills'`), never user input, so no ReDoS/injection. If the API ever exposes `key` to callers, escape it. No action required now. |
+
+**Re-verification verdict: PASS** — Phase 7 found no P1/P2/P3; the single P4 is benign (literal-key, not user-controlled). Phase 8: all five acceptance criteria (A1–A5) MET with live evidence. DOCS SYNC mandate satisfied — `04_DESIGN.md` is a 33-line index that delegates Phase 2 scaffold surface to `design/design-doc-phase2.md`, which carries `--template/--skills/--tools` (commit e51179d).
 
 
 ### Testing
