@@ -272,9 +272,10 @@ describe('executeInstall', () => {
         expect(skillContent).toContain('disable-model-invocation: true');
         // demo:dev-run → demo-dev-run (scoped to plugin prefix)
         expect(skillContent).toContain('Use demo-dev-run');
-        // Slash command translation: /demo:dev-run → $demo-dev-run (codex dialect)
-        // Note: slash translation runs in transformMarkdownDirectory AFTER the mapper
-        expect(skillContent).toContain('demo-dev-run 0004');
+        // Slash command translation: /demo:dev-run → $demo-dev-run (codex dialect).
+        // Slash translation runs in transformMarkdownDirectory; the mapper must
+        // leave the `:` intact (not pre-rewrite it) so the translator can match.
+        expect(skillContent).toContain('$demo-dev-run 0004');
     });
 
     it('copies superskill-owned target output when not dry-run', async () => {

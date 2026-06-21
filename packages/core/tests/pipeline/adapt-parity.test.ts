@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'bun:test';
-import { normalizeFrontmatter } from '../../src/pipeline/frontmatter';
+import { adaptCommandToSkill } from '../../src/pipeline/adapt-command';
+import { adaptSubagentToPi, adaptSubagentToSkill } from '../../src/pipeline/adapt-subagent';
 import { convertToPiSubagent } from '../../src/pipeline/pi-subagent';
 import { rewriteSkillReferences } from '../../src/pipeline/rewrite-references';
 import { translateSlashCommands } from '../../src/pipeline/slash-command';
@@ -11,43 +12,50 @@ import type { Target } from '../../src/targets';
  *
  * The deleted adapters (cc-{agents,commands,skills}/scripts/adapt.ts) were
  * removed in Phase 3 §2.1 with disposition "fold into superskill install
- * conversion pipeline." This test asserts that the 4 pipeline stages —
- * rewriteSkillReferences (scoped), translateSlashCommands, normalizeFrontmatter,
- * convertToPiSubagent — fully cover the deleted-adapter behavior.
+ * conversion pipeline." This test asserts the real production transforms —
+ * the mapper's adapt-* functions plus the per-target install pass —
+ * fully cover the deleted-adapter behavior.
  *
- * Wiring (commands/install.ts transformMarkdownDirectory):
- * - skills:    translateSlashCommands → rewriteSkillReferences(content, plugin)
- * - commands:  normalizeFrontmatter → translateSlashCommands → rewriteSkillReferences (via mapper + per-target pass)
- * - subagents: normalizeFrontmatter → rewriteSkillReferences → convertToPiSubagent (pi/omp only)
+ * Real wiring:
+ * - skills:    mapper rewriteSkillReferences, then per-target
+ *              translateSlashCommands → rewriteSkillReferences (install.ts).
+ * - commands:  mapper adaptCommandToSkill (name replace + disable-model-invocation
+ *              + arg/tools normalize + scoped rewrite), then per-target
+ *              translateSlashCommands → rewriteSkillReferences.
+ * - subagents: mapper adaptSubagentToSkill; for pi/omp, install dispatches
+ *              adaptSubagentToPi (Pi native agent YAML) instead.
  *
- * Reference rewriting is now plugin-scoped (task 0045 R4): rewriteSkillReferences
- * only rewrites `<plugin>:<name>` for the plugin currently being installed,
- * so `node:fs`, `bun:test`, and other-plugin refs survive untouched. The legacy
- * hardcoded `/(rd3|wt):/` rewriter was deleted.
+ * Note: adaptCommandToSkill / adaptSubagentToSkill REPLACE any existing `name:`
+ * with the canonical `<plugin>-<name>` (expectedName) — they do not preserve it.
+ *
+ * Reference rewriting is plugin-scoped (task 0045 R4): only `<plugin>:<name>`
+ * for the plugin being installed is rewritten, so `node:fs`, `bun:test`, and
+ * other-plugin refs survive untouched.
  */
 
 /** The plugin prefix these parity tests install under. */
 const PLUGIN = 'rd3';
 
-/** Simulate the install pipeline wiring for a command file. */
-function applyCommandPipeline(content: string, name: string, target: Target): string {
-    let result = normalizeFrontmatter(content, name);
+/** No fixture here references a real skill directory, so nothing resolves. */
+const noSkillExists = (_bareName: string): boolean => false;
+
+/** Mirror the install pipeline for a command file: mapper adapt + per-target pass. */
+function applyCommandPipeline(content: string, expectedName: string, target: Target): string {
+    let result = adaptCommandToSkill(content, expectedName, PLUGIN);
     result = translateSlashCommands(result, target);
     result = rewriteSkillReferences(result, PLUGIN);
     return result;
 }
 
-/** Simulate the install pipeline wiring for a subagent file (pi/omp). */
-function applySubagentPipeline(content: string, name: string, target: Target): string {
-    let result = normalizeFrontmatter(content, name);
-    result = rewriteSkillReferences(result, PLUGIN);
+/** Mirror the install pipeline for a subagent file: Pi dispatch for pi/omp, else skill adapt. */
+function applySubagentPipeline(content: string, expectedName: string, target: Target): string {
     if (target === 'pi' || target === 'omp') {
-        result = convertToPiSubagent(result);
+        return adaptSubagentToPi(content, expectedName, PLUGIN, noSkillExists);
     }
-    return result;
+    return adaptSubagentToSkill(content, expectedName, PLUGIN);
 }
 
-/** Simulate the install pipeline wiring for a skill file. */
+/** Mirror the install pipeline for a skill file. */
 function applySkillPipeline(content: string): string {
     return rewriteSkillReferences(content, PLUGIN);
 }
@@ -125,16 +133,18 @@ Run the thing.`;
             expect(result).toContain('name: my-cmd');
         });
 
-        it('preserves existing name in command frontmatter', () => {
+        it('replaces existing name with the canonical expectedName in command frontmatter', () => {
             const cmd = `---
 name: existing-name
 description: A command.
 ---
 
 Run the thing.`;
+            // adaptCommandToSkill canonicalizes the name to expectedName — the
+            // source's own name: is dropped (production behavior).
             const result = applyCommandPipeline(cmd, 'my-cmd', 'codex');
-            expect(result).toContain('name: existing-name');
-            expect(result).not.toContain('name: my-cmd');
+            expect(result).toContain('name: my-cmd');
+            expect(result).not.toContain('name: existing-name');
         });
 
         it('injects missing name into subagent frontmatter', () => {
@@ -225,18 +235,20 @@ You are a helper. Use rd3:dev-run.`;
             // Colon refs rewritten
             expect(result).not.toMatch(/rd3:dev-run/);
         });
-        it('all 4 pipeline stages exist and are pure functions', () => {
-            // This test documents the parity: the 4 stages cover all deleted adapter transforms.
-            // If any stage is removed, this test fails — surfacing the gap.
+        it('all production transforms exist and are pure functions', () => {
+            // This test documents the parity: these transforms cover all deleted
+            // adapter behavior. If any is removed, this test fails — surfacing the gap.
             expect(typeof rewriteSkillReferences).toBe('function');
             expect(typeof translateSlashCommands).toBe('function');
-            expect(typeof normalizeFrontmatter).toBe('function');
+            expect(typeof adaptCommandToSkill).toBe('function');
+            expect(typeof adaptSubagentToSkill).toBe('function');
             expect(typeof convertToPiSubagent).toBe('function');
 
             // Pure: same input → same output, no side effects
             const input = 'Use rd3:dev-run';
             expect(rewriteSkillReferences(input, PLUGIN)).toBe(rewriteSkillReferences(input, PLUGIN));
-            expect(normalizeFrontmatter(input, 'test')).toBe(normalizeFrontmatter(input, 'test'));
+            const cmd = '---\ndescription: d\n---\n\nbody';
+            expect(adaptCommandToSkill(cmd, 'test', PLUGIN)).toBe(adaptCommandToSkill(cmd, 'test', PLUGIN));
         });
     });
 

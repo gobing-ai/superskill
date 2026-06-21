@@ -12,5 +12,16 @@ export function rewriteSkillReferences(content: string, pluginPrefix: string): s
     // or `+`), then anchor to a word boundary + colon + lowercase-hyphenated name.
     const escaped = pluginPrefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const re = new RegExp(`\\b(${escaped}):([a-z][a-z0-9-]*)`, 'gi');
-    return content.replace(re, '$1-$2');
+
+    // Leave slash-command lines (`/plugin:cmd ...`) untouched — colon rewriting
+    // would strip the `:` the slash-dialect translator needs, defeating it. Slash
+    // commands are owned by translateSlashCommands, which must run on these lines
+    // first; prose/frontmatter colon refs are rewritten here.
+    return content
+        .split('\n')
+        .map((line) => (SLASH_COMMAND_LINE_RE.test(line) ? line : line.replace(re, '$1-$2')))
+        .join('\n');
 }
+
+/** A standalone Claude-style slash-command line: `/plugin:command [args]`. */
+const SLASH_COMMAND_LINE_RE = /^\s*\/[a-zA-Z0-9._-]+:[a-zA-Z0-9._-]+(\s|$)/;

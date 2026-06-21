@@ -94,7 +94,7 @@ packages/core/src/                # ── Reusable domain logic (@gobing-ai/sup
 ├── pipeline/                     # ── Conversion transformations (pure stage functions) ──
 │   ├── adapt-command.ts          # Adapt Claude command .md → Skills 2.0 skill entry
 │   ├── adapt-subagent.ts         # Adapt Claude subagent .md → skill entry / Pi native agent
-│   ├── frontmatter.ts            # Frontmatter name-injection normalization
+│   ├── frontmatter-walk.ts       # Shared frontmatter-block walker for the adapt-* stages
 │   ├── pi-subagent.ts            # pi subagent conversion stage
 │   ├── pi-tools.ts               # Claude → Pi tool-name normalization
 │   ├── rewrite-references.ts     # Rewrite scoped plugin:name colon references
