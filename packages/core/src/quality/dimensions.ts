@@ -55,6 +55,12 @@ export const DIMENSION_REGISTRY: Record<ContentType, string[]> = {
     magent: ['completeness', 'platform-coverage', 'conciseness', 'tone-consistency', 'safety'],
 };
 
+/** Imperative keywords signalling clear, directive prose. Shared by clarity scorers. */
+export const IMPERATIVE_KEYWORDS = ['must', 'should', 'never', 'always', 'required', 'ensure', 'validate'] as const;
+
+/** Vague hedging terms that weaken directive prose. Shared by clarity scorers. */
+export const VAGUE_KEYWORDS = ['maybe', 'perhaps', 'might', 'could be', 'probably'] as const;
+
 /** Required frontmatter fields per content type. Consumed by validate (F010) and evaluate (F009). */
 export const REQUIRED_FIELDS: Record<ContentType, string[]> = {
     skill: ['name', 'description'],
@@ -77,6 +83,28 @@ export function computeAggregate(dimensions: Record<string, DimensionScore>): nu
     const scores = Object.values(dimensions).map((d) => d.score);
     if (scores.length === 0) return 0;
     return scores.reduce((a, b) => a + b, 0) / scores.length;
+}
+
+// ── Shared Dimension Scorers ───────────────────────────────────────────────────
+
+/**
+ * Score the `clarity` dimension from a body's imperative vs vague keyword density.
+ *
+ * Unified formula for skill and command (was divergent — skill used a 0.5-baseline
+ * symmetric scale, command used a raw difference that floored at 0). Uses the
+ * 0.5-baseline scale so neutral prose scores mid-range and the two content types
+ * are comparable: `clamp((imperative - vague) / 2 + 0.5)`.
+ */
+export function scoreClarityFromDensities(body: string): DimensionScore {
+    const imperative = keywordDensity(body, [...IMPERATIVE_KEYWORDS]);
+    const vague = keywordDensity(body, [...VAGUE_KEYWORDS]);
+    const score = clamp((imperative - vague) / 2 + 0.5);
+
+    const lower = body.toLowerCase();
+    const found = VAGUE_KEYWORDS.filter((t) => lower.includes(t));
+    const note = found.length === 0 ? 'Good imperative style' : `Vague terms found: ${found.join(', ')}`;
+
+    return { score, note };
 }
 
 // ── Heuristic Helpers ────────────────────────────────────────────────────────

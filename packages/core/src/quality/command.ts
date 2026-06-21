@@ -3,10 +3,10 @@ import {
     computeAggregate,
     type DimensionScore,
     extractBody,
-    keywordDensity,
     parseFrontmatterSafe,
     type QualityReport,
     REQUIRED_FIELDS,
+    scoreClarityFromDensities,
     scorePresence,
 } from './dimensions';
 
@@ -28,21 +28,7 @@ function scoreCompleteness(data: Record<string, unknown>): DimensionScore {
 }
 
 function scoreClarity(body: string): DimensionScore {
-    const imperative = keywordDensity(body, ['must', 'should', 'never', 'always', 'required', 'ensure', 'validate']);
-    const vague = keywordDensity(body, ['maybe', 'perhaps', 'might', 'could be', 'probably']);
-    const score = clamp(imperative - vague);
-
-    const detectedVague: string[] = [];
-    for (const v of ['maybe', 'perhaps', 'might', 'could be', 'probably']) {
-        if (new RegExp(`(?:^|\\s)${v.replace(/\s/g, '\\s')}(?:\\s|$|[.,;:!?])`, 'i').test(body)) {
-            detectedVague.push(v);
-        }
-    }
-
-    const note =
-        detectedVague.length > 0 ? `Uses vague language: ${detectedVague.join(', ')}` : 'Good imperative style';
-
-    return { score, note };
+    return scoreClarityFromDensities(body);
 }
 
 function scoreArgumentHints(data: Record<string, unknown>): DimensionScore {
@@ -68,25 +54,20 @@ function scoreArgumentHints(data: Record<string, unknown>): DimensionScore {
 }
 
 function scoreToolReferences(body: string): DimensionScore {
-    const toolRefs: RegExp[] = [/`[a-z][a-z0-9_-]*`/g, /tool:/gi, /tools:/gi];
-
-    let count = 0;
-    for (const pattern of toolRefs) {
-        // Reset regex state for global patterns
-        pattern.lastIndex = 0;
-        const matches = body.match(pattern);
-        if (matches) count += matches.length;
-    }
-
-    // Deduplicate backtick-quoted names that also appear in tool:/tools: labels
-    // but keep it simple: count total matches
+    // Structured references (`tool:`/`tools:`) are a strong signal — they name a
+    // tool dependency explicitly. Backtick-quoted tokens are a weak secondary
+    // signal: any inline-code span matches, so prose with `json`/`true` must NOT
+    // alone saturate the score (SECU #2). Cap their contribution at 1.
+    const structuredCount = (body.match(/\btools?:/gi) ?? []).length;
+    const backtickCount = (body.match(/`[a-z][a-z0-9_-]*`/g) ?? []).length;
+    const weightedCount = structuredCount + Math.min(backtickCount, 1);
 
     let score: number;
     let note: string;
-    if (count >= 2) {
+    if (structuredCount >= 1 || weightedCount >= 2) {
         score = 1.0;
         note = 'Uses tool references';
-    } else if (count === 1) {
+    } else if (weightedCount === 1) {
         score = 0.6;
         note = 'Limited tool references';
     } else {

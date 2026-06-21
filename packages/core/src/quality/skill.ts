@@ -9,6 +9,7 @@ import {
     parseFrontmatterSafe,
     type QualityReport,
     REQUIRED_FIELDS,
+    scoreClarityFromDensities,
     scoreLength,
     scorePresence,
 } from './dimensions';
@@ -67,24 +68,7 @@ function scoreCompleteness(content: string, data: Record<string, unknown> | null
 }
 
 function scoreClarity(body: string): DimensionScore {
-    const imperativeDensity = keywordDensity(body, [
-        'must',
-        'should',
-        'never',
-        'always',
-        'required',
-        'ensure',
-        'validate',
-    ]);
-    const vagueDensity = keywordDensity(body, ['maybe', 'perhaps', 'might', 'could be', 'probably']);
-    const score = clamp((imperativeDensity - vagueDensity) / 2 + 0.5);
-
-    const lower = body.toLowerCase();
-    const vagueTerms = ['maybe', 'perhaps', 'might', 'could be', 'probably'].filter((t) => lower.includes(t));
-
-    const note = vagueTerms.length === 0 ? 'Good imperative style' : `Vague terms found: ${vagueTerms.join(', ')}`;
-
-    return { score, note };
+    return scoreClarityFromDensities(body);
 }
 
 function scoreTriggerAccuracy(body: string): DimensionScore {
