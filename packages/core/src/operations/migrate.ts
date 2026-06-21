@@ -81,9 +81,17 @@ export function mergeSkillBodies(sources: ParsedFrontmatter[]): string {
     return dedupeLines(concatenated);
 }
 
-/** Collapse exact-duplicate lines and consecutive blank lines. */
+/**
+ * Collapse duplicate Markdown headings and consecutive blank lines.
+ *
+ * Only ATX headings (`^#{1,6} `) are deduplicated — when two merged sources share
+ * a `# Title` or `## Examples`, the heading is kept once. Content lines (prose,
+ * code fences, braces, list items) are preserved verbatim, because identical
+ * content lines are legitimately repeated across skills and dropping them
+ * corrupts structure (e.g. a stray closing ``` or `}` deleted as a "duplicate").
+ */
 export function dedupeLines(text: string): string {
-    const seen = new Set<string>();
+    const seenHeadings = new Set<string>();
     const out: string[] = [];
     let prevBlank = false;
     for (const line of text.split('\n')) {
@@ -93,10 +101,11 @@ export function dedupeLines(text: string): string {
             continue;
         }
         prevBlank = false;
-        if (!seen.has(line)) {
-            seen.add(line);
-            out.push(line);
+        if (/^#{1,6} /.test(line)) {
+            if (seenHeadings.has(line)) continue;
+            seenHeadings.add(line);
         }
+        out.push(line);
     }
     while (out.length > 0 && out[out.length - 1] === '') out.pop();
     return out.join('\n');

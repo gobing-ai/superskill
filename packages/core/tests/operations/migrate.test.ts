@@ -52,8 +52,15 @@ describe('dedupeArray', () => {
 });
 
 describe('dedupeLines', () => {
-    it('collapses exact-duplicate lines keeping first occurrence', () => {
-        expect(dedupeLines('a\nb\na\nc')).toBe('a\nb\nc');
+    it('collapses duplicate Markdown headings keeping first occurrence', () => {
+        expect(dedupeLines('# T\na\n# T\nb')).toBe('# T\na\nb');
+    });
+
+    it('preserves repeated content lines so merged structure is not corrupted', () => {
+        // Code fences, braces, and repeated prose are legitimately duplicated
+        // across merged skills — dropping them would corrupt the output.
+        expect(dedupeLines('a\nb\na\nc')).toBe('a\nb\na\nc');
+        expect(dedupeLines('```\nx\n```\n```\ny\n```')).toBe('```\nx\n```\n```\ny\n```');
     });
 
     it('collapses consecutive blank lines into one', () => {

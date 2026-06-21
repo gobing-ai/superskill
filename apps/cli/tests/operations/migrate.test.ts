@@ -143,7 +143,7 @@ describe('migrateSkills — deterministic merge core', () => {
         expect(fmSection).not.toContain('beta widgets');
     });
 
-    it('body dedupe: identical lines collapsed to first occurrence', async () => {
+    it('body merge: dedupes shared headings but preserves repeated content lines', async () => {
         const dest = join(dir, 'merged.md');
 
         await migrateSkills(['skill-a', 'skill-b'], dest);
@@ -151,14 +151,16 @@ describe('migrateSkills — deterministic merge core', () => {
         const content = readFileSync(dest, 'utf-8');
         const body = content.split('---\n')[2] ?? '';
 
-        // These lines appear in both skills — should appear only once
-        const configureCount = (body.match(/Configure the widget settings\./g) || []).length;
-        expect(configureCount).toBe(1);
-        const validateCount = (body.match(/Validate the configuration\./g) || []).length;
-        expect(validateCount).toBe(1);
-        // "## Steps" appears in both — deduped to one
+        // "## Steps" appears in both sources — deduped to one (headings collapse)
         const stepsHeaderCount = (body.match(/## Steps/g) || []).length;
         expect(stepsHeaderCount).toBe(1);
+
+        // Content lines that appear in both skills are preserved verbatim — dropping
+        // them would corrupt structure (a repeated step is real content, not noise).
+        const configureCount = (body.match(/Configure the widget settings\./g) || []).length;
+        expect(configureCount).toBe(2);
+        const validateCount = (body.match(/Validate the configuration\./g) || []).length;
+        expect(validateCount).toBe(2);
     });
 
     it('throws ENOENT for missing source (exit 2)', () => {
