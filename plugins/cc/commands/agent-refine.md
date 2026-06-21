@@ -1,6 +1,6 @@
 ---
 description: Evaluate and fix agent issues in one step
-argument-hint: "<agent-path> [--auto] [--save] [--target <platform>]"
+argument-hint: "<agent-path> [--auto] [--save] [--dry-run] [--target <platform>]"
 allowed-tools: ["Read", "Write", "Glob", "Bash", "Skill"]
 ---
 
@@ -8,7 +8,7 @@ allowed-tools: ["Read", "Write", "Glob", "Bash", "Skill"]
 
 Wraps **cc:cc-agents** skill.
 
-Run evaluation, apply deterministic fixes, then perform LLM content improvement — all in one step. Delegates to **cc:cc-agents** skill.
+Run evaluation, apply deterministic structural fixes (missing fields, type coercion, whitespace), then re-evaluate — all in one step. Delegates to **cc:cc-agents** skill.
 
 ## When to Use
 
@@ -21,16 +21,19 @@ Run evaluation, apply deterministic fixes, then perform LLM content improvement 
 |----------|-------------|---------|
 | `agent-path` | Path to the agent .md file | (required) |
 | `--auto` | Skip interactive prompts (auto-apply fixes) | false |
-| `--save` | Save evaluation results to file | false |
+| `--save` | Persist the evaluation to the evaluation store | false |
+| `--dry-run` | Preview classified fixes and projected delta without writing | false |
 | `--target` | Target platform | claude-code |
 
 ## Examples
 
 ```bash
-# Refine an agent (evaluate + fix + content improvement)
+# Refine an agent (evaluate + structural fixes + re-evaluate)
 /cc:agent-refine ./agents/my-agent.md
 # Auto-refine without prompts
 /cc:agent-refine ./agents/my-agent.md --auto --save
+# Preview fixes without writing
+/cc:agent-refine ./agents/my-agent.md --dry-run
 ```
 
 ## Implementation
