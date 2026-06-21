@@ -1,20 +1,20 @@
 ---
 name: Make cc agent-add ready to replace rd3 agent-add
 description: Make cc agent-add ready to replace rd3 agent-add
-status: Backlog
+status: Testing
 created_at: 2026-06-21T21:14:01.172Z
-updated_at: 2026-06-21T21:14:01.172Z
+updated_at: 2026-06-21T23:22:52.122Z
 folder: docs/tasks
 type: task
 feature-id: ""
 priority: high
 tags: ["cc-agents","add","scaffold","dogfood","migration","rd3-parity"]
 impl_progress:
-  planning: pending
-  design: pending
-  implementation: pending
-  review: pending
-  testing: pending
+  planning: complete
+  design: complete
+  implementation: complete
+  review: complete
+  testing: complete
 ---
 
 ## 0062. Make cc agent-add ready to replace rd3 agent-add
@@ -165,6 +165,32 @@ land in frontmatter; unknown tier errors clearly.
 
 ### Solution
 
+Provisional approach (will be updated with actual execution record during implementation).
+
+**Shared engine fix (`packages/core/src/operations/scaffold.ts`):**
+- `ScaffoldOptions` gains `template?`, `skills?`, `tools?` (type-agnostic; inherited by all 5 content-type commands via the shared `addScaffoldOptions` helper)
+- `resolveTemplate(type, tier?)` resolves `<type>/<tier>.md` when a tier is given, falling back to `<type>/default.md` (no breaking change to the no-`--template` path)
+- `substituteVars` gains `<!-- SKILLS -->` and `<!-- TOOLS -->` placeholders (frontmatter array injection)
+
+**Agent templates (`apps/cli/src/templates/agent/`):**
+- Enrich `default.md` so a freshly scaffolded agent PASSes its own evaluator (real Role persona line ≥30 chars with ≥2 of {you are/role/specialist/persona}; `tools:` array with ≥3 entries; `skill:` structured reference in body). Keep `model: sonnet` (model-fit 1.0).
+- Ship `minimal.md` / `standard.md` / `specialist.md` tiers. Keep `default.md` as a working fallback tier.
+
+**Agent surface (`apps/cli/src/commands/agent.ts` + `helpers.ts`):**
+- Add `--template <tier>`, `--skills <list>`, `--tools <list>` to `addScaffoldOptions` (shared helper — wires all 5 subcommands; this task exercises the agent path, 0063-0065 verify the others)
+- Parse comma-separated lists into frontmatter arrays
+
+**Wrapper (`plugins/cc/commands/agent-add.md`):**
+- Align `argument-hint` + Arguments table to real templates + flags
+
+**Tests (`packages/core/tests/operations/scaffold.test.ts`):**
+- scaffold→evaluate ≥ PASS (0.7) for each agent tier
+- `--template specialist` resolves the specialist template
+- `--tools Read,Write,Bash` lands in frontmatter `tools:`
+- `--skills a,b` lands in frontmatter `skills:`
+- unknown tier → clear error
+
+**Do-not-drift:** keep `default.md` as a working fallback; keep the engine type-agnostic (per-type richness in templates, not `scaffold.ts` branches).
 
 
 ### Plan
@@ -200,10 +226,53 @@ Engine type-agnostic; richness in templates. Coordinate alias/deployment with 00
 
 ### Review
 
+**Verdict: PASS** — all five acceptance criteria (A1–A5) met.
+
+_2026-06-21_
+
+## Traceability
+
+| Acceptance criterion | Work item | Evidence |
+| --- | --- | --- |
+| **A1** scaffolded agent PASSes its own evaluator (≥0.7) | Enriched `apps/cli/src/templates/agent/{default,minimal,standard,specialist}.md` | `superskill agent scaffold x → evaluate` = AGGREGATE 0.98 PASS Grade A for every tier (regression test `passes its own evaluator for every agent tier`) |
+| **A2** `--template <tier>` resolves the named tier; unknown tier errors clearly | `resolveTemplate(type, tier)` in `packages/core/src/operations/scaffold.ts`; flags on `agent.ts` + shared `addScaffoldOptions` | `--template specialist` → `model: opus` + `Persona` body (test `resolves a named template tier`); `--template bogus` → clear `Unknown template tier "bogus"...` error (test `errors clearly on an unknown template tier`) |
+| **A3** `--skills`/`--tools` pre-populate frontmatter | `ScaffoldOptions.skills/tools` + `mergeFrontmatterList` in `scaffold.ts` | `--tools Read,Write,Bash` → `tools: [Read, Write, Bash]` (test `pre-populates frontmatter tools`); `--skills cc-router,cc-reviewer` → `skills:` key inserted (test `pre-populates frontmatter skills`); verified against built CLI bundle |
+| **A4** wrapper claims match shipped templates + flags | `plugins/cc/commands/agent-add.md` rewritten | `argument-hint` + Arguments table now list `--template/--skills/--tools`; Template Tiers section documents minimal/standard/specialist |
+| **A5** regression tests | `packages/core/tests/operations/scaffold.test.ts` +6 tests | 16/16 scaffold tests pass; covers tier resolution, skills/tools (string + array), user-override tier, unknown-tier error, scaffold→evaluate PASS per tier |
+
+## Quality gate
+
+- `bun run lint` (biome + typecheck): **clean** across `@gobing-ai/superskill-core` + `@gobing-ai/superskill`
+- `bun run test`: **967 pass, 0 fail**
+- `bun run build`: **success** (3.43 MB bundle)
+- `packages/core/src/operations/scaffold.ts` coverage: **100% functions, 98.11% lines** (only the genuinely-unreachable default.md fallthrough uncovered)
+
+## Design conformance (do-not-drift guardrails)
+
+- ✅ Scaffolded artifact PASSes its own evaluator — regression-enforced (`scaffold→evaluate ≥ 0.7` for every tier)
+- ✅ `default.md` retained as a working fallback tier (no-`--template` path unchanged — test `falls back to default.md`)
+- ✅ Engine stays type-agnostic — `resolveTemplate`/`mergeFrontmatterList` operate on any `ContentType`; per-type richness lives in the template files, not `scaffold.ts` branches
+- ✅ Wrapper claims only tiers the repo ships (minimal/standard/specialist — all present)
+
+## Scope notes (intentional non-goals)
+
+- The shared `addScaffoldOptions` helper wires `--template/--skills/--tools` onto ALL five content-type commands at once. This task exercised the **agent** path end-to-end. Tasks 0063 (command), 0064 (magent), 0065 (skill) inherit the engine + add their type's tier templates, register, and verify their own paths. Per the set design, the engine is proven here; siblings prove the other types.
+- **Deployment deferred** per policy decision: the `/agent-add` alias is NOT flipped until the full add-set (0062–0066) ships and the global binary is republished.
+- No breaking change: omitting `--template` uses `default.md` exactly as before; omitting `--skills`/`--tools` preserves the template's own frontmatter defaults.
 
 
 ### Testing
 
+**Testing**
+
+- **Command:** `bun run lint && bun run test && bun run build` (full project gate) + functional smoke against the freshly built CLI bundle (`bun apps/cli/dist/index.js agent scaffold|evaluate`)
+- **Scope:** scaffold engine (`packages/core/src/operations/scaffold.ts`) tier/skills/tools paths; agent templates (default/minimal/standard/specialist) scaffold→evaluate; agent command wiring; wrapper accuracy
+- **Result: PASS** — 967/967 tests, lint+typecheck clean, build success. `packages/core/src/operations/scaffold.ts` coverage 100% funcs / 98.11% lines. Functional: `agent scaffold x --description ...` → `evaluate` = AGGREGATE 0.98 PASS Grade A (every tier); `--template specialist --tools Read,Grep,Bash,Edit` → correct frontmatter; `--template bogus` → clear error. Run: 2026-06-21T23:35:00Z.
+- **Evidence:**
+  - 6 new regression tests in `packages/core/tests/operations/scaffold.test.ts` (16 total in that file, all pass)
+  - scaffold.ts coverage: `100.00 | 98.11 | 155-156` (155-156 = unreachable default.md fallthrough)
+  - Built-CLI smoke: `scaffold smoke-spec --template specialist` → evaluate = `AGGREGATE 0.98 Verdict PASS Grade A`
+- **Next action:** none — all gates clean; ready for `done` transition pending postflight audit
 
 
 ### Artifacts
