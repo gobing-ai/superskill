@@ -38,6 +38,7 @@ export * from './pipeline/slash-command';
 export * from './quality/agent';
 export * from './quality/command';
 export * from './quality/dimensions';
+export * from './quality/evaluate';
 export * from './quality/hook';
 export * from './quality/magent';
 export * from './quality/rubric';

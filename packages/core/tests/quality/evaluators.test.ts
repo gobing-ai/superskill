@@ -3,6 +3,7 @@ import { evaluateAgent } from '../../src/quality/agent';
 import { evaluateCommand } from '../../src/quality/command';
 import type { ContentType, QualityReport } from '../../src/quality/dimensions';
 import { computeAggregate, DIMENSION_REGISTRY, REQUIRED_FIELDS, scorePresence } from '../../src/quality/dimensions';
+import { evaluate } from '../../src/quality/evaluate';
 import { evaluateHook } from '../../src/quality/hook';
 import { evaluateMagent } from '../../src/quality/magent';
 import { evaluateSkill } from '../../src/quality/skill';
@@ -405,4 +406,26 @@ platforms: claude, codex, pi`,
         expect(report.dimensions['platform-coverage']?.score).toBeGreaterThan(0.3);
         expect(report.dimensions['platform-coverage']?.note).toContain('platforms covered');
     });
+});
+
+describe('evaluate (dispatch verb)', () => {
+    // The verb must be a drop-in for the per-type dispatch every caller used to
+    // rebuild — routing each ContentType to its evaluator and returning an
+    // identical report.
+    const cases: Array<[ContentType, string, (c: string, t: string) => QualityReport]> = [
+        ['skill', SKILL_GOOD, evaluateSkill],
+        ['command', COMMAND_GOOD, evaluateCommand],
+        ['agent', AGENT_GOOD, evaluateAgent],
+        ['hook', HOOK_GOOD, evaluateHook],
+        ['magent', MAGENT_GOOD, evaluateMagent],
+    ];
+
+    for (const [type, sample, direct] of cases) {
+        it(`routes ${type} to its evaluator with an equivalent report`, () => {
+            const target = `${type}/dispatch.md`;
+            const viaVerb = evaluate(type, sample, target);
+            assertReportShape(viaVerb, type);
+            expect(viaVerb).toEqual(direct(sample, target));
+        });
+    }
 });

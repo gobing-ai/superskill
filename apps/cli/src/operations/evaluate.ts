@@ -2,11 +2,7 @@ import { readFileSync } from 'node:fs';
 import {
     type ContentType,
     type DimensionScore,
-    evaluateAgent,
-    evaluateCommand,
-    evaluateHook,
-    evaluateMagent,
-    evaluateSkill,
+    evaluate as evaluateContent,
     hashContent,
     loadRubric,
     type QualityReport,
@@ -42,16 +38,6 @@ export interface EvaluateOptions {
 
 /** Result of an evaluate call — aliases QualityReport from F009. */
 export type EvaluationResult = QualityReport;
-
-// ── Evaluator Dispatch ───────────────────────────────────────────────────────
-
-const EVALUATORS: Record<ContentType, (content: string, target: string) => QualityReport> = {
-    skill: evaluateSkill,
-    command: evaluateCommand,
-    agent: evaluateAgent,
-    hook: evaluateHook,
-    magent: evaluateMagent,
-};
 
 // ── Core ─────────────────────────────────────────────────────────────────────
 
@@ -96,8 +82,7 @@ export async function evaluate(
     }
 
     // 6. Heuristic mode (default): deterministic F009 evaluators
-    const evaluator = EVALUATORS[type];
-    const report = evaluator(content, resolvedTarget);
+    const report = evaluateContent(type, content, resolvedTarget);
     report.content = resolveContentName(resolvedPath);
 
     if (opts?.save) {
@@ -142,7 +127,7 @@ function emitEnvelope(
     const contentName = resolveContentName(resolvedPath);
 
     // Baseline: heuristic QualityReport for the same content
-    const baseline = EVALUATORS[type](content, resolvedTarget);
+    const baseline = evaluateContent(type, content, resolvedTarget);
     baseline.content = contentName;
 
     const envelope = {
