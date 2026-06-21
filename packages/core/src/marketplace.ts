@@ -107,8 +107,9 @@ export function resolvePlugin(marketplacePath: string | undefined, pluginName: s
         );
     }
 
-    // Reject path-escaping sources
-    if (source.includes('..')) {
+    // Reject path-escaping sources — match `..` only as a path segment, so
+    // legitimate names containing `..` as a substring (e.g. `./a..b`) are allowed.
+    if (/(?:^|\/)\.\.(?:\/|$)/.test(source)) {
         throw new Error(`Plugin source for '${pluginName}' escapes the marketplace root: '${source}'.`);
     }
 

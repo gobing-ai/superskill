@@ -130,6 +130,20 @@ describe('resolvePlugin', () => {
         expect(() => resolvePlugin(join(claudePluginDir, 'marketplace.json'), 'demo')).toThrow('escapes');
     });
 
+    it('allows ".." as a substring inside a path segment (not a traversal)', () => {
+        tmpDir = mkdtempSync('superskill-mp-');
+        const claudePluginDir = join(tmpDir, '.claude-plugin');
+        mkdirSync(claudePluginDir, { recursive: true });
+        writeFileSync(
+            join(claudePluginDir, 'marketplace.json'),
+            JSON.stringify({ plugins: [{ name: 'demo', source: './a..b' }] }),
+        );
+
+        // ./a..b has '..' only as a substring, not a path segment — it must clear
+        // the escape guard and fail later on the missing plugin.json instead.
+        expect(() => resolvePlugin(join(claudePluginDir, 'marketplace.json'), 'demo')).toThrow('plugin.json');
+    });
+
     it('throws when marketplace manifest is missing', () => {
         expect(() => resolvePlugin('/nonexistent/marketplace.json', 'demo')).toThrow('not found');
     });

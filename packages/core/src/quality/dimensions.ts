@@ -66,7 +66,13 @@ export const REQUIRED_FIELDS: Record<ContentType, string[]> = {
 
 // ── Aggregate ────────────────────────────────────────────────────────────────
 
-/** Equal-weighted mean of all dimension scores. Returns 0.0 if no dimensions. */
+/**
+ * Equal-weighted mean of all dimension scores. Returns 0.0 if no dimensions.
+ *
+ * Unweighted by design: this is the default heuristic aggregate. Rubric
+ * per-dimension weights apply only on the agent-scored `--ingest` path
+ * (`computeWeightedAggregate` in the CLI evaluate operation), not here.
+ */
 export function computeAggregate(dimensions: Record<string, DimensionScore>): number {
     const scores = Object.values(dimensions).map((d) => d.score);
     if (scores.length === 0) return 0;
