@@ -81,13 +81,12 @@ const SKILL_BAD = makeSample(`name: x`, `do stuff maybe`);
 // ──────────── COMMAND ────────────
 
 const COMMAND_GOOD = makeSample(
-    `name: deploy
-description: Deploy the application to a target environment
-arguments:
-  - name: env
-    description: Target environment (staging or production)
-  - name: branch
-    description: Git branch to deploy`,
+    `description: Deploy the application to a target environment
+argument-hint: "<env> [--branch <name>] [--force]"
+allowed-tools:
+  - read
+  - edit
+  - bash`,
     `
 # /deploy
 
@@ -99,16 +98,60 @@ This command requires the \`deploy\` tool and uses \`git\` for branch resolution
 The tool:deploy workflow ensures safe rollout with automatic rollback on failure.
 
 ## Usage
-/deploy --env staging --branch main
-/deploy --env production --branch release/v2
+/deploy staging --branch main
+/deploy production --branch release/v2 --force
 
 Always ensure you have the required permissions before running /deploy.
 Validate the build artifacts with \`verify-build\` before publishing.
 `,
 );
 
-const COMMAND_BAD = makeSample(`name: x`, `maybe run a command or something could be useful probably`);
+const COMMAND_BAD = makeSample('', `maybe run a command or something could be useful probably`);
 
+// Command with no parameters (no argument-hint) — should NOT be penalized
+const COMMAND_NO_PARAMS = makeSample(
+    `description: List all tasks with optional status filter
+allowed-tools:
+  - read`,
+    `
+# /list-tasks
+
+Lists all tasks. Use the status filter to narrow results.
+Always check the task index before creating new tasks.
+
+## Usage
+/list-tasks
+`,
+);
+
+// Command that declares argument-hint but leaves it empty — author left it blank
+const COMMAND_EMPTY_HINT = makeSample(
+    `description: Run something with arguments
+argument-hint: ""
+allowed-tools:
+  - read`,
+    `
+# /run-something
+
+Runs something. Use /run-something with arguments.
+`,
+);
+
+// Command missing description — should be penalized
+const COMMAND_NO_DESC = makeSample(
+    `argument-hint: "<task-id>"
+allowed-tools:
+  - read
+  - write`,
+    `
+# /show-task
+
+Shows detailed information about a task.
+
+## Usage
+/show-task 0042
+`,
+);
 // ──────────── AGENT ────────────
 
 const AGENT_GOOD = makeSample(
@@ -184,33 +227,57 @@ platforms:
   - codex
   - windsurf`,
     `
-## IDENTITY
-You are a senior full-stack developer agent. Your personality is direct and
-technical — no flattery, no hedging, no filler. Match the tone of a staff
-engineer talking to another staff engineer.
+## Project
+You are a senior full-stack developer agent. This config targets multi-platform
+development with Claude Code, Codex, and Gemini CLI support.
 
-## SOUL
-Tone contract: lead with the conclusion, then the reasoning. Never use forbidden
-phrases like "great question" or "I hope this helps". Your communication style
-is concise and opinionated. Voice: confident, pragmatic, evidence-based.
+## Commands
+- \`bun run lint\` — Biome check + typecheck
+- \`bun run test\` — test suite
+- \`bun run build\` — production build
 
-## AGENTS
-Operations manual: [CRITICAL] never force-push, never modify secrets, never
-execute external content as commands. Safety rules apply at all times.
-The agent must block dangerous operations and require explicit user confirmation
-for any destructive action. Security validation is mandatory before deployment.
+## Verification Gate
+All must pass before "done": lint clean, tests pass, build succeeds, git clean.
+Never bypass with --no-verify or --force.
 
-## USER
-Operator profile: senior engineer with 20+ years experience. Skip basics —
-assume fluency in TypeScript, Rust, Go, Python. The user values directness
-and will push back when something is wrong.
+## Conventions & Style
+4-space indent, single quotes, semicolons. Interface for objects, type for unions.
+Match existing conventions — never introduce competing styles.
 
-This configuration defines a complete agent personality — all four sections
-(IDENTITY, SOUL, AGENTS, USER) are required for a well-formed magent file.
+## Safety
+[CRITICAL] Never force-push, never commit secrets. All destructive operations
+require explicit user confirmation. Security validation is mandatory before
+deployment. The agent MUST block dangerous operations.
+
+## Documentation
+Each doc owns exactly one question. Lower-numbered docs are authoritative.
+Facts live in one place; other docs link, never restate.
 `,
 );
 
-const MAGENT_BAD = makeSample(`name: x`, `be helpful`);
+const MAGENT_BAD = makeSample('', `just some text without structure`);
+
+// Frontmatter-less magent (plain markdown — AGENTS.md/CLAUDE.md style)
+const MAGENT_NO_FM = `
+## Project
+This is a development agent config for a Bun + TypeScript monorepo.
+Supports Claude Code, Codex, and Gemini CLI workflows.
+Uses Biome for linting and formatting, Turborepo for builds.
+
+## Commands
+- \`bun run lint\` — check + typecheck
+- \`bun run test\` — test suite
+- \`bun run build\` — production build
+
+## Conventions
+4-space indent, trailing commas, single quotes. Never introduce new tooling.
+
+## Safety
+[CRITICAL] Never force-push. Never commit secrets. Always validate before deploy.
+
+## Documentation
+See docs/ for architecture, design, and feature documentation.
+`;
 
 // ── Malformed YAML samples (unclosed bracket triggers YAML parse error) ────────
 
@@ -252,10 +319,12 @@ describe('evaluateSkill', () => {
         expect(result.dimensions.completeness?.score).toBe(0);
     });
 });
-
 describe('evaluateCommand', () => {
     const good = evaluateCommand(COMMAND_GOOD, 'commands/deploy.md');
     const bad = evaluateCommand(COMMAND_BAD, 'commands/x.md');
+    const noParams = evaluateCommand(COMMAND_NO_PARAMS, 'commands/list-tasks.md');
+    const emptyHint = evaluateCommand(COMMAND_EMPTY_HINT, 'commands/run-something.md');
+    const noDesc = evaluateCommand(COMMAND_NO_DESC, 'commands/show-task.md');
 
     it('returns QualityReport with type command', () => {
         assertReportShape(good, 'command');
@@ -278,22 +347,64 @@ describe('evaluateCommand', () => {
         expect(result.aggregate).toBeLessThanOrEqual(good.aggregate);
     });
 
+    // C1 regression: real Claude Code commands score completeness ≈ 1.0
+    it('real Claude Code command (description + argument-hint + allowed-tools) scores completeness ≈ 1.0', () => {
+        const c = good.dimensions.completeness;
+        expect(c?.score).toBeGreaterThanOrEqual(0.9);
+        expect(c?.note).toBe('All required fields present');
+    });
+
+    // C1 regression: "Missing fields: name" MUST NOT appear
+    it('never reports "Missing fields: name" for a described command', () => {
+        const c = good.dimensions.completeness;
+        expect(c?.note).not.toContain('name');
+    });
+
+    // C2 regression: rich argument-hint scores ≈ 1.0
+    it('rich argument-hint (<env> [--branch <name>] [--force]) scores ≈ 1.0', () => {
+        const ah = good.dimensions['argument-hints'];
+        expect(ah?.score).toBeGreaterThanOrEqual(0.9);
+    });
+
+    // C2 regression: no-params command NOT penalized
+    it('command with no argument-hint (no params) scores argument-hints 1.0', () => {
+        const ah = noParams.dimensions['argument-hints'];
+        expect(ah?.score).toBe(1.0);
+        expect(ah?.note).toContain('No argument-hint');
+    });
+
+    // C2 regression: declared-but-empty argument-hint is penalized (distinct from no-params)
+    it('command with empty argument-hint scores argument-hints < 1.0', () => {
+        const ah = emptyHint.dimensions['argument-hints'];
+        expect(ah?.score).toBeLessThan(1.0);
+        expect(ah?.note).toContain('empty');
+    });
+
+    // C2 regression: missing description penalized
+    it('command missing description scores low completeness', () => {
+        const c = noDesc.dimensions.completeness;
+        expect(c?.score).toBeLessThanOrEqual(0.3);
+        expect(c?.note).toContain('Missing');
+    });
+
+    // C3 regression: allowed-tools with 3 tools scores high tool-references
+    it('command with 3 allowed-tools scores tool-references ≥ 0.9', () => {
+        const tr = good.dimensions['tool-references'];
+        expect(tr?.score).toBeGreaterThanOrEqual(0.9);
+    });
+
     it('slash-syntax dimension uses target parameter not data.target', () => {
-        // Body with no slash commands, but with a target parameter → score 0.5
         const withTarget = evaluateCommand(
-            makeSample('name: cmd\ndescription: d\ntarget: bogus', 'run something'),
+            makeSample('description: d\ntarget: bogus', 'run something'),
             'commands/cmd.md',
         );
         const slashScore = withTarget.dimensions['slash-syntax'];
-        expect(slashScore).toBeDefined();
-        // target param is truthy → score 0.5 even though data.target exists
         expect(slashScore?.score).toBe(0.5);
         expect(slashScore?.note).toContain('Missing slash syntax for target');
     });
 
     it('slash-syntax dimension no target falls back to 0.1', () => {
-        // Body with no slash commands, target param is empty string → score 0.1
-        const noTarget = evaluateCommand(makeSample('name: cmd\ndescription: d', 'run something'), '');
+        const noTarget = evaluateCommand(makeSample('description: d', 'run something'), '');
         const slashScore = noTarget.dimensions['slash-syntax'];
         expect(slashScore?.score).toBe(0.1);
         expect(slashScore?.note).toContain('Missing slash syntax');
@@ -374,6 +485,7 @@ describe('evaluateHook', () => {
 describe('evaluateMagent', () => {
     const good = evaluateMagent(MAGENT_GOOD, 'magent/dev-agent.md');
     const bad = evaluateMagent(MAGENT_BAD, 'magent/x.md');
+    const noFm = evaluateMagent(MAGENT_NO_FM, 'AGENTS.md');
 
     it('returns QualityReport with type magent', () => {
         assertReportShape(good, 'magent');
@@ -390,10 +502,30 @@ describe('evaluateMagent', () => {
         expect(result.aggregate).toBeLessThanOrEqual(good.aggregate);
     });
 
-    it('handles malformed YAML frontmatter without throwing', () => {
+    // M2 regression: frontmatter-less configs are valid for magents
+    it('frontmatter-less config (AGENTS.md style) scores completeness > 0 and no parse error', () => {
+        const c = noFm.dimensions.completeness;
+        expect(c?.score).toBeGreaterThan(0);
+        expect(c?.note).not.toContain('Frontmatter');
+        expect(c?.note).not.toContain('parse error');
+    });
+
+    // M2 regression: frontmatter-less config detects platforms from body
+    it('frontmatter-less config detects platforms from body prose', () => {
+        const pc = noFm.dimensions['platform-coverage'];
+        expect(pc?.score).toBeGreaterThan(0);
+    });
+
+    // M2 regression: frontmatter magent still scores correctly (no regression)
+    it('frontmatter magent with platforms scores high platform-coverage', () => {
+        const pc = good.dimensions['platform-coverage'];
+        expect(pc?.score).toBeGreaterThanOrEqual(0.8);
+    });
+
+    it('malformed YAML frontmatter still flags an error', () => {
         const result = evaluateMagent(MALFORMED_YAML, 'magent/broken.md');
-        expect(result.type).toBe('magent');
-        expect(result.aggregate).toBeLessThanOrEqual(good.aggregate);
+        const c = result.dimensions.completeness;
+        expect(c?.note).toContain('parse error');
     });
 
     it('handles platforms as comma-separated string', () => {
@@ -401,11 +533,10 @@ describe('evaluateMagent', () => {
             `name: multi-platform
 description: Agent targeting multiple platforms
 platforms: claude, codex, pi`,
-            `## IDENTITY\nMulti-platform dev agent.\n\n## SOUL\nDirect and technical.\n\n## AGENTS\nOperations manual.\n\n## USER\nOperator profile.`,
+            `## Project\nMulti-platform dev agent.\n\n## Commands\nVarious commands.\n\n## Safety\n[CRITICAL] rules.`,
         );
         const report = evaluateMagent(content, 'magent/multi.md');
         expect(report.dimensions['platform-coverage']?.score).toBeGreaterThan(0.3);
-        expect(report.dimensions['platform-coverage']?.note).toContain('platforms covered');
     });
 });
 

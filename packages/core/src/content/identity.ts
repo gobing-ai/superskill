@@ -57,13 +57,15 @@ export function resolveContentPath(type: ContentType, name: string, opts?: Resol
             }
         }
     }
-
     const base = opts?.baseDir ?? cwd();
+
+    // Bare name that already has an extension and exists in cwd (e.g. AGENTS.md, CLAUDE.md)
+    const asIs = join(base, name);
+    if (existsSync(asIs) && statSync(asIs).isFile()) return asIs;
 
     // Direct match: baseDir/<name>.md
     const direct = join(base, `${name}.md`);
     if (existsSync(direct)) return direct;
-
     // Type-specific subdirectories
     const subdirs: Record<ContentType, string> = {
         skill: 'skills',

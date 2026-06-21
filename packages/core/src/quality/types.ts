@@ -71,10 +71,10 @@ export const VAGUE_KEYWORDS = ['maybe', 'perhaps', 'might', 'could be', 'probabl
 /** Required frontmatter fields per content type. Consumed by validate (F010) and evaluate (F009). */
 export const REQUIRED_FIELDS: Record<ContentType, string[]> = {
     skill: ['name', 'description'],
-    command: ['name', 'description'],
+    command: ['description'],
     agent: ['name', 'description', 'model', 'tools'],
     hook: ['name', 'description', 'event'],
-    magent: ['name', 'description'],
+    magent: [],
 };
 
 // ── Aggregate ────────────────────────────────────────────────────────────────

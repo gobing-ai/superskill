@@ -7,22 +7,38 @@ import {
     type QualityReport,
 } from './types';
 
-const MAGENT_SECTIONS = [/^## IDENTITY/m, /^## SOUL/m, /^## AGENTS/m, /^## USER/m];
+// Governance section patterns for main-agent configs (frontmatter-optional)
+const MAGENT_SECTIONS: { re: RegExp; label: string }[] = [
+    { re: /^## .*[Pp]roject|^## .*[Ss]tack/m, label: 'project' },
+    { re: /^## .*[Cc]ommand|^## .*[Tt]ool/m, label: 'commands' },
+    { re: /^## .*[Vv]erif|^## .*[Tt]est|^## .*[Gg]ate/m, label: 'verification' },
+    { re: /^## .*[Cc]onvention|^## .*[Ss]tyle|^## .*[Bb]oundar/m, label: 'conventions' },
+    { re: /^## .*[Ss]afety|^## .*[Ss]ecurity|^## .*[Cc]ritical/m, label: 'safety' },
+    { re: /^## .*[Dd]oc|^## .*[Rr]eference|^## .*[Rr]outing/m, label: 'docs' },
+];
 
-/** Count IDENTITY, SOUL, AGENTS, USER section headers in body. */
+/** Count governance sections found in body. */
 function scoreCompleteness(body: string): DimensionScore {
     let found = 0;
-    for (const re of MAGENT_SECTIONS) {
+    for (const { re } of MAGENT_SECTIONS) {
         if (re.test(body)) found++;
     }
+    const score = clamp(found / MAGENT_SECTIONS.length);
+    const findings = found < MAGENT_SECTIONS.length / 2 ? ['Config is missing key governance sections'] : undefined;
+    const recs =
+        found < MAGENT_SECTIONS.length
+            ? ['Add more governance sections (commands, verification, conventions, safety, docs)']
+            : undefined;
     return {
-        score: clamp(found / MAGENT_SECTIONS.length),
-        note: `${found}/${MAGENT_SECTIONS.length} sections present`,
+        score,
+        note: `${found}/${MAGENT_SECTIONS.length} governance sections present`,
+        findings,
+        recommendations: recs,
     };
 }
 
-/** Score platform coverage from frontmatter data.platforms (string | string[]). */
-function scorePlatformCoverage(data: Record<string, unknown>): DimensionScore {
+/** Score platform coverage from frontmatter data.platforms, with body-based fallback. */
+function scorePlatformCoverage(data: Record<string, unknown>, body: string): DimensionScore {
     const raw = data.platforms;
     let platforms: string[] = [];
     if (Array.isArray(raw)) {
@@ -33,8 +49,39 @@ function scorePlatformCoverage(data: Record<string, unknown>): DimensionScore {
             .map((s) => s.trim())
             .filter(Boolean);
     }
+
+    // Body-based fallback: detect platform mentions in prose
+    if (platforms.length === 0) {
+        const detected: string[] = [];
+        const platformPatterns: [RegExp, string][] = [
+            [/claude.?code/i, 'claude-code'],
+            [/codex/i, 'codex'],
+            [/gemini/i, 'gemini'],
+            [/cursor/i, 'cursor'],
+            [/windsurf/i, 'windsurf'],
+            [/opencode/i, 'opencode'],
+            [/openclaw/i, 'openclaw'],
+            [/antigravity/i, 'antigravity'],
+            [/pi\b/i, 'pi'],
+        ];
+        for (const [re, name] of platformPatterns) {
+            if (re.test(body)) detected.push(name);
+        }
+        platforms = detected;
+    }
+
     const score = clamp(Math.min(platforms.length / 5, 1));
-    return { score, note: `${platforms.length} platforms covered` };
+    const findings =
+        platforms.length === 0
+            ? ['No platforms declared or detected']
+            : platforms.length < 3
+              ? ['Limited platform coverage']
+              : undefined;
+    const recs =
+        platforms.length < 3
+            ? ['Declare supported platforms in frontmatter (platforms:) or mention them in prose']
+            : undefined;
+    return { score, note: `${platforms.length} platforms covered`, findings, recommendations: recs };
 }
 
 /** Score body length within 1000–8000 sweet spot. */
@@ -69,9 +116,11 @@ function scoreSafety(body: string): DimensionScore {
     for (const kw of keywords) {
         if (lower.includes(kw.toLowerCase())) count++;
     }
-    return { score: density, note: `${count} safety markers found` };
+    const findings = count < 3 ? ['Limited safety markers in config'] : undefined;
+    const recs =
+        count < 3 ? ['Add [CRITICAL] markers, safety rules, NEVER directives, and security validation'] : undefined;
+    return { score: density, note: `${count} safety markers found`, findings, recommendations: recs };
 }
-
 // ── Public API ────────────────────────────────────────────────────────────────
 
 /**
@@ -83,20 +132,23 @@ function scoreSafety(body: string): DimensionScore {
  * @returns        QualityReport with per-dimension scores and aggregate.
  */
 export function evaluateMagent(content: string, target: string): QualityReport {
-    const fmResult = parseFrontmatterSafe(content);
-    const data = fmResult ?? {};
-    const fmNote = fmResult === null ? parseErrorNote(content, 'unknown parse error') : null;
     const body = extractBody(content);
+    // Distinguish "no frontmatter" (valid for magents — AGENTS.md/CLAUDE.md are plain markdown)
+    // from "malformed frontmatter" (starts with --- but parse fails — real error)
+    const hasFrontmatter = /^---\s*$/m.test(content);
+    const fmResult = hasFrontmatter ? parseFrontmatterSafe(content) : undefined;
+    const data = fmResult ?? {};
+    const fmNote = hasFrontmatter && fmResult === null ? parseErrorNote(content, 'Frontmatter parse error') : null;
 
     const dimensions: Record<string, DimensionScore> = {
         completeness: scoreCompleteness(body),
-        'platform-coverage': scorePlatformCoverage(data),
+        'platform-coverage': scorePlatformCoverage(data, body),
         conciseness: scoreConciseness(body),
         'tone-consistency': scoreToneConsistency(body),
         safety: scoreSafety(body),
     };
 
-    // R14: on frontmatter parse failure, attach error note to first dimension
+    // Only attach frontmatter error note for real parse failures (starts with --- but parse fails)
     if (fmNote) {
         const firstKey = DIMENSION_REGISTRY.magent[0];
         if (firstKey && dimensions[firstKey]) {

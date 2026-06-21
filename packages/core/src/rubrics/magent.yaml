@@ -4,13 +4,14 @@ dimensions:
   - name: completeness
     weight: 0.25
     criterion: >
-      Does the main-agent config cover its stated scope end-to-end? Penalize
-      missing routing rules, undocumented fallbacks, and gaps between the
-      stated trigger and the actual execution path.
+      Does the main-agent config cover key governance areas: project/stack,
+      commands/tools, verification/testing, conventions/style, safety/security,
+      and documentation/references? Configs may be frontmatter-optional
+      (AGENTS.md/CLAUDE.md are plain markdown by design). Penalize missing
+      governance sections regardless of frontmatter presence.
     anchors:
-      excellent: "Routing, fallbacks, and execution path are fully explicit; no implicit steps."
-      poor: "Scope claims coverage but routing or fallbacks are implicit."
-
+      excellent: "All governance areas covered; project, commands, verification, conventions, safety, docs."
+      poor: "Few governance sections; config is mostly unstructured or bare."
   - name: platform-coverage
     weight: 0.25
     criterion: >

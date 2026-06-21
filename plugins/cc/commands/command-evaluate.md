@@ -1,6 +1,6 @@
 ---
 description: Score command quality across 10 dimensions
-argument-hint: "<command-path> [--json] [--save] [--target <platform>]"
+argument-hint: "<command-path> [--save] [--target <platform>]"
 allowed-tools: ["Read", "Write", "Glob", "Bash", "Skill"]
 ---
 
@@ -20,8 +20,7 @@ Score slash command quality across 10 dimensions. **Evaluate only — make NO ch
 | Argument | Description | Default |
 |----------|-------------|---------|
 | `command-path` | Path to the command .md file | (required) |
-| `--json` | Output results as JSON | text |
-| `--save` | Save evaluation results to file | false |
+| `--save` | Persist the evaluation to the evaluation store (enables evolve trend analysis) | false |
 | `--target` | Target platform | claude-code |
 
 ## Examples
@@ -29,9 +28,8 @@ Score slash command quality across 10 dimensions. **Evaluate only — make NO ch
 ```bash
 # Evaluate a command
 /cc:command-evaluate ./commands/my-command.md
-# Save results as JSON
-/cc:command-evaluate ./commands/my-command.md --json --save
-```
+# Save results to the evaluation store
+/cc:command-evaluate ./commands/my-command.md --save
 
 ## Implementation
 

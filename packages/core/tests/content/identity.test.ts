@@ -140,4 +140,30 @@ describe('resolveContentPath', () => {
             teardown();
         }
     });
+
+    // M1 regression: bare name ending in .md resolves without double-extension
+    it('resolves bare AGENTS.md in cwd when file exists', () => {
+        setup();
+        try {
+            const filePath = join(tmpDir, 'AGENTS.md');
+            writeFileSync(filePath, '## Project\nAgent config.\n');
+            const result = resolveContentPath('magent', 'AGENTS.md', { baseDir: tmpDir });
+            expect(result).toBe(filePath);
+        } finally {
+            teardown();
+        }
+    });
+
+    // M1 regression: extension-less names still get .md appended
+    it('still appends .md for extension-less names', () => {
+        setup();
+        try {
+            const filePath = join(tmpDir, 'my-config.md');
+            writeFileSync(filePath, '## Project\nAgent config.\n');
+            const result = resolveContentPath('magent', 'my-config', { baseDir: tmpDir });
+            expect(result).toBe(filePath);
+        } finally {
+            teardown();
+        }
+    });
 });

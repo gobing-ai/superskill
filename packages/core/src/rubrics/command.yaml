@@ -4,13 +4,13 @@ dimensions:
   - name: completeness
     weight: 0.25
     criterion: >
-      Does the command cover its stated function end-to-end? Penalize missing
-      argument validation, undocumented flags, and incomplete output. A
-      complete command handles the happy path and the documented error paths.
+      Does the command frontmatter include the required description field
+      and optional-but-expected fields (argument-hint string, allowed-tools array)?
+      A complete command declares its purpose and signals what tools and arguments
+      it uses. Penalize missing description; reward argument-hint and allowed-tools.
     anchors:
-      excellent: "All arguments validated, all flags documented, output covers success and error paths."
-      poor: "Happy path only; argument validation and error paths undocumented."
-
+      excellent: "Description present; argument-hint and allowed-tools declared."
+      poor: "Missing description; no argument-hint or allowed-tools signals."
   - name: clarity
     weight: 0.25
     criterion: >
@@ -24,13 +24,13 @@ dimensions:
   - name: argument-hints
     weight: 0.20
     criterion: >
-      Are argument hints present and accurate? Each argument should have a
-      hint that helps the user supply the right value. Penalize missing hints,
-      hints that restate the argument name, and hints that mislead.
+      Is the argument-hint string clear, descriptive, and consistent with
+      Claude Code conventions? A rich hint names positional args (<agent-name>)
+      and flags ([--description <text>]). Penalize placeholder-only hints or
+      missing hints on commands that take parameters.
     anchors:
-      excellent: "Every argument has a hint that guides the user to the correct value."
-      poor: "Hints missing, or restate the argument name without guidance."
-
+      excellent: "Argument-hint string names positional args and flags with descriptions."
+      poor: "Argument-hint is empty, placeholder-only, or missing on a parameterized command."
   - name: tool-references
     weight: 0.15
     criterion: >

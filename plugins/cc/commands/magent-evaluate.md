@@ -1,6 +1,6 @@
 ---
 description: Score main agent config across 6 quality dimensions
-argument-hint: "<config-path> [--json] [--save] [--target <platform>]"
+argument-hint: "<config-path> [--save] [--target <platform>]"
 allowed-tools: ["Read", "Write", "Glob", "Bash", "Skill"]
 ---
 
@@ -20,8 +20,7 @@ Score main agent config quality across 6 dimensions. **Evaluate only — make NO
 | Argument | Description | Default |
 |----------|-------------|---------|
 | `config-path` | Path to the config .md file | (required) |
-| `--json` | Output results as JSON | text |
-| `--save` | Save evaluation results to file | false |
+| `--save` | Persist the evaluation to the evaluation store (enables evolve trend analysis) | false |
 | `--target` | Target platform | claude-code |
 
 ## Examples
@@ -29,9 +28,8 @@ Score main agent config quality across 6 dimensions. **Evaluate only — make NO
 ```bash
 # Evaluate a config
 /cc:magent-evaluate ./CLAUDE.md
-# Save results as JSON
-/cc:magent-evaluate ./CLAUDE.md --json --save
-```
+# Save results to the evaluation store
+/cc:magent-evaluate ./CLAUDE.md --save
 
 ## Implementation
 

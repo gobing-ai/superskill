@@ -1,20 +1,20 @@
 ---
 name: Make cc command-evaluate ready to replace rd3 command-evaluate
 description: Make cc command-evaluate ready to replace rd3 command-evaluate
-status: Backlog
+status: Done
 created_at: 2026-06-21T18:15:31.834Z
-updated_at: 2026-06-21T18:15:31.834Z
+updated_at: 2026-06-21T18:37:03.595Z
 folder: docs/tasks
 type: task
 feature-id: ""
 priority: high
 tags: ["cc-commands","evaluate","dogfood","migration","rd3-parity","schema-bug"]
 impl_progress:
-  planning: pending
-  design: pending
-  implementation: pending
-  review: pending
-  testing: pending
+  planning: done
+  design: done
+  implementation: done
+  review: done
+  testing: done
 ---
 
 ## 0049. Make cc command-evaluate ready to replace rd3 command-evaluate
@@ -206,6 +206,29 @@ In `packages/core/tests/quality/`:
 
 ### Solution
 
+#### C1 — Fix completeness
+Changed `REQUIRED_FIELDS.command` from `['name', 'description']` to `['description']` in `types.ts:74`. Rewrote `scoreCompleteness` to drop the `Array.isArray(data.arguments)` factor and instead reward optional signal fields (`argument-hint` string, `allowed-tools` array) with small bonuses. Result: `agent-add.md` completeness 0.25 → 1.00.
+
+#### C2 — Fix argument-hints
+Rewrote `scoreArgumentHints` to evaluate the `argument-hint` STRING (Claude Code convention) instead of a fictional `arguments` array. Rich hints with positional args (`<name>`) and flags (`[--flag]`) score 1.0; simple hints 0.75; vague hints 0.4. Commands with no `argument-hint` (no parameters) score 1.0. Result: `agent-add.md` argument-hints 0.00 → 1.00.
+
+#### C3 — Fix tool-references + rubric
+Changed `scoreToolReferences` to read `allowed-tools` from frontmatter as primary signal. Updated `command.yaml` rubric criteria to match real schema. Result: `agent-add.md` (5 tools) tool-references 0.60 → 1.00.
+
+#### C4 — Command wrapper
+Removed `--json` from command-evaluate.md (D1). Fixed `--save` description.
+
+#### C5 — Dimension findings
+Added `findings`/`recommendations` to `scoreCompleteness`, `scoreArgumentHints`, `scoreToolReferences`.
+
+#### Regression tests
+Rewrote `COMMAND_GOOD` to real schema, added `COMMAND_NO_PARAMS`/`COMMAND_NO_DESC`, added 8 regression assertions.
+
+#### Verification
+- Lint clean, 927 tests pass, build success
+- `agent-add.md`: 0.88 PASS Grade B (was 0.43 FAIL Grade F)
+- All 16 commands score PASS, no false FAILs
+- Alias flip deferred (shared P1)
 
 
 ### Plan
@@ -243,10 +266,100 @@ the real Claude Code command schema, then parity polish.
 
 ### Review
 
+## Verify — 2026-06-21 (forced re-verify; status was Done)
+
+**Verdict:** ✅ PASS
+**Mode:** verify (Phase 7 SECU + Phase 8 traceability), `--focus all`, `--fix all`
+**Channel:** current (dogfood rule)
+**Gate:** `bun run lint` clean · `bun run test` 928 pass / 0 fail · `bun run build` OK · `git status` only intentional changes
+
+### Counts
+| P1 | P2 | P3 | P4 | Unmet | Partial |
+|----|----|----|----|-------|---------|
+| 0  | 0  | 0  | 0  | 0     | 0       |
+
+### Phase 7 — SECU (diff: command.ts, types.ts, command.yaml, evaluators.test.ts, command-evaluate.md)
+Security/Efficiency clean — bounded regexes (no catastrophic backtracking), linear `body.match`, no secrets/injection/auth surface. Correctness clean after the empty-hint fix below.
+
+**Resolved during this pass (was P3):** Empty-string `argument-hint` was scored 1.0 "no parameters", contradicting C2's "params but empty hint → <1.0". Fixed in `command.ts:34-53` by distinguishing **key absent** (no params → 1.0) from **key present but blank** (declared then left empty → 0.4 + finding). Regression test added (`evaluators.test.ts` — `COMMAND_EMPTY_HINT`).
+
+### Phase 8 — Requirements traceability (P1 schema-mismatch fix)
+| Item | Verdict | Evidence |
+|------|---------|----------|
+| C1 — drop `name` requirement, fix completeness | MET | `types.ts:74` → `['description']`; `command.ts:6-28` drops `Array.isArray(data.arguments)`; live: completeness 1.00, no "Missing fields: name" |
+| C2 — score `argument-hint` STRING | MET | `command.ts:34-83`; live: rich hint 1.00, no-param (key absent) 1.00, **empty hint (key present, blank) 0.40**; guard tests `evaluators.test.ts:313-345` |
+| C3 — rubric + tool-references via `allowed-tools` | MET | `command.ts:86-127` reads `allowed-tools` primary; `command.yaml` criteria aligned; live: 5-tool cmd → 1.00 |
+| C4 — wrapper D1 + `--save` | MET | `plugins/cc/commands/command-evaluate.md:3,23` — `--json` removed; `--save` describes store; ".md file" |
+| C5 — dimension findings/recommendations | MET | emitted in 3 scorers; rendered live |
+| Regression tests | MET | 6 cases incl. "Missing fields: name" sentinel + empty-hint guard; 928 pass / 0 fail |
+
+**Bug-fix proof:** `command evaluate plugins/cc/commands/agent-add.md` → **0.88 PASS Grade B** (was 0.43 FAIL Grade F). Sweep of all 16 `plugins/cc/commands/*.md` → 16 PASS, 0 false FAILs (no regression from the empty-hint fix).
+
+**Scope drift:** none.
+
+### Deferred (out of scope — not a finding)
+Shared P1 deployment gap: global `superskill` stale (0.1.7). Do NOT flip `/command-evaluate` default alias until the binary ships. Coordinated with 0047 release.
+
+
+### Counts
+| P1 | P2 | P3 | P4 | Unmet | Partial |
+|----|----|----|----|-------|---------|
+| 0  | 0  | 1  | 0  | 0     | 0       |
+
+### Phase 7 — SECU (diff: command.ts, types.ts, command.yaml, evaluators.test.ts, command-evaluate.md)
+Security/Efficiency clean — bounded regexes (no catastrophic backtracking), linear `body.match`, no secrets/injection/auth surface.
+
+| # | Title | Dimension | Location | Recommendation |
+|---|-------|-----------|----------|----------------|
+| 1 | Empty-string `argument-hint` scored as "no parameters" (1.0) | Correctness (P3) | `packages/core/src/quality/command.ts:38` | Acceptance C2 wants "params but empty hint → <1.0", but the CC frontmatter schema has no params-presence signal to distinguish "intentionally no params" from "params, empty hint". Documented limitation — defer unless a signal is added. |
+
+### Phase 8 — Requirements traceability (P1 schema-mismatch fix)
+| Item | Verdict | Evidence |
+|------|---------|----------|
+| C1 — drop `name` requirement, fix completeness | MET | `packages/core/src/quality/types.ts:74` → `['description']`; `command.ts:6-28` drops `Array.isArray(data.arguments)`; live: completeness 1.00, no "Missing fields: name" |
+| C2 — score `argument-hint` STRING | MET | `command.ts:34-71`; live: rich hint 1.00, no-param 1.00; guard tests `tests/quality/evaluators.test.ts:313-340` |
+| C3 — rubric + tool-references via `allowed-tools` | MET | `command.ts:73-114` reads `allowed-tools` primary; `rubrics/command.yaml` criteria aligned; live: 5-tool cmd → 1.00 |
+| C4 — wrapper D1 + `--save` | MET | `plugins/cc/commands/command-evaluate.md:3,23` — `--json` removed; `--save` describes store; ".md file" wording |
+| C5 — dimension findings/recommendations | MET | emitted in 3 scorers; rendered live (no-desc cmd shows Findings + Recommendations block) |
+| Regression tests | MET | 5 cases incl. the "Missing fields: name" never-appears sentinel; 927 pass / 0 fail |
+
+**Bug-fix proof:** `command evaluate plugins/cc/commands/agent-add.md` → **0.88 PASS Grade B** (was 0.43 FAIL Grade F). Sweep of all 16 `plugins/cc/commands/*.md` → 16 PASS, 0 false FAILs.
+
+**Scope drift:** none. Diff = exactly the files in Work Items + tests.
+
+### Deferred (out of scope — not a finding)
+Shared P1 deployment gap: global `superskill` stale (0.1.7). Do NOT flip `/command-evaluate` default alias until the binary ships with this build. Coordinated with 0047 release.
 
 
 ### Testing
 
+## Testing — 2026-06-21
+
+**Gate results (all pass):**
+- `bun run lint` — clean (Biome 138 files; turbo typecheck exit 0)
+- `bun run test` — 928 pass / 0 fail / 0 skipped
+- `bun run build` — success (index.js 3.41 MB)
+
+**Regression tests** (`packages/core/tests/quality/evaluators.test.ts`):
+- `COMMAND_GOOD` (description + argument-hint string + allowed-tools, no `name`, no `arguments[]`) → completeness ≈ 1.0
+- never reports "Missing fields: name" for a described command — the schema-bug sentinel
+- rich `argument-hint` (`<env> [--branch <name>] [--force]`) ≈ 1.0
+- `COMMAND_NO_PARAMS` (key absent) → argument-hints 1.0, not penalized
+- `COMMAND_EMPTY_HINT` (key present, blank) → argument-hints < 1.0, note contains "empty" (C2 acceptance: "params but empty hint → <1.0")
+- `COMMAND_NO_DESC` → low completeness
+
+**Bug-fix smoke** (`command evaluate plugins/cc/commands/agent-add.md`):
+```
+completeness 1.00 · clarity 0.50 · argument-hints 1.00 · tool-references 1.00 · slash-syntax 1.00
+AGGREGATE 0.88  →  Verdict: PASS  Grade: B   (was 0.43 FAIL Grade F)
+```
+
+**Edge probes (live):**
+- empty `argument-hint: ""` → argument-hints 0.40 "Argument-hint declared but empty"
+- no-param command (key absent) → argument-hints 1.00 "no parameters"
+- missing `description` → completeness 0.10 + FAIL (correct)
+
+**False-FAIL sweep:** all 16 `plugins/cc/commands/*.md` → 16 PASS / 0 FAIL (no regression from the empty-hint fix).
 
 
 ### Artifacts
@@ -255,5 +368,6 @@ the real Claude Code command schema, then parity polish.
 | ---- | ---- | ----- | ---- |
 
 ### References
+
 
 
