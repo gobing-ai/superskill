@@ -629,6 +629,133 @@ describe('evolve — orchestrator', () => {
     });
 });
 
+// ── Command-type regression (task 0053 C3: file-based .md commands) ────────────
+
+describe('evolve — command type (0053)', () => {
+    let dir: string;
+    let prevCwd: string;
+    let adapter: DbAdapter;
+
+    async function makeAdapter(): Promise<DbAdapter> {
+        const a = await createDbAdapter({ driver: 'bun-sqlite', url: ':memory:' });
+        await a.exec(evaluations.createTableSql);
+        await a.exec(proposals.createTableSql);
+        return a;
+    }
+
+    /** Seed command evaluations so trend analysis has declining history. */
+    async function seedCommandHistory(a: DbAdapter, scores: number[]): Promise<void> {
+        const dao = new EvaluationDao(a);
+        for (let i = 0; i < scores.length; i++) {
+            const score = scores[i];
+            if (score === undefined) continue;
+            const id = await dao.insertEvaluation({
+                content_type: 'command',
+                content_name: 'deploy',
+                target_agent: 'claude',
+                operation: 'evaluate',
+                aggregate: score,
+                dimensions: { clarity: { score, note: 'declining clarity' } },
+                file_hash: 'abc',
+            });
+            await a.exec(`UPDATE evaluations SET created_at = ${Date.UTC(2026, 5, 1, 0, 0, i)} WHERE id = ${id}`);
+        }
+    }
+
+    beforeEach(async () => {
+        prevCwd = cwd();
+        dir = mkdtempSync(join(tmpdir(), 'superskill-evolve-command-'));
+        mkdirSync(join(dir, '.superskill'), { recursive: true });
+        writeFileSync(
+            join(dir, 'deploy.md'),
+            '---\nname: deploy\ndescription: Deploy command\n---\n\nRun the deployment.\n',
+        );
+        chdir(dir);
+        adapter = await makeAdapter();
+        spyOn(process.stdout, 'write').mockImplementation(() => true);
+        spyOn(process.stderr, 'write').mockImplementation(() => true);
+    });
+    afterEach(() => {
+        chdir(prevCwd);
+        rmSync(dir, { recursive: true, force: true });
+    });
+
+    it('--propose-only seeds heuristic changes for a sub-perfect command (C3/G1)', async () => {
+        await seedCommandHistory(adapter, [0.9, 0.5]); // declining clarity
+        const r = await evolve('command', 'deploy', { adapter, proposeOnly: true });
+        expect(r.proposalPath).not.toBe('');
+        const proposalContent = readFileSync(r.proposalPath, 'utf-8');
+        expect(proposalContent).toContain('[Improve clarity]');
+        expect(r.changesApplied).toBe(0);
+        const props = await new ProposalDao(adapter).getProposals('command', 'deploy');
+        expect(props).toHaveLength(1);
+        expect(props[0]?.status).toBe('draft');
+    });
+
+    it('--analyze prints summary for a command without writing a proposal (C3/G2)', async () => {
+        await seedCommandHistory(adapter, [0.9, 0.5]);
+        const writes: string[] = [];
+        const spy = spyOn(process.stdout, 'write').mockImplementation((data) => {
+            writes.push(typeof data === 'string' ? data : data.toString());
+            return true;
+        });
+        const r = await evolve('command', 'deploy', { adapter, analyze: true });
+        spy.mockRestore();
+        const output = writes.join('');
+        expect(output).toContain('=== Evolution Analysis ===');
+        expect(output).toContain('Score:');
+        expect(r.proposalPath).toBe('');
+        expect(r.changesApplied).toBe(0);
+    });
+
+    it('--history lists an applied command version after --accept (C3/G3)', async () => {
+        await seedCommandHistory(adapter, [0.9, 0.5]);
+        await evolve('command', 'deploy', { adapter, proposeOnly: true });
+        const draft = (await new ProposalDao(adapter).getProposals('command', 'deploy'))[0];
+        const pid = ((draft?.proposal_json as Record<string, unknown>)?.proposal_id as string) ?? '';
+        await evolve('command', 'deploy', { adapter, acceptId: pid, margin: -1 });
+
+        const writes: string[] = [];
+        const spy = spyOn(process.stdout, 'write').mockImplementation((data) => {
+            writes.push(typeof data === 'string' ? data : data.toString());
+            return true;
+        });
+        const r = await evolve('command', 'deploy', { adapter, history: true });
+        spy.mockRestore();
+        const output = writes.join('');
+        expect(output).toContain('=== Version History: deploy ===');
+        expect(output).toContain(pid);
+        expect(r.changesApplied).toBe(0);
+    });
+
+    it('--rollback restores byte-identical command file after apply (C3/G3)', async () => {
+        await seedCommandHistory(adapter, [0.9, 0.5]);
+        const originalContent = readFileSync(join(dir, 'deploy.md'), 'utf-8');
+
+        await evolve('command', 'deploy', { adapter, proposeOnly: true });
+        const draft = (await new ProposalDao(adapter).getProposals('command', 'deploy'))[0];
+        const pid = ((draft?.proposal_json as Record<string, unknown>)?.proposal_id as string) ?? '';
+        await evolve('command', 'deploy', { adapter, acceptId: pid, margin: -1 });
+
+        const modifiedContent = readFileSync(join(dir, 'deploy.md'), 'utf-8');
+        expect(modifiedContent).not.toBe(originalContent);
+
+        const r = await evolve('command', 'deploy', { adapter, rollback: pid, confirm: true });
+        expect(r.changesApplied).toBe(0);
+
+        const restoredContent = readFileSync(join(dir, 'deploy.md'), 'utf-8');
+        expect(restoredContent).toBe(originalContent);
+    });
+
+    it('--rollback without --confirm does not mutate the command file (C3/G3)', async () => {
+        await seedCommandHistory(adapter, [0.9, 0.5]);
+        const originalContent = readFileSync(join(dir, 'deploy.md'), 'utf-8');
+        const r = await evolve('command', 'deploy', { adapter, rollback: 'some-id' });
+        expect(r.changesApplied).toBe(0);
+        expect(readFileSync(join(dir, 'deploy.md'), 'utf-8')).toBe(originalContent);
+    });
+});
+
 // ── Interactive review (injectable readline) ───────────────────────────────────
 
 describe('interactiveReview', () => {

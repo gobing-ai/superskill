@@ -145,6 +145,35 @@ describe('commandEvolve', () => {
         const result = await commandEvolve({ name: 'my-command', proposeOnly: true, accept: 'abc', reject: 'def' });
         expect(result).toBeUndefined();
     });
+
+    it('passes analyze/history/rollback/confirm options through to evolve (C1)', async () => {
+        const { commandEvolve } = await import('../../src/commands/command');
+        // evolveOp.evolve is already spied in beforeEach; verify the new flags reach it.
+        const result = await commandEvolve({
+            name: 'my-command',
+            analyze: true,
+            history: true,
+            rollback: 'command-evolve-2026-06-21-001',
+            confirm: true,
+            ingest: '/tmp/p.json',
+            margin: 0.1,
+            json: true,
+        });
+        expect(result).toBeUndefined();
+        expect(evolveOp.evolve).toHaveBeenCalledWith(
+            'command',
+            'my-command',
+            expect.objectContaining({
+                analyze: true,
+                history: true,
+                rollback: 'command-evolve-2026-06-21-001',
+                confirm: true,
+                ingest: '/tmp/p.json',
+                margin: 0.1,
+                json: true,
+            }),
+        );
+    });
 });
 
 describe('registerCommand', () => {
@@ -254,5 +283,19 @@ describe('registerCommand', () => {
             exit.mockRestore();
             process.exitCode = 0;
         }
+    });
+
+    it('registers evolve subcommand with analyze/history/rollback/confirm flags (C1)', async () => {
+        const { registerCommand } = await import('../../src/commands/command');
+        const program = new Command();
+        registerCommand(program);
+        const commandCmd = program.commands.find((c: Command) => c.name() === 'command');
+        const evolveCmd = commandCmd?.commands.find((c: Command) => c.name() === 'evolve');
+        expect(evolveCmd).toBeDefined();
+        const flagNames = (evolveCmd?.options ?? []).map((o) => o.long);
+        expect(flagNames).toContain('--analyze');
+        expect(flagNames).toContain('--history');
+        expect(flagNames).toContain('--rollback');
+        expect(flagNames).toContain('--confirm');
     });
 });

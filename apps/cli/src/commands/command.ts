@@ -99,6 +99,10 @@ export async function commandEvolve(opts: {
     json?: boolean;
     ingest?: string;
     margin?: number;
+    analyze?: boolean;
+    history?: boolean;
+    rollback?: string;
+    confirm?: boolean;
 }): Promise<number | undefined> {
     const target = resolveTarget(opts);
     await evolve('command', opts.name, {
@@ -110,6 +114,10 @@ export async function commandEvolve(opts: {
         json: opts.json,
         ingest: opts.ingest,
         margin: opts.margin,
+        analyze: opts.analyze,
+        history: opts.history,
+        rollback: opts.rollback,
+        confirm: opts.confirm,
     });
     return undefined;
 }
@@ -167,6 +175,11 @@ export async function handleCommandEvolve(opts: {
     reject?: string;
     json?: boolean;
     ingest?: string;
+    margin?: number;
+    analyze?: boolean;
+    history?: boolean;
+    rollback?: string;
+    confirm?: boolean;
 }): Promise<void> {
     await runOperation(() => commandEvolve(opts));
 }
@@ -221,7 +234,20 @@ export function registerCommand(program: Command): void {
     ).action(
         async (
             name: string,
-            opts: { target?: string; from?: string; proposeOnly?: boolean; accept?: string; reject?: string },
+            opts: {
+                target?: string;
+                from?: string;
+                proposeOnly?: boolean;
+                accept?: string;
+                reject?: string;
+                json?: boolean;
+                ingest?: string;
+                margin?: number;
+                analyze?: boolean;
+                history?: boolean;
+                rollback?: string;
+                confirm?: boolean;
+            },
         ) => {
             await handleCommandEvolve({ name, ...opts });
         },
