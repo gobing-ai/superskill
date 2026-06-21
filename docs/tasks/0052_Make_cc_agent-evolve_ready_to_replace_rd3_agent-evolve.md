@@ -1,9 +1,9 @@
 ---
 name: Make cc agent-evolve ready to replace rd3 agent-evolve
 description: Make cc agent-evolve ready to replace rd3 agent-evolve
-status: Testing
+status: Done
 created_at: 2026-06-21T20:55:48.410Z
-updated_at: 2026-06-21T22:03:42.799Z
+updated_at: 2026-06-21T22:05:57.978Z
 folder: docs/tasks
 type: task
 feature-id: ""
@@ -174,14 +174,23 @@ Seeded proposal (declining/flat-low dim → non-empty changes), `--analyze` outp
 
 ### Solution
 
-Shared-engine fix landing in `apps/cli/src/operations/evolve.ts` + agent surface on `apps/cli/src/commands/agent.ts` + wrapper fix on `plugins/cc/commands/agent-evolve.md`.
+Shared-engine fix landed in `apps/cli/src/operations/evolve.ts` + flag registration in `apps/cli/src/commands/helpers.ts` + pass-through in `apps/cli/src/commands/agent.ts` + wrapper fix in `plugins/cc/commands/agent-evolve.md` + docs sync in `docs/design/design-doc-phase2.md` + regression tests in `apps/cli/tests/operations/evolve.test.ts`.
 
-- A1 (G1): revive `generateChanges(report, trends)` in `stepPropose` — rename `_report` → `report`, seed `changes` for declining/flat-low dims. `--ingest` override stays intact.
-- A2 (G2): add `--analyze` path — reuse `stepAnalyze`/`computeTrends`, print trend table + score/grade + data-source inventory + pattern summary. No file mutation.
-- A3 (G3): add `--history` (list applied proposals + backup timestamps) and `--rollback <ver>` (restore via `restoreFromBackup` behind `--confirm`). Persist backup path + version id on apply so rollback is real.
-- A4 (G4): fix wrapper drift in `agent-evolve.md` — real capabilities, real id shape (`agent-evolve-YYYY-MM-DD-NNN`), synced `argument-hint`.
-- A5: regression tests for seeded proposals, analyze shape, history listing, rollback byte-identical restore.
-- Docs sync: `docs/04_DESIGN.md` + `docs/design/design-doc-phase2.md` updated in the same commit as flag registration.
+**A1 (G1):** Revived `generateChanges(report, trends)` in `stepPropose` — renamed `_report` → `report`, seeded `changes` for declining/flat-low dims. `--ingest` override intact.
+
+**A2 (G2):** Added `--analyze` path — `formatAnalyze()` helper prints trend table + score/grade + data-source inventory (eval count + git presence) + pattern summary. Reuses `stepAnalyze`/`computeTrends`. `scoreToGrade()` mirrors `evaluate.ts` grading. No file mutation, no proposal write.
+
+**A3 (G3):** Added `--history` (lists accepted proposals + snapshot status) and `--rollback <id> --confirm` (restores byte-identical from version snapshot). Backup lifecycle changed: `stepVerify` no longer deletes backup on success; caller persists it as `${resolvedPath}.version-${proposalId}` via `persistVersionSnapshot()`. `--rollback` uses direct `Bun.write` (not `restoreFromBackup`) to preserve the snapshot for future rollbacks.
+
+**A4 (G4):** Wrapper drift fixed — real capabilities, real id shape (`agent-evolve-2026-06-21-001`), synced `argument-hint`, complete arguments table with all 13 flags.
+
+**Flag registration:** `addEvolveOptions` extended with `--analyze`, `--history`, `--rollback <id>`, `--confirm` (shared across all content types via the helper). Agent subcommand passes them through.
+
+**Tests:** 8 new regression tests + 1 updated test. Seeded proposal (declining → non-empty, flat-low → non-empty, perfect → empty), analyze shape (multi-eval + single-eval), history (empty + after-accept), rollback (confirm guard + byte-identical restore + missing snapshot).
+
+**Commits:**
+- `75427b9` feat(evolve): seed heuristic proposals and add analyze/history/rollback
+- `e49f76b` fix(cc-commands): align agent-evolve wrapper to real capabilities
 
 
 ### Plan
