@@ -77,6 +77,8 @@ Each command file contains:
 
 **Design principle:** Commands are **pass-through routers**. They contain zero domain logic — they parse `$ARGUMENTS` and forward to the skill, which forwards to the CLI.
 
+**Install-time adaptation:** For non-Claude targets, `superskill install` adapts each command `.md` file into a Skills 2.0 skill directory entry via `pipeline/adapt-command.ts`. The adaptation injects `name` and `disable-model-invocation: true` frontmatter — the command becomes a non-invocable skill entry that preserves its delegation instructions verbatim in the body.
+
 ### 3. Agents (`agents/`)
 
 **Purpose:** Thin specialist subagents that route requests to the correct skill operation. Unlike general-purpose subagents, these are tightly scoped: each expert agent owns exactly one entity type.
@@ -108,6 +110,8 @@ The **evaluate** and **evolve** operations drive quality scoring via four person
 **Goal-anchor verbatim discipline:** Persona prompts MUST pass the original instructions + negative constraints **verbatim** to Skeptic/Judge. No compaction, no summarization, no paraphrasing. The CLI gate (F024) enforces via `anchor_hash` — if the agent strips or alters the anchor, the hash won't match and the gate rejects.
 
 **Design principle:** Expert agents are **delegates, not implementors**. They never contain domain logic. Their sole job is to recognize trigger phrases and route to the bound skill, which routes to the CLI. This separation means all knowledge lives in skills, all execution lives in the CLI, and agents are just dispatchers.
+
+**Install-time adaptation:** For non-Claude targets, `superskill install` adapts each agent `.md` file into a Skills 2.0 skill directory entry via `pipeline/adapt-subagent.ts`. Unlike commands, agents remain model-invocable (`disable-model-invocation` is NOT set) — the adaptation preserves `description`, `tools`, `model`, `skills`, `color`, and all trigger examples. Pi additionally receives a native agent frontmatter format via `pipeline/pi-subagent.ts`.
 
 ### 4. Hooks (`hooks/`)
 
@@ -260,16 +264,15 @@ Tier 3 — Execution Layer (superskill CLI + Scripts)
 
 ## Platform Compatibility
 
-The `cc` plugin is the Claude Code native format. On other platforms (Codex, Gemini, Pi, OpenCode, Antigravity, OpenClaw, Hermes, omp), the `superskill install` command maps plugin entities to platform-native locations via the rulesync mapper:
+The `cc` plugin is the Claude Code native format. On other platforms (Codex, Gemini, Pi, OpenCode, Antigravity, Hermes, omp), the `superskill install` command maps plugin entities to platform-native locations via the rulesync mapper. OpenClaw is implicitly supported — it reads skills from `~/.agents/skills/`, the same root codex/opencode use in global mode.
 
 | Plugin Entity | Claude Code | Other Platforms |
 |--------------|-------------|-----------------|
-| `skills/*.md` | `~/.claude/skills/` | `~/.agents/skills/`, `~/.pi/agent/skills/`, etc. |
-| `commands/*.md` | `~/.claude/commands/` | `~/.codex/commands/`, `~/.gemini/commands/`, etc. |
-| `agents/*.md` | `~/.claude/agents/` | `~/.pi/agent/agents/`, `~/.codex/agents/`, etc. |
-| `hooks/hooks.json` | `~/.claude/hooks/` | `~/.pi/agent/hooks/`, `~/.codex/hooks/`, etc. |
+| `skills/*.md` | `~/.claude/skills/` | Adapted as Skills 2.0 skill directories — all platforms receive skills uniformly |
+| `commands/*.md` | `~/.claude/commands/` | Adapted as Skills 2.0 skill entries (`disable-model-invocation: true`) via `pipeline/adapt-command.ts` |
+| `agents/*.md` | `~/.claude/agents/` | Adapted as Skills 2.0 skill entries (model-invocable) via `pipeline/adapt-subagent.ts`; Pi additionally gets native agent format via `pipeline/pi-subagent.ts` |
+| `hooks/hooks.json` | `~/.claude/hooks/` | Converted to target-native format (pi-hooks shim for pi/omp, HOOK.yaml for hermes) |
 | `scripts/` | `${CLAUDE_PLUGIN_ROOT}/scripts/` | Copied alongside platform output |
-
 Each skill declares its own platform support in `metadata.platforms` frontmatter — not all skills support all platforms. See the per-skill table above.
 
 ## Lifecycle Operations

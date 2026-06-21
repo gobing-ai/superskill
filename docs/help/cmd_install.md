@@ -49,6 +49,7 @@ superskill install rd3 --targets codex --no-global
 | `antigravity-cli` | rulesync | `~/.gemini/antigravity-cli/skills/` |
 | `antigravity-ide` | rulesync | `~/.gemini/config/skills/` |
 | `hermes` | superskill copy (via `opencode` surrogate) | `~/.hermes/skills/` |
+| `openclaw` | implicit (reads `~/.agents/skills/`) | Shared skills root with codex/opencode — no dedicated dispatch |
 
 ## How it's implemented
 
@@ -74,7 +75,7 @@ flowchart TD
 
     subgraph "Stage 3: Transform"
         T["prepareTargetRulesyncInput<br/>per-target copy + markdown transforms"]
-        TT["pipeline/<br/>frontmatter · slash-command ·<br/>rewrite-colons · pi-subagent"]
+        TT["pipeline/<br/>adapt-command · adapt-subagent ·<br/>slash-command · rewrite-references · pi-subagent"]
     end
 
     subgraph "Stage 4: Generate"
@@ -124,11 +125,12 @@ Missing optional directories are handled gracefully — nothing is created for a
 
 | Pipeline module | Transform | Applies to |
 |-----------------|-----------|------------|
-| `frontmatter.ts` | Normalize frontmatter keys per target | all targets |
+| `frontmatter-walk.ts` | Walk frontmatter blocks for adaptation stages | adapt-command, adapt-subagent |
+| `adapt-command.ts` | Adapt command `.md` → Skills 2.0 skill entry (`disable-model-invocation: true`) | all non-Claude targets |
+| `adapt-subagent.ts` | Adapt subagent `.md` → Skills 2.0 skill entry (model-invocable) | all non-Claude targets |
 | `slash-command.ts` | Translate `/plugin-command` ↔ `/skill:` dialects | pi, omp, opencode, antigravity, hermes |
-| `rewrite-colons.ts` | Rewrite `::` references to target-compatible form | pi, omp |
+| `rewrite-references.ts` | Rewrite `<pluginPrefix>:name` → `<pluginPrefix>-name` (plugin-prefix-scoped) | all non-Claude targets |
 | `pi-subagent.ts` | Convert subagent frontmatter to Pi native agent format | pi, omp |
-
 Target-to-rulesync and target-to-agent-name mappings live in `targets.ts`:
 
 ```mermaid
@@ -213,12 +215,18 @@ sequenceDiagram
 | File | Role |
 |------|------|
 | `apps/cli/src/commands/install.ts` | Command registration, `executeInstall()` orchestration, target dispatch |
-| `apps/cli/src/marketplace.ts` | Plugin resolution from marketplace manifest (Zod-validated) |
-| `apps/cli/src/mapper.ts` | Plugin → `.rulesync/` canonical layout mapping |
-| `apps/cli/src/rulesync.ts` | Thin programmatic wrapper over `rulesync.generate()` |
-| `apps/cli/src/targets.ts` | Target enum + `TARGET_TO_RULESYNC` / `TARGET_TO_AGENT_NAME` maps |
-| `apps/cli/src/pipeline/*.ts` | Per-target markdown transforms (pure functions) |
 | `apps/cli/src/hooks.ts` | Canonical → Pi-hooks conversion; `emitPiStyleHooks` / `emitHermesHooks` |
+| `packages/core/src/marketplace.ts` | Plugin resolution from marketplace manifest (Zod-validated) |
+| `packages/core/src/mapper.ts` | Plugin → `.rulesync/` canonical layout mapping |
+| `packages/core/src/rulesync.ts` | Thin programmatic wrapper over `rulesync.generate()` |
+| `packages/core/src/targets.ts` | Target enum + `TARGET_TO_RULESYNC` / `TARGET_TO_AGENT_NAME` maps |
+| `packages/core/src/pipeline/adapt-command.ts` | Adapt Claude Code command `.md` → Skills 2.0 skill entry |
+| `packages/core/src/pipeline/adapt-subagent.ts` | Adapt Claude Code subagent `.md` → Skills 2.0 skill entry |
+| `packages/core/src/pipeline/slash-command.ts` | Slash-dialect translation per target |
+| `packages/core/src/pipeline/rewrite-references.ts` | Plugin-prefix-scoped `plugin:name` → `plugin-name` rewriting |
+| `packages/core/src/pipeline/frontmatter-walk.ts` | Shared frontmatter-block walker for adapt-* stages |
+| `packages/core/src/pipeline/pi-subagent.ts` | Subagent → Pi native agent frontmatter conversion |
+| `packages/core/src/pipeline/pi-tools.ts` | Claude → Pi tool-name normalization |
 
 ### Design notes
 

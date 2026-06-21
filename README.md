@@ -187,25 +187,23 @@ Since ts-ai-runner 0.3.21, `omp`, `hermes`, and `antigravity-cli` are canonical 
 |-------|--------|-------|
 | **Claude Code** | `claude plugin marketplace add` + `claude plugin install` | Native plugin system — handles all entity types automatically |
 | **Codex** | rulesync | `codex` → `codexcli` |
-| **Pi** | rulesync + superskill shim | Subagents via direct write to `~/.pi/agent/agents/` (rulesync excludes Pi subagents) |
+| **Pi** | rulesync + superskill shim | Subagents adapted as Skills 2.0 skill directories; Pi native agents written directly to `~/.pi/agent/agents/` |
 | **omp** | rulesync + superskill shim | `omp` → `pi` surrogate for rulesync, then copy to `~/.omp/`; omp also reads from other agent dirs |
 | **OpenCode** | rulesync | `opencode` → `opencode` |
 | **Antigravity IDE** | rulesync | `antigravity-ide` → `antigravity-ide` |
 | **Antigravity CLI** | rulesync | `antigravity-cli` → `antigravity-cli`; commands/subagents not supported by rulesync for this target |
 | **Hermes** | rulesync + superskill shim | `hermes` → `opencode` surrogate for rulesync, then copy to `~/.hermes/`; hooks format is HOOK.yaml not hooks.json |
-| **OpenClaw** | direct copy (planned) | Not yet in `TARGETS`. Skills → `skills/` (project) or `~/.openclaw/plugin-skills/` (global). Commands/subagents as skills. |
+| **OpenClaw** | implicit (via `~/.agents/skills/`) | Reads skills from `~/.agents/skills/` (shared root with codex/opencode in global mode). No dedicated dispatch needed. |
 
 ### Known gaps
 
 | Gap | Status |
 |-----|--------|
-| **Pi subagents** not installed | Rulesync's SubagentsProcessor excludes `pi`. Fix: direct write to `~/.pi/agent/agents/` in install dispatch (tracked in task 0044). |
 | **antigravity-cli** commands/subagents | Rulesync doesn't support `antigravity-cli` for commands/subagents (only `antigravity` project-level). |
 | **Hermes hooks format** | Superskill writes `hooks.json`; Hermes expects `~/.hermes/hooks/<name>/HOOK.yaml` + `handler.py`. |
 | **Hermes commands** | No `commands/` directory. Install commands as skills for slash-command auto-discovery. |
 | **Pi/omp hooks → extensions** | Legacy pi-hooks shim should migrate to the Extensions format. |
-| **OpenClaw** | Missing from `TARGETS` entirely. Old `cc-agents/scripts/` supported it via direct `skills/` directory copy. |
-| **Claude Code install** | Code fix committed (`13dcf78`) but binary not yet rebuilt/published. |
+| **OpenClaw agents/hooks** | OpenClaw reads skills from `~/.agents/skills/` (implicitly covered). Dedicated agent YAML config and webhook-based hooks are not managed by superskill. |
 ## Bundled `cc` plugin
 
 superskill ships with a Claude Code plugin at [`plugins/cc/`](plugins/cc/) (marketplace name: `cc`, version `0.1.1`) that demonstrates the full authoring lifecycle and provides the meta-agent skills the expert personas reference:
@@ -218,7 +216,7 @@ superskill ships with a Claude Code plugin at [`plugins/cc/`](plugins/cc/) (mark
 | **hooks** | 1 | `Stop` hook running the anti-hallucination guard |
 | **scripts** | 3 | `ah_guard.ts`, `validate_response.ts`, `logger.ts` — deterministic enforcement for the anti-hallucination protocol |
 
-The plugin follows a three-tier delegation pattern: **Commands/Agents → Skills → `superskill` CLI**. See [`plugins/cc/README.md`](plugins/cc/README.md) for the full entity design and relationship diagram.
+The plugin follows a three-tier delegation pattern: **Commands/Agents → Skills → `superskill` CLI**. For non-Claude targets, `superskill install` adapts commands and subagents as Skills 2.0 skill directories (`pipeline/adapt-command.ts`, `pipeline/adapt-subagent.ts`) so every target receives a uniform skill-based distribution. See [`plugins/cc/README.md`](plugins/cc/README.md) for the full entity design and relationship diagram.
 
 ## Development
 
