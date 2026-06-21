@@ -44,14 +44,27 @@ Source-oriented SECU review of packages/ run via /rd3:dev-review packages --focu
 
 ### Review
 
-## Review — 2026-06-20
+## Follow-up — deferred architecture item (2026-06-20)
 
-**Status:** 6 findings (0 P1, 1 P2, 4 P3, 1 P4)
-**Scope:** packages/core/src (all .ts; tests excluded)
-**Mode:** source
-**Channel:** inline (dogfood — current)
-**Gate:** `bun run lint` -> pass (Biome clean, both workspaces typecheck)
-**Auto-fix:** none applied — every finding changes scoring/merge semantics, not mechanical lint/type fixes. Auto-rewriting them would break the behavior-pinning tests (R8) and violate surgical-change (R3). Surfaced for decision per R12.
+**Candidate 4 (deferred): `normalizeFrontmatter` is production-dead but test-load-bearing.**
+
+`packages/core/src/pipeline/frontmatter.ts` `normalizeFrontmatter` has no production caller — the live install path (`apps/cli/src/commands/install.ts` `transformMarkdownDirectory`) runs only `translateSlashCommands → rewriteSkillReferences`; frontmatter injection is done by the mapper's `adaptCommandToSkill` / `adaptSubagentToSkill`. The function is kept alive by `packages/core/tests/pipeline/adapt-parity.test.ts`, which *simulates* the install wiring with `normalizeFrontmatter` (a different function than production uses) and `frontmatter.test.ts`.
+
+The parity test's wiring comment (adapt-parity.test.ts:18-21) is stale — it claims `commands: normalizeFrontmatter → …` but production uses `adaptCommandToSkill`.
+
+**Scoped fix (its own task):**
+1. Rewrite `applyCommandPipeline`/`applySubagentPipeline` in `adapt-parity.test.ts` to simulate via the real mapper functions (`adaptCommandToSkill`, `adaptSubagentToSkill`).
+2. Update the stale wiring comment.
+3. Delete `normalizeFrontmatter`, its barrel export (`index.ts`), and `frontmatter.test.ts`.
+4. Run full suite to confirm parity still holds.
+
+Deferred from the 2026-06-20 review pass to keep the ConversionPipeline removal surgical (R3) — it touches the parity contract, not a trivial dead-export delete.
+
+**Other architecture candidates (surveyed, not actioned):**
+- C2 (major): duplicated frontmatter walker across `adapt-command.ts` / `adapt-subagent.ts`.
+- C3 (major): `evaluate<Type>` dispatch duplicated 5×; no single `evaluate(type, …)` verb in core.
+- C5 (minor): `dimensions.ts` mixes registry + heuristic toolkit.
+
 
 ### P1 — Blockers
 _(none)_
