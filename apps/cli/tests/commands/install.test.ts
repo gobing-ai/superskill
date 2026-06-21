@@ -335,6 +335,8 @@ describe('executeInstall', () => {
         const volArg: { args: { root: string; name: string; plugin: string } | null } = { args: null };
         process.chdir(workspace);
 
+        const stdout = spyOn(process.stdout, 'write').mockImplementation(() => true);
+
         await executeInstall(
             'market',
             ['claude'],
@@ -350,9 +352,11 @@ describe('executeInstall', () => {
         expect(args).not.toBeNull();
         // guard after .not.toBeNull() since TS can't track the assertion
         if (!args) throw new Error('expected captured args to be non-null');
+        const output = stdout.mock.calls.map((call) => String(call[0])).join('');
         expect(args.plugin).toBe('market');
         expect(args.name).toBe('test-marketplace');
         expect(args.root).toBe(workspace);
+        expect(output).toContain("Installed 'market' to 1 target(s).");
     });
 
     it('spawns claude marketplace add and install when using default runClaudeInstall', async () => {
@@ -372,6 +376,8 @@ describe('executeInstall', () => {
             spawnCalls.push({ cmd: [...cmd], options });
             return { exited: Promise.resolve(0) };
         }) as typeof Bun.spawn;
+
+        spyOn(process.stdout, 'write').mockImplementation(() => true);
 
         process.chdir(workspace);
         await executeInstall('market', ['claude'], {
