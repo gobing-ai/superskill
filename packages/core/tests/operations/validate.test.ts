@@ -62,12 +62,11 @@ describe('_validateContent — Required fields', () => {
         expect(result.findings.some((f) => f.field === 'model')).toBe(true);
     });
 
-    it('reports missing event for hook', () => {
+    it('passes hook with any fields (hooks are JSON-based, frontmatter not required)', () => {
         const result = _validateContent('hook', fm('x', { description: 'd' }));
-        expect(result.valid).toBe(false);
-        expect(result.findings.some((f) => f.field === 'event')).toBe(true);
+        // REQUIRED_FIELDS.hook = [] (task 0051 — hooks evaluate hooks.json, not .md)
+        expect(result.valid).toBe(true);
     });
-
     it('passes agent with all required fields', () => {
         const result = _validateContent(
             'agent',

@@ -2,41 +2,45 @@ version: 1
 type: hook
 dimensions:
   - name: correctness
-    weight: 0.30
-    criterion: >
-      Does the hook's logic produce the intended effect? Penalize hooks that
-      fire on the wrong event, mutate state the spec says they shouldn't, or
-      exit with the wrong code on a documented path.
-    anchors:
-      excellent: "Logic matches the spec on every documented path; correct event, mutation, and exit code."
-      poor: "Logic diverges from spec on at least one documented path."
-
-  - name: event-coverage
-    weight: 0.30
-    criterion: >
-      Does the hook handle all events it claims to? Penalize hooks that
-      register for an event but silently no-op on it, or that miss an event
-      the spec requires. Coverage means the hook acts on every registered event.
-    anchors:
-      excellent: "Every registered event has a real handler; no silent no-ops; no missing required events."
-      poor: "Registered events include silent no-ops, or required events are missing."
-
-  - name: safety
     weight: 0.25
     criterion: >
-      Does the hook avoid destructive side effects? Penalize hooks that
-      force-push, delete without confirmation, bypass gates, or modify files
-      outside their stated scope. Safety is about blast radius, not just correctness.
+      Does each hook entry have a valid command, type="command", and a non-empty
+      matcher? Penalize entries with missing or empty commands, unrecognized types,
+      or blank matchers.
     anchors:
-      excellent: "No destructive side effect without an explicit guard; blast radius matches stated scope."
-      poor: "Destructive side effects (force-push, delete, bypass) without guards."
+      excellent: "Every entry has type=command, a non-empty command, and a valid matcher."
+      poor: "Entries missing commands, have invalid types, or have blank matchers."
+
+  - name: event-coverage
+    weight: 0.20
+    criterion: >
+      How many lifecycle events are hooked? The canonical event set includes
+      PreToolUse, PostToolUse, Stop, SubagentStop, SessionStart, SessionEnd,
+      UserPromptSubmit, PreCompact, and Notification. Broader coverage of
+      appropriate events is better; penalize coverage that misses safety-critical
+      events (e.g. no PreToolUse gate).
+    anchors:
+      excellent: "Covers multiple lifecycle events including PreToolUse and Stop; breadth matches the hook's purpose."
+      poor: "Covers a single event or misses safety-critical lifecycle events."
+
+  - name: safety
+    weight: 0.35
+    criterion: >
+      Do the hook commands avoid dangerous patterns? Scan for rm -rf, curl pipe
+      to shell, --no-verify bypasses, eval, sudo, chmod 777, unquoted command
+      substitution, and backtick execution. Hooks run arbitrary shell — safety
+      is the highest-value dimension.
+    anchors:
+      excellent: "No dangerous patterns; all commands use safe, portable constructs."
+      poor: "Commands contain dangerous patterns (rm -rf, curl|sh, --no-verify) with no guard."
 
   - name: pattern-match-quality
-    weight: 0.15
+    weight: 0.20
     criterion: >
-      Are the matchers precise? Penalize matchers that over-match (fire on
-      unrelated commands) or under-match (miss the intended case). A precise
-      matcher fires on exactly the intended inputs.
+      Are matchers specific (not just *), do entries have timeouts, and are
+      paths portable (using ${CLAUDE_PLUGIN_ROOT} rather than absolute paths)?
+      Penalize broad * matchers on destructive events, missing timeouts, and
+      hardcoded user-specific paths.
     anchors:
-      excellent: "Matchers fire on exactly the intended inputs; no over- or under-matching."
-      poor: "Matchers over-match (fire on unrelated commands) or under-match (miss intended case)."
+      excellent: "Specific matchers, timeouts on every entry, portable paths throughout."
+      poor: "Broad * matchers, missing timeouts, absolute paths tied to a specific user/machine."

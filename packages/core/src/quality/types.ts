@@ -73,7 +73,7 @@ export const REQUIRED_FIELDS: Record<ContentType, string[]> = {
     skill: ['name', 'description'],
     command: ['description'],
     agent: ['name', 'description', 'model', 'tools'],
-    hook: ['name', 'description', 'event'],
+    hook: [],
     magent: [],
 };
 

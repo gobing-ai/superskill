@@ -43,12 +43,11 @@ tools:
   - bash`,
         `# Code Reviewer Agent\n\nReviews code and reports findings.\n\n## Instructions\n\nYou are a code reviewer. Check for bugs and issues.`,
     ),
-    hook: makeSample(
-        `name: block-dangerous
-description: Blocks dangerous shell commands
-enabled: true`,
-        `# Block Dangerous Hook\n\nThis hook blocks dangerous shell commands.\n\n## Rules\n\n- Block rm -rf\n- Block force push`,
-    ),
+    hook: JSON.stringify({
+        hooks: {
+            Stop: [{ matcher: '*', hooks: [{ type: 'command', command: 'bun guard.ts', timeout: 10 }] }],
+        },
+    }),
     magent: makeSample(
         `name: dev-agent
 description: Development agent configuration

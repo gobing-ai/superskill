@@ -33,9 +33,10 @@ describe('task 0032 — cc personas wiring and hide validate', () => {
     });
 
     // R7 — command surface = 16
-    it('has exactly 16 slash commands', () => {
+    // R7 — command surface = 17 (added hook-evaluate in task 0051)
+    it('has exactly 17 slash commands', () => {
         const commands = readdirSync(COMMANDS_DIR).filter((f) => f.endsWith('.md'));
-        expect(commands.length).toBe(16);
+        expect(commands.length).toBe(17);
     });
 
     // R5/R6 — no *-validate slash command for any type
