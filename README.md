@@ -131,21 +131,60 @@ The CLI never scores or generates inline. Quality operations drive four personas
 
 Version-aware trends partition by `rubric_version`, preventing false regression signals when rubrics are updated.
 
-## Supported targets
+## Proper Location for Coding Agents
 
-| Target | Engine | Output location |
-|--------|--------|-----------------|
-| `claude` | Direct `claude plugin install` | Claude Code marketplace |
-| `codex` | rulesync | `~/.agents/skills/` |
-| `pi` | rulesync + superskill hook shim | Pi native format |
-| `omp` | superskill copy (via `pi` surrogate) | `~/.omp/agent/skills/` |
-| `opencode` | rulesync | `~/.agents/skills/` |
-| `antigravity-cli` | rulesync | `~/.gemini/antigravity-cli/skills/` |
-| `antigravity-ide` | rulesync | `~/.gemini/config/skills/` |
-| `hermes` | superskill copy (via `opencode` surrogate) | `~/.hermes/skills/` |
+Each coding agent stores skills, slash commands, subagents, and hooks in different directories. This table is the single source of truth for where `superskill install` writes each entity type per target — verified against each agent's source code (`vendors/`).
+
+### Entity locations by agent (global / user-level)
+
+| Agent | Skills | Slash Commands | Subagents | Hooks |
+|-------|--------|---------------|-----------|-------|
+| **Claude Code** | `~/.claude/plugins/<name>/skills/` | `~/.claude/plugins/<name>/commands/` | `~/.claude/plugins/<name>/agents/` | `~/.claude/plugins/<name>/hooks/hooks.json` |
+| **Codex** | `~/.agents/skills/` | `~/.codex/prompts/` | `~/.codex/agents/` | — |
+| **Pi** | `~/.pi/agent/skills/` | `~/.pi/agent/prompts/` | `~/.pi/agent/agents/`¹ | extensions² |
+| **omp** | `~/.omp/agent/skills/` | `~/.omp/agent/commands/` | `~/.omp/agent/agents/`¹ | extensions² / `.omp/hooks/pre\|post/*.ts` |
+| **OpenCode** | `~/.opencode/skills/` | `~/.config/opencode/commands/` | `~/.config/opencode/agents/` | — |
+| **Antigravity IDE** | `~/.gemini/config/skills/` | `~/.gemini/antigravity/global_workflows/` | — | — |
+| **Antigravity CLI** | `~/.gemini/antigravity-cli/skills/` | — | — | — |
+| **Hermes** | `~/.hermes/skills/` | config.yaml³ | —⁴ | `~/.hermes/hooks/<name>/HOOK.yaml` + `handler.py` |
+| **OpenClaw** | `skills/` (project-level) | —⁵ | —⁵ | — |
+
+¹ Subagents require an extension to be loaded (not built-in). Pi: `subagent` example extension reads `~/.pi/agent/agents/*.md`. omp: `omp agents unpack` writes to `~/.omp/agent/agents/`.
+
+² Pi and omp replaced their legacy hook systems with an **Extensions** system (TypeScript event handlers at `~/.pi/agent/extensions/` / `~/.omp/agent/extensions/`). `superskill` currently emits a pi-hooks-format shim; migrating to extensions format is on the roadmap.
+
+³ Hermes defines slash commands inline in `~/.hermes/config.yaml` (`quick_commands:` block) or as hardcoded `CommandDef` entries in source. Skills registered at `~/.hermes/skills/` are auto-discovered as `/<skill-name>` slash commands — installing commands as skills is the recommended path.
+
+⁴ Hermes spawns subagents dynamically at runtime via `delegate_task`; there is no persistent subagent directory.
+
+⁵ OpenClaw reads skills from a flat `skills/` directory at project root. Commands and subagents are installed as skill directories (same as other agents that lack dedicated command/subagent dirs). Currently dropped from superskill's `TARGETS` — tracked for re-add.
+
+### How superskill installs
+
+| Agent | Engine | Notes |
+|-------|--------|-------|
+| **Claude Code** | `claude plugin marketplace add` + `claude plugin install` | Native plugin system — handles all entity types automatically |
+| **Codex** | rulesync | `codex` → `codexcli` |
+| **Pi** | rulesync + superskill shim | Subagents via direct write to `~/.pi/agent/agents/` (rulesync doesn't support Pi subagents) |
+| **omp** | rulesync + superskill shim | `omp` → `pi` surrogate for rulesync, then copy skills to `~/.omp/agent/skills/`; omp natively reads from other agent directories |
+| **OpenCode** | rulesync | `opencode` → `opencode` |
+| **Antigravity IDE** | rulesync | `antigravity-ide` → `antigravity-ide` |
+| **Antigravity CLI** | rulesync | `antigravity-cli` → `antigravity-cli`; commands/subagents not supported by rulesync for this target |
+| **Hermes** | rulesync + superskill shim | `hermes` → `opencode` surrogate for rulesync, then copy to `~/.hermes/`; hooks currently emit `hooks.json` (wrong format — Hermes uses `HOOK.yaml`) |
 
 Since ts-ai-runner 0.3.21, `omp`, `hermes`, and `antigravity-cli` are canonical `AgentName` values — slash-command dialect translation maps 1:1. Only `antigravity-ide` still bridges through `opencode`.
 
+### Known gaps
+
+| Gap | Status |
+|-----|--------|
+| **Pi subagents** not installed | Rulesync's SubagentsProcessor excludes `pi`. Fix: direct write to `~/.pi/agent/agents/` in install dispatch (tracked in task 0044). |
+| **antigravity-cli** commands/subagents | Rulesync doesn't support `antigravity-cli` for commands/subagents (only `antigravity` project-level). |
+| **Hermes hooks format** | Superskill writes `hooks.json`; Hermes expects `~/.hermes/hooks/<name>/HOOK.yaml` + `handler.py`. |
+| **Hermes commands** | No `commands/` directory. Install commands as skills for slash-command auto-discovery. |
+| **Pi/omp hooks → extensions** | Legacy pi-hooks shim should migrate to the Extensions format. |
+| **OpenClaw** | Missing from `TARGETS` entirely. Old `cc-agents/scripts/` supported it via direct `skills/` directory copy. |
+| **Claude Code install** | Code fix committed (`13dcf78`) but binary not yet rebuilt/published. |
 ## Bundled `cc` plugin
 
 superskill ships with a Claude Code plugin at [`plugins/cc/`](plugins/cc/) (marketplace name: `cc`, version `0.1.1`) that demonstrates the full authoring lifecycle and provides the meta-agent skills the expert personas reference:
