@@ -1,9 +1,9 @@
 ---
 name: Make cc agent-evolve ready to replace rd3 agent-evolve
 description: Make cc agent-evolve ready to replace rd3 agent-evolve
-status: Backlog
+status: WIP
 created_at: 2026-06-21T20:55:48.410Z
-updated_at: 2026-06-21T20:55:48.410Z
+updated_at: 2026-06-21T21:47:13.193Z
 folder: docs/tasks
 type: task
 feature-id: ""
@@ -174,6 +174,14 @@ Seeded proposal (declining/flat-low dim → non-empty changes), `--analyze` outp
 
 ### Solution
 
+Shared-engine fix landing in `apps/cli/src/operations/evolve.ts` + agent surface on `apps/cli/src/commands/agent.ts` + wrapper fix on `plugins/cc/commands/agent-evolve.md`.
+
+- A1 (G1): revive `generateChanges(report, trends)` in `stepPropose` — rename `_report` → `report`, seed `changes` for declining/flat-low dims. `--ingest` override stays intact.
+- A2 (G2): add `--analyze` path — reuse `stepAnalyze`/`computeTrends`, print trend table + score/grade + data-source inventory + pattern summary. No file mutation.
+- A3 (G3): add `--history` (list applied proposals + backup timestamps) and `--rollback <ver>` (restore via `restoreFromBackup` behind `--confirm`). Persist backup path + version id on apply so rollback is real.
+- A4 (G4): fix wrapper drift in `agent-evolve.md` — real capabilities, real id shape (`agent-evolve-YYYY-MM-DD-NNN`), synced `argument-hint`.
+- A5: regression tests for seeded proposals, analyze shape, history listing, rollback byte-identical restore.
+- Docs sync: `docs/04_DESIGN.md` + `docs/design/design-doc-phase2.md` updated in the same commit as flag registration.
 
 
 ### Plan
