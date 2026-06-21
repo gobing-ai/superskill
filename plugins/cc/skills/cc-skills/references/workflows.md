@@ -245,43 +245,37 @@ Validate skill structure and score quality using **Two-Tier Architecture**.
 
 ### Tier 2: Quality Scoring
 
-**Purpose:** Assess skill quality across dimensions (script + LLM).
+**Purpose:** Assess skill quality across 5 dimensions via deterministic heuristic + optional LLM enrichment.
 
 | Step | Name | Handler | Success Criteria |
 |------|------|---------|------------------|
-| 2.1 | Dimension Scoring | Script | Returns scores for all dimensions |
-| 2.2 | Calculate Grade | Script | Returns A/B/C/D/F |
-| 2.3 | Embedded LLM Checklist Review | LLM (invoking agent) | Returns nuanced follow-up guidance |
-| 2.4 | Generate Report | Script | JSON/text output |
+| 2.1 | Heuristic Scoring | `superskill skill evaluate` | Weighted aggregate + per-dim scores |
+| 2.2 | LLM Enrichment (optional) | LLM via envelope-out → Scorer → ingest-in seam | Rubric-scored dimensions + findings |
+| 2.3 | Generate Report | `superskill skill evaluate` (built-in) | Table + verdict + grade + recommendations |
 
 #### Scoring Dimensions
 
-MECE framework: 4 categories, 10 dimensions, 100 points total (source: `superskill skill evaluate` CLI):
+5 dimensions, rubric-weighted (canonical weights in `packages/core/src/rubrics/skill.yaml`):
 
-| Category | Dimension | Pts | What It Checks |
-|----------|-----------|-----|----------------|
-| **Core Quality** (40) | Frontmatter | 10 | YAML validity, required fields |
-| | Structure | 5 | Directory organization |
-| | Content | 15 | Body quality, examples |
-| | Completeness | 10 | All required sections |
-| **Discovery & Trigger** (20) | Trigger Design | 10 | Description triggers, when-to-use |
-| | Platform Compatibility | 10 | Multi-platform support |
-| **Safety & Security** (20) | Security | 10 | No dangerous patterns |
-| | Circular Reference | 10 | No command/agent refs |
-| **Code & Docs** (20) | Code Quality | 10 | Scripts executable, tested |
-| | Progressive Disclosure | 10 | References used properly |
+| Dimension | What It Checks |
+|-----------|----------------|
+| **completeness** | Required frontmatter fields present? Sections structured? |
+| **clarity** | Unambiguous instruction? Penalizes vague verbs. |
+| **trigger-accuracy** | Fires on right inputs? Counts trigger phrases. |
+| **anti-hallucination** | Prevents fabrication? Checks verification language density. |
+| **conciseness** | Short as possible while complete? Penalizes bloat. |
 
-> **Note:** Skills without scripts use a different weight profile (Structure=10, Content=20, Code Quality=0). See [evaluation-framework.md](evaluation-framework.md) for both profiles.
+See [evaluation-framework.md](evaluation-framework.md) for scoring modes and rubric resolution tiers.
 
 #### Grading Scale
 
-| Grade | Score | Meaning |
-|-------|-------|---------|
-| **A** | 90-100 | Production ready |
-| **B** | 70-89 | Minor fixes needed |
-| **C** | 50-69 | Moderate revision |
-| **D** | 30-49 | Major revision |
-| **F** | 0-29 | Rewrite needed |
+| Grade | Score (0–1) | Meaning |
+|-------|-------------|---------|
+| **A** | 0.90–1.00 | Production ready |
+| **B** | 0.75–0.89 | Minor fixes needed |
+| **C** | 0.60–0.74 | Moderate revision |
+| **D** | 0.45–0.59 | Major revision |
+| **F** | 0.00–0.44 | Rewrite needed |
 
 ---
 
@@ -451,32 +445,29 @@ superskill skill evaluate <skill-path> --save
 
 **If BLOCK:** Stop - critical failure
 
-#### Step 2.1: Dimension Scoring (Script)
+#### Step 2.1: Dimension Scoring
 ```bash
-superskill skill evaluate <skill-path> --save
+superskill skill evaluate <skill-dir> --save
 ```
 
-**What script scores (10 dimensions, see evaluation.config.ts):**
-- Core Quality: Frontmatter (10), Structure (5), Content (15), Completeness (10)
-- Discovery & Trigger: Trigger Design (10), Platform Compatibility (10)
-- Safety & Security: Security (10), Circular Reference (10)
-- Code & Documentation: Code Quality (10), Progressive Disclosure (10)
+**What the CLI scores (5 dimensions, rubric-weighted):**
+- completeness, clarity, trigger-accuracy, anti-hallucination, conciseness
+- Weights from `packages/core/src/rubrics/skill.yaml`; verified at load time.
 
-**Output:** Score per dimension, total (out of 100), grade (A/B/C/D/F)
+**Output:** Per-dimension score + note, weighted aggregate, verdict (PASS/FAIL), grade (A–F).
 
-#### Step 2.3: Embedded LLM Checklist Review (Invoking Agent)
+#### Step 2.3: LLM Enrichment (Optional)
 
-**What the invoking agent evaluates:**
-- Description quality (rubric-based)
-- Trigger effectiveness
-- Content helpfulness
-- Voice consistency
+**What the invoking agent evaluates via rubric seam:**
+- Each dimension against the rubric criteria (anchor-driven)
+- Structured findings and actionable recommendations
 
-**Output:** Detailed analysis, recommendations
+**Output:** Detailed analysis, recommendations per dimension.
 
-#### Step 2.4: Generate Report (Script)
-- Outputs JSON or text report
-- Lists all findings and recommendations
+#### Step 2.4: Generate Report
+- Built into `superskill skill evaluate` (no separate script).
+- Human output: table + verdict + grade + findings + recommendations.
+- JSON output (`--json`): full QualityReport.
 - Includes grade and pass/fail status
 
 ---
@@ -970,7 +961,7 @@ Multi-source skill migration combining deterministic script phases with LLM cont
 | 3 | Reconcile + Convert | `skill-migrate.ts` (cont.) | Conflicts reconciled, Python converted to TS | Continue (warnings logged) |
 | 4 | Apply + Report | `skill-migrate.ts --apply` | Files written, report generated | Abort |
 | 5 | LLM Content Refinement | LLM (invoking agent) | Coherent content, TODO markers resolved | Retry step 5 (max 2) |
-| 6 | Validate Result | `evaluate.ts --scope full` | Score >= 70 (pass threshold) | Back to step 5 |
+| 6 | Validate Result | `superskill skill evaluate <skill-dir>` | Verdict PASS (≥0.70) | Back to step 5 |
 
 ### Step Details
 

@@ -1,5 +1,5 @@
 import { existsSync, statSync } from 'node:fs';
-import { dirname } from 'node:path';
+import { dirname, join } from 'node:path';
 import { parseFrontmatter } from '../content/frontmatter';
 import { resolveContentPath } from '../content/identity';
 import type { ContentType } from '../content/types';
@@ -85,6 +85,37 @@ const DEPRECATED_FIELDS: Record<string, string> = {
 };
 
 // ── Core ─────────────────────────────────────────────────────────────────────
+/**
+ * Check markdown body links for integrity.
+ * For every `[...](path)` in the body, resolves the file portion against `baseDir`
+ * and flags non-existent targets. Skips external URLs (`http(s)://`, `mailto:`, any
+ * `scheme:` link) and anchor-only `#...` links. Strips `#anchor` and `?query`
+ * suffixes before resolving so `foo.md#section` checks `foo.md`.
+ */
+function checkBodyLinks(body: string, baseDir: string): Finding[] {
+    const findings: Finding[] = [];
+    const linkRe = /\[([^\]]*)\]\(([^)]+)\)/g;
+    for (const match of body.matchAll(linkRe)) {
+        const linkText = match[1];
+        const target = match[2];
+        if (!target) continue;
+        // Skip anchor-only links and any scheme-qualified URL (http:, https:, mailto:, etc.)
+        if (/^#/.test(target)) continue;
+        if (/^[a-z][a-z0-9+.-]*:/i.test(target)) continue;
+        // Strip anchor (#...) and query (?...) suffixes before resolving the file path
+        const filePart = target.split(/[#?]/)[0];
+        if (!filePart) continue;
+        const resolved = join(baseDir, filePart);
+        if (!existsSync(resolved)) {
+            findings.push({
+                severity: 'warning',
+                field: '_links',
+                message: `Broken body link: [${linkText}](${target}) → target not found: ${resolved}`,
+            });
+        }
+    }
+    return findings;
+}
 
 /**
  * Structural + schema validation for a content file.
@@ -132,10 +163,18 @@ export async function validate(
     }
 
     const baseDir = dirname(resolvedPath);
-    return _validateContent(type, content, {
+    const result = _validateContent(type, content, {
         ...opts,
         referenceChecker: (refType, refName) => resolveContentPath(refType, refName, { baseDir }) !== null,
     });
+
+    // Body-link integrity check (E6): flag broken markdown links in the body.
+    const bodyStart = content.indexOf('\n---\n');
+    const body = bodyStart >= 0 ? content.slice(bodyStart + 5) : content;
+    const linkFindings = checkBodyLinks(body, baseDir);
+    result.findings.push(...linkFindings);
+
+    return result;
 }
 
 /**

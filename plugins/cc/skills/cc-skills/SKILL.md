@@ -54,8 +54,7 @@ When a `cc-skills` workflow is tracked in a task file under `docs/tasks/`, do no
 record with isolated `tasks update --section ...` or `tasks update --phase ...` calls when a
 canonical lifecycle operation exists.
 
-Use the predefined `cc:tasks` operations in
-[../tasks/references/workflows.md](../tasks/references/workflows.md):
+Use the predefined `cc:tasks` lifecycle operations:
 
 - `create`
 - `planning`
@@ -297,26 +296,23 @@ Follow these best practices to create effective, maintainable skills. See [refer
 
 <!-- Full best practices moved to references/best-practices.md -->
 
-## MECE Evaluation Dimensions
+## Evaluation Dimensions
 
-Skills are scored across **4 categories, 10 dimensions, 100 points total**:
+Skills are scored across **5 dimensions** using rubric-weighted heuristics (see `superskill skill evaluate`):
 
-| Category | Dimension | Pts | What It Checks |
-|----------|-----------|-----|----------------|
-| **Core Quality** (40) | Frontmatter | 10 | YAML validity, required fields |
-| | Structure | 5 | Directory organization |
-| | Content | 15 | Body quality, examples |
-| | Completeness | 10 | All required sections |
-| **Discovery & Trigger** (20) | Trigger Design | 10 | Description triggers, when-to-use |
-| | Platform Compatibility | 10 | Multi-platform support |
-| **Safety & Security** (20) | Security | 10 | No dangerous patterns |
-| | Circular Reference | 10 | No command/agent refs |
-| **Code & Docs** (20) | Code Quality | 10 | Optional executable helpers tested |
-| | Progressive Disclosure | 10 | References used properly |
+| Dimension | Weight | What It Checks |
+|-----------|--------|----------------|
+| **completeness** | 0.25 | Are required frontmatter fields present and sections structured? |
+| **clarity** | 0.25 | Is the instruction unambiguous to a fresh agent? Penalizes vague verbs. |
+| **trigger-accuracy** | 0.20 | Does the skill fire on the right inputs? Counts trigger phrases. |
+| **anti-hallucination** | 0.15 | Does the skill prevent fabrication? Checks verification language. |
+| **conciseness** | 0.15 | Is the skill as short as possible while complete? Penalizes bloat. |
 
-Grade: A (90+) / B (70-89) / C (50-69) / D (30-49) / F (<30). Pass threshold: **70 pts**.
+The canonical rubric lives at `packages/core/src/rubrics/skill.yaml`. Do not restate weights elsewhere — they drift.
 
-See [references/evaluation-framework.md](references/evaluation-framework.md) for weight profiles (with/without executable helpers), security scanner rules, and full scoring details.
+Verdict: **PASS** (≥0.70) / **FAIL** (<0.70). Grade: A (≥0.90) / B (0.75–0.89) / C (0.60–0.749) / D (0.45–0.599) / F (<0.45).
+
+The rubric scoring seam: heuristic dimension scores (deterministic) → rubric weights → aggregate + verdict. For LLM-scored enrichment: envelope-out → Scorer → ingest-in path. See [references/evaluation-framework.md](references/evaluation-framework.md) for the two-call seam, rubric resolution tiers, and persistent evaluation history.
 
 ## Additional Resources
 

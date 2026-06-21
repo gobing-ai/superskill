@@ -1,6 +1,6 @@
 ---
 description: Check skill quality score and identify weaknesses
-argument-hint: "<skill-path> [--json] [--save] [--target <platform>]"
+argument-hint: "<skill-dir> [--save] [--target <platform>]"
 allowed-tools: ["Read", "Write", "Glob", "Bash", "Skill"]
 ---
 
@@ -19,18 +19,17 @@ Score skill quality across multiple dimensions. **Evaluate only — make NO chan
 
 | Argument | Description | Default |
 |----------|-------------|---------|
-| `skill-path` | Path to the SKILL.md file | (required) |
-| `--json` | Output results as JSON | text |
-| `--save` | Save evaluation results to file | false |
+| `skill-dir` | Path to the skill directory | (required) |
+| `--save` | Persist the evaluation to the evaluation store (enables evolve trend analysis) | false |
 | `--target` | Target platform | claude-code |
 
 ## Examples
 
 ```bash
 # Evaluate a skill
-/cc:skill-evaluate ./skills/my-skill/SKILL.md
-# Save results as JSON
-/cc:skill-evaluate ./skills/my-skill/SKILL.md --json --save
+/cc:skill-evaluate ./skills/my-skill
+# Save results for trend analysis
+/cc:skill-evaluate ./skills/my-skill --save
 ```
 
 ## Implementation

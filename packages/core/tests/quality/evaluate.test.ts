@@ -99,4 +99,14 @@ describe('evaluate', () => {
             expect(report.aggregate).toBeGreaterThan(0);
         }
     });
+
+    it('scores a 14k-char skill body above zero on conciseness (B3c regression)', () => {
+        // A rich but legitimate skill body should not auto-zero conciseness.
+        const body = `# Rich Skill\n\n${'x'.repeat(14000)}`;
+        const content = `---\nname: rich-skill\ndescription: A complete skill with substantial body\n---\n${body}`;
+        const report = evaluate('skill', content, 'skill/rich-skill');
+        const conciseness = report.dimensions.conciseness;
+        expect(conciseness).toBeDefined();
+        expect(conciseness?.score).toBeGreaterThan(0);
+    });
 });

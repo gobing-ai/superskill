@@ -34,6 +34,36 @@ export interface EvaluateOptions {
     rubric?: string;
     /** Path to an agent-produced scores JSON → ingest-in mode: validate against rubric, persist (with --save). */
     ingest?: string;
+    /** Show evaluation history from the store for the given content (--history mode). */
+    history?: boolean;
+}
+
+/** Show prior evaluation rows from the SQLite store for a given content type and name. */
+async function showHistory(type: ContentType, contentName: string, opts: EvaluateOptions): Promise<void> {
+    const adapter = opts.adapter ?? (await openStore());
+    const dao = new EvaluationDao(adapter);
+    const rows = await dao.getEvaluations(type, contentName);
+
+    if (rows.length === 0) return;
+
+    const cols = { date: 19, agg: 9, verdict: 7 };
+    const lines: string[] = [];
+    lines.push(`Evaluation history for ${contentName} (${rows.length} entries):`);
+    lines.push('');
+    const header = `${'Date'.padEnd(cols.date)}  ${'Aggregate'.padEnd(cols.agg)}  ${'Verdict'.padEnd(cols.verdict)}  Scorer`;
+    lines.push(header);
+    lines.push('-'.repeat(header.length));
+
+    for (const row of rows) {
+        const date = new Date(row.created_at).toISOString().slice(0, 19).replace('T', ' ');
+        const agg = row.aggregate.toFixed(2).padEnd(cols.agg);
+        const verdict = (row.aggregate >= 0.7 ? 'PASS' : 'FAIL').padEnd(cols.verdict);
+        const scorer = row.scorer ?? 'heuristic';
+        const rv = row.rubric_version ? ` v${row.rubric_version}` : '';
+        lines.push(`${date.padEnd(cols.date)}  ${agg}  ${verdict}  ${scorer}${rv}`);
+    }
+
+    echo(lines.join('\n'));
 }
 
 /** Result of an evaluate call — aliases QualityReport from F009. */
@@ -60,6 +90,12 @@ export async function evaluate(
         throw Object.assign(new Error(`File not found: ${nameOrPath}`), { code: 2 });
     }
 
+    // History mode: show prior evaluations from the store (E7)
+    if (opts?.history) {
+        await showHistory(type, resolveContentName(resolvedPath), opts);
+        return null;
+    }
+
     // 2. Read content
     let content: string;
     try {
@@ -84,6 +120,7 @@ export async function evaluate(
     // 6. Heuristic mode (default): deterministic F009 evaluators
     const report = evaluateContent(type, content, resolvedTarget);
     report.content = resolveContentName(resolvedPath);
+    applyRubricWeightingAndVerdict(type, report, opts);
 
     if (opts?.save) {
         await persistEvaluation(type, resolvedPath, resolvedTarget, report, opts);
@@ -113,6 +150,31 @@ function computeWeightedAggregate(scores: Record<string, DimensionScore>, rubric
 }
 
 /**
+ * Apply rubric weighting and a verdict/grade to a heuristic report in place.
+ *
+ * `loadRubric` throws when no rubric ships for the type — in that case the
+ * equal-weight aggregate from `evaluateContent` is kept. This is the single
+ * source of truth for the default-path aggregate so the envelope baseline and
+ * the default report share the same weighting basis (Scorer deltas stay comparable).
+ */
+function applyRubricWeightingAndVerdict(type: ContentType, report: QualityReport, opts?: EvaluateOptions): void {
+    try {
+        const rubric = loadRubric(type, opts?.rubric ? { path: opts.rubric } : undefined);
+        report.aggregate = computeWeightedAggregate(report.dimensions, rubric);
+    } catch {
+        // No rubric available: keep the equal-weight aggregate from evaluateContent.
+    }
+
+    const agg = report.aggregate;
+    report.verdict = agg >= 0.7 ? 'PASS' : 'FAIL';
+    if (agg >= 0.9) report.grade = 'A';
+    else if (agg >= 0.75) report.grade = 'B';
+    else if (agg >= 0.6) report.grade = 'C';
+    else if (agg >= 0.45) report.grade = 'D';
+    else report.grade = 'F';
+}
+
+/**
  * Envelope-out: emit `{ type, content_name, target, content, rubric, baseline }` as JSON.
  * No scoring, no DB write, no model call. The agent scores offline and returns via --ingest.
  */
@@ -126,9 +188,11 @@ function emitEnvelope(
     const rubric = loadRubric(type, { path: opts.rubric });
     const contentName = resolveContentName(resolvedPath);
 
-    // Baseline: heuristic QualityReport for the same content
+    // Baseline: heuristic QualityReport, weighted on the same basis as the default
+    // report (P2#3) so the Scorer's deltas against the baseline stay comparable.
     const baseline = evaluateContent(type, content, resolvedTarget);
     baseline.content = contentName;
+    applyRubricWeightingAndVerdict(type, baseline, opts);
 
     const envelope = {
         type,
@@ -292,6 +356,33 @@ export function formatEvaluationReport(report: QualityReport, json?: boolean): s
 
     lines.push(`  ${'─'.repeat(maxNameLen)}${'─'.repeat(30)}`);
     lines.push(`  ${'AGGREGATE'.padEnd(maxNameLen)}  ${report.aggregate.toFixed(2)}`);
+
+    // Verdict + grade (E5)
+    if (report.verdict || report.grade) {
+        lines.push('');
+        lines.push(`  Verdict: ${report.verdict ?? ''}  Grade: ${report.grade ?? ''}`);
+    }
+
+    // Findings + Recommendations (E5)
+    const findings: string[] = [];
+    const recommendations: string[] = [];
+    for (const name of dimNames) {
+        const dim = report.dimensions[name];
+        if (!dim) continue;
+        if (dim.findings) findings.push(...dim.findings.map((f) => `[${name}] ${f}`));
+        if (dim.recommendations) recommendations.push(...dim.recommendations.map((r) => `[${name}] ${r}`));
+    }
+
+    if (findings.length > 0) {
+        lines.push('');
+        lines.push('Findings:');
+        for (const f of findings) lines.push(`  • ${f}`);
+    }
+    if (recommendations.length > 0) {
+        lines.push('');
+        lines.push('Recommendations:');
+        for (const r of recommendations) lines.push(`  → ${r}`);
+    }
 
     return lines.join('\n');
 }

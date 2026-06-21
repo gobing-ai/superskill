@@ -63,15 +63,17 @@ export async function skillEvaluate(opts: {
     save?: boolean;
     rubric?: string;
     ingest?: string;
+    history?: boolean;
 }): Promise<number | undefined> {
     const target = resolveTarget(opts);
     const report = await evaluate('skill', opts.nameOrPath, {
         target,
         save: opts.save,
+        history: opts.history,
         ...(opts.rubric ? { rubric: opts.rubric } : {}),
         ...(opts.ingest ? { ingest: opts.ingest } : {}),
     });
-    if (report) {
+    if (report && !opts.history) {
         const output = formatEvaluationReport(report, opts.json);
         echo(`${output}`);
     }
@@ -131,11 +133,10 @@ export async function handleSkillValidate(
 ): Promise<void> {
     await runOperation(() => skillValidate({ nameOrPath, ...opts }));
 }
-
 /** Run skill evaluate as a CLI action. */
 export async function handleSkillEvaluate(
     nameOrPath: string,
-    opts: { target?: string; json?: boolean; save?: boolean; rubric?: string; ingest?: string },
+    opts: { target?: string; json?: boolean; save?: boolean; rubric?: string; ingest?: string; history?: boolean },
 ): Promise<void> {
     await runOperation(() => skillEvaluate({ nameOrPath, ...opts }));
 }
@@ -218,7 +219,6 @@ export function registerSkill(program: Command): void {
     addStrictOption(
         addTargetOption(addJsonOption(cmd.command('validate <nameOrPath>').description('Validate a skill file'))),
     ).action(handleSkillValidate);
-
     addEvaluateOptions(
         addSaveOption(
             addTargetOption(
@@ -227,7 +227,8 @@ export function registerSkill(program: Command): void {
                         .command('evaluate <nameOrPath>')
                         .description(
                             'Evaluate skill quality (use --rubric --json for envelope, --ingest --save to persist scores)',
-                        ),
+                        )
+                        .option('--history', 'Show prior evaluation rows from the store'),
                 ),
             ),
         ),

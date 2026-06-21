@@ -73,7 +73,8 @@ describe('evaluate', () => {
         }
     });
 
-    it('throws with code 2 for unreadable file', async () => {
+    it('throws with code 2 for path that resolves to nothing', async () => {
+        // After B1, an empty directory without SKILL.md returns null from resolveContentPath → "File not found".
         const dir = join(tmpDir, 'subdir');
         mkdirSync(dir, { recursive: true });
         try {
@@ -81,7 +82,7 @@ describe('evaluate', () => {
             throw new Error('should have thrown');
         } catch (err: unknown) {
             const e = err as Error & { code?: number };
-            expect(e.message).toContain('Cannot read');
+            expect(e.message).toContain('File not found');
             expect(e.code).toBe(2);
         }
     });
@@ -183,8 +184,206 @@ describe('evaluate', () => {
         const magent = notNull(await evaluate('magent', file));
         expect(magent.type).toBe('magent');
     });
-});
 
+    it('--history with empty store returns null', async () => {
+        const adapter = await createDbAdapter({ driver: 'bun-sqlite', url: ':memory:' });
+        await adapter.exec(evaluations.createTableSql);
+        const file = createTempFile(GOOD_SKILL);
+        const result = await evaluate('skill', file, { history: true, adapter });
+        expect(result).toBeNull();
+    });
+
+    it('--history with stored evaluations prints them', async () => {
+        const adapter = await createDbAdapter({ driver: 'bun-sqlite', url: ':memory:' });
+        await adapter.exec(evaluations.createTableSql);
+        const dao = new EvaluationDao(adapter);
+        await dao.insertEvaluation({
+            content_type: 'skill',
+            content_name: 'test-skill',
+            target_agent: 'claude',
+            operation: 'evaluate',
+            aggregate: 0.89,
+            dimensions: {},
+        });
+        await dao.insertEvaluation({
+            content_type: 'skill',
+            content_name: 'test-skill',
+            target_agent: 'claude',
+            operation: 'refine',
+            aggregate: 0.67,
+            dimensions: {},
+            rubric_version: 1,
+        });
+
+        const stdoutLines: string[] = [];
+        const origWrite = process.stdout.write;
+        process.stdout.write = ((chunk: string) => {
+            stdoutLines.push(String(chunk));
+            return true;
+        }) as typeof process.stdout.write;
+
+        try {
+            const file = createTempFile(GOOD_SKILL);
+            const result = await evaluate('skill', file, { history: true, adapter });
+            expect(result).toBeNull();
+            const output = stdoutLines.join('');
+            expect(output).toContain('Evaluation history');
+            expect(output).toContain('2 entries');
+            expect(output).toContain('PASS');
+            expect(output).toContain('FAIL');
+            expect(output).toContain('heuristic');
+            expect(output).toContain('v1');
+        } finally {
+            process.stdout.write = origWrite;
+        }
+    });
+
+    it('ingest mode throws when scores file is missing', async () => {
+        const file = createTempFile(GOOD_SKILL);
+        await expect(evaluate('skill', file, { ingest: '/nonexistent/scores.json' })).rejects.toThrow(
+            'Cannot read scores file',
+        );
+    });
+
+    it('ingest mode throws when scores file has invalid JSON', async () => {
+        const file = createTempFile(GOOD_SKILL);
+        const scoresFile = join(tmpDir, 'bad.json');
+        writeFileSync(scoresFile, 'not json');
+        await expect(evaluate('skill', file, { ingest: scoresFile })).rejects.toThrow('Invalid JSON');
+    });
+    it('envelope-out mode emits JSON and returns null', async () => {
+        const rubricPath = join(tmpDir, 'skill.yaml');
+        writeFileSync(
+            rubricPath,
+            `version: 1
+type: skill
+dimensions:
+  - name: completeness
+    weight: 0.5
+    criterion: "c"
+  - name: clarity
+    weight: 0.5
+    criterion: "c"
+`,
+        );
+        const stdoutLines: string[] = [];
+        const origWrite = process.stdout.write;
+        process.stdout.write = ((chunk: string) => {
+            stdoutLines.push(String(chunk));
+            return true;
+        }) as typeof process.stdout.write;
+
+        try {
+            const file = createTempFile(GOOD_SKILL);
+            const result = await evaluate('skill', file, { rubric: rubricPath });
+            expect(result).toBeNull();
+            const output = stdoutLines.join('');
+            expect(output).toContain('"type": "skill"');
+            expect(output).toContain('"content_name"');
+            expect(output).toContain('"rubric"');
+            expect(output).toContain('"baseline"');
+        } finally {
+            process.stdout.write = origWrite;
+        }
+    });
+
+    it('ingest mode throws on rubric_version mismatch', async () => {
+        const file = createTempFile(GOOD_SKILL);
+        const scoresFile = join(tmpDir, 'scores.json');
+        writeFileSync(scoresFile, JSON.stringify({ rubric_version: 999, dimensions: {} }));
+        await expect(evaluate('skill', file, { ingest: scoresFile })).rejects.toThrow('rubric_version mismatch');
+    });
+
+    it('throws on unreadable file', async () => {
+        const file = join(tmpDir, 'unreadable.md');
+        writeFileSync(file, '# test');
+        // Make file unreadable
+        const { chmodSync, statSync: fsStatSync } = await import('node:fs');
+        const oldMode = fsStatSync(file).mode;
+        try {
+            chmodSync(file, 0o000);
+            await expect(evaluate('skill', file)).rejects.toThrow(/Cannot read|File not found/);
+        } finally {
+            chmodSync(file, oldMode);
+        }
+    });
+
+    it('ingest mode succeeds with valid scores and rubric dimensions', async () => {
+        const adapter = await createDbAdapter({ driver: 'bun-sqlite', url: ':memory:' });
+        await adapter.exec(evaluations.createTableSql);
+        const file = createTempFile(GOOD_SKILL);
+        const scoresFile = join(tmpDir, 'valid-scores.json');
+        writeFileSync(
+            scoresFile,
+            JSON.stringify({
+                rubric_version: 1,
+                dimensions: {
+                    completeness: { score: 0.9, note: 'ok' },
+                    clarity: { score: 0.8, note: 'clear' },
+                    'trigger-accuracy': { score: 0.7, note: 'ok' },
+                    'anti-hallucination': { score: 0.6, note: 'ok' },
+                    conciseness: { score: 0.5, note: 'verbose' },
+                },
+            }),
+        );
+        const result = notNull(await evaluate('skill', file, { ingest: scoresFile, adapter }));
+        expect(result.type).toBe('skill');
+        expect(result.aggregate).toBeGreaterThan(0);
+        expect(result.dimensions.completeness?.score).toBe(0.9);
+    });
+
+    it('ingest mode throws on missing dimension', async () => {
+        const file = createTempFile(GOOD_SKILL);
+        const scoresFile = join(tmpDir, 'scores.json');
+        writeFileSync(
+            scoresFile,
+            JSON.stringify({
+                rubric_version: 1,
+                dimensions: { completeness: { score: 0.5, note: 'ok' } },
+            }),
+        );
+        await expect(evaluate('skill', file, { ingest: scoresFile })).rejects.toThrow('Missing dimension');
+    });
+
+    it('ingest mode throws on unexpected dimension', async () => {
+        const file = createTempFile(GOOD_SKILL);
+        const scoresFile = join(tmpDir, 'scores.json');
+        writeFileSync(
+            scoresFile,
+            JSON.stringify({
+                rubric_version: 1,
+                dimensions: {
+                    completeness: { score: 0.5, note: 'ok' },
+                    clarity: { score: 0.5, note: 'ok' },
+                    'trigger-accuracy': { score: 0.5, note: 'ok' },
+                    'anti-hallucination': { score: 0.5, note: 'ok' },
+                    conciseness: { score: 0.5, note: 'ok' },
+                    'extra-dim': { score: 0.5, note: 'not in rubric' },
+                },
+            }),
+        );
+        await expect(evaluate('skill', file, { ingest: scoresFile })).rejects.toThrow('Unexpected dimension');
+    });
+
+    it('ingest mode throws on score out of range', async () => {
+        const file = createTempFile(GOOD_SKILL);
+        const scoresFile = join(tmpDir, 'scores.json');
+        writeFileSync(
+            scoresFile,
+            JSON.stringify({
+                rubric_version: 1,
+                dimensions: {
+                    completeness: { score: 1.5, note: 'too high' },
+                    clarity: { score: 0.5, note: 'ok' },
+                    'trigger-accuracy': { score: 0.5, note: 'ok' },
+                    'anti-hallucination': { score: 0.5, note: 'ok' },
+                    conciseness: { score: 0.5, note: 'ok' },
+                },
+            }),
+        );
+        await expect(evaluate('skill', file, { ingest: scoresFile })).rejects.toThrow('Score out of range');
+    });
+});
 describe('formatEvaluationReport', () => {
     const sampleReport: QualityReport = {
         content: 'test-skill',
@@ -243,5 +442,76 @@ describe('formatEvaluationReport', () => {
         };
         const output = formatEvaluationReport(emptyReport, false);
         expect(output).toContain('AGGREGATE');
+    });
+
+    it('prints verdict and grade when present', () => {
+        const report: QualityReport = {
+            content: 'test',
+            type: 'skill',
+            target: 'claude',
+            aggregate: 0.89,
+            dimensions: { completeness: { score: 1, note: 'ok' } },
+            verdict: 'PASS',
+            grade: 'B',
+        };
+        const output = formatEvaluationReport(report, false);
+        expect(output).toContain('Verdict: PASS');
+        expect(output).toContain('Grade: B');
+    });
+
+    it('prints findings when dimensions have them', () => {
+        const report: QualityReport = {
+            content: 'test',
+            type: 'skill',
+            target: 'claude',
+            aggregate: 0.5,
+            dimensions: {
+                completeness: { score: 0.3, note: 'incomplete', findings: ['Missing field: description'] },
+                clarity: { score: 0.5, note: 'ok' },
+            },
+            verdict: 'FAIL',
+            grade: 'D',
+        };
+        const output = formatEvaluationReport(report, false);
+        expect(output).toContain('Findings:');
+        expect(output).toContain('Missing field: description');
+        expect(output).toContain('[completeness]');
+    });
+
+    it('prints recommendations when dimensions have them', () => {
+        const report: QualityReport = {
+            content: 'test',
+            type: 'skill',
+            target: 'claude',
+            aggregate: 0.6,
+            dimensions: {
+                clarity: {
+                    score: 0.4,
+                    note: 'vague',
+                    recommendations: ['Use more imperative verbs, fewer hedging terms'],
+                },
+            },
+            verdict: 'FAIL',
+            grade: 'C',
+        };
+        const output = formatEvaluationReport(report, false);
+        expect(output).toContain('Recommendations:');
+        expect(output).toContain('Use more imperative verbs');
+        expect(output).toContain('[clarity]');
+    });
+
+    it('omits findings section when no findings exist', () => {
+        const report: QualityReport = {
+            content: 'test',
+            type: 'skill',
+            target: 'claude',
+            aggregate: 0.9,
+            dimensions: { completeness: { score: 1, note: 'ok' } },
+            verdict: 'PASS',
+            grade: 'A',
+        };
+        const output = formatEvaluationReport(report, false);
+        expect(output).not.toContain('Findings:');
+        expect(output).not.toContain('Recommendations:');
     });
 });

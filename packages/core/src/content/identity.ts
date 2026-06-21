@@ -1,4 +1,4 @@
-import { existsSync } from 'node:fs';
+import { existsSync, statSync } from 'node:fs';
 import { basename, dirname, extname, join } from 'node:path';
 import { cwd } from 'node:process';
 import type { ContentType } from './types';
@@ -47,7 +47,15 @@ export function resolveContentName(path: string): string {
 export function resolveContentPath(type: ContentType, name: string, opts?: ResolvePathOptions): string | null {
     // If name is already a path to an existing file, return it unchanged.
     if (name.includes('/') || name.includes('\\')) {
-        if (existsSync(name)) return name;
+        if (existsSync(name)) {
+            const st = statSync(name);
+            if (st.isDirectory()) {
+                const skillMd = join(name, 'SKILL.md');
+                if (existsSync(skillMd)) return skillMd;
+            } else {
+                return name;
+            }
+        }
     }
 
     const base = opts?.baseDir ?? cwd();

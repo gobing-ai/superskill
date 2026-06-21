@@ -103,4 +103,41 @@ describe('resolveContentPath', () => {
             teardown();
         }
     });
+
+    it('resolves a skill directory to its SKILL.md', () => {
+        setup();
+        try {
+            const skillDir = join(tmpDir, 'my-skill');
+            mkdirSync(skillDir);
+            writeFileSync(join(skillDir, 'SKILL.md'), '# My Skill');
+            const result = resolveContentPath('skill', skillDir);
+            expect(result).toBe(join(skillDir, 'SKILL.md'));
+        } finally {
+            teardown();
+        }
+    });
+
+    it('returns null for a directory without SKILL.md', () => {
+        setup();
+        try {
+            const emptyDir = join(tmpDir, 'empty-dir');
+            mkdirSync(emptyDir);
+            const result = resolveContentPath('skill', emptyDir);
+            expect(result).toBeNull();
+        } finally {
+            teardown();
+        }
+    });
+
+    it('resolves a plain file path unchanged (non-skill type)', () => {
+        setup();
+        try {
+            const filePath = join(tmpDir, 'my-command.md');
+            writeFileSync(filePath, '# My Command');
+            const result = resolveContentPath('command', filePath);
+            expect(result).toBe(filePath);
+        } finally {
+            teardown();
+        }
+    });
 });

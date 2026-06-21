@@ -334,7 +334,7 @@ describe('validate — file access', () => {
         expect(result.findings[0]?.message).toContain('File not found');
     });
 
-    it('returns sentinel for directory path', async () => {
+    it('reports file-not-found for empty skill directory (B1: dir→SKILL.md, no SKILL.md present)', async () => {
         const { mkdtempSync, rmSync } = await import('node:fs');
         const { tmpdir } = await import('node:os');
         const dir = mkdtempSync(`${tmpdir()}/superskill-validate-`);
@@ -342,7 +342,7 @@ describe('validate — file access', () => {
             const result = await validate('skill', dir);
             expect(result.valid).toBe(false);
             expect(result.findings[0]?.field).toBe('_file');
-            expect(result.findings[0]?.message).toContain('directory');
+            expect(result.findings[0]?.message).toMatch(/not found|directory/);
         } finally {
             rmSync(dir, { recursive: true, force: true });
         }
@@ -391,5 +391,108 @@ describe('_validateContent — Additional type branches', () => {
         // model as integer
         const result = _validateContent('agent', '---\nname: x\ndescription: d\nmodel: 42\n---\n\nBody.');
         expect(result.findings.some((f) => f.field === 'model' && f.message.includes('must be a string'))).toBe(true);
+    });
+});
+
+describe('validate — body-link integrity', () => {
+    it('flags broken relative markdown link', async () => {
+        const { mkdtempSync, rmSync, writeFileSync } = await import('node:fs');
+        const { tmpdir } = await import('node:os');
+        const dir = mkdtempSync(`${tmpdir()}/superskill-link-`);
+        try {
+            writeFileSync(
+                `${dir}/SKILL.md`,
+                '---\nname: link-test\ndescription: Tests body links\n---\n\nSee [Broken](does-not-exist.md).',
+            );
+            const result = await validate('skill', dir);
+            const linkFinding = result.findings.find((f) => f.field === '_links');
+            expect(linkFinding).toBeDefined();
+            expect(linkFinding?.message).toContain('does-not-exist.md');
+            expect(linkFinding?.severity).toBe('warning');
+        } finally {
+            rmSync(dir, { recursive: true, force: true });
+        }
+    });
+
+    it('skips external http links', async () => {
+        const { mkdtempSync, rmSync, writeFileSync } = await import('node:fs');
+        const { tmpdir } = await import('node:os');
+        const dir = mkdtempSync(`${tmpdir()}/superskill-link-`);
+        try {
+            writeFileSync(
+                `${dir}/SKILL.md`,
+                '---\nname: link-test\ndescription: Tests body links\n---\n\nSee [External](https://example.com).',
+            );
+            const result = await validate('skill', dir);
+            expect(result.findings.filter((f) => f.field === '_links')).toHaveLength(0);
+        } finally {
+            rmSync(dir, { recursive: true, force: true });
+        }
+    });
+
+    it('skips anchor-only links', async () => {
+        const { mkdtempSync, rmSync, writeFileSync } = await import('node:fs');
+        const { tmpdir } = await import('node:os');
+        const dir = mkdtempSync(`${tmpdir()}/superskill-link-`);
+        try {
+            writeFileSync(
+                `${dir}/SKILL.md`,
+                '---\nname: link-test\ndescription: Tests body links\n---\n\nSee [Anchor](#section).',
+            );
+            const result = await validate('skill', dir);
+            expect(result.findings.filter((f) => f.field === '_links')).toHaveLength(0);
+        } finally {
+            rmSync(dir, { recursive: true, force: true });
+        }
+    });
+
+    it('does not flag valid relative link', async () => {
+        const { mkdtempSync, rmSync, writeFileSync } = await import('node:fs');
+        const { tmpdir } = await import('node:os');
+        const dir = mkdtempSync(`${tmpdir()}/superskill-link-`);
+        try {
+            writeFileSync(
+                `${dir}/SKILL.md`,
+                '---\nname: link-test\ndescription: Tests body links\n---\n\nSee [Valid](existing.md).',
+            );
+            writeFileSync(`${dir}/existing.md`, '# Exists');
+            const result = await validate('skill', dir);
+            expect(result.findings.filter((f) => f.field === '_links')).toHaveLength(0);
+        } finally {
+            rmSync(dir, { recursive: true, force: true });
+        }
+    });
+
+    it('strips #anchor before resolving so foo.md#section checks foo.md', async () => {
+        const { mkdtempSync, rmSync, writeFileSync } = await import('node:fs');
+        const { tmpdir } = await import('node:os');
+        const dir = mkdtempSync(`${tmpdir()}/superskill-link-`);
+        try {
+            writeFileSync(
+                `${dir}/SKILL.md`,
+                '---\nname: link-test\ndescription: Tests body links\n---\n\nSee [Section](existing.md#part-two).',
+            );
+            writeFileSync(`${dir}/existing.md`, '# Exists');
+            const result = await validate('skill', dir);
+            expect(result.findings.filter((f) => f.field === '_links')).toHaveLength(0);
+        } finally {
+            rmSync(dir, { recursive: true, force: true });
+        }
+    });
+
+    it('skips mailto: and other scheme-qualified links', async () => {
+        const { mkdtempSync, rmSync, writeFileSync } = await import('node:fs');
+        const { tmpdir } = await import('node:os');
+        const dir = mkdtempSync(`${tmpdir()}/superskill-link-`);
+        try {
+            writeFileSync(
+                `${dir}/SKILL.md`,
+                '---\nname: link-test\ndescription: Tests body links\n---\n\nContact [us](mailto:dev@example.com).',
+            );
+            const result = await validate('skill', dir);
+            expect(result.findings.filter((f) => f.field === '_links')).toHaveLength(0);
+        } finally {
+            rmSync(dir, { recursive: true, force: true });
+        }
     });
 });

@@ -29,6 +29,10 @@ export type DimensionName =
 export interface DimensionScore {
     score: number;
     note: string;
+    /** Specific issues found (additive — optional). */
+    findings?: string[];
+    /** Actionable suggestions (additive — optional). */
+    recommendations?: string[];
 }
 
 /** The complete evaluation result for a piece of content. */
@@ -37,10 +41,14 @@ export interface QualityReport {
     content: string;
     type: ContentType;
     target: string;
-    /** Equal-weighted mean of all dimension scores (0.0–1.0). */
+    /** Aggregate score (0.0–1.0). Equal-weight mean for heuristic; rubric-weighted when rubric is applied. */
     aggregate: number;
     /** Per-dimension scores keyed by dimension name. */
     dimensions: Record<string, DimensionScore>;
+    /** PASS | FAIL verdict based on aggregate threshold (0.0–1.0 scale, 0.70 threshold) — additive. */
+    verdict?: string;
+    /** Letter grade: A (≥0.90), B (≥0.75), C (≥0.60), D (≥0.45), F (<0.45) — additive. */
+    grade?: string;
 }
 
 // ── Registry ─────────────────────────────────────────────────────────────────

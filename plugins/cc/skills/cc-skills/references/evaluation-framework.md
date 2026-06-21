@@ -1,178 +1,60 @@
 # Evaluation Framework
 
-This document describes the evaluation framework for cc:cc-skills. The authoritative source for weights and rules is the `superskill skill evaluate` CLI command.
+The authoritative source for dimension weights is `packages/core/src/rubrics/skill.yaml`. This document describes the evaluation model, scoring modes, and rubric resolution. Do not restate weights inline — they drift.
 
-## Evaluation Scopes
+## Scoring Model
 
-### Basic Scope
+Skills are scored across **5 dimensions** with rubric-weighted heuristics:
 
-Default scope for quick validation. Checks:
+| Dimension | What It Checks |
+|-----------|----------------|
+| **completeness** | Required frontmatter fields present? Sections structured? |
+| **clarity** | Unambiguous instruction? Penalizes vague verbs. |
+| **trigger-accuracy** | Fires on right inputs? Counts trigger phrases. |
+| **anti-hallucination** | Prevents fabrication? Checks verification language density. |
+| **conciseness** | Short as possible while complete? Penalizes bloat. |
 
-1. **Frontmatter Validation**
-   - `name` field present and valid
-   - `description` field present, descriptive
-   - No unknown fields (platform-specific)
+**Verdict:** PASS (≥0.70) / FAIL (<0.70).
+**Grade:** A (≥0.90) / B (≥0.75) / C (≥0.60) / D (≥0.45) / F (<0.45).
 
-2. **Structure Validation**
-   - SKILL.md exists
-   - Optional directories: extensions/, references/, assets/
-   - agents/openai.yaml valid (if present)
+## Scoring Modes
 
-3. **Best Practices Check**
-   - SKILL.md under 500 lines
-   - Progressive disclosure followed
-   - Clear section structure
+### 1. Heuristic (default)
 
-4. **Platform Compatibility**
-   - Platform-specific features documented
-   - Companion files valid for target platforms
+Deterministic scorers in `packages/core/src/quality/skill.ts` compute per-dimension scores from frontmatter + body analysis. Rubric weights from `skill.yaml` are applied for the weighted aggregate. No LLM required.
 
-### Full Scope
-
-Comprehensive evaluation including all basic checks plus
-
-1. **Test Case Execution**
-   - Run sample prompts with skill
-   - Compare with baseline (no skill)
-   - Measure success rate
-
-2. **Quality Scoring**
-   - 10 dimensions across 4 MECE categories
-   - Deterministic (script) + fuzzy (LLM) checks
-   - Two weight profiles: with/without scripts
-
-3. **Performance Metrics**
-   - Token efficiency
-   - Execution time
-   - Success rate across platforms
-
-## Evaluation Dimensions (MECE)
-
-4 categories, 10 dimensions, 100 points total.
-
-### Weight Profiles
-
-Skills are scored differently depending on whether they contain executable code:
-
-| Category | Dimension | With Scripts | Without Scripts | What It Checks |
-|----------|-----------|:---:|:---:|----------------|
-| **Core Quality** | Frontmatter | 10 | 10 | YAML validity, required fields |
-| | Structure | 5 | 10 | Directory organization, file layout |
-| | Content | 15 | 20 | SKILL.md body quality, examples |
-| | Completeness | 10 | 10 | All required sections present |
-| **Discovery & Trigger** | Trigger Design | 10 | 10 | Description triggers, when-to-use |
-| | Platform Compatibility | 10 | 10 | Multi-platform support |
-| **Safety & Security** | Security | 10 | 10 | No dangerous patterns (blacklist/greylist) |
-| | Circular Reference | 10 | 10 | No command/agent references |
-| **Code & Documentation** | Code Quality | 10 | 0 | Scripts executable, tested |
-| | Progressive Disclosure | 10 | 10 | References used, detail offloaded |
-| **Total** | | **100** | **100** | |
-
-**Key differences without scripts:** Structure and Content get more weight (+5 each) to compensate for Code Quality being 0.
-
-### Category Totals
-
-| Category | With Scripts | Without Scripts |
-|----------|:---:|:---:|
-| Core Quality | 40 | 50 |
-| Discovery & Trigger | 20 | 20 |
-| Safety & Security | 20 | 20 |
-| Code & Documentation | 20 | 10 |
-
-### Script Detection
-
-A skill is classified as "with scripts" if it contains any of:
-- Bash/shell code blocks
-- `!`cmd`` syntax (Claude command execution)
-- Variable assignments (`$VAR=`)
-- Package manager commands (`bun run`, `npm run`)
-- Python script references (`python script.py`)
-- References to `extensions/` directory
-
-## Scoring Guide
-
-### Grading Scale
-
-| Grade | Score | Meaning |
-|-------|-------|---------|
-| **A** | 90-100 | Production ready |
-| **B** | 70-89 | Minor fixes needed |
-| **C** | 50-69 | Moderate revision |
-| **D** | 30-49 | Major revision |
-| **F** | 0-29 | Rewrite needed |
-
-### Passing Threshold
-
-- **Basic scope**: All structural checks pass
-- **Full scope**: Score >= **70 pts** (Grade B or above)
-
-See [red-flags.md](red-flags.md) for the complete 10-category red flags checklist.
-
-## Security Scanner
-
-The evaluation includes a security scanner with two tiers:
-
-### Blacklist (Immediate REJECT)
-
-Patterns that cause critical security failures:
-
-| Pattern | Reason |
-|---------|--------|
-| `rm -rf` | Destructive file deletion |
-| `curl ... \| sh` | Pipe to shell execution |
-| `eval()` / `exec()` | Dynamic code execution |
-| `subprocess...shell=True` | Shell injection vulnerability |
-| `password=` / `api_key=` | Hardcoded credentials |
-| `mkfs.*` | Disk formatting |
-| `dd if=...of=/dev/` | Destructive block writes |
-| `shutdown` / `reboot` | System shutdown commands |
-| Fork bomb patterns | Resource exhaustion |
-| `nc -l` / `netcat -l` | Network listeners / bind shells |
-
-### Greylist (Penalty: -2 pts each)
-
-Patterns that warrant warnings:
-
-| Pattern | Reason |
-|---------|--------|
-| `sudo` (without -n) | May prompt for password |
-| `chmod 777` | Insecure permissions |
-| `chown -R root:` | Recursive ownership change |
-| `os.system()` | Command injection risk |
-| `curl -k` / `--insecure` | Disabling SSL checks |
-| `git push --force` | Destructive remote push |
-| `npm publish` | Risky automated publishing |
-| Hardcoded `/tmp/` paths | Use mktemp instead |
-
-See the `superskill skill evaluate --json` output for the complete list.
-
-## Evaluation Report Format
-
-```json
-{
-  "skillPath": "./skills/my-skill",
-  "skillName": "my-skill",
-  "scope": "full",
-  "overallScore": 82,
-  "maxScore": 100,
-  "percentage": 82,
-  "weightProfile": "withScripts",
-  "dimensions": [
-    {
-      "name": "Frontmatter",
-      "category": "Core Quality",
-      "weight": 10,
-      "score": 9,
-      "maxScore": 10,
-      "findings": ["Complete frontmatter", "Good description"],
-      "recommendations": []
-    }
-  ],
-  "securityFindings": [],
-  "timestamp": "2026-03-14T00:00:00Z",
-  "passed": true
-}
+```bash
+superskill skill evaluate ./skills/my-skill
+# → human: table + verdict + grade + findings + recommendations
+# → --json: full QualityReport
 ```
+
+### 2. Rubric + LLM (two-call seam)
+
+For LLM-enriched scoring:
+
+1. **Envelope-out:** `superskill skill evaluate --rubric skill.yaml --json > envelope.json`
+   - Emits content + rubric + heuristic baseline as a JSON work order.
+2. **Scorer:** Agent reads the envelope, scores each dimension against rubric criteria, writes `scores.json`.
+3. **Ingest-in:** `superskill skill evaluate --ingest scores.json --save`
+   - Validates scores against rubric schema, computes weighted aggregate, persists.
+
+This seam keeps LLM scoring offline and auditable.
+
+### 3. Default command surface
+
+The slash command `/cc:skill-evaluate` runs the heuristic mode with rubric weights. It produces a PASS/FAIL verdict, letter grade, per-dimension findings, and actionable recommendations — no LLM call.
+
+## Rubric Resolution
+
+The rubric file is resolved through 4 tiers (implemented in `resolveRubricContent`):
+
+1. `--rubric <path>` flag — explicit override
+2. `~/.superskill/rubrics/<type>.yaml` — per-user override
+3. `packages/core/src/rubrics/<type>.yaml` — development default
+4. `rubrics/<type>.yaml` — production default
+
+The canonical rubric for skills is `packages/core/src/rubrics/skill.yaml` (version 1, 5 dimensions, weights sum to 1.0 ± 0.001).
 
 ## Platform-Specific Evaluation
 
@@ -204,25 +86,33 @@ See the `superskill skill evaluate --json` output for the complete list.
 
 ## Iterative Improvement
 
-1. Run evaluation with `--scope full`
+1. Run evaluation: `superskill skill evaluate ./skills/my-skill`
 2. Review findings and recommendations
 3. Apply refinements: `superskill skill refine <nameOrPath> --auto --save`
 4. Re-run evaluation to verify improvements
-5. Repeat until score >= 70 pts (Grade B)
 
-## Integration with CI/CD
+## Persistence
 
-```yaml
-# .github/workflows/skill-validation.yml
-name: Skill Validation
-on: [push, pull_request]
+When `--save` is used, evaluations are stored in SQLite. Use `superskill skill history <name>` to view prior scores and track improvement over time.
 
-jobs:
-  validate:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Validate Skills
-        run: |
-          superskill skill validate skills/
+## JSON Output
+
+The `--json` output is a `QualityReport` object. The schema is additive (fields added, never removed or renamed):
+
+```json
+{
+  "content": "my-skill",
+  "type": "skill",
+  "target": "claude",
+  "aggregate": 0.87,
+  "dimensions": {
+    "completeness": {"score": 1.0, "note": "All required fields present", "findings": [], "recommendations": []},
+    "clarity": {"score": 0.86, "note": "Good imperative style"},
+    "trigger-accuracy": {"score": 1.0, "note": "5 trigger phrases found"},
+    "anti-hallucination": {"score": 0.50, "note": "Includes verification language"},
+    "conciseness": {"score": 1.0, "note": "Body length: 14161 chars"}
+  },
+  "verdict": "PASS",
+  "grade": "B"
+}
 ```

@@ -61,7 +61,18 @@ function scoreCompleteness(content: string, data: Record<string, unknown> | null
     const missing = required.filter((f) => !keySet.has(f));
     const note = missing.length > 0 ? `Missing fields: ${missing.join(', ')}` : 'All required fields present';
 
-    return { score, note };
+    const findings: string[] = [];
+    const recommendations: string[] = [];
+    if (missing.length > 0) {
+        findings.push(`Missing required frontmatter: ${missing.join(', ')}`);
+        recommendations.push(`Add \`${missing.join('`, `')}\` to YAML frontmatter`);
+    }
+    if (structure < 1) {
+        findings.push('Body lacks section headings (# / ## / ###). Structure aids navigation.');
+        recommendations.push('Organize content with markdown headings for progressive disclosure');
+    }
+
+    return { score, note, findings, recommendations };
 }
 
 function scoreClarity(body: string): DimensionScore {
@@ -81,7 +92,17 @@ function scoreTriggerAccuracy(body: string): DimensionScore {
         score = clamp(1 - (count - 10) / 10);
     }
 
-    return { score, note: `${count} trigger phrases found` };
+    const findings: string[] = [];
+    const recommendations: string[] = [];
+    if (count < 3) {
+        findings.push(`Only ${count} trigger phrase(s) found; aim for 3–10 for reliable skill activation.`);
+        recommendations.push('Add 1–2 more When-to-Use scenarios or trigger phrase patterns to the description.');
+    } else if (count > 10) {
+        findings.push(`${count} trigger phrases may cause overlap with adjacent skills.`);
+        recommendations.push('Consolidate overlapping triggers or narrow the activation scope.');
+    }
+
+    return { score, note: `${count} trigger phrases found`, findings, recommendations };
 }
 
 function scoreAntiHallucination(body: string): DimensionScore {
@@ -97,11 +118,22 @@ function scoreAntiHallucination(body: string): DimensionScore {
     ]);
     const note = density > 0 ? 'Includes verification language' : 'Missing verification instructions';
 
-    return { score: density, note };
+    const findings: string[] = [];
+    const recommendations: string[] = [];
+    if (density < 0.3) {
+        findings.push('Verification/citation language sparse or absent. Skill may invite fabrication.');
+        recommendations.push(
+            'Add explicit "verify with source", "cross-check against docs", or "cite the reference" instructions.',
+        );
+    }
+
+    return { score: density, note, findings, recommendations };
 }
 
 function scoreConciseness(body: string): DimensionScore {
-    const score = scoreLength(body, 500, 5000);
+    // 500–15000 chars ≈ 15–500 lines of markdown. A rich skill body (e.g. cc-skills at ~14k)
+    // should not auto-zero; 15000 accommodates complete multi-section skills.
+    const score = scoreLength(body, 500, 15000);
     return { score, note: `Body length: ${body.length} chars` };
 }
 
