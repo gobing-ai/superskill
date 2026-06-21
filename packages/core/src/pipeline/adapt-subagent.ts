@@ -1,4 +1,5 @@
 import { parseFrontmatter } from '../content/frontmatter';
+import { walkFrontmatter } from './frontmatter-walk';
 import { normalizePiToolList, parseToolsList } from './pi-tools';
 import { rewriteSkillReferences } from './rewrite-references';
 
@@ -41,42 +42,10 @@ export function adaptSubagentToSkill(source: string, expectedName: string, plugi
  * (subagents stay model-invocable — Refinement #6).
  */
 function normalizeSubagentFrontmatter(content: string, expectedName: string): string {
-    const lines = content.split('\n');
-    const out: string[] = [];
-    let inFrontmatter = false;
-    let pastOpener = false;
-    let injectedName = false;
-
-    for (const line of lines) {
-        if (!pastOpener) {
-            if (line.trim() === '---') {
-                inFrontmatter = true;
-                pastOpener = true;
-                out.push(line);
-                out.push(`name: ${expectedName}`);
-                injectedName = true;
-                continue;
-            }
-            out.push(line);
-            continue;
-        }
-        if (inFrontmatter) {
-            if (line.trim() === '---') {
-                inFrontmatter = false;
-                out.push(line);
-                continue;
-            }
-            // Skip existing name: (we already injected the correct one)
-            if (/^name:\s*/.test(line)) continue;
-            out.push(line);
-            continue;
-        }
-        out.push(line);
-    }
-    if (!injectedName) {
-        return `---\nname: ${expectedName}\n---\n\n${content}`;
-    }
-    return out.join('\n');
+    return walkFrontmatter(content, {
+        expectedName,
+        fallbackBlock: `---\nname: ${expectedName}\n---`,
+    });
 }
 
 /**

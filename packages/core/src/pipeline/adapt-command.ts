@@ -1,3 +1,4 @@
+import { walkFrontmatter } from './frontmatter-walk';
 import { rewriteSkillReferences } from './rewrite-references';
 
 /**
@@ -33,82 +34,38 @@ export function adaptCommandToSkill(source: string, expectedName: string, plugin
  * Inject `name`, set `disable-model-invocation`, normalize argument-hint / allowed-tools.
  *
  * Mirrors the awk logic in `commands.sh:128-189` / `skills.sh:276-337`.
- * `disable-model-invocation: true` is injected right after the opening `---` line
- * for command-as-skill files only (Refinement #6).
+ * `disable-model-invocation: true` is injected for command-as-skill files only
+ * (Refinement #6) — at the closer, unless the source already declares it.
  */
 function normalizeCommandFrontmatter(content: string, expectedName: string): string {
-    const lines = content.split('\n');
-    const out: string[] = [];
-    let inFrontmatter = false;
-    let pastOpener = false;
-    let injectedName = false;
-    const injectedDisable = false;
-    let sawDisableModelInvocation = false;
-
-    for (const line of lines) {
-        if (!pastOpener) {
-            if (line.trim() === '---') {
-                inFrontmatter = true;
-                pastOpener = true;
-                out.push(line);
-                // Inject name immediately after the opening delimiter
-                out.push(`name: ${expectedName}`);
-                injectedName = true;
-                continue;
-            }
-            out.push(line);
-            continue;
-        }
-
-        if (inFrontmatter) {
-            if (line.trim() === '---') {
-                // Closing delimiter — inject disable-model-invocation if not already present
-                if (!injectedDisable && !sawDisableModelInvocation) {
-                    out.push('disable-model-invocation: true');
-                }
-                inFrontmatter = false;
-                out.push(line);
-                continue;
-            }
-            // Skip existing name: (we already injected the correct one)
-            if (/^name:\s*/.test(line)) continue;
-            // Track if disable-model-invocation already exists
-            if (/^disable-model-invocation:\s*/.test(line)) {
-                sawDisableModelInvocation = true;
-                out.push(line);
-                continue;
-            }
-            // Normalize argument-hint: ensure double-quoted YAML string
-            if (/^argument-hint:\s*/.test(line)) {
-                const value = line.slice(line.indexOf(':') + 1).trim();
-                out.push(`argument-hint: ${quoteYaml(value)}`);
-                continue;
-            }
-            // Normalize allowed-tools: bare CSV → [a, b, c]
-            if (/^allowed-tools:\s*/.test(line)) {
-                const value = line.slice(line.indexOf(':') + 1).trim();
-                if (value.startsWith('[')) {
-                    out.push(line);
-                    continue;
-                }
-                const parts = value
-                    .split(/,\s*/)
-                    .map((p) => p.trim())
-                    .filter(Boolean);
-                out.push(`allowed-tools: [${parts.join(', ')}]`);
-                continue;
-            }
-            out.push(line);
-            continue;
-        }
-        out.push(line);
-    }
-
-    // Safety: if we somehow never hit the opener, append the name
-    if (!injectedName) {
-        return `---\nname: ${expectedName}\ndisable-model-invocation: true\n---\n\n${content}`;
-    }
-    return out.join('\n');
+    return walkFrontmatter(content, {
+        expectedName,
+        lineRules: [
+            {
+                // Normalize argument-hint: ensure double-quoted YAML string
+                test: (line) => /^argument-hint:\s*/.test(line),
+                rewrite: (line) => `argument-hint: ${quoteYaml(line.slice(line.indexOf(':') + 1).trim())}`,
+            },
+            {
+                // Normalize allowed-tools: bare CSV → [a, b, c]; leave existing arrays as-is
+                test: (line) => /^allowed-tools:\s*/.test(line),
+                rewrite: (line) => {
+                    const value = line.slice(line.indexOf(':') + 1).trim();
+                    if (value.startsWith('[')) return line;
+                    const parts = value
+                        .split(/,\s*/)
+                        .map((p) => p.trim())
+                        .filter(Boolean);
+                    return `allowed-tools: [${parts.join(', ')}]`;
+                },
+            },
+        ],
+        closerInjection: {
+            lines: ['disable-model-invocation: true'],
+            shouldInject: (seen) => !seen.some((l) => /^disable-model-invocation:\s*/.test(l)),
+        },
+        fallbackBlock: `---\nname: ${expectedName}\ndisable-model-invocation: true\n---`,
+    });
 }
 
 /** Quote a YAML string value, escaping backslashes and double quotes. */
