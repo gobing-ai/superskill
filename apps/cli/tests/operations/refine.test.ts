@@ -6,6 +6,7 @@ import {
     applyAutoFixes,
     classifyFix,
     generateAutoChange,
+    isHookApplyCapableOpt,
     RefineAbortedError,
     refine,
     runInteractive,
@@ -806,5 +807,120 @@ describe('RefineAbortedError', () => {
 
     it('defaults to User quit message', () => {
         expect(new RefineAbortedError().message).toBe('User quit interactive mode');
+    });
+});
+
+// ── Task 0061: hook refine suggest-only ──────────────────────────────────────
+
+describe('refine — hook type, suggest-only (0061)', () => {
+    const HOOK_JSON = JSON.stringify({
+        hooks: {
+            Stop: [
+                {
+                    matcher: '*',
+                    hooks: [{ type: 'command', command: 'echo done', timeout: 10 }],
+                },
+            ],
+        },
+    });
+
+    it('isHookApplyCapableOpt detects mutation options', () => {
+        expect(isHookApplyCapableOpt({ auto: true })).toBe(true);
+        expect(isHookApplyCapableOpt({ save: true })).toBe(true);
+        expect(isHookApplyCapableOpt({ auto: true, save: true })).toBe(true);
+        expect(isHookApplyCapableOpt({ dryRun: true })).toBe(false);
+        expect(isHookApplyCapableOpt({ target: 'claude' })).toBe(false);
+        expect(isHookApplyCapableOpt(undefined)).toBe(false);
+    });
+
+    it('refine — hook type with --auto is rejected (0061 C — suggest-only)', async () => {
+        const dir = mkdtempSync(join(tmpdir(), 'hook-refine-'));
+        const file = join(dir, 'hooks.json');
+        writeFileSync(file, HOOK_JSON);
+        const writes: string[] = [];
+        const stderrSpy = spyOn(process.stderr, 'write').mockImplementation((data) => {
+            writes.push(typeof data === 'string' ? data : data.toString());
+            return true;
+        });
+        try {
+            const r = await refine('hook', file, { auto: true });
+            expect(r.preScore).toBe(0);
+            expect(r.postScore).toBe(0);
+            expect(r.fixesApplied).toEqual([]);
+            // Guard message goes to stderr (echoError)
+            expect(writes.some((w) => w.includes('suggest-only'))).toBe(true);
+        } finally {
+            stderrSpy.mockRestore();
+            rmSync(dir, { recursive: true, force: true });
+        }
+    });
+
+    it('refine — hook type with --save is rejected (0061 C — suggest-only)', async () => {
+        const dir = mkdtempSync(join(tmpdir(), 'hook-refine-'));
+        const file = join(dir, 'hooks.json');
+        writeFileSync(file, HOOK_JSON);
+        const writes: string[] = [];
+        const stderrSpy = spyOn(process.stderr, 'write').mockImplementation((data) => {
+            writes.push(typeof data === 'string' ? data : data.toString());
+            return true;
+        });
+        try {
+            const r = await refine('hook', file, { save: true });
+            expect(r.preScore).toBe(0);
+            expect(r.postScore).toBe(0);
+            expect(r.fixesApplied).toEqual([]);
+            expect(writes.some((w) => w.includes('suggest-only'))).toBe(true);
+        } finally {
+            stderrSpy.mockRestore();
+            rmSync(dir, { recursive: true, force: true });
+        }
+    });
+
+    it('refine — hook type without mutation opts surfaces findings without writing (0061 C)', async () => {
+        const dir = mkdtempSync(join(tmpdir(), 'hook-refine-'));
+        const file = join(dir, 'hooks.json');
+        writeFileSync(file, HOOK_JSON);
+        const writes: string[] = [];
+        const spy = spyOn(process.stdout, 'write').mockImplementation((data) => {
+            writes.push(typeof data === 'string' ? data : data.toString());
+            return true;
+        });
+        try {
+            const r = await refine('hook', file, {});
+            // Suggest-only: no fixes applied, file unmodified
+            expect(r.fixesApplied).toEqual([]);
+            expect(writes.some((w) => w.includes('suggest-only'))).toBe(true);
+            // File content unchanged
+            expect(readFileSync(file, 'utf-8')).toBe(HOOK_JSON);
+        } finally {
+            spy.mockRestore();
+            rmSync(dir, { recursive: true, force: true });
+        }
+    });
+
+    it('refine — hook findings render as [SUGGEST], never [AUTO-APPLY] or frontmatter proposals (0061 C)', async () => {
+        // generateAutoChange is frontmatter-oriented; for hooks it must NOT
+        // leak "AUTO-APPLY" tags or "would set X = Y" proposals — both imply
+        // an apply capability that does not exist for hooks.json.
+        const dir = mkdtempSync(join(tmpdir(), 'hook-refine-'));
+        const file = join(dir, 'hooks.json');
+        writeFileSync(file, HOOK_JSON);
+        const writes: string[] = [];
+        const spy = spyOn(process.stdout, 'write').mockImplementation((data) => {
+            writes.push(typeof data === 'string' ? data : data.toString());
+            return true;
+        });
+        try {
+            await refine('hook', file, {});
+            const allOutput = writes.join('');
+            expect(allOutput.includes('AUTO-APPLY')).toBe(false);
+            expect(allOutput.includes('would set')).toBe(false);
+            // Findings still surface, but tagged SUGGEST
+            expect(allOutput.includes('[SUGGEST]')).toBe(true);
+            expect(readFileSync(file, 'utf-8')).toBe(HOOK_JSON);
+        } finally {
+            spy.mockRestore();
+            rmSync(dir, { recursive: true, force: true });
+        }
     });
 });

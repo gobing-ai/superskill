@@ -77,7 +77,7 @@ On platforms where the `superskill` binary is not on PATH, invoke the `cc:cc-hoo
 | "create hooks", "scaffold hooks", "set up hooks", "define hooks" | **scaffold** | Create a new hook config from template |
 | "validate hooks", "check hook config" | **validate** | Validate hook config structure and frontmatter |
 | "score hooks", "evaluate hooks", "check hook quality" | **evaluate** | Two-call seam: `--rubric --json` envelope → Scorer → `--ingest --save` |
-| "fix hooks", "refine hooks", "auto-fix hooks" | **refine** | Evaluate + deterministic auto-fix (`--auto --save`) |
+| "fix hooks", "refine hooks", "improve hook quality" | **refine** | Suggest-only: surface findings as recommendations (no auto-apply, task 0061 C) |
 | "evolve hooks", "improve hooks", "longitudinal improvement" | **evolve** | Two-call seam: `--propose-only --json` → Author → Skeptic → (Judge) → `--ingest --accept` |
 
 ## Operation Arguments
@@ -132,20 +132,23 @@ superskill hook evaluate <nameOrPath> --ingest <scores.json> --save [--target <p
 | `--save` | Persist evaluation row | false |
 | `--target` | Target platform | (none) |
 
-### refine — Evaluate and auto-fix
+### refine — Surface findings as suggestions (suggest-only, task 0061 C)
 
-Deterministic path (not a two-call seam): evaluate then apply automatic fixes.
+Hooks are security-critical config (`hooks.json`); auto-applying fixes is not supported.
+`hook refine` evaluates the config and surfaces quality findings (safety patterns, event coverage,
+matcher specificity) as actionable recommendations — what to change and why. No file mutation.
 
 ```bash
-superskill hook refine <nameOrPath> [--target <platform>] [--auto] [--save]
+superskill hook refine <nameOrPath> [--target <platform>] [--dry-run]
 ```
 
 | Argument | Description | Default |
 |----------|-------------|---------|
 | `<nameOrPath>` | Hook config name or file path | (required) |
-| `--auto` | Apply deterministic fixes automatically | false |
-| `--save` | Persist fixes | false |
+| `--dry-run` | Preview classified findings and recommendations (default behavior for hooks) | false |
 | `--target` | Target platform | (none) |
+
+**To fix hooks:** hand-edit `hooks.json`, then run `superskill hook validate` to verify.
 
 ### evolve — Longitudinal improvement (Generation seam)
 

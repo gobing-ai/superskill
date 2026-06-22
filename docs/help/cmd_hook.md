@@ -2,7 +2,7 @@
 
 Manage **hook** definitions — JSON configs that register shell commands to fire on agent lifecycle events (e.g. `PreToolUse`, `PostToolUse`, `Stop`). Hooks let you validate, block, or augment agent actions automatically.
 
-The `hook` command exposes the five standard operations (`scaffold`, `validate`, `evaluate`, `refine`, `evolve`) plus one hook-only operation: **`emit`**.
+The `hook` command exposes the five standard operations (`scaffold`, `validate`, `evaluate`, `refine`, `evolve`) plus one hook-only operation: **`emit`**. Note: `refine` is **suggest-only** for hooks (task 0061) — it surfaces findings as recommendations without file mutation; `evolve` is **analyze-only** (task 0056).
 
 ## How to use it
 
@@ -14,7 +14,7 @@ superskill hook <operation> <name> [options]
 
 ### Standard operations
 
-The five standard operations behave identically to the other type commands. See [`cmd_agent.md`](cmd_agent.md#how-to-use-it) for the shared option table.
+The standard operations mirror the other type commands, with two exceptions for hooks: `refine` is **suggest-only** (surfaces findings, no auto-apply — task 0061) and `evolve` is **analyze-only** (no apply/history/rollback — task 0056). See [`cmd_agent.md`](cmd_agent.md#how-to-use-it) for the shared option table.
 
 **Required frontmatter:** `name`, `description`, `event`.
 
@@ -36,8 +36,8 @@ superskill hook scaffold block-force-push \
 superskill hook validate block-force-push --strict
 superskill hook evaluate block-force-push --save
 
-# Auto-fix
-superskill hook refine block-force-push --auto
+# Surface findings as suggestions (suggest-only — no auto-apply for hooks)
+superskill hook refine block-force-push
 ```
 
 ### `emit` — emit hooks to a single target (hook-only)

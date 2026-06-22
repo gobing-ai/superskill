@@ -48,6 +48,17 @@ export function addHookEvolveOptions(cmd: Command): Command {
         .option('--analyze', 'Print analysis summary (trends, score, data sources) — analyze-only, no apply')
         .option('--json', 'Output machine-readable JSON');
 }
+/**
+ * Add hook-refine-specific options (task 0061 decision C: suggest-only, no auto-apply).
+ * Hooks are fixed by hand-editing hooks.json + re-validating; refine surfaces quality
+ * findings as suggestions (what to change and why) without file mutation. The --auto and
+ * --save mutation paths are NOT exposed for hooks.
+ */
+export function addHookRefineOptions(cmd: Command): Command {
+    return cmd
+        .option('-t, --target <agent>', 'Target agent platform', 'claude')
+        .option('--dry-run', 'Preview classified findings and recommendations without writing');
+}
 
 /** Add --json option. */
 export function addJsonOption(cmd: Command): Command {

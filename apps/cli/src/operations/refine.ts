@@ -56,6 +56,19 @@ export class RefineAbortedError extends Error {
     }
 }
 
+// ── Hook Guard (task 0061 decision C) ────────────────────────────────────────
+
+/**
+ * Task 0061 decision C: hook refine is suggest-only. Detect whether any
+ * mutation-capable option is set so `refine()` can refuse early for hook content.
+ * Hooks are security-critical config; auto-applying frontmatter-oriented fixes
+ * to hooks.json is both broken (JSON, not markdown) and dangerous (shell rewrites).
+ */
+export function isHookApplyCapableOpt(opts?: RefineOptions): boolean {
+    if (!opts) return false;
+    return Boolean(opts.auto || opts.save);
+}
+
 // ── Fix Classification ───────────────────────────────────────────────────────
 
 type FixStrategy = 'auto-apply' | 'suggest' | 'flag';
@@ -385,6 +398,14 @@ export async function refine(type: ContentType, nameOrPath: string, opts?: Refin
     const resolvedTarget = opts?.target ?? 'claude';
     const filePath = resolvedPath ?? nameOrPath;
 
+    // Task 0061 decision C: hook refine is suggest-only — no auto-apply, no save.
+    if (type === 'hook' && isHookApplyCapableOpt(opts)) {
+        echoError(
+            'hook refine is suggest-only — auto-apply and save are not supported for hooks. Use --dry-run to preview findings, then hand-fix and `hook validate`.',
+        );
+        return { preScore: 0, postScore: 0, delta: 0, fixesApplied: [], fixesSkipped: [] };
+    }
+
     // Step 1: Validate
     const validation = await validate(type, filePath, {
         target: resolvedTarget,
@@ -431,7 +452,14 @@ export async function refine(type: ContentType, nameOrPath: string, opts?: Refin
     }
 
     // Step 5: --dry-run → preview classified fixes + projected delta, write nothing.
-    if (opts?.dryRun) {
+    // Task 0061 decision C: hooks are always suggest-only — force dry-run path
+    // to surface findings as recommendations without file mutation.
+    if (opts?.dryRun || type === 'hook') {
+        if (type === 'hook') {
+            echo(
+                'Hook refine is suggest-only (task 0061 decision C). Findings are recommendations; hooks.json is not modified. Hand-fix, then `hook validate`.',
+            );
+        }
         return dryRunPreview(type, content, resolvedTarget, findings);
     }
 
@@ -570,11 +598,17 @@ function dryRunPreview(
     if (findings.length === 0) {
         echo(`No issues found. Score: ${preScore.toFixed(2)}`);
     } else {
+        // Task 0061 decision C: hooks are suggest-only. Never show an
+        // "AUTO-APPLY" tag or a frontmatter proposal for hooks — both imply
+        // an apply capability that does not exist for hooks.json, and
+        // generateAutoChange is frontmatter-oriented (meaningless for JSON).
+        const hookSuggestOnly = type === 'hook';
         for (const { finding, strategy } of findings) {
-            const tag = strategy.toUpperCase();
+            const effectiveStrategy: FixStrategy = hookSuggestOnly ? 'suggest' : strategy;
+            const tag = effectiveStrategy.toUpperCase();
             const change = strategy === 'auto-apply' ? generateAutoChange(finding, content) : null;
             const proposed =
-                change && change.kind === 'frontmatter'
+                !hookSuggestOnly && change && change.kind === 'frontmatter'
                     ? ` → would set ${change.key} = ${formatValue(change.value)}`
                     : '';
             echo(`[${tag}] ${finding.field}: ${finding.message}${proposed}`);
@@ -586,11 +620,12 @@ function dryRunPreview(
         );
     }
 
+    const hookSuggestOnly = type === 'hook';
     const fixesSkipped: FixRecord[] = findings.map(({ finding, strategy }) => ({
         severity: finding.severity,
         field: finding.field,
         message: finding.message,
-        strategy,
+        strategy: hookSuggestOnly ? 'suggest' : strategy,
         applied: false,
     }));
     return { preScore, postScore: projectedPost, delta: projectedPost - preScore, fixesApplied: [], fixesSkipped };

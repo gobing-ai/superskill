@@ -100,7 +100,7 @@ describe('hook command module', () => {
         expect(await hookScaffold({ name: 'pre-tool', description: 'desc', target: 'codex' })).toBeUndefined();
         expect(await hookValidate({ nameOrPath: 'pre-tool', strict: true })).toBe(0);
         expect(await hookEvaluate({ nameOrPath: 'pre-tool', json: true, save: true })).toBeUndefined();
-        expect(await hookRefine({ nameOrPath: 'pre-tool', auto: true, save: true })).toBeUndefined();
+        expect(await hookRefine({ nameOrPath: 'pre-tool', dryRun: true })).toBeUndefined();
         expect(await hookEvolve({ name: 'pre-tool', analyze: true })).toBeUndefined();
 
         const program = new Command();

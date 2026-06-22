@@ -43,3 +43,31 @@ describe('hook evolve — analyze-only surface (0056)', () => {
         expect(evolveCmd?.description()).toContain('analyze-only');
     });
 });
+
+// Task 0061 decision C: hook refine is suggest-only — no auto-apply, no save.
+describe('hook refine — suggest-only surface (0061)', () => {
+    it('exposes --dry-run/--target but not --auto/--save', async () => {
+        const { registerHook } = await import('../../src/commands/hook');
+        const program = new Command();
+        registerHook(program);
+        const hookCmd = program.commands.find((c) => c.name() === 'hook');
+        const refineCmd = hookCmd?.commands.find((c) => c.name() === 'refine');
+        expect(refineCmd).toBeDefined();
+        const flagNames = refineCmd?.options.map((o) => o.long).filter((v): v is string => v !== undefined) ?? [];
+        // Allowed flags for hook refine (suggest-only)
+        expect(flagNames).toContain('--target');
+        expect(flagNames).toContain('--dry-run');
+        // Forbidden flags — must NOT be registered (mutation paths)
+        expect(flagNames).not.toContain('--auto');
+        expect(flagNames).not.toContain('--save');
+    });
+
+    it('describes hook refine as suggest-only', async () => {
+        const { registerHook } = await import('../../src/commands/hook');
+        const program = new Command();
+        registerHook(program);
+        const hookCmd = program.commands.find((c) => c.name() === 'hook');
+        const refineCmd = hookCmd?.commands.find((c) => c.name() === 'refine');
+        expect(refineCmd?.description()).toContain('suggest-only');
+    });
+});

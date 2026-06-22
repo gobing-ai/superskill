@@ -9,9 +9,9 @@ import { refine } from '../operations/refine';
 import { scaffold } from '../operations/scaffold';
 import { formatValidationResult, validate } from '../operations/validate';
 import {
-    addAutoOption,
     addEvaluateOptions,
     addHookEvolveOptions,
+    addHookRefineOptions,
     addJsonOption,
     addSaveOption,
     addScaffoldOptions,
@@ -55,9 +55,10 @@ async function evaluateHook(
     });
 }
 
-async function refineHook(nameOrPath: string, opts: { target?: string; auto?: boolean; save?: boolean }) {
+async function refineHook(nameOrPath: string, opts: { target?: string; dryRun?: boolean }) {
+    // Task 0061 decision C: hook refine is suggest-only — no auto-apply, no save.
     const target = resolveTarget(opts);
-    return refine('hook', nameOrPath, { target, auto: opts.auto, save: opts.save });
+    return refine('hook', nameOrPath, { target, dryRun: opts.dryRun });
 }
 
 async function evolveHook(
@@ -178,12 +179,11 @@ export async function hookEvaluate(opts: {
     return undefined;
 }
 
-/** Refine a hook definition with optional automatic fixes. */
+/** Refine a hook definition — suggest-only (task 0061 decision C). No auto-apply, no save. */
 export async function hookRefine(opts: {
     nameOrPath: string;
     target?: string;
-    auto?: boolean;
-    save?: boolean;
+    dryRun?: boolean;
 }): Promise<number | undefined> {
     await refineHook(opts.nameOrPath, opts);
     return undefined;
@@ -252,9 +252,11 @@ export function registerHook(program: Command): void {
         },
     );
 
-    addSaveOption(
-        addTargetOption(addAutoOption(cmd.command('refine <nameOrPath>').description('Evaluate and auto-fix a hook'))),
-    ).action(async (nameOrPath: string, opts: { target?: string; auto?: boolean; save?: boolean }) => {
+    addHookRefineOptions(
+        cmd
+            .command('refine <nameOrPath>')
+            .description('Surface hook quality findings as suggestions (suggest-only, no auto-apply)'),
+    ).action(async (nameOrPath: string, opts: { target?: string; dryRun?: boolean }) => {
         await runOperation(() => hookRefine({ nameOrPath, ...opts }));
     });
 
