@@ -31,7 +31,7 @@ Create and manage slash commands that work across multiple agent platforms.
 This skill provides a complete pipeline for slash command development:
 - **Scaffold** new commands from templates
 - **Validate** structure and frontmatter
-- **Evaluate** quality across 10 dimensions
+- **Evaluate** quality across 5 rubric dimensions
 - **Refine** based on evaluation feedback
 
 | Operation | Purpose | CLI |
@@ -47,7 +47,7 @@ This skill provides a complete pipeline for slash command development:
 Use for:
 - Creating a new slash command from scratch
 - Validating command structure and frontmatter
-- Evaluating command quality across 10 dimensions
+- Evaluating command quality across 5 rubric dimensions
 - Refining commands based on evaluation feedback
 - Planning longitudinal improvement proposals
 
@@ -213,24 +213,19 @@ The `evaluate` and `evolve` operations use a **two-call seam pattern** that sepa
 
 **Goal-anchor verbatim discipline:** Pass the original frontmatter and negative constraints verbatim to Skeptic and Judge — do not summarize. The CLI gate enforces via `anchor_hash`.
 
-## Evaluation Dimensions (10)
+## Evaluation Dimensions
 
-Organized into 5 categories (MECE-compliant):
+Commands are scored across **5 rubric dimensions**. The canonical rubric at
+`packages/core/src/rubrics/command.yaml` owns each dimension's weight and criterion — read it there;
+do not restate weights here, they drift.
 
-| # | Category | Dimension | What It Checks |
-|---|---------|-----------|----------------|
-| 1 | Metadata | Frontmatter Quality | Valid YAML, only allowed fields |
-| 2 | Metadata | Description Effectiveness | Under 60 chars, starts with verb |
-| 3 | Metadata | Naming Convention | noun-verb (grouped) or verb-noun (simple) |
-| 4 | Content | Content Quality | Imperative form, writes FOR Claude |
-| 5 | Content | Structure & Brevity | Under 150 lines, progressive disclosure |
-| 6 | Architecture | Delegation Architecture | Proper Skill()/Task() usage |
-| 7 | Architecture | Argument Design | argument-hint consistency with body |
-| 8 | Security | Security | Tool restrictions, dangerous patterns |
-| 9 | Security | Circular Reference Prevention | No /cc:command-* refs or Commands Reference |
-| 10 | Platform | Cross-Platform Portability | Non-portable features documented |
-
-Two weight profiles: `with-pseudocode` and `without-pseudocode`.
+| Dimension | What It Checks |
+|-----------|----------------|
+| `completeness` | Required `description` present; `argument-hint` and `allowed-tools` declared |
+| `clarity` | Description states what the command does and when to use it |
+| `argument-hints` | `argument-hint` names positional args and flags, consistent with the body |
+| `tool-references` | Tool references match exposed CLI verbs; no orphaned or undocumented refs |
+| `slash-syntax` | Syntax follows platform convention, consistent across sibling commands |
 
 ## Platform Adapters
 
