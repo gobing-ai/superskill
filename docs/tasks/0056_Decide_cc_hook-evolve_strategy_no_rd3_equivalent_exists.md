@@ -1,9 +1,9 @@
 ---
 name: Decide cc hook-evolve strategy (no rd3 equivalent exists)
 description: Decide cc hook-evolve strategy (no rd3 equivalent exists)
-status: Testing
+status: Done
 created_at: 2026-06-21T20:57:07.001Z
-updated_at: 2026-06-22T04:29:02.558Z
+updated_at: 2026-06-22T04:35:42.169Z
 folder: docs/tasks
 type: task
 feature-id: ""
