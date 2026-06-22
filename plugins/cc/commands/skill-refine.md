@@ -1,6 +1,6 @@
 ---
 description: Evaluate and fix skill issues in one step
-argument-hint: "<skill-path> [--auto] [--save] [--target <platform>]"
+argument-hint: "<skill-path> [--auto] [--save] [--dry-run] [--target <platform>]"
 allowed-tools: ["Read", "Write", "Glob", "Bash", "Skill"]
 ---
 
@@ -22,6 +22,7 @@ Run evaluation, apply deterministic fixes, then perform LLM content improvement 
 | `skill-path` | Path to the SKILL.md file | (required) |
 | `--auto` | Skip interactive prompts (auto-apply fixes) | false |
 | `--save` | Save evaluation results to file | false |
+| `--dry-run` | Preview classified fixes and projected score delta without writing | false |
 | `--target` | Target platform | claude-code |
 
 ## Examples
@@ -31,6 +32,8 @@ Run evaluation, apply deterministic fixes, then perform LLM content improvement 
 /cc:skill-refine ./skills/my-skill/SKILL.md
 # Auto-refine without prompts
 /cc:skill-refine ./skills/my-skill/SKILL.md --auto --save
+# Preview fixes without writing
+/cc:skill-refine ./skills/my-skill/SKILL.md --dry-run
 ```
 
 ## Implementation

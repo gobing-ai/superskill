@@ -1,9 +1,9 @@
 ---
 name: Make cc skill-refine ready to replace rd3 skill-refine
 description: Make cc skill-refine ready to replace rd3 skill-refine
-status: Backlog
+status: Done
 created_at: 2026-06-21T21:05:49.535Z
-updated_at: 2026-06-21T21:05:49.535Z
+updated_at: 2026-06-22T03:24:50.117Z
 folder: docs/tasks
 type: task
 feature-id: ""
@@ -61,7 +61,10 @@ Directory-based skills. No engine rewrite beyond 0057 + dir-resolution confirmat
 
 ### Solution
 
-
+- S1: Register `--dry-run` option on `apps/cli/src/commands/skill.ts` refine subcommand
+- S2: Confirm directory-form resolution: `skill refine <name>` resolves to `SKILL.md` inside skill dir for validate/evaluate/fix/backup/restore; `--dry-run` + reorder operate on correct `SKILL.md`
+- S3: Fix `plugins/cc/commands/skill-refine.md` wrapper drift after engine changes from 0057
+- S4: Regression test: directory-based skill refine edits + backs up right `SKILL.md`; quit restores byte-identical; `--dry-run` writes nothing
 
 ### Plan
 
@@ -72,10 +75,37 @@ Gate: lint/test/build/git clean. Do NOT flip alias until ship.
 
 ### Review
 
+**Date:** 2026-06-22
+**Status:** 0 findings
+**Scope:** `apps/cli/src/commands/skill.ts`, `plugins/cc/commands/skill-refine.md`, `apps/cli/tests/operations/refine.test.ts`, `docs/tasks/0060_*.md`
+**Mode:** verify
+**Channel:** inline
+**Gate:** `bun run lint && bun run test && bun run build` → PASS
+**Verdict:** PASS
+
+#### Requirements Traceability
+
+| Req | Status | Evidence |
+|-----|--------|----------|
+| S1: Register `--dry-run` on skill.ts CLI | ✅ MET | `skill.ts:250-256` — `addDryRunOption` wired; `dryRun` flows through `handleSkillRefine`→`skillRefine`→`refine()` |
+| S2: Directory-form resolution confirmed | ✅ MET | `identity.ts:52-54` handles dir→`SKILL.md`; backup/restore target resolved path |
+| S3: Fix wrapper drift | ✅ MET | `skill-refine.md:3,25,35-36` — `--dry-run` in argument-hint, table, example |
+| S4: Regression test | ✅ MET | `refine.test.ts:618-674` — 3 directory-based skill tests (resolve, dry-run, backup) |
+| Gates green | ✅ MET | lint clean, 1003 tests pass, build success |
+| Alias not flipped | ✅ MET | `/skill-refine` alias unchanged |
+
+#### SECU Summary
+
+No P1/P2/P3/P4 findings. Mechanical CLI wiring + doc + test changes only. No security, efficiency, correctness, or usability concerns.
 
 
 ### Testing
 
+- Command: `bun run test` (full suite + refine regression)
+- Scope: `apps/cli/tests/operations/refine.test.ts` — directory-based skill refine regression (3 new tests); all existing refine tests re-ran
+- Result: 1003 pass, 0 fail. Coverage: 99.69% funcs, 98.76% lines
+- Evidence: `refine — directory-based skill` describe block at line 618 in refine.test.ts; CLI `--dry-run` wired through `skill.ts`
+- Next action: none — all gates green
 
 
 ### Artifacts

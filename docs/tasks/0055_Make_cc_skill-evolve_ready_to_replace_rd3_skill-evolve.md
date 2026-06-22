@@ -10,11 +10,11 @@ feature-id: ""
 priority: high
 tags: ["cc-skills","evolve","dogfood","migration","rd3-parity"]
 impl_progress:
-  planning: pending
-  design: pending
-  implementation: pending
-  review: pending
-  testing: pending
+  planning: completed
+  design: completed
+  implementation: completed
+  review: completed
+  testing: completed
 ---
 
 ## 0055. Make cc skill-evolve ready to replace rd3 skill-evolve
@@ -85,15 +85,30 @@ test. Gate: lint/test/build/git clean. Do NOT flip alias until ship.
 
 ### Review
 
-## Review — 2026-06-22 (Stage 4 verify, inline)
+## Re-verify — 2026-06-21 (--force, inline)
 
 **Status:** 0 findings
-**Scope:** `apps/cli/src/commands/skill.ts`, `plugins/cc/commands/skill-evolve.md`, `apps/cli/tests/operations/evolve.test.ts`
-**Mode:** verify (Phase 7 SECU + Phase 8 traceability)
+**Scope (0055-owned):** `apps/cli/src/commands/skill.ts`, `apps/cli/src/commands/helpers.ts` (addEvolveOptions), `plugins/cc/commands/skill-evolve.md`, `apps/cli/tests/operations/evolve.test.ts`, `docs/design/design-doc-phase2.md §2.5`
+**Mode:** verify (Phase 7 SECU + Phase 8 traceability), --force bypassed terminal-status guard
 **Channel:** inline (current)
-**Gate:** `bun run lint` → pass · `bun run test` → 1000/1000 pass (0 skips) · `bun run build` → pass · `git status` → 4 owned changes, 4 pre-existing
+**Gate:** `bun run lint` → pass · `bun run test` → 1000/1000 pass (0 skips) · `bun run build` → exit 0 · `git status` → only unrelated 0060 task file
 
 **Verdict:** PASS
+
+### Phase 7 — SECU
+No findings. Scope is option-registration + delegation glue (no secrets, no `any`, no empty catch, no injection surface). Engine logic lives in 0052 (`operations/evolve.ts`) — out of this slice's scope.
+
+### Phase 8 — Requirements traceability (all MET)
+- **S1** Register `--analyze/--history/--rollback/--confirm` → MET · `helpers.ts:33-36` (addEvolveOptions), wired through `skill.ts:96-127,161-179`.
+- **S2** Dir-form resolution + SKILL.md-targeted backup/proposal/rollback → MET · `packages/core/src/content/identity.ts:22-53` resolves both `SKILL.md`→parent-dir-name and bare dir→`<dir>/SKILL.md`; verified by tests below.
+- **S3** Wrapper drift fixed → MET · `skill-evolve.md` — no stale "saved version history" claim, no `--accept p1234` example; correct `--rollback <id> --confirm` flow documented.
+- **S4** Directory-based regression → MET · `evolve.test.ts:932-1081` (8 tests): propose-only seeds heuristic changes, bare-dir resolution, --analyze, --history, **--rollback restores byte-identical inner SKILL.md**, --rollback-without-confirm no-op.
+
+### Docs sync
+`docs/design/design-doc-phase2.md §2.5` documents all four flags; `docs/04_DESIGN.md:17,23` links to it as authoritative surface — CLAUDE.md same-commit mandate satisfied.
+
+**No fix pass:** verdict PASS → `--fix all` is a no-op (acts only on PARTIAL/FAIL). Task remains `Done`.
+
 
 ### Requirements traceability
 

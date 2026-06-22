@@ -9,6 +9,7 @@ import { scaffold } from '../operations/scaffold';
 import { formatValidationResult, validate } from '../operations/validate';
 import {
     addAutoOption,
+    addDryRunOption,
     addEvaluateOptions,
     addEvolveOptions,
     addJsonOption,
@@ -86,9 +87,10 @@ export async function skillRefine(opts: {
     target?: string;
     auto?: boolean;
     save?: boolean;
+    dryRun?: boolean;
 }): Promise<number | undefined> {
     const target = resolveTarget(opts);
-    await refine('skill', opts.nameOrPath, { target, auto: opts.auto, save: opts.save });
+    await refine('skill', opts.nameOrPath, { target, auto: opts.auto, save: opts.save, dryRun: opts.dryRun });
     return undefined;
 }
 
@@ -148,11 +150,10 @@ export async function handleSkillEvaluate(
 ): Promise<void> {
     await runOperation(() => skillEvaluate({ nameOrPath, ...opts }));
 }
-
 /** Run skill refine as a CLI action. */
 export async function handleSkillRefine(
     nameOrPath: string,
-    opts: { target?: string; auto?: boolean; save?: boolean },
+    opts: { target?: string; auto?: boolean; save?: boolean; dryRun?: boolean },
 ): Promise<void> {
     await runOperation(() => skillRefine({ nameOrPath, ...opts }));
 }
@@ -246,9 +247,12 @@ export function registerSkill(program: Command): void {
             ),
         ),
     ).action(handleSkillEvaluate);
-
-    addSaveOption(
-        addTargetOption(addAutoOption(cmd.command('refine <nameOrPath>').description('Evaluate and auto-fix a skill'))),
+    addDryRunOption(
+        addSaveOption(
+            addTargetOption(
+                addAutoOption(cmd.command('refine <nameOrPath>').description('Evaluate and auto-fix a skill')),
+            ),
+        ),
     ).action(handleSkillRefine);
 
     addEvolveOptions(

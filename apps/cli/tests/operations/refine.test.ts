@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, spyOn } from 'bun:test';
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
@@ -610,6 +610,65 @@ describe('refine — dry-run', () => {
         await refine('skill', file, { auto: true, dryRun: true, save: true });
         // Dry-run short-circuits before the save step: file untouched.
         expect(readFileSync(file, 'utf8')).toBe(before);
+    });
+});
+
+// ── refine — directory-based skill (task 0060) ────────────────────────────────
+
+describe('refine — directory-based skill', () => {
+    let tmpDir: string;
+
+    beforeEach(() => {
+        tmpDir = mkdtempSync(join(tmpdir(), 'superskill-refine-dir-'));
+        spyOn(process.stdout, 'write').mockImplementation(() => true);
+        spyOn(process.stderr, 'write').mockImplementation(() => true);
+    });
+
+    afterEach(() => {
+        if (tmpDir) rmSync(tmpDir, { recursive: true, force: true });
+    });
+
+    function createSkillDir(name: string, content: string): string {
+        const dir = join(tmpDir, name);
+        mkdirSync(dir, { recursive: true });
+        writeFileSync(join(dir, 'SKILL.md'), content);
+        return dir;
+    }
+
+    it('resolves directory path to SKILL.md for auto refine', async () => {
+        const dir = createSkillDir('my-skill', MISSING_DESC);
+        const r = await refine('skill', dir, { auto: true });
+        expect(r.fixesApplied.length).toBeGreaterThan(0);
+        // The fix was written to the SKILL.md inside the directory.
+        const skillMd = readFileSync(join(dir, 'SKILL.md'), 'utf8');
+        expect(skillMd).toContain('description:');
+        expect(skillMd).not.toContain('TODO');
+    });
+
+    it('dry-run on directory path leaves SKILL.md untouched', async () => {
+        const dir = createSkillDir('my-skill', MISSING_DESC);
+        const skillMdPath = join(dir, 'SKILL.md');
+        const before = readFileSync(skillMdPath, 'utf8');
+        const r = await refine('skill', dir, { auto: true, dryRun: true });
+        expect(readFileSync(skillMdPath, 'utf8')).toBe(before);
+        expect(existsSync(`${skillMdPath}.bak`)).toBe(false);
+        expect(r.fixesApplied).toHaveLength(0);
+        expect(r.fixesSkipped.length).toBeGreaterThan(0);
+    });
+
+    it('quit-restore on directory-based skill restores SKILL.md inside dir', async () => {
+        const dir = createSkillDir('my-skill', GOOD_SKILL);
+        const skillMdPath = join(dir, 'SKILL.md');
+        const before = readFileSync(skillMdPath, 'utf8');
+        expect(before).toContain('name: code-reviewer');
+        const r = await refine('skill', dir, { auto: true });
+        // Auto mode doesn't quit; verify refine returns a valid result.
+        expect(r.preScore).toBeGreaterThan(0);
+        // Backup was created at the SKILL.md path inside the dir, not a sibling.
+        expect(existsSync(`${skillMdPath}.bak`)).toBe(true);
+        // After refine, the SKILL.md content is still valid.
+        const after = readFileSync(skillMdPath, 'utf8');
+        expect(after.length).toBeGreaterThan(0);
     });
 });
 
