@@ -668,7 +668,55 @@ You are a deployment specialist. Wrap the deploy workflow.
         expect(existsSync(`${file}.bak`)).toBe(false);
     });
 });
-// ── refine — file not found ──────────────────────────────────────────────────
+
+describe('refine — magent type, frontmatter-less (0059)', () => {
+    let tmpDir: string;
+
+    beforeEach(() => {
+        tmpDir = mkdtempSync(join(tmpdir(), 'superskill-refine-magent-'));
+        spyOn(process.stdout, 'write').mockImplementation(() => true);
+        spyOn(process.stderr, 'write').mockImplementation(() => true);
+    });
+
+    afterEach(() => {
+        if (tmpDir) rmSync(tmpDir, { recursive: true, force: true });
+    });
+
+    it('--auto on frontmatter-less magent applies no structural fixes, no crash, score monotonic (M2/M4)', async () => {
+        // Frontmatter-LESS magent: plain markdown (AGENTS.md/CLAUDE.md per task 0050).
+        // REQUIRED_FIELDS.magent = [] so there is nothing to insert; structural auto-apply
+        // is a clean no-op. Refine must not insert bogus frontmatter or crash.
+        const content = `# AGENTS.md
+
+Guidance for coding agents in this repo. Minimal config for regression test.
+`;
+        const file = createTempFile(content, tmpDir);
+        const r = await refine('magent', file, { auto: true });
+        // No structural fixes applied (no required fields for magents)
+        expect(r.fixesApplied.length).toBe(0);
+        // Score monotonic-or-neutral
+        expect(r.postScore).toBeGreaterThanOrEqual(r.preScore);
+        // File still has no frontmatter (no bogus frontmatter inserted)
+        const after = readFileSync(file, 'utf8');
+        expect(after).not.toContain('---');
+        expect(after).toBe(content);
+    });
+
+    it('--dry-run on frontmatter-less magent leaves file unchanged, no crash (M1/M4)', async () => {
+        const content = `# AGENTS.md
+
+Guidance for coding agents. Minimal config with no frontmatter.
+`;
+        const file = createTempFile(content, tmpDir);
+        const before = readFileSync(file, 'utf8');
+        const r = await refine('magent', file, { auto: true, dryRun: true });
+        expect(readFileSync(file, 'utf8')).toBe(before);
+        expect(existsSync(`${file}.bak`)).toBe(false);
+        // Dry-run still reports scores
+        expect(r.preScore).toBeGreaterThanOrEqual(0);
+        expect(r.postScore).toBeGreaterThanOrEqual(0);
+    });
+});
 
 describe('refine — file not found', () => {
     beforeEach(() => {

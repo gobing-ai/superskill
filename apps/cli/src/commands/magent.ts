@@ -7,6 +7,7 @@ import { scaffold } from '../operations/scaffold';
 import { formatValidationResult, validate } from '../operations/validate';
 import {
     addAutoOption,
+    addDryRunOption,
     addEvaluateOptions,
     addEvolveOptions,
     addJsonOption,
@@ -82,9 +83,10 @@ export async function magentRefine(opts: {
     target?: string;
     auto?: boolean;
     save?: boolean;
+    dryRun?: boolean;
 }): Promise<number | undefined> {
     const target = resolveTarget(opts);
-    await refine('magent', opts.nameOrPath, { target, auto: opts.auto, save: opts.save });
+    await refine('magent', opts.nameOrPath, { target, auto: opts.auto, save: opts.save, dryRun: opts.dryRun });
     return undefined;
 }
 
@@ -161,6 +163,7 @@ export async function handleMagentRefine(opts: {
     target?: string;
     auto?: boolean;
     save?: boolean;
+    dryRun?: boolean;
 }): Promise<void> {
     await runOperation(() => magentRefine(opts));
 }
@@ -221,13 +224,17 @@ export function registerMagent(program: Command): void {
         },
     );
 
-    addSaveOption(
-        addTargetOption(
-            addAutoOption(cmd.command('refine <nameOrPath>').description('Evaluate and auto-fix a magent')),
+    addDryRunOption(
+        addSaveOption(
+            addTargetOption(
+                addAutoOption(cmd.command('refine <nameOrPath>').description('Evaluate and auto-fix a magent')),
+            ),
         ),
-    ).action(async (nameOrPath: string, opts: { target?: string; auto?: boolean; save?: boolean }) => {
-        await handleMagentRefine({ nameOrPath, ...opts });
-    });
+    ).action(
+        async (nameOrPath: string, opts: { target?: string; auto?: boolean; save?: boolean; dryRun?: boolean }) => {
+            await handleMagentRefine({ nameOrPath, ...opts });
+        },
+    );
 
     addEvolveOptions(
         cmd.command('evolve <name>').description('Longitudinal improvement from evaluation history'),

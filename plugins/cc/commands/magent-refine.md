@@ -1,6 +1,6 @@
 ---
 description: Evaluate and fix magent config issues in one step
-argument-hint: "<config-path> [--auto] [--save] [--target <platform>]"
+argument-hint: "<config-path> [--auto] [--save] [--dry-run] [--target <platform>]"
 allowed-tools: ["Read", "Write", "Glob", "Bash", "Skill"]
 ---
 
@@ -8,12 +8,13 @@ allowed-tools: ["Read", "Write", "Glob", "Bash", "Skill"]
 
 Wraps **cc:cc-magents** skill.
 
-Run evaluation, apply deterministic fixes, then perform LLM content improvement — all in one step. Delegates to **cc:cc-magents** skill.
+Run evaluation, apply deterministic structural fixes (missing fields, type coercion, whitespace), then re-evaluate — all in one step. Magents are frontmatter-OPTIONAL plain markdown (AGENTS.md/CLAUDE.md/GEMINI.md), and required-fields is empty for magents, so structural auto-apply is a clean no-op on frontmatter-less configs — body/section suggestions still surface. Delegates to **cc:cc-magents** skill.
 
 ## When to Use
 
-- Improve config quality after scaffolding
+- Improve magent config quality after scaffolding
 - Fix config issues without running evaluate separately
+- Preview fixes without writing with `--dry-run`
 
 ## Arguments
 
@@ -21,16 +22,19 @@ Run evaluation, apply deterministic fixes, then perform LLM content improvement 
 |----------|-------------|---------|
 | `config-path` | Path to the config .md file | (required) |
 | `--auto` | Skip interactive prompts (auto-apply fixes) | false |
-| `--save` | Save evaluation results to file | false |
-| `--target` | Target platform | claude-code |
+| `--save` | Persist the evaluation to the evaluation store | false |
+| `--dry-run` | Preview classified fixes and projected delta without writing | false |
+| `--target` | Target platform | claude |
 
 ## Examples
 
 ```bash
-# Refine a config
+# Refine a config (evaluate + structural fixes + re-evaluate)
 /cc:magent-refine ./CLAUDE.md
 # Auto-refine without prompts
 /cc:magent-refine ./CLAUDE.md --auto --save
+# Preview fixes without writing
+/cc:magent-refine ./CLAUDE.md --dry-run
 ```
 
 ## Implementation
