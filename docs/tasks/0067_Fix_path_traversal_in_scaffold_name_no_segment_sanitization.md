@@ -3,18 +3,18 @@ name: Fix path traversal in scaffold name (no segment sanitization)
 description: Fix path traversal in scaffold name (no segment sanitization)
 status: Done
 created_at: 2026-06-22T06:23:56.983Z
-updated_at: 2026-06-22T08:00:00.000Z
+updated_at: 2026-06-22T07:19:13.838Z
 folder: docs/tasks
 type: task
 feature-id: ""
 priority: high
 tags: ["scaffold","security","path-traversal","core"]
 impl_progress:
-  planning: pending
-  design: pending
-  implementation: pending
-  review: pending
-  testing: pending
+  planning: done
+  design: done
+  implementation: done
+  review: done
+  testing: done
 ---
 
 ## 0067. Fix path traversal in scaffold name (no segment sanitization)
