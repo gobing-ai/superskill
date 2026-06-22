@@ -199,29 +199,68 @@ export function computeTrends(evaluations: Evaluation[]): TrendEntry[] {
 }
 
 /**
+ * Detect whether a content string carries a YAML frontmatter block (`---\n…\n---\n`).
+ * Used to gate frontmatter-only code paths so frontmatter-OPTIONAL types (magents) degrade gracefully.
+ */
+function hasFrontmatter(content: string): boolean {
+    if (!content.startsWith('---\n')) return false;
+    return /\n---(?=\n|$)/.test(content.slice(4));
+}
+
+/** Extract the first non-empty line of a content body as a stable text anchor for body-targeted changes. */
+function firstBodyLine(content: string): string {
+    for (const line of content.split('\n')) {
+        const trimmed = line.trim();
+        if (trimmed) return trimmed;
+    }
+    return '';
+}
+
+/**
  * Generate proposed changes from a quality report and trend table.
  * Only proposes for declining dimensions or flat dimensions below 0.7.
+ *
+ * Frontmatter-OPTIONAL guard (task 0054): when `content` has no frontmatter (e.g. a plain-markdown
+ * magent like AGENTS.md/CLAUDE.md/GEMINI.md), the change targets the body (`location: 'body'`) using
+ * the first non-empty line as a text anchor, and `proposed` appends the suggestion — never a
+ * `frontmatter.description` edit on a config that has no frontmatter.
  */
-export function generateChanges(report: QualityReport, trends: TrendEntry[]): ProposedChange[] {
+export function generateChanges(report: QualityReport, trends: TrendEntry[], content?: string): ProposedChange[] {
     const changes: ProposedChange[] = [];
     const dimMap = new Map(Object.entries(report.dimensions));
+    const withFrontmatter = content === undefined ? true : hasFrontmatter(content);
+    const bodyAnchor = withFrontmatter ? '' : firstBodyLine(content ?? '');
 
     for (const trend of trends) {
         if (trend.trend === 'declining' || (trend.trend === 'flat' && trend.latest < 0.7)) {
             const dimData = dimMap.get(trend.dimension);
             const note = dimData?.note ?? '';
-            const suggestion = note
-                ? `[Improve ${trend.dimension}]: ${note}`
-                : `[Improve ${trend.dimension}]: review and enhance the description for better ${trend.dimension}.`;
-            changes.push({
-                dimension: trend.dimension,
-                location: 'frontmatter.description',
-                current: `${trend.dimension} score: ${trend.latest.toFixed(2)}`,
-                proposed: suggestion,
-                reason: note
-                    ? `Score: ${trend.latest.toFixed(2)} (trend: ${trend.trend}, Δ${trend.delta >= 0 ? '+' : ''}${trend.delta.toFixed(2)}). Note: "${note}".`
-                    : `Score: ${trend.latest.toFixed(2)} (trend: ${trend.trend}, Δ${trend.delta >= 0 ? '+' : ''}${trend.delta.toFixed(2)}). Score below threshold.`,
-            });
+            const scoreLine = `Score: ${trend.latest.toFixed(2)} (trend: ${trend.trend}, Δ${trend.delta >= 0 ? '+' : ''}${trend.delta.toFixed(2)}).`;
+            if (withFrontmatter) {
+                const suggestion = note
+                    ? `[Improve ${trend.dimension}]: ${note}`
+                    : `[Improve ${trend.dimension}]: review and enhance the description for better ${trend.dimension}.`;
+                changes.push({
+                    dimension: trend.dimension,
+                    location: 'frontmatter.description',
+                    current: `${trend.dimension} score: ${trend.latest.toFixed(2)}`,
+                    proposed: suggestion,
+                    reason: note ? `${scoreLine} Note: "${note}".` : `${scoreLine} Score below threshold.`,
+                });
+            } else {
+                // Frontmatter-less config: target the body. Proposed text appends the suggestion to the
+                // first non-empty line so stepApply's text-replace branch can apply it safely.
+                const suggestion = note
+                    ? `[Improve ${trend.dimension}]: ${note}`
+                    : `[Improve ${trend.dimension}]: review and enhance this config for better ${trend.dimension}.`;
+                changes.push({
+                    dimension: trend.dimension,
+                    location: 'body',
+                    current: bodyAnchor,
+                    proposed: bodyAnchor ? `${bodyAnchor}\n\n${suggestion}` : suggestion,
+                    reason: `${scoreLine} Config has no frontmatter; suggesting a body addition rather than a frontmatter.description edit.`,
+                });
+            }
         }
     }
 
@@ -279,10 +318,20 @@ export function computeAnchorHash(anchor: GenerationAnchor): string {
  * Mirrors the anchor that `emitGenerationEnvelope` emits, so a faithful agent round-trip
  * yields a matching `anchor_hash`. The rubric criterion is omitted (dimension-specific) —
  * the anchor gate guards the frontmatter + negative constraints that bound the goal.
+ *
+ * Frontmatter-OPTIONAL guard (task 0054): when the content has no frontmatter (e.g. a plain-markdown
+ * magent), the hash is computed over an empty frontmatter mapping. This keeps the anchor stable and
+ * crash-free without proposing a bogus frontmatter.description edit.
  */
 function computeBaselineAnchorHash(content: string): string {
-    const parsed = parseFrontmatter(content);
-    const frontmatter = parsed.data;
+    let frontmatter: Record<string, unknown> = {};
+    if (hasFrontmatter(content)) {
+        try {
+            frontmatter = parseFrontmatter(content).data;
+        } catch {
+            frontmatter = {};
+        }
+    }
     return computeAnchorHash({
         frontmatter,
         rubric_criteria: '',
@@ -384,8 +433,16 @@ function emitGenerationEnvelope(
     trends: TrendEntry[],
 ): EvolveResult {
     const rubric = loadRubric(type);
-    const parsed = parseFrontmatter(content);
-    const frontmatter = parsed.data;
+    // Frontmatter-OPTIONAL guard (task 0054): parse only when present; fall back to empty mapping
+    // so a plain-markdown magent (AGENTS.md/CLAUDE.md/GEMINI.md) emits a valid envelope without crashing.
+    let frontmatter: Record<string, unknown> = {};
+    if (hasFrontmatter(content)) {
+        try {
+            frontmatter = parseFrontmatter(content).data;
+        } catch {
+            frontmatter = {};
+        }
+    }
     const description = frontmatter.description;
     const negativeConstraints = extractNegativeConstraints(description);
     const contentName = resolveContentName(resolvedPath);
@@ -596,6 +653,7 @@ async function stepPropose(
     evaluations: Evaluation[],
     baselineScore: number,
     baselineDate: string,
+    content?: string,
 ): Promise<{
     proposalId: string;
     proposalDbId: number;
@@ -603,7 +661,7 @@ async function stepPropose(
     changes: ProposedChange[];
     proposalRecord: Proposal;
 }> {
-    const changes = generateChanges(report, trends);
+    const changes = generateChanges(report, trends, content);
     const proposalDao = new ProposalDao(db);
 
     const existingProposals = await proposalDao.getProposals(type, name);
@@ -1142,6 +1200,7 @@ export async function evolve(type: ContentType, name: string, opts?: EvolveOptio
     }
 
     // Step 2: PROPOSE (interactive and --propose-only paths create a fresh draft).
+    const proposeContent = await Bun.file(resolvedPath).text();
     const { proposalId, proposalDbId, proposalPath, changes } = await stepPropose(
         db,
         type,
@@ -1151,6 +1210,7 @@ export async function evolve(type: ContentType, name: string, opts?: EvolveOptio
         evaluations,
         baselineScore,
         baselineDate,
+        proposeContent,
     );
 
     // Step 3: REVIEW — --propose-only writes the draft and stops.

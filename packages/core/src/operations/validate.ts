@@ -184,13 +184,28 @@ export async function validate(
 export function _validateContent(type: ContentType, content: string, opts?: ValidateOptions): ValidationResult {
     const findings: Finding[] = [];
 
-    // 2. Frontmatter presence
+    // 2. Frontmatter presence. Magents are frontmatter-OPTIONAL (AGENTS.md/CLAUDE.md/GEMINI.md are
+    // plain markdown per task 0050); absence is tolerated. Malformed frontmatter (starts with `---`
+    // but fails to parse) is still a real error for every type.
     let data: Record<string, unknown>;
     let body: string;
+    const frontmatterPresent = /^---\s*$/m.test(content);
     try {
-        const parsed = parseFrontmatter(content);
-        data = parsed.data;
-        body = parsed.body;
+        if (frontmatterPresent) {
+            const parsed = parseFrontmatter(content);
+            data = parsed.data;
+            body = parsed.body;
+        } else if (type === 'magent') {
+            data = {};
+            body = content;
+        } else {
+            findings.push({
+                severity: 'error',
+                field: 'frontmatter',
+                message: 'YAML parse error: Missing frontmatter: content must start with ---',
+            });
+            return { valid: false, findings };
+        }
     } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
         findings.push({ severity: 'error', field: 'frontmatter', message: `YAML parse error: ${msg}` });
