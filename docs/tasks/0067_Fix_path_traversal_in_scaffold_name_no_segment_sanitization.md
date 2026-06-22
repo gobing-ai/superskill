@@ -1,9 +1,9 @@
 ---
 name: Fix path traversal in scaffold name (no segment sanitization)
 description: Fix path traversal in scaffold name (no segment sanitization)
-status: Backlog
+status: Done
 created_at: 2026-06-22T06:23:56.983Z
-updated_at: 2026-06-22T06:23:56.983Z
+updated_at: 2026-06-22T08:00:00.000Z
 folder: docs/tasks
 type: task
 feature-id: ""
