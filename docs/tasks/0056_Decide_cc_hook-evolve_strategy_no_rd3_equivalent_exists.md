@@ -1,9 +1,9 @@
 ---
 name: Decide cc hook-evolve strategy (no rd3 equivalent exists)
 description: Decide cc hook-evolve strategy (no rd3 equivalent exists)
-status: WIP
+status: Testing
 created_at: 2026-06-21T20:57:07.001Z
-updated_at: 2026-06-22T04:08:42.425Z
+updated_at: 2026-06-22T04:29:02.558Z
 folder: docs/tasks
 type: task
 feature-id: ""
@@ -127,10 +127,67 @@ The shared `evolve()` engine already supports `--analyze` for all content types 
 
 ### Review
 
+**Verdict: PASS**
+
+_SECU review — 2026-06-22_
+
+**S — Security (PASS):** The change restricts hook evolve to analyze-only, preventing auto-rewrite of security-critical hooks.json shell commands (F024 double-loop gate risk). The `isHookApplyCapableOpt` guard fires before any DB access or file mutation. No new security risks.
+
+**E — Correctness (PASS):** `--analyze` prints the safety/coverage trend from evaluation history (test: "=== Evolution Analysis ===", "Score:", "declining", no proposal written). All 6 apply-capable opts are rejected at both layers. 1020 tests pass, 0 fail. Coverage: 99.69% funcs / 98.76% lines aggregate, all files above 90%.
+
+**C — Architecture (PASS):** Two-layer defense follows existing `addEvolveOptions` pattern. `addHookEvolveOptions` is surgical — only registers `--target/--from/--analyze/--json`. `isHookApplyCapableOpt` is a pure function, testable in isolation. No new files, no new abstractions.
+
+**U — Usability (PASS):** Help text says "Analyze hook evaluation trends (analyze-only, no apply)" — honest, no false capability claims. No apply/history/rollback advertised.
+
+**Traceability — acceptance criteria:**
+1. ✅ `hook evolve --analyze` prints safety/coverage trend from evaluation history (test: `--analyze prints trend summary for hooks`)
+2. ✅ Writes nothing, mutates nothing (test: `r.proposalPath === ''`, `r.changesApplied === 0`)
+3. ✅ Exposes no apply/history/rollback (test: flag verification — `--propose-only`/`--accept`/`--reject`/`--ingest`/`--margin`/`--history`/`--rollback`/`--confirm` NOT registered)
+4. ✅ No wrapper or help text claims apply-capable hook-evolve (test: description contains "analyze-only")
+5. ✅ Gates: lint clean, 1020 tests pass (no skips), build succeeds, git clean after commit
+
+**Changed files (7):**
+- `apps/cli/src/commands/helpers.ts` — added `addHookEvolveOptions`
+- `apps/cli/src/commands/hook.ts` — switched `hook evolve` to `addHookEvolveOptions`, updated handler/description
+- `apps/cli/src/operations/evolve.ts` — added `isHookApplyCapableOpt` guard
+- `apps/cli/tests/commands/content-command-modules.test.ts` — updated `hookEvolve` call to analyze-only signature
+- `apps/cli/tests/commands/hook.test.ts` — added flag verification tests
+- `apps/cli/tests/operations/evolve.test.ts` — added 10 hook analyze-only tests
+- `docs/tasks/0056_*.md` — Solution, Plan, Review, Testing sections
 
 
 ### Testing
 
+_Testing — 2026-06-22T04:15:00Z_
+
+**Test run:** `bun run test` → 1020 pass, 0 fail, 2563 expect() calls, 58 files.
+
+**New tests (12 total):**
+
+Engine-level (`apps/cli/tests/operations/evolve.test.ts` — "evolve — hook type, analyze-only (0056)"):
+1. `--analyze prints trend summary for hooks without writing a proposal (0056 C)` — verifies trend table, score, "declining", no proposal
+2. `--analyze works with a single hook evaluation (0056 C)` — single-eval edge case
+3. `--propose-only is rejected for hooks (0056 C — analyze-only)` — stderr contains "analyze-only", no proposal
+4. `--accept is rejected for hooks (0056 C — analyze-only)` — zero result
+5. `--reject is rejected for hooks (0056 C — analyze-only)` — zero result
+6. `--ingest is rejected for hooks (0056 C — analyze-only)` — zero result
+7. `--history is rejected for hooks (0056 C — analyze-only)` — zero result
+8. `--rollback is rejected for hooks (0056 C — analyze-only)` — zero result, file unmodified
+9. `isHookApplyCapableOpt detects apply-capable options` — pure function: 11 assertions covering all opts
+
+Command-level (`apps/cli/tests/commands/hook.test.ts` — "hook evolve — analyze-only surface (0056)"):
+10. `exposes --analyze but not --history/--rollback/--propose-only/--accept/--reject/--ingest` — flag verification
+11. `describes hook evolve as analyze-only` — description check
+
+Updated test (`apps/cli/tests/commands/content-command-modules.test.ts`):
+12. `hookEvolve` call updated from `{ proposeOnly: true, accept: 'a', reject: 'b' }` to `{ analyze: true }`
+
+**Coverage:** 99.69% functions / 98.76% lines aggregate. All files above 90/90 threshold.
+
+**Gates:**
+- `bun run lint` — clean (biome + typecheck)
+- `bun run test` — 1020 pass, 0 fail, no skips
+- `bun run build` — 768 modules bundled, exit 0
 
 
 ### Artifacts
