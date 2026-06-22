@@ -127,33 +127,21 @@ The shared `evolve()` engine already supports `--analyze` for all content types 
 
 ### Review
 
-**Verdict: PASS**
+**Re-verify (--force) — 2026-06-21:** PASS. Phase 7 SECU + Phase 8 traceability re-run inline on commit fe37f6f.
 
-_SECU review — 2026-06-22_
+- **Security:** No hardcoded secrets, no injection surface. Engine guard `isHookApplyCapableOpt` (`evolve.ts:121`) fires before `openDb`/file mutation, blocking apply/history/rollback for hooks. ✅
+- **Efficiency:** Pure boolean guard, no added I/O on the analyze path. ✅
+- **Correctness:** Two-layer defense — command layer (`helpers.ts:44 addHookEvolveOptions` registers only `--target/--from/--analyze/--json`) + engine layer (`evolve.ts:1050` rejects 6 apply-capable opts for `type === 'hook'`). Handler `evolveHook` (`hook.ts:63`) forwards only analyze-safe opts. ✅
+- **Usability:** Description "Analyze hook evaluation trends (analyze-only, no apply)" — no false capability claims. ✅
 
-**S — Security (PASS):** The change restricts hook evolve to analyze-only, preventing auto-rewrite of security-critical hooks.json shell commands (F024 double-loop gate risk). The `isHookApplyCapableOpt` guard fires before any DB access or file mutation. No new security risks.
+**Traceability (5/5 MET):**
+1. `--analyze` prints trend → `evolve.test.ts:1142` ✅
+2. Writes/mutates nothing → `evolve.test.ts:1142` (no proposal) ✅
+3. No apply/history/rollback → `hook.test.ts:12`, `evolve.test.ts:1166-1209` ✅
+4. No wrapper claims apply-capable evolve → `hook.test.ts:37` (description "analyze-only") ✅
+5. Gates → lint clean, **1020 pass / 0 fail / no skips**, build exit 0, git clean ✅
 
-**E — Correctness (PASS):** `--analyze` prints the safety/coverage trend from evaluation history (test: "=== Evolution Analysis ===", "Score:", "declining", no proposal written). All 6 apply-capable opts are rejected at both layers. 1020 tests pass, 0 fail. Coverage: 99.69% funcs / 98.76% lines aggregate, all files above 90%.
-
-**C — Architecture (PASS):** Two-layer defense follows existing `addEvolveOptions` pattern. `addHookEvolveOptions` is surgical — only registers `--target/--from/--analyze/--json`. `isHookApplyCapableOpt` is a pure function, testable in isolation. No new files, no new abstractions.
-
-**U — Usability (PASS):** Help text says "Analyze hook evaluation trends (analyze-only, no apply)" — honest, no false capability claims. No apply/history/rollback advertised.
-
-**Traceability — acceptance criteria:**
-1. ✅ `hook evolve --analyze` prints safety/coverage trend from evaluation history (test: `--analyze prints trend summary for hooks`)
-2. ✅ Writes nothing, mutates nothing (test: `r.proposalPath === ''`, `r.changesApplied === 0`)
-3. ✅ Exposes no apply/history/rollback (test: flag verification — `--propose-only`/`--accept`/`--reject`/`--ingest`/`--margin`/`--history`/`--rollback`/`--confirm` NOT registered)
-4. ✅ No wrapper or help text claims apply-capable hook-evolve (test: description contains "analyze-only")
-5. ✅ Gates: lint clean, 1020 tests pass (no skips), build succeeds, git clean after commit
-
-**Changed files (7):**
-- `apps/cli/src/commands/helpers.ts` — added `addHookEvolveOptions`
-- `apps/cli/src/commands/hook.ts` — switched `hook evolve` to `addHookEvolveOptions`, updated handler/description
-- `apps/cli/src/operations/evolve.ts` — added `isHookApplyCapableOpt` guard
-- `apps/cli/tests/commands/content-command-modules.test.ts` — updated `hookEvolve` call to analyze-only signature
-- `apps/cli/tests/commands/hook.test.ts` — added flag verification tests
-- `apps/cli/tests/operations/evolve.test.ts` — added 10 hook analyze-only tests
-- `docs/tasks/0056_*.md` — Solution, Plan, Review, Testing sections
+No findings (P1–P4 all 0). Verdict matches prior pipeline PASS. No fix pass needed.
 
 
 ### Testing
