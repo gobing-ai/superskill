@@ -927,6 +927,158 @@ describe('evolve — magent type, frontmatter-less (0054)', () => {
         expect(r.changesApplied).toBe(0);
     });
 });
+// ── Skill-type regression (task 0055: directory-based SKILL.md) ─────────────────
+
+describe('evolve — skill type, directory-based (0055)', () => {
+    let dir: string;
+    let prevCwd: string;
+    let adapter: DbAdapter;
+
+    async function makeAdapter(): Promise<DbAdapter> {
+        const a = await createDbAdapter({ driver: 'bun-sqlite', url: ':memory:' });
+        await a.exec(evaluations.createTableSql);
+        await a.exec(proposals.createTableSql);
+        return a;
+    }
+
+    /** Seed skill evaluations so trend analysis has declining history. */
+    async function seedSkillHistory(a: DbAdapter, scores: number[]): Promise<void> {
+        const dao = new EvaluationDao(a);
+        for (let i = 0; i < scores.length; i++) {
+            const score = scores[i];
+            if (score === undefined) continue;
+            const id = await dao.insertEvaluation({
+                content_type: 'skill',
+                content_name: 'my-skill',
+                target_agent: 'claude',
+                operation: 'evaluate',
+                aggregate: score,
+                dimensions: { clarity: { score, note: 'declining clarity' } },
+                file_hash: 'abc',
+            });
+            await a.exec(`UPDATE evaluations SET created_at = ${Date.UTC(2026, 5, 1, 0, 0, i)} WHERE id = ${id}`);
+        }
+    }
+
+    const SKILL_CONTENT = [
+        '---',
+        'name: my-skill',
+        'description: A test skill for evolve regression',
+        'version: 1.0.0',
+        '---',
+        '',
+        '# My Skill',
+        '',
+        'This is a directory-based skill.',
+    ].join('\n');
+
+    function writeSkill(dirPath: string) {
+        mkdirSync(join(dirPath, 'skills', 'my-skill'), { recursive: true });
+        writeFileSync(join(dirPath, 'skills', 'my-skill', 'SKILL.md'), SKILL_CONTENT);
+    }
+
+    beforeEach(async () => {
+        prevCwd = cwd();
+        dir = mkdtempSync(join(tmpdir(), 'superskill-evolve-skill-'));
+        mkdirSync(join(dir, '.superskill'), { recursive: true });
+        writeSkill(dir);
+        chdir(dir);
+        adapter = await makeAdapter();
+        spyOn(process.stdout, 'write').mockImplementation(() => true);
+        spyOn(process.stderr, 'write').mockImplementation(() => true);
+    });
+    afterEach(() => {
+        chdir(prevCwd);
+        rmSync(dir, { recursive: true, force: true });
+    });
+
+    it('--propose-only seeds heuristic changes for a sub-perfect directory-based skill', async () => {
+        await seedSkillHistory(adapter, [0.9, 0.5]); // declining clarity
+        const r = await evolve('skill', 'skills/my-skill/SKILL.md', { adapter, proposeOnly: true });
+        expect(r.proposalPath).not.toBe('');
+        const proposalContent = readFileSync(r.proposalPath, 'utf-8');
+        expect(proposalContent).toContain('[Improve clarity]');
+        expect(r.changesApplied).toBe(0);
+        const props = await new ProposalDao(adapter).getProposals('skill', 'my-skill');
+        expect(props).toHaveLength(1);
+        expect(props[0]?.status).toBe('draft');
+    });
+
+    it('resolves directory path (no SKILL.md suffix) to SKILL.md inside the dir', async () => {
+        await seedSkillHistory(adapter, [0.9, 0.5]);
+        const r = await evolve('skill', 'skills/my-skill', { adapter, proposeOnly: true });
+        expect(r.proposalPath).not.toBe('');
+        const proposalContent = readFileSync(r.proposalPath, 'utf-8');
+        expect(proposalContent).toContain('[Improve clarity]');
+        const props = await new ProposalDao(adapter).getProposals('skill', 'my-skill');
+        expect(props).toHaveLength(1);
+    });
+
+    it('--analyze prints summary for a directory-based skill without writing a proposal', async () => {
+        await seedSkillHistory(adapter, [0.9, 0.5]);
+        const writes: string[] = [];
+        const spy = spyOn(process.stdout, 'write').mockImplementation((data) => {
+            writes.push(typeof data === 'string' ? data : data.toString());
+            return true;
+        });
+        const r = await evolve('skill', 'skills/my-skill/SKILL.md', { adapter, analyze: true });
+        spy.mockRestore();
+        const output = writes.join('');
+        expect(output).toContain('=== Evolution Analysis ===');
+        expect(output).toContain('Score:');
+        expect(r.proposalPath).toBe('');
+        expect(r.changesApplied).toBe(0);
+    });
+
+    it('--history lists an applied skill version after --accept', async () => {
+        await seedSkillHistory(adapter, [0.9, 0.5]);
+        await evolve('skill', 'skills/my-skill/SKILL.md', { adapter, proposeOnly: true });
+        const draft = (await new ProposalDao(adapter).getProposals('skill', 'my-skill'))[0];
+        const pid = ((draft?.proposal_json as Record<string, unknown>)?.proposal_id as string) ?? '';
+        await evolve('skill', 'skills/my-skill/SKILL.md', { adapter, acceptId: pid, margin: -1 });
+
+        const writes: string[] = [];
+        const spy = spyOn(process.stdout, 'write').mockImplementation((data) => {
+            writes.push(typeof data === 'string' ? data : data.toString());
+            return true;
+        });
+        const r = await evolve('skill', 'skills/my-skill/SKILL.md', { adapter, history: true });
+        spy.mockRestore();
+        const output = writes.join('');
+        expect(output).toContain('=== Version History: my-skill ===');
+        expect(output).toContain(pid);
+        expect(r.changesApplied).toBe(0);
+    });
+
+    it('--rollback restores byte-identical SKILL.md file after apply', async () => {
+        await seedSkillHistory(adapter, [0.9, 0.5]);
+        const skillPath = join(dir, 'skills', 'my-skill', 'SKILL.md');
+        const originalContent = readFileSync(skillPath, 'utf-8');
+
+        await evolve('skill', 'skills/my-skill/SKILL.md', { adapter, proposeOnly: true });
+        const draft = (await new ProposalDao(adapter).getProposals('skill', 'my-skill'))[0];
+        const pid = ((draft?.proposal_json as Record<string, unknown>)?.proposal_id as string) ?? '';
+        await evolve('skill', 'skills/my-skill/SKILL.md', { adapter, acceptId: pid, margin: -1 });
+
+        const modifiedContent = readFileSync(skillPath, 'utf-8');
+        expect(modifiedContent).not.toBe(originalContent);
+
+        const r = await evolve('skill', 'skills/my-skill/SKILL.md', { adapter, rollback: pid, confirm: true });
+        expect(r.changesApplied).toBe(0);
+
+        const restoredContent = readFileSync(skillPath, 'utf-8');
+        expect(restoredContent).toBe(originalContent);
+    });
+
+    it('--rollback without --confirm does not mutate the SKILL.md file', async () => {
+        await seedSkillHistory(adapter, [0.9, 0.5]);
+        const skillPath = join(dir, 'skills', 'my-skill', 'SKILL.md');
+        const originalContent = readFileSync(skillPath, 'utf-8');
+        const r = await evolve('skill', 'skills/my-skill/SKILL.md', { adapter, rollback: 'some-id' });
+        expect(r.changesApplied).toBe(0);
+        expect(readFileSync(skillPath, 'utf-8')).toBe(originalContent);
+    });
+});
 // ── Interactive review (injectable readline) ───────────────────────────────────
 
 describe('interactiveReview', () => {

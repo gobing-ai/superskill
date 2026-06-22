@@ -163,6 +163,66 @@ describe('magent command module', () => {
             process.exitCode = 0;
         }
     });
+
+    it('forwards magent scaffold template, skills, and tools options (task 0064)', async () => {
+        const { magentScaffold, registerMagent } = await import('../../src/commands/magent');
+
+        expect(
+            await magentScaffold({
+                name: 'main',
+                description: 'desc',
+                target: 'codex',
+                template: 'standard',
+                skills: 'cc:cc-magents,rd3-dev-verify',
+                tools: 'Read,Write,Bash',
+                output: 'out',
+                force: true,
+            }),
+        ).toBeUndefined();
+        expect(scaffoldOp.scaffold).toHaveBeenLastCalledWith('magent', 'main', {
+            description: 'desc',
+            target: 'codex',
+            output: 'out',
+            force: true,
+            template: 'standard',
+            skills: 'cc:cc-magents,rd3-dev-verify',
+            tools: 'Read,Write,Bash',
+        });
+
+        const program = new Command();
+        registerMagent(program);
+        const exit = spyOn(process, 'exit').mockImplementation(() => undefined as never);
+        try {
+            await program.parseAsync(
+                [
+                    'magent',
+                    'scaffold',
+                    'main',
+                    '--template',
+                    'standard',
+                    '--skills',
+                    'cc:cc-magents',
+                    '--tools',
+                    'Read,Write',
+                    '--force',
+                ],
+                { from: 'user' },
+            );
+            expect(scaffoldOp.scaffold).toHaveBeenLastCalledWith(
+                'magent',
+                'main',
+                expect.objectContaining({
+                    template: 'standard',
+                    skills: 'cc:cc-magents',
+                    tools: 'Read,Write',
+                    force: true,
+                }),
+            );
+        } finally {
+            exit.mockRestore();
+            process.exitCode = 0;
+        }
+    });
 });
 
 describe('skill command module', () => {

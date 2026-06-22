@@ -1,9 +1,9 @@
 ---
 name: Make cc skill-evolve ready to replace rd3 skill-evolve
 description: Make cc skill-evolve ready to replace rd3 skill-evolve
-status: Backlog
+status: Done
 created_at: 2026-06-21T20:56:07.191Z
-updated_at: 2026-06-21T20:56:07.191Z
+updated_at: 2026-06-22T02:11:08.367Z
 folder: docs/tasks
 type: task
 feature-id: ""
@@ -64,6 +64,7 @@ Directory-based skills. No engine rewrite beyond 0052 + dir-resolution confirmat
 
 ### Solution
 
+Per-type slice. SHARED engine fix landed in 0052 (`operations/evolve.ts`); this task consumes it for the SKILL type and handles the DIRECTORY-based wrinkle. Register `--analyze/--history/--rollback/--confirm` flags on `skillEvolve` + `handleSkillEvolve`, fix `skill-evolve.md` wrapper drift, add dir-based skill evolve regression test.
 
 
 ### Plan
@@ -71,14 +72,6 @@ Directory-based skills. No engine rewrite beyond 0052 + dir-resolution confirmat
 1. Consume 0052 engine. 2. Register flags on `skill.ts`. 3. Confirm dir-form resolution + SKILL.md-targeted
 backup/proposal/rollback + correct store key. 4. Fix wrapper. 5. Directory-based skill evolve regression
 test. Gate: lint/test/build/git clean. Do NOT flip alias until ship.
-
-
-### Review
-
-
-
-### Testing
-
 
 
 ### Artifacts
@@ -89,3 +82,31 @@ test. Gate: lint/test/build/git clean. Do NOT flip alias until ship.
 ### References
 
 
+
+### Review
+
+## Review — 2026-06-22 (Stage 4 verify, inline)
+
+**Status:** 0 findings
+**Scope:** `apps/cli/src/commands/skill.ts`, `plugins/cc/commands/skill-evolve.md`, `apps/cli/tests/operations/evolve.test.ts`
+**Mode:** verify (Phase 7 SECU + Phase 8 traceability)
+**Channel:** inline (current)
+**Gate:** `bun run lint` → pass · `bun run test` → 1000/1000 pass (0 skips) · `bun run build` → pass · `git status` → 4 owned changes, 4 pre-existing
+
+**Verdict:** PASS
+
+### Requirements traceability
+
+All work items MET with code + test evidence:
+
+- **S1** — Register `--analyze/--history/--rollback/--confirm` on skill.ts: **MET**
+- **S2** — Dir-form resolution confirmed: **MET**
+- **S3** — Wrapper drift fixed: **MET**
+- **S4** — Regression tests: **MET** · 6 new tests in `evolve.test.ts`
+
+### Testing
+
+**Command:** `bun run lint && bun run test && bun run build`
+**Scope:** Full project — 1000 tests across 58 files, coverage gate (90/90)
+**Result:** PASS — 1000/1000 pass, 0 failures, 0 skips
+**Next action:** None — all gates pass.

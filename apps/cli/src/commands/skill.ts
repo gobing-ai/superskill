@@ -103,6 +103,10 @@ export async function skillEvolve(opts: {
     json?: boolean;
     ingest?: string;
     margin?: number;
+    analyze?: boolean;
+    history?: boolean;
+    rollback?: string;
+    confirm?: boolean;
 }): Promise<number | undefined> {
     const target = resolveTarget(opts);
     await evolve('skill', opts.name, {
@@ -114,6 +118,10 @@ export async function skillEvolve(opts: {
         json: opts.json,
         ingest: opts.ingest,
         margin: opts.margin,
+        analyze: opts.analyze,
+        history: opts.history,
+        rollback: opts.rollback,
+        confirm: opts.confirm,
     });
     return undefined;
 }
@@ -160,6 +168,11 @@ export async function handleSkillEvolve(
         reject?: string;
         json?: boolean;
         ingest?: string;
+        margin?: number;
+        analyze?: boolean;
+        history?: boolean;
+        rollback?: string;
+        confirm?: boolean;
     },
 ): Promise<void> {
     await runOperation(() => skillEvolve({ name, ...opts }));

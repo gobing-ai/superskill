@@ -20,7 +20,7 @@ Scaffold a new main agent configuration file. Delegates to **cc:cc-magents** ski
 | Argument | Description | Default |
 |----------|-------------|---------|
 | `--description` | Free-text description of the config's purpose | auto-generated |
-| `--target` | Target platform | claude-code |
+| `--target` | Target platform | claude |
 | `--output` | Output directory | . |
 | `--template` | Template tier (e.g. minimal / standard / specialist) | default |
 | `--skills` | Comma-separated skill names to pre-populate | — |
