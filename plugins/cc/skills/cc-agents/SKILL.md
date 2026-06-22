@@ -167,7 +167,7 @@ Subagent frontmatter MUST follow strict schema rules. The frontmatter IS the con
 
 #### Claude Code Fields (Primary Format)
 
-**Valid fields** (from `types.ts:VALID_CLAUDE_AGENT_FIELDS`):
+**Valid Claude Code agent frontmatter fields:**
 
 | Field | Type | Required | Description |
 |-------|------|---------|-------------|
@@ -309,21 +309,13 @@ The description IS the trigger. It determines when the main agent routes to this
 
 ## Core Concepts
 
-### Universal Agent Model (UAM)
+### Cross-Platform Field Model
 
-The **UAM** is an internal superset representation that captures ALL fields from all 6 platform formats. It's used as the common interchange format:
-
-```typescript
-interface UniversalAgent {
-  name: string;           // Required
-  description: string;    // Required (trigger)
-  body: string;           // System prompt
-  tools?: string[];       // Allowed tools
-  model?: string;         // Model override
-  maxTurns?: number;      // Max turns
-  // ... 22 fields total
-}
-```
+Agents are authored in the Claude Code Markdown+YAML format and adapted to each target
+platform. The adapter (`packages/core/src/pipeline/adapt-subagent.ts`) preserves the core
+fields — `name`, `description`, `tools`, `model`, `skills`, `color` — and maps or drops the
+rest per the platform-specific field table above. Fields a target does not support are dropped,
+not invented.
 
 ### 3 Tiered Templates
 
@@ -335,31 +327,19 @@ interface UniversalAgent {
 
 ### Evaluation Dimensions
 
-Agents are scored across **4 categories, 10 dimensions, 100 points total** (source: quality configuration):
+Agents are scored across **5 rubric dimensions**. The canonical rubric at
+`packages/core/src/rubrics/agent.yaml` owns each dimension's weight and criterion — read it
+there; do not restate weights here, they drift.
 
-| Category | Dimension | Thin | Spec | What It Checks |
-|----------|-----------|:---:|:---:|----------------|
-| **Core Quality** (30/35) | Frontmatter Quality | 10 | 10 | YAML validity, required fields |
-| | Body Quality | 10 | 15 | Persona/process/rules sections |
-| | Naming Convention | 5 | 5 | Lowercase hyphen-case, length |
-| | Instruction Clarity | 5 | 5 | Unambiguous, specific instructions |
-| **Discovery & Trigger** (15/15) | Description Effectiveness | 15 | 15 | Trigger phrases, routing accuracy |
-| **Safety & Compliance** (30/20) | Tool Restriction | 10 | 10 | Tools whitelist/blacklist |
-| | Thin-Wrapper Compliance | 15 | 5 | Skill delegation vs implementation |
-| | Security Posture | 5 | 5 | No dangerous patterns |
-| **Operational** (25/30) | Platform Compatibility | 10 | 10 | UAM cross-platform support |
-| | Operational Readiness | 15 | 20 | Output format, examples, verification |
+| Dimension | What It Checks |
+|-----------|----------------|
+| `completeness` | Workflow covered end-to-end; no skipped phases or unhandled edge cases |
+| `role-clarity` | Specific non-generic persona with an explicit expertise boundary |
+| `tool-selection` | Each tool matched to a step; no missing or orphaned tool references |
+| `skill-linkage` | Skills linked at the delegation point, reachable in the workflow |
+| `model-fit` | Model tier matches the agent's cognitive load |
 
-**Thin** = thin-wrapper profile (delegates to skills). **Spec** = specialist profile (domain experts).
-
-Grade: A (90+) / B (80-89) / C (70-79) / D (60-69) / F (<60). Pass threshold: **75%**.
-
-### 2 Weight Profiles
-
-| Profile | Emphasis | Best For |
-|---------|----------|----------|
-| **thin-wrapper** | Delegation, trigger, tools | Agents that delegate to skills |
-| **specialist** | Body quality, completeness | Domain expert agents |
+Verdict: **PASS** (≥0.70) / **FAIL** (<0.70). Grade: A (≥0.90) / B (≥0.75) / C (≥0.60) / D (≥0.45) / F (<0.45).
 
 See [references/evaluation-framework.md](references/evaluation-framework.md) for detailed scoring criteria.
 
@@ -382,7 +362,7 @@ See [references/evaluation-framework.md](references/evaluation-framework.md) for
 | Format | Directory + SKILL.md | Single .md file |
 | Templates | 3 types | 3 tiers |
 | Adapters | Export only | Bidirectional |
-| Evaluation | 10 dimensions | 10 dimensions |
+| Evaluation | 5 rubric dimensions | 5 rubric dimensions |
 
 ## Additional Resources
 
@@ -393,9 +373,9 @@ See [references/evaluation-framework.md](references/evaluation-framework.md) for
 ## See Also
 
 - [references/agent-anatomy.md](references/agent-anatomy.md) - Body structure guidance (tiered)
-- [references/architecture.md](references/architecture.md) - System architecture (UAM, adapters, pipeline)
+- [references/architecture.md](references/architecture.md) - System architecture (adapters, pipeline, field model)
 - [references/colors.md](references/colors.md) - Semantic color palette for agent UI
-- [references/evaluation-framework.md](references/evaluation-framework.md) - 10-dimension scoring details
+- [references/evaluation-framework.md](references/evaluation-framework.md) - rubric scoring details
 - [references/frontmatter-reference.md](references/frontmatter-reference.md) - Per-platform frontmatter fields
 - [references/hybrid-architecture.md](references/hybrid-architecture.md) - Command + agent orchestration patterns
 - [references/platform-compatibility.md](references/platform-compatibility.md) - Cross-platform feature matrix
