@@ -196,7 +196,7 @@ Score a hook config against a rubric in two calls.
    superskill hook evaluate <nameOrPath> --rubric <file> --json
    ```
    Returns `{ type, content_name, target, content, rubric, baseline }`.
-2. **Scorer persona** — read the envelope, score each dimension, emit `{ rubric_version, dimensions: { name: { score, note } } }`. Hook dimensions: `correctness`, `event-coverage`, `safety`, `pattern-match-quality` (`dimensions.ts:54`).
+2. **Scorer persona** — read the envelope, score each dimension, emit `{ rubric_version, dimensions: { name: { score, note } } }`. Hook dimensions: `correctness`, `event-coverage`, `safety`, `pattern-match-quality` (`packages/core/src/quality/hook.ts:226`).
 3. **Ingest-in** — validate the agent-produced scores against the rubric schema and persist:
    ```bash
    superskill hook evaluate <nameOrPath> --ingest <scores.json> --save
@@ -358,4 +358,4 @@ With `failClosed: true`, a crash or timeout of `validate-bash.sh` **blocks** the
 - **[platform-limits.md](references/platform-limits.md)** — What's NOT portable and why
 - **[migration.md](references/migration.md)** — Migrating legacy hook configs to the canonical `HookDefinitionSchema`
 - **Canonical schema:** `vendors/rulesync/src/types/hooks.ts:26,49` (`HookDefinitionSchema`, `HookEvent`)
-- **Hook dimensions:** `apps/cli/src/quality/dimensions.ts:54` (`correctness`, `event-coverage`, `safety`, `pattern-match-quality`)
+- **Hook dimensions:** `packages/core/src/quality/hook.ts:226` (`correctness`, `event-coverage`, `safety`, `pattern-match-quality`)
