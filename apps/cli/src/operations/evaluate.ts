@@ -123,7 +123,22 @@ export async function evaluate(
     applyRubricWeightingAndVerdict(type, report, opts);
 
     if (opts?.save) {
-        await persistEvaluation(type, resolvedPath, resolvedTarget, report, opts);
+        try {
+            const adapter = opts.adapter ?? (await openStore());
+            await new EvaluationDao(adapter).insertEvaluation({
+                content_type: type,
+                content_name: resolveContentName(resolvedPath),
+                target_agent: resolvedTarget,
+                operation: (opts.operation as 'evaluate' | 'refine' | 'evolve') ?? 'evaluate',
+                aggregate: report.aggregate,
+                dimensions: report.dimensions as Record<string, { score: number; note: string }>,
+                file_hash: hashContent(resolvedPath),
+                scorer: 'heuristic',
+            });
+        } catch (err) {
+            const msg = err instanceof Error ? err.message : String(err);
+            echoError(`Warning: failed to save evaluation: ${msg}`);
+        }
     }
 
     return report;
@@ -289,45 +304,27 @@ async function ingestScores(
         dimensions,
     };
 
-    // Persist with scorer='rubric' marker + rubric_version
     if (opts.save) {
-        await persistEvaluation(type, resolvedPath, resolvedTarget, report, opts, 'rubric', rubric.version);
+        try {
+            const adapter = opts.adapter ?? (await openStore());
+            await new EvaluationDao(adapter).insertEvaluation({
+                content_type: type,
+                content_name: resolveContentName(resolvedPath),
+                target_agent: resolvedTarget,
+                operation: (opts.operation as 'evaluate' | 'refine' | 'evolve') ?? 'evaluate',
+                aggregate: report.aggregate,
+                dimensions: report.dimensions as Record<string, { score: number; note: string }>,
+                file_hash: hashContent(resolvedPath),
+                scorer: 'rubric',
+                rubric_version: rubric.version,
+            });
+        } catch (err) {
+            const msg = err instanceof Error ? err.message : String(err);
+            echoError(`Warning: failed to save evaluation: ${msg}`);
+        }
     }
 
     return report;
-}
-
-// ── Persistence ──────────────────────────────────────────────────────────────
-
-async function persistEvaluation(
-    type: ContentType,
-    resolvedPath: string,
-    resolvedTarget: string,
-    report: QualityReport,
-    opts: EvaluateOptions,
-    scorer?: string,
-    rubricVersion?: number,
-): Promise<void> {
-    try {
-        const fileHash = hashContent(resolvedPath);
-        const adapter = opts.adapter ?? (await openStore());
-        const dao = new EvaluationDao(adapter);
-
-        await dao.insertEvaluation({
-            content_type: type,
-            content_name: resolveContentName(resolvedPath),
-            target_agent: resolvedTarget,
-            operation: (opts.operation as 'evaluate' | 'refine' | 'evolve') ?? 'evaluate',
-            aggregate: report.aggregate,
-            dimensions: report.dimensions as Record<string, { score: number; note: string }>,
-            file_hash: fileHash,
-            scorer: scorer ?? 'heuristic',
-            ...(rubricVersion !== undefined ? { rubric_version: rubricVersion } : {}),
-        });
-    } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        echoError(`Warning: failed to save evaluation: ${msg}`);
-    }
 }
 
 // ── Output ───────────────────────────────────────────────────────────────────

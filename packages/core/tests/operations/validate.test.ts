@@ -257,6 +257,34 @@ describe('_validateContent — ValidationResult.valid', () => {
     });
 });
 
+// ── F4: strict unknown-key warning ──
+it('warns on unknown frontmatter key under --strict', () => {
+    const result = _validateContent('skill', fm('x', { description: 'd', foo: 'bar' }), { strict: true });
+    expect(result.findings.some((f) => f.field === 'foo' && f.severity === 'warning')).toBe(true);
+    expect(result.valid).toBe(true); // warning, not error
+});
+
+it('does not warn on unknown key without --strict', () => {
+    const result = _validateContent('skill', fm('x', { description: 'd', foo: 'bar' }), { strict: false });
+    expect(result.findings.some((f) => f.field === 'foo')).toBe(false);
+});
+
+it('does not warn on known-optional fields', () => {
+    // command allowed-tools: is KNOWN_OPTIONAL
+    const result = _validateContent('command', fm('x', { description: 'd', 'allowed-tools': ['read'] }), {
+        strict: true,
+    });
+    expect(result.findings.some((f) => f.field === 'allowed-tools')).toBe(false);
+});
+
+it('does not double-report deprecated keys as unknown', () => {
+    const result = _validateContent('skill', fm('x', { description: 'd', tags: 'old' }), { strict: true });
+    // deprecated tag should only appear once
+    const tagFindings = result.findings.filter((f) => f.field === 'tags');
+    expect(tagFindings.length).toBe(1);
+    expect(tagFindings[0]?.message).toContain('deprecated');
+});
+
 describe('_validateContent — Content type coverage', () => {
     it('validates skill type', () => {
         assertValid(_validateContent('skill', fm('x', { description: 'd' })));

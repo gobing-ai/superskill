@@ -135,7 +135,17 @@ function scorePatternMatchQuality(entries: HookEntry[]): DimensionScore {
     for (const e of entries) {
         if (e.matcher !== '*' && e.matcher.length > 0) specificMatchers++;
         if (e.timeout !== undefined && e.timeout > 0) hasTimeout++;
-        if (/\$\{CLAUDE_PLUGIN_ROOT\}/.test(e.command) || !/^\//.test(e.command.trim())) portable++;
+        if (/\$\{CLAUDE_PLUGIN_ROOT\}/.test(e.command)) {
+            portable++;
+        } else {
+            const tokens = e.command.trim().split(/\s+/);
+            const firstToken = tokens[0] ?? '';
+            // Bare binary: first token has no / and no leading .
+            const bareBinary = firstToken.length > 0 && !firstToken.includes('/') && !firstToken.startsWith('.');
+            // No relative/absolute paths in any token (F6 fix)
+            const noPathTokens = tokens.every((t) => !t.includes('/') || /\$\{CLAUDE_PLUGIN_ROOT\}/.test(t));
+            if (bareBinary && noPathTokens) portable++;
+        }
     }
 
     const n = entries.length || 1;

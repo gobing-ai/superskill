@@ -1,5 +1,6 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { assertSafePathSegment } from './content/identity';
 import { adaptCommandToSkill } from './pipeline/adapt-command';
 import { adaptSubagentToSkill } from './pipeline/adapt-subagent';
 import { rewriteSkillReferences } from './pipeline/rewrite-references';
@@ -137,19 +138,6 @@ export function mapPluginToRulesync(pluginPath: string, pluginName: string, outp
     }
 
     return result;
-}
-
-function assertSafePathSegment(value: string, label: string): void {
-    if (
-        !value ||
-        value === '.' ||
-        value === '..' ||
-        value.includes('/') ||
-        value.includes('\\') ||
-        value.includes('\0')
-    ) {
-        throw new Error(`Invalid ${label} '${value}': must be a single path segment`);
-    }
 }
 
 function deepMergeJsonFile(sourcePath: string, targetPath: string): void {

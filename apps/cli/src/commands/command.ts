@@ -28,7 +28,6 @@ export async function commandScaffold(opts: {
     output?: string;
     force?: boolean;
     template?: string;
-    skills?: string;
     tools?: string;
 }): Promise<number | undefined> {
     const target = resolveTarget(opts);
@@ -38,7 +37,6 @@ export async function commandScaffold(opts: {
         output: opts.output,
         force: opts.force,
         template: opts.template,
-        skills: opts.skills,
         tools: opts.tools,
     });
     echo(`Created: ${createdPath}`);
@@ -138,8 +136,6 @@ export async function handleCommandScaffold(opts: {
     output?: string;
     force?: boolean;
     template?: string;
-    skills?: string;
-    tools?: string;
 }): Promise<void> {
     await runOperation(() => commandScaffold(opts));
 }
@@ -206,10 +202,7 @@ export function registerCommand(program: Command): void {
             opts: {
                 description?: string;
                 target?: string;
-                output?: string;
-                force?: boolean;
                 template?: string;
-                skills?: string;
                 tools?: string;
             },
         ) => {

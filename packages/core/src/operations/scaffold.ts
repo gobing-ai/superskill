@@ -2,6 +2,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { cwd } from 'node:process';
+import { assertSafePathSegment } from '../content/identity';
 import type { ContentType } from '../content/types';
 
 /** Options for the scaffold operation. */
@@ -16,8 +17,6 @@ export interface ScaffoldOptions {
     force?: boolean;
     /** Template tier name (e.g. `minimal` / `standard` / `specialist`). Resolves `<type>/<tier>.md`. */
     template?: string;
-    /** Comma-separated or array skill names to pre-populate frontmatter `skills:`. */
-    skills?: string[] | string;
     /** Comma-separated or array tool names to pre-populate frontmatter `tools:`. */
     tools?: string[] | string;
 }
@@ -26,10 +25,9 @@ const PLACEHOLDER_NAME = '<!-- NAME -->';
 const PLACEHOLDER_DESCRIPTION = '<!-- DESCRIPTION -->';
 const PLACEHOLDER_TARGET = '<!-- TARGET -->';
 const PLACEHOLDER_BODY = '<!-- BODY -->';
-const PLACEHOLDER_SKILLS = '<!-- SKILLS -->';
 const PLACEHOLDER_TOOLS = '<!-- TOOLS -->';
 
-/** Parse a `--skills`/`--tools` value (string list or comma-separated string) into a clean array. */
+/** Parse a `--tools` value (string list or comma-separated string) into a clean array. */
 function parseList(value: string[] | string | undefined): string[] {
     if (value === undefined) return [];
     if (Array.isArray(value)) {
@@ -54,7 +52,6 @@ function toYamlArray(items: string[]): string {
  * - `<!-- DESCRIPTION -->` → `vars.description ?? ''`
  * - `<!-- TARGET -->` → `vars.target ?? 'claude'`
  * - `<!-- BODY -->` → `vars.body ?? ''`
- * - `<!-- SKILLS -->` → YAML inline array of skills (e.g. `[a, b]`) or `[]`
  * - `<!-- TOOLS -->` → YAML inline array of tools (e.g. `[Read, Write]`) or `[]`
  */
 function substituteVars(
@@ -64,7 +61,6 @@ function substituteVars(
         description: string;
         target: string;
         body: string;
-        skills: string[];
         tools: string[];
     },
 ): string {
@@ -73,7 +69,6 @@ function substituteVars(
         .replaceAll(PLACEHOLDER_DESCRIPTION, vars.description)
         .replaceAll(PLACEHOLDER_TARGET, vars.target)
         .replaceAll(PLACEHOLDER_BODY, vars.body)
-        .replaceAll(PLACEHOLDER_SKILLS, toYamlArray(vars.skills))
         .replaceAll(PLACEHOLDER_TOOLS, toYamlArray(vars.tools));
 }
 
@@ -85,21 +80,25 @@ function substituteVars(
  */
 function mergeFrontmatterList(content: string, key: string, items: string[]): string {
     if (items.length === 0) return content;
-    const openIdx = content.indexOf('---');
-    if (openIdx === -1) return content;
-    const closeIdx = content.indexOf('---', openIdx + 3);
-    if (closeIdx === -1) return content;
+    // Find YAML fences by line-anchored match (not substring scan), so a --- HR
+    // in the body is never misidentified as the closing fence (F3 fix).
+    const fenceRe = /^---$/gm;
+    const matches = [...content.matchAll(fenceRe)];
+    if (matches.length < 2) return content;
+    const openPos = matches[0]?.index ?? 0;
+    const closePos = matches[1]?.index ?? 0;
+    // Frontmatter body: after the opening --- line, before the closing --- line.
+    const fmStart = openPos + 3; // skip past "---"
+    const fmBody = content.slice(fmStart, closePos);
     const yamlValue = toYamlArray(items);
     const pattern = new RegExp(`^${key}:.*$`, 'm');
-    if (pattern.test(content)) {
-        const head = content.slice(0, closeIdx);
-        const tail = content.slice(closeIdx);
-        return head.replace(pattern, `${key}: ${yamlValue}`) + tail;
+    let newFmBody: string;
+    if (pattern.test(fmBody)) {
+        newFmBody = fmBody.replace(pattern, `${key}: ${yamlValue}`);
+    } else {
+        newFmBody = `${fmBody}${key}: ${yamlValue}\n`;
     }
-    // Key absent: insert before the closing fence.
-    const head = content.slice(0, closeIdx);
-    const tail = content.slice(closeIdx);
-    return `${head}${key}: ${yamlValue}\n${tail}`;
+    return content.slice(0, fmStart) + newFmBody + content.slice(closePos);
 }
 
 /** Built-in template base directories: dev (apps/cli/src/templates) then prod (apps/cli/templates). */
@@ -171,6 +170,8 @@ export async function scaffold(type: ContentType, name: string, opts: ScaffoldOp
     if (!validTypes.includes(type)) {
         throw new Error(`Unknown content type: "${type}". Expected one of: ${validTypes.join(', ')}`);
     }
+    // Reject unsafe names that could escape the output directory (F1 fix).
+    assertSafePathSegment(name, 'content name');
 
     const template = resolveTemplate(type, opts.template);
     let content = substituteVars(template, {
@@ -178,15 +179,14 @@ export async function scaffold(type: ContentType, name: string, opts: ScaffoldOp
         description: opts.description ?? '',
         target: opts.target ?? 'claude',
         body: '',
-        skills: parseList(opts.skills),
         tools: parseList(opts.tools),
     });
 
-    // When --skills/--tools are provided, override the corresponding frontmatter key
-    // so a template's sensible defaults yield to the explicit user input. Type-agnostic:
-    // replaces the first `<key>:` line inside the leading YAML block only.
-    content = mergeFrontmatterList(content, 'tools', parseList(opts.tools));
-    content = mergeFrontmatterList(content, 'skills', parseList(opts.skills));
+    // When --tools are provided, override the corresponding frontmatter key
+    // using the type's canonical field name (F2 fix).
+    // agent → tools: ; skill/command/magent → allowed-tools:
+    const toolField = type === 'agent' ? 'tools' : 'allowed-tools';
+    content = mergeFrontmatterList(content, toolField, parseList(opts.tools));
 
     const outDir = opts.output ?? cwd();
     mkdirSync(outDir, { recursive: true });

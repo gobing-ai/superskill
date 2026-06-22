@@ -28,7 +28,6 @@ export async function magentScaffold(opts: {
     output?: string;
     force?: boolean;
     template?: string;
-    skills?: string[] | string;
     tools?: string[] | string;
 }): Promise<number | undefined> {
     const target = resolveTarget(opts);
@@ -38,7 +37,6 @@ export async function magentScaffold(opts: {
         output: opts.output,
         force: opts.force,
         template: opts.template,
-        skills: opts.skills,
         tools: opts.tools,
     });
     echo(`Created: ${createdPath}`);
@@ -139,7 +137,6 @@ export async function handleMagentScaffold(opts: {
     force?: boolean;
     template?: string;
     skills?: string[] | string;
-    tools?: string[] | string;
 }): Promise<void> {
     await runOperation(() => magentScaffold(opts));
 }
@@ -207,9 +204,7 @@ export function registerMagent(program: Command): void {
                 description?: string;
                 target?: string;
                 output?: string;
-                force?: boolean;
                 template?: string;
-                skills?: string[] | string;
                 tools?: string[] | string;
             },
         ) => {

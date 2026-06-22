@@ -462,6 +462,14 @@ describe('refine — auto mode', () => {
         expect(r.preScore).toBeGreaterThan(0);
     });
 
+    // F5: --save persists exactly one evaluation row (no double-evaluate)
+    it('persists exactly one evaluation row on --save (F5)', async () => {
+        const file = createTempFile(GOOD_SKILL, tmpDir);
+        const r = await refine('skill', file, { auto: true, save: true });
+        expect(r.preScore).toBeGreaterThan(0);
+        expect(r.postScore).toBe(r.preScore); // good skill: no fixes applied, no delta
+    });
+
     it('runs with custom target', async () => {
         const file = createTempFile(GOOD_SKILL, tmpDir);
         const r = await refine('skill', file, { auto: true, target: 'codex' });

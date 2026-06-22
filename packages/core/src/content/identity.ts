@@ -88,3 +88,19 @@ export function resolveContentPath(type: ContentType, name: string, opts?: Resol
 
     return null;
 }
+/**
+ * Reject a value that could escape the output directory when used as a path segment.
+ * A safe segment is non-empty, not `.` or `..`, and contains no `/`, `\`, or NUL.
+ */
+export function assertSafePathSegment(value: string, label: string): void {
+    if (
+        !value ||
+        value === '.' ||
+        value === '..' ||
+        value.includes('/') ||
+        value.includes('\\') ||
+        value.includes('\0')
+    ) {
+        throw new Error(`Invalid ${label} '${value}': must be a single path segment`);
+    }
+}

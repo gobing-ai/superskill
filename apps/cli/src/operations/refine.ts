@@ -6,12 +6,16 @@ import {
     type ContentType,
     type DimensionScore,
     evaluate as evaluateContent,
+    hashContent,
     parseFrontmatter,
+    resolveContentName,
     resolveContentPath,
     restoreFromBackup,
     type Target,
 } from '@gobing-ai/superskill-core';
 import { echo, echoError } from '@gobing-ai/ts-utils';
+import { openStore } from '../store/db';
+import { EvaluationDao } from '../store/evaluations';
 import { evaluate } from './evaluate';
 import type { Finding } from './validate';
 import { validate } from './validate';
@@ -514,8 +518,9 @@ export async function refine(type: ContentType, nameOrPath: string, opts?: Refin
 
     // Step 8: Re-evaluate and enforce the monotonic-or-neutral guarantee.
     let postScore: number;
+    let postReport: import('@gobing-ai/superskill-core').QualityReport | null = null;
     try {
-        const postReport = await evaluate(type, filePath, { target: resolvedTarget });
+        postReport = await evaluate(type, filePath, { target: resolvedTarget });
         if (!postReport) throw new Error('evaluate returned null in heuristic mode');
         postScore = postReport.aggregate;
     } catch {
@@ -548,13 +553,21 @@ export async function refine(type: ContentType, nameOrPath: string, opts?: Refin
         );
     }
 
-    // Step 10: Optionally save
-    if (opts?.save) {
+    // Step 10: Optionally save — persist the already-computed report (F5 fix)
+    if (opts?.save && postReport) {
         try {
-            await evaluate(type, filePath, {
-                target: resolvedTarget,
-                save: true,
+            const fileHash = hashContent(filePath);
+            const adapter = await openStore();
+            const dao = new EvaluationDao(adapter);
+            await dao.insertEvaluation({
+                content_type: type,
+                content_name: resolveContentName(filePath),
+                target_agent: resolvedTarget,
                 operation: 'refine',
+                aggregate: postReport.aggregate,
+                dimensions: postReport.dimensions as Record<string, { score: number; note: string }>,
+                file_hash: fileHash,
+                scorer: 'heuristic',
             });
         } catch {
             echoError('Warning: failed to save evaluation results.');

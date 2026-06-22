@@ -28,7 +28,6 @@ export async function agentScaffold(opts: {
     output?: string;
     force?: boolean;
     template?: string;
-    skills?: string;
     tools?: string;
 }): Promise<number | undefined> {
     const target = resolveTarget(opts);
@@ -38,7 +37,6 @@ export async function agentScaffold(opts: {
         output: opts.output,
         force: opts.force,
         template: opts.template,
-        skills: opts.skills,
         tools: opts.tools,
     });
     echo(`Created: ${createdPath}`);
@@ -139,7 +137,6 @@ export async function handleAgentScaffold(opts: {
     output?: string;
     force?: boolean;
     template?: string;
-    skills?: string;
     tools?: string;
 }): Promise<void> {
     await runOperation(() => agentScaffold(opts));
@@ -207,9 +204,7 @@ export function registerAgent(program: Command): void {
                 description?: string;
                 target?: string;
                 output?: string;
-                force?: boolean;
                 template?: string;
-                skills?: string;
                 tools?: string;
             },
         ) => {

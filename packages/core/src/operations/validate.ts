@@ -84,6 +84,16 @@ const DEPRECATED_FIELDS: Record<string, string> = {
     version: 'Version is derived from the source repository.',
 };
 
+/** Frontmatter keys that appear in shipped templates but are not in FIELD_TYPES.
+ *  Known-optional fields never trigger unknown-key warnings under --strict. */
+const KNOWN_OPTIONAL: Record<ContentType, string[]> = {
+    skill: ['license', 'metadata'],
+    command: ['argument-hint', 'allowed-tools', 'target'],
+    agent: [],
+    hook: [],
+    magent: [],
+};
+
 // ── Core ─────────────────────────────────────────────────────────────────────
 /**
  * Check markdown body links for integrity.
@@ -392,7 +402,7 @@ function checkLinkValidity(
 
 // ── Strict Checks ────────────────────────────────────────────────────────────
 
-function strictChecks(_type: ContentType, data: Record<string, unknown>, body: string): Finding[] {
+function strictChecks(type: ContentType, data: Record<string, unknown>, body: string): Finding[] {
     const findings: Finding[] = [];
 
     // Description length ≥ 40 chars recommended
@@ -436,6 +446,22 @@ function strictChecks(_type: ContentType, data: Record<string, unknown>, body: s
                 message: `'${field}' has trailing whitespace`,
             });
         }
+    }
+
+    // Unknown frontmatter keys — only under --strict (F4 fix)
+    const recognized = new Set([
+        ...Object.keys(FIELD_TYPES[type] ?? {}),
+        ...REQUIRED_FIELDS[type],
+        ...(KNOWN_OPTIONAL[type] ?? []),
+    ]);
+    for (const key of Object.keys(data)) {
+        if (recognized.has(key)) continue;
+        if (DEPRECATED_FIELDS[key] !== undefined) continue; // already reported, don't double-count
+        findings.push({
+            severity: 'warning',
+            field: key,
+            message: `Unknown frontmatter key '${key}'`,
+        });
     }
 
     return findings;

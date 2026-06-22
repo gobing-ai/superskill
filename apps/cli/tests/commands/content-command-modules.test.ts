@@ -161,7 +161,7 @@ describe('magent command module', () => {
         }
     });
 
-    it('forwards magent scaffold template, skills, and tools options (task 0064)', async () => {
+    it('forwards magent scaffold template and tools options (task 0064)', async () => {
         const { magentScaffold, registerMagent } = await import('../../src/commands/magent');
 
         expect(
@@ -170,7 +170,6 @@ describe('magent command module', () => {
                 description: 'desc',
                 target: 'codex',
                 template: 'standard',
-                skills: 'cc:cc-magents,rd3-dev-verify',
                 tools: 'Read,Write,Bash',
                 output: 'out',
                 force: true,
@@ -182,7 +181,6 @@ describe('magent command module', () => {
             output: 'out',
             force: true,
             template: 'standard',
-            skills: 'cc:cc-magents,rd3-dev-verify',
             tools: 'Read,Write,Bash',
         });
 
@@ -191,18 +189,7 @@ describe('magent command module', () => {
         const exit = spyOn(process, 'exit').mockImplementation(() => undefined as never);
         try {
             await program.parseAsync(
-                [
-                    'magent',
-                    'scaffold',
-                    'main',
-                    '--template',
-                    'standard',
-                    '--skills',
-                    'cc:cc-magents',
-                    '--tools',
-                    'Read,Write',
-                    '--force',
-                ],
+                ['magent', 'scaffold', 'main', '--template', 'standard', '--tools', 'Read,Write', '--force'],
                 { from: 'user' },
             );
             expect(scaffoldOp.scaffold).toHaveBeenLastCalledWith(
@@ -210,7 +197,6 @@ describe('magent command module', () => {
                 'main',
                 expect.objectContaining({
                     template: 'standard',
-                    skills: 'cc:cc-magents',
                     tools: 'Read,Write',
                     force: true,
                 }),

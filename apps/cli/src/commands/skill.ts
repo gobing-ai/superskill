@@ -30,7 +30,6 @@ export async function skillScaffold(opts: {
     output?: string;
     force?: boolean;
     template?: string;
-    skills?: string;
     tools?: string;
 }): Promise<number | undefined> {
     const target = resolveTarget(opts);
@@ -40,7 +39,6 @@ export async function skillScaffold(opts: {
         output: opts.output,
         force: opts.force,
         template: opts.template,
-        skills: opts.skills,
         tools: opts.tools,
     });
     echo(`Created: ${createdPath}`);
@@ -143,7 +141,6 @@ export async function handleSkillScaffold(
         output?: string;
         force?: boolean;
         template?: string;
-        skills?: string;
         tools?: string;
     },
 ): Promise<void> {

@@ -116,6 +116,45 @@ describe('scaffold', () => {
         );
     });
 
+    // ── F1: path traversal rejection ──
+    it('rejects "../escape" as path traversal', async () => {
+        await expect(scaffold('skill', '../escape', { output: tmpDir })).rejects.toThrow(
+            "Invalid content name '../escape': must be a single path segment",
+        );
+        // Verify no file escaped the output dir.
+        expect(existsSync(join(tmpDir, '..', 'escape'))).toBe(false);
+    });
+
+    it('rejects "." as a name', async () => {
+        await expect(scaffold('skill', '.', { output: tmpDir })).rejects.toThrow(
+            "Invalid content name '.': must be a single path segment",
+        );
+    });
+
+    it('rejects ".." as a name', async () => {
+        await expect(scaffold('skill', '..', { output: tmpDir })).rejects.toThrow(
+            "Invalid content name '..': must be a single path segment",
+        );
+    });
+
+    it('rejects "a/b" (forward slash) as a name', async () => {
+        await expect(scaffold('skill', 'a/b', { output: tmpDir })).rejects.toThrow(
+            "Invalid content name 'a/b': must be a single path segment",
+        );
+    });
+
+    it('rejects "a\\b" (backslash) as a name', async () => {
+        await expect(scaffold('skill', 'a\\b', { output: tmpDir })).rejects.toThrow('must be a single path segment');
+    });
+
+    it('rejects name with NUL byte', async () => {
+        await expect(scaffold('skill', 'a\0b', { output: tmpDir })).rejects.toThrow('must be a single path segment');
+    });
+
+    it('rejects empty name', async () => {
+        await expect(scaffold('skill', '', { output: tmpDir })).rejects.toThrow('must be a single path segment');
+    });
+
     it('uses user template override when it exists', async () => {
         const originalHome = process.env.HOME;
         process.env.HOME = tmpDir;
@@ -201,29 +240,91 @@ describe('scaffold', () => {
         expect(content).toContain('tools: [Read, Write, Bash]');
     });
 
-    it('pre-populates frontmatter skills from --skills', async () => {
-        const filePath = await scaffold('agent', 'skilled-agent', {
-            description: 'Skilled agent',
-            output: tmpDir,
-            skills: 'cc-router,cc-reviewer',
-        });
-
-        const content = readFileSync(filePath, 'utf-8');
-        expect(content).toContain('skills: [cc-router, cc-reviewer]');
-    });
-
-    it('accepts --tools/--skills as arrays as well as comma-strings', async () => {
+    it('accepts --tools as comma-separated or array', async () => {
         const filePath = await scaffold('agent', 'array-agent', {
             description: 'Array inputs',
             output: tmpDir,
             tools: ['Read', 'Write', ' Edit ', ''],
-            skills: ['cc-router', 'cc-reviewer'],
         });
 
         const content = readFileSync(filePath, 'utf-8');
         // Array path trims and drops empties
         expect(content).toContain('tools: [Read, Write, Edit]');
-        expect(content).toContain('skills: [cc-router, cc-reviewer]');
+    });
+
+    // ── F2: per-type tool field mapping ──
+    it('maps --tools to tools: for agent', async () => {
+        const filePath = await scaffold('agent', 'tools-agent', {
+            description: 'Agent with tools',
+            output: tmpDir,
+            tools: 'Read,Write',
+        });
+        const content = readFileSync(filePath, 'utf-8');
+        expect(content).toContain('tools: [Read, Write]');
+        expect(content).not.toContain('allowed-tools:');
+    });
+
+    it('maps --tools to allowed-tools: for skill', async () => {
+        const filePath = await scaffold('skill', 'tools-skill', {
+            description: 'Skill with tools',
+            output: tmpDir,
+            tools: 'Read,Write',
+        });
+        const content = readFileSync(filePath, 'utf-8');
+        expect(content).toContain('allowed-tools: [Read, Write]');
+        expect(content).not.toContain('\ntools:');
+    });
+
+    it('maps --tools to allowed-tools: for command', async () => {
+        const filePath = await scaffold('command', 'tools-cmd', {
+            description: 'Command with tools',
+            output: tmpDir,
+            tools: 'Read,Write',
+        });
+        const content = readFileSync(filePath, 'utf-8');
+        expect(content).toContain('allowed-tools: [Read, Write]');
+        expect(content).not.toContain('\ntools:');
+    });
+
+    // ── F3: fence hardening ──
+    it('does not misidentify --- HR in body as frontmatter fence (F3)', async () => {
+        const tierDir = join(tmpDir, '.superskill', 'templates', 'skill');
+        mkdirSync(tierDir, { recursive: true });
+        writeFileSync(
+            join(tierDir, 'default.md'),
+            [
+                '---',
+                'name: <!-- NAME -->',
+                'description: <!-- DESCRIPTION -->',
+                'tools: [Read]',
+                '---',
+                '',
+                '# <!-- NAME -->',
+                '',
+                '---',
+                '',
+                'A horizontal rule above this line.',
+            ].join('\n'),
+            'utf-8',
+        );
+        const originalHome = process.env.HOME;
+        process.env.HOME = tmpDir;
+        try {
+            const filePath = await scaffold('skill', 'hr-skill', {
+                output: tmpDir,
+                tools: 'Write',
+            });
+            const content = readFileSync(filePath, 'utf-8');
+            // tools override landed in frontmatter, not body
+            expect(content).toContain('tools: [Write]');
+            // Three --- fences total: opening, closing, body HR
+            const fenceCount = (content.match(/^---$/gm) || []).length;
+            expect(fenceCount).toBe(3);
+            // Body HR text is preserved
+            expect(content).toContain('A horizontal rule above this line.');
+        } finally {
+            process.env.HOME = originalHome;
+        }
     });
 
     it('resolves a user-override template tier from ~/.superskill/templates', async () => {

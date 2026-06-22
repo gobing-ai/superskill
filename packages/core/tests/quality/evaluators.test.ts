@@ -560,6 +560,52 @@ describe('evaluateHook', () => {
         expect(pm?.note).toContain('broad');
         expect(pm?.note).toContain('missing timeout');
     });
+
+    // ── F6: portability predicate tightening ──
+    it('bare binary (eslint) is portable', () => {
+        const hook = JSON.stringify({
+            hooks: { PreToolUse: [{ matcher: 'Bash', hooks: [{ type: 'command', command: 'eslint .', timeout: 5 }] }] },
+        });
+        const pm = evaluateHook(hook, 'hooks/eslint.json').dimensions['pattern-match-quality'];
+        expect(pm?.note).not.toContain('non-portable');
+    });
+
+    it('relative path (node ./scripts/x.js) is non-portable', () => {
+        const hook = JSON.stringify({
+            hooks: {
+                PreToolUse: [
+                    { matcher: 'Bash', hooks: [{ type: 'command', command: 'node ./scripts/x.js', timeout: 5 }] },
+                ],
+            },
+        });
+        const pm = evaluateHook(hook, 'hooks/rel-path.json').dimensions['pattern-match-quality'];
+        expect(pm?.note).toContain('non-portable');
+    });
+
+    it('absolute path (/usr/bin/x) is non-portable', () => {
+        const hook = JSON.stringify({
+            hooks: {
+                PreToolUse: [{ matcher: 'Bash', hooks: [{ type: 'command', command: '/usr/bin/x', timeout: 5 }] }],
+            },
+        });
+        const pm = evaluateHook(hook, 'hooks/abs-path.json').dimensions['pattern-match-quality'];
+        expect(pm?.note).toContain('non-portable');
+    });
+
+    it('CLAUDE_PLUGIN_ROOT reference is portable', () => {
+        const hook = JSON.stringify({
+            hooks: {
+                PreToolUse: [
+                    {
+                        matcher: 'Bash',
+                        hooks: [{ type: 'command', command: '$' + '{CLAUDE_PLUGIN_ROOT}/scripts/x.sh', timeout: 5 }],
+                    },
+                ],
+            },
+        });
+        const pm = evaluateHook(hook, 'hooks/cpr.json').dimensions['pattern-match-quality'];
+        expect(pm?.note).not.toContain('non-portable');
+    });
 });
 describe('evaluateMagent', () => {
     const good = evaluateMagent(MAGENT_GOOD, 'magent/dev-agent.md');
