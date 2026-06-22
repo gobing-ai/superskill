@@ -201,6 +201,43 @@ describe('generateChanges', () => {
         expect(changes[0]?.proposed).toContain('[Improve completeness]');
         expect(changes[0]?.proposed).toContain('review and enhance the description');
     });
+
+    it('targets the body (not frontmatter.description) when content has no frontmatter (task 0054)', () => {
+        const trends: TrendEntry[] = [
+            { dimension: 'conciseness', earliest: 0.8, latest: 0.55, delta: -0.25, trend: 'declining' },
+        ];
+        const frontmatterLess = '# AGENTS.md\n\nGuidance for coding agents.\n';
+        const changes = generateChanges(report, trends, frontmatterLess);
+        expect(changes).toHaveLength(1);
+        expect(changes[0]?.location).toBe('body');
+        expect(changes[0]?.proposed).toContain('[Improve conciseness]');
+        // Body anchor is the first non-empty line
+        expect(changes[0]?.current).toBe('# AGENTS.md');
+        expect(changes[0]?.proposed).toBe('# AGENTS.md\n\n[Improve conciseness]: Too verbose, redundant examples');
+    });
+
+    it('falls back to bare suggestion when frontmatter-less body is empty (task 0054)', () => {
+        const emptyBodyReport = makeReport({ conciseness: { score: 0.4, note: '' } });
+        const trends: TrendEntry[] = [
+            { dimension: 'conciseness', earliest: 0.6, latest: 0.4, delta: -0.2, trend: 'declining' },
+        ];
+        const changes = generateChanges(emptyBodyReport, trends, '\n  \n');
+        expect(changes).toHaveLength(1);
+        expect(changes[0]?.location).toBe('body');
+        expect(changes[0]?.current).toBe('');
+        expect(changes[0]?.proposed).toBe(
+            '[Improve conciseness]: review and enhance this config for better conciseness.',
+        );
+    });
+
+    it('preserves frontmatter.description targeting when content has frontmatter (task 0054)', () => {
+        const trends: TrendEntry[] = [
+            { dimension: 'conciseness', earliest: 0.8, latest: 0.55, delta: -0.25, trend: 'declining' },
+        ];
+        const withFrontmatter = '---\nname: test\ndescription: A test config\n---\n\nBody.\n';
+        const changes = generateChanges(report, trends, withFrontmatter);
+        expect(changes[0]?.location).toBe('frontmatter.description');
+    });
 });
 
 describe('generateProposalId', () => {
@@ -756,6 +793,140 @@ describe('evolve — command type (0053)', () => {
     });
 });
 
+describe('evolve — magent type, frontmatter-less (0054)', () => {
+    let dir: string;
+    let prevCwd: string;
+    let adapter: DbAdapter;
+
+    async function makeAdapter(): Promise<DbAdapter> {
+        const a = await createDbAdapter({ driver: 'bun-sqlite', url: ':memory:' });
+        await a.exec(evaluations.createTableSql);
+        await a.exec(proposals.createTableSql);
+        return a;
+    }
+
+    /** Seed magent evaluations so trend analysis has declining history. */
+    async function seedMagentHistory(a: DbAdapter, scores: number[]): Promise<void> {
+        const dao = new EvaluationDao(a);
+        for (let i = 0; i < scores.length; i++) {
+            const score = scores[i];
+            if (score === undefined) continue;
+            const id = await dao.insertEvaluation({
+                content_type: 'magent',
+                content_name: 'AGENTS',
+                target_agent: 'claude',
+                operation: 'evaluate',
+                aggregate: score,
+                dimensions: { completeness: { score, note: 'declining completeness' } },
+                file_hash: 'abc',
+            });
+            await a.exec(`UPDATE evaluations SET created_at = ${Date.UTC(2026, 5, 1, 0, 0, i)} WHERE id = ${id}`);
+        }
+    }
+
+    beforeEach(async () => {
+        prevCwd = cwd();
+        dir = mkdtempSync(join(tmpdir(), 'superskill-evolve-magent-'));
+        mkdirSync(join(dir, '.superskill'), { recursive: true });
+        // Frontmatter-LESS magent (plain markdown, like AGENTS.md/CLAUDE.md/GEMINI.md per task 0050).
+        writeFileSync(join(dir, 'AGENTS.md'), '# AGENTS.md\n\nGuidance for coding agents in this repo.\n');
+        chdir(dir);
+        adapter = await makeAdapter();
+        spyOn(process.stdout, 'write').mockImplementation(() => true);
+        spyOn(process.stderr, 'write').mockImplementation(() => true);
+    });
+    afterEach(() => {
+        chdir(prevCwd);
+        rmSync(dir, { recursive: true, force: true });
+    });
+
+    it('--propose-only seeds body-targeted changes (no frontmatter.description) for a frontmatter-less magent (M2/M4)', async () => {
+        await seedMagentHistory(adapter, [0.9, 0.5]); // declining completeness
+        const r = await evolve('magent', 'AGENTS', { adapter, proposeOnly: true });
+        expect(r.proposalPath).not.toBe('');
+        const proposalContent = readFileSync(r.proposalPath, 'utf-8');
+        expect(proposalContent).toContain('[Improve completeness]');
+        // Critical: the change targets the body, not a frontmatter.description field edit
+        // (the config has no frontmatter). Assert the Location line, not the whole file, since
+        // the reason string legitimately mentions "frontmatter.description" by name.
+        expect(proposalContent).toContain('**Location:** body');
+        expect(proposalContent).not.toMatch(/\*\*Location:\*\* frontmatter\.description/);
+        expect(r.changesApplied).toBe(0);
+        const props = await new ProposalDao(adapter).getProposals('magent', 'AGENTS');
+        expect(props).toHaveLength(1);
+        expect(props[0]?.status).toBe('draft');
+    });
+
+    it('--analyze prints summary for a frontmatter-less magent without crashing (M1/M4)', async () => {
+        await seedMagentHistory(adapter, [0.9, 0.5]);
+        const writes: string[] = [];
+        const spy = spyOn(process.stdout, 'write').mockImplementation((data) => {
+            writes.push(typeof data === 'string' ? data : data.toString());
+            return true;
+        });
+        const r = await evolve('magent', 'AGENTS', { adapter, analyze: true });
+        spy.mockRestore();
+        const output = writes.join('');
+        expect(output).toContain('=== Evolution Analysis ===');
+        expect(output).toContain('Score:');
+        expect(r.proposalPath).toBe('');
+        expect(r.changesApplied).toBe(0);
+    });
+
+    it('--history lists an applied version after --accept on a frontmatter-less magent (M1/M4)', async () => {
+        await seedMagentHistory(adapter, [0.9, 0.5]);
+        await evolve('magent', 'AGENTS', { adapter, proposeOnly: true });
+        const draft = (await new ProposalDao(adapter).getProposals('magent', 'AGENTS'))[0];
+        const pid = ((draft?.proposal_json as Record<string, unknown>)?.proposal_id as string) ?? '';
+        await evolve('magent', 'AGENTS', { adapter, acceptId: pid, margin: -1 });
+
+        const writes: string[] = [];
+        const spy = spyOn(process.stdout, 'write').mockImplementation((data) => {
+            writes.push(typeof data === 'string' ? data : data.toString());
+            return true;
+        });
+        const r = await evolve('magent', 'AGENTS', { adapter, history: true });
+        spy.mockRestore();
+        const output = writes.join('');
+        expect(output).toContain('=== Version History: AGENTS ===');
+        expect(output).toContain(pid);
+        expect(r.changesApplied).toBe(0);
+    });
+
+    it('--rollback restores byte-identical frontmatter-less magent after apply (M1/M4)', async () => {
+        await seedMagentHistory(adapter, [0.9, 0.5]);
+        const originalContent = readFileSync(join(dir, 'AGENTS.md'), 'utf-8');
+
+        await evolve('magent', 'AGENTS', { adapter, proposeOnly: true });
+        const draft = (await new ProposalDao(adapter).getProposals('magent', 'AGENTS'))[0];
+        const pid = ((draft?.proposal_json as Record<string, unknown>)?.proposal_id as string) ?? '';
+        await evolve('magent', 'AGENTS', { adapter, acceptId: pid, margin: -1 });
+
+        const modifiedContent = readFileSync(join(dir, 'AGENTS.md'), 'utf-8');
+        expect(modifiedContent).not.toBe(originalContent);
+
+        const r = await evolve('magent', 'AGENTS', { adapter, rollback: pid, confirm: true });
+        expect(r.changesApplied).toBe(0);
+
+        const restoredContent = readFileSync(join(dir, 'AGENTS.md'), 'utf-8');
+        expect(restoredContent).toBe(originalContent);
+    });
+
+    it('--rollback without --confirm does not mutate the frontmatter-less magent (M1/M4)', async () => {
+        await seedMagentHistory(adapter, [0.9, 0.5]);
+        const originalContent = readFileSync(join(dir, 'AGENTS.md'), 'utf-8');
+        const r = await evolve('magent', 'AGENTS', { adapter, rollback: 'some-id' });
+        expect(r.changesApplied).toBe(0);
+        expect(readFileSync(join(dir, 'AGENTS.md'), 'utf-8')).toBe(originalContent);
+    });
+
+    it('--json --propose-only emits an envelope without crashing on a frontmatter-less magent (M2/M4)', async () => {
+        await seedMagentHistory(adapter, [0.9, 0.5]);
+        const r = await evolve('magent', 'AGENTS', { adapter, proposeOnly: true, json: true });
+        // Envelope path returns proposalPath === '' and writes JSON to stdout; just assert no crash.
+        expect(r.changesApplied).toBe(0);
+    });
+});
 // ── Interactive review (injectable readline) ───────────────────────────────────
 
 describe('interactiveReview', () => {
