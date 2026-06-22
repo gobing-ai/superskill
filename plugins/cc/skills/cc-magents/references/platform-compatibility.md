@@ -1,6 +1,6 @@
 # Platform Compatibility
 
-The platform matrix is sourced from `docs/main_agents.md` and applied during
+This file is the source of the platform capability matrix, applied during
 `superskill install` conversion.
 
 Support levels are capability-based:

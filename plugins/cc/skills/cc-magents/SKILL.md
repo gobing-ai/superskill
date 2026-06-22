@@ -43,11 +43,14 @@ Main-agent support is capability-based. Each platform declares:
 - supported operations
 - source confidence and verification evidence
 
+Each platform's resolved values for these attributes live in the capability
+matrix at [references/platform-compatibility.md](references/platform-compatibility.md).
+
 ## Operations
 
 | Operation | Command | Purpose |
 | --- | --- | --- |
-| add / synthesize | `superskill magent scaffold <name>` | Create new platform-native config from a template |
+| add | `superskill magent scaffold <name>` | Create (synthesize) a new platform-native config from a template |
 | validate | `superskill magent validate <nameOrPath>` | Validate document and registry structure |
 | evaluate | `superskill magent evaluate <nameOrPath>` | Two-call seam: envelope-out (`--rubric --json`) → Scorer → ingest-in (`--ingest --save`) |
 | refine | `superskill magent refine <nameOrPath>` | Recommend native splits, scoping, safety, and evidence improvements |
@@ -96,9 +99,11 @@ See [references/workflows.md](references/workflows.md) for full step tables and
 
 ## Source Material
 
-The current platform research source is `docs/main_agents.md`, verified on
-2026-04-30. Provisional platforms such as Antigravity and Pi must remain marked
-as low confidence until official docs or reproducible product tests exist.
+The platform capability matrix lives in
+[references/platform-compatibility.md](references/platform-compatibility.md),
+with high-confidence entries verified on 2026-04-30. Provisional platforms such
+as Antigravity and Pi must remain marked as low confidence until official docs
+or reproducible product tests exist.
 
 ## Additional Resources
 
