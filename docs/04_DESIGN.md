@@ -2,10 +2,10 @@
 doc: 04_DESIGN
 owns: SURFACE — concrete shapes: every CLI command, flag, config key, env var, table, DTO
 authority: derived
-version: 2.0.0
+version: 2.1.0
 derived_from: [00_ADR, 01_PRD, 02_ROADMAP]
 owner: Robin Min
-updated_at: 2026-06-16
+updated_at: 2026-06-22
 read_before: changing a command, flag, env var, or schema
 edit_rules: 99 §6.5
 sync: [T3]
@@ -15,6 +15,14 @@ sync: [T3]
 
 - Phase 1 — Distribution: [design-doc-phase1.md](design/design-doc-phase1.md) — `superskill install` and supporting commands.
 - Phase 2 — Authoring + quality: [design-doc-phase2.md](design/design-doc-phase2.md) — `superskill agent|skill|command|hook|magent` with scaffold, validate, evaluate, refine, evolve.
+
+## Phase 2 command surface
+
+| Command family | Lifecycle subcommands | Shared refine flags | Detail |
+|----------------|-----------------------|---------------------|--------|
+| `superskill agent|skill|command|hook|magent` | `scaffold`, `validate`, `evaluate`, `refine`, `evolve` | `--target <agent>`, `--auto`, `--save`, `--dry-run` | [design-doc-phase2.md §2.4](design/design-doc-phase2.md#24-refine--evaluate-then-fix) |
+
+`--dry-run` previews classified refine fixes and projected score delta without writing files or creating backups.
 
 ## Plugin-level scripts directory
 

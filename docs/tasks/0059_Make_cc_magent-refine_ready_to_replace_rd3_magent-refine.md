@@ -10,11 +10,11 @@ feature-id: ""
 priority: high
 tags: ["cc-magents","refine","dogfood","migration","rd3-parity"]
 impl_progress:
-  planning: pending
-  design: pending
-  implementation: pending
-  review: pending
-  testing: pending
+  planning: completed
+  design: completed
+  implementation: completed
+  review: completed
+  testing: completed
 ---
 
 ## 0059. Make cc magent-refine ready to replace rd3 magent-refine
@@ -26,7 +26,12 @@ Dogfood pair-run /cc:magent-refine vs /rd3:magent-refine. Same SHARED-ENGINE gap
 
 ### Requirements
 
-Inherit 0057 decisions (R1/R3 reorder+real-defaults; R2 --dry-run; R5 honest wrapper). MAGENT extras: confirm a frontmatter-LESS magent (REQUIRED_FIELDS.magent=[]) refines without attempting to insert frontmatter fields; structural auto-apply is a no-op there, so refine should report no structural fixes (not an error) and surface body/section suggestions instead. Register --dry-run on apps/cli/src/commands/magent.ts, fix plugins/cc/commands/magent-refine.md drift. Gates: bun run lint, bun run test (no skips, add frontmatter-less-magent refine regression), bun run build, git clean. DOCS SYNC (CLAUDE.md mandate): the new --dry-run flag touches the CLI command/flag surface — update docs/04_DESIGN.md (and docs/design/design-doc-phase2.md) in the SAME commit. Do NOT flip /magent-refine alias until parity confirmed AND global binary ships.
+- [x] **R1**: Inherit 0057 shared-engine decisions: validation-error reorder, real defaults, `--dry-run`, honest wrapper behavior. → **MET** | Evidence: `apps/cli/src/operations/refine.ts` applies fixes before remaining validation-error abort; `apps/cli/src/commands/magent.ts` forwards `dryRun`; `plugins/cc/commands/magent-refine.md` documents the wrapper.
+- [x] **R2**: Confirm a frontmatter-less magent (`REQUIRED_FIELDS.magent = []`) refines without inserting bogus frontmatter; structural auto-apply is a no-op and body/section suggestions remain available. → **MET** | Evidence: `packages/core/src/quality/types.ts` has `magent: []`; `packages/core/src/operations/validate.ts` treats missing magent frontmatter as valid; `apps/cli/tests/operations/refine.test.ts` covers auto and dry-run frontmatter-less magents.
+- [x] **R3**: Register `--dry-run` on `apps/cli/src/commands/magent.ts`. → **MET** | Evidence: `magentRefine`, `handleMagentRefine`, and `registerMagent` all include `dryRun`; full command-module tests and full suite pass.
+- [x] **R4**: Fix `plugins/cc/commands/magent-refine.md` drift. → **MET** | Evidence: wrapper argument hint, arguments table, examples, and frontmatter-optional note include `--dry-run`.
+- [x] **R5**: Gates: `bun run lint`, `bun run test`, `bun run build`, no skips, regression coverage, git clean except unrelated in-progress task 0064 edits. → **MET** | Evidence: re-run at 2026-06-22T01:39Z and final rerun after concurrent edits; lint/typecheck pass, 993/993 tests pass, build pass.
+- [x] **R6**: Docs sync for command/flag surface: update `docs/04_DESIGN.md` and `docs/design/design-doc-phase2.md`; do not flip `/magent-refine` alias. → **MET** | Evidence: `docs/design/design-doc-phase2.md` records `--dry-run`; verification fix added the concrete Phase 2 refine flag surface to `docs/04_DESIGN.md`; no alias flip found.
 
 
 ### Q&A
@@ -78,15 +83,24 @@ M4 adds regression coverage.
    (2 tests: auto no-crash/no-insertion, dry-run unchanged).
 5. Gate: `bun run lint && bun run test && bun run build`; `git status` clean. Do NOT flip alias.
 
-## Review
+### Review
 
-**Status:** 0 P1/P2; 0 P3/P4 — clean implementation.
-**Scope:** `apps/cli/src/commands/magent.ts`, `apps/cli/tests/operations/refine.test.ts`,
-`plugins/cc/commands/magent-refine.md`.
-**Channel:** inline (current).
-**Gate:** `bun run lint` → pass · `bun run test` → 992/992 pass (0 skips) · `bun run build` → pass ·
-`git status` → 3 files, all in scope.
-**Verdict:** PASS.
+**Verdict: PASS** — forced re-verification for task 0059 on 2026-06-22T01:39Z with `--auto --fix all --force`.
+
+**Scope:** `apps/cli/src/commands/magent.ts`, `apps/cli/tests/operations/refine.test.ts`, `plugins/cc/commands/magent-refine.md`, `docs/design/design-doc-phase2.md`, `docs/04_DESIGN.md`.
+
+**SECU findings:** 0 P1/P2/P3/P4 after fix pass.
+
+| # | Title | Dimension | Location | Resolution |
+|---|-------|-----------|----------|------------|
+| 1 | `04_DESIGN` did not record the concrete `refine --dry-run` surface despite the task's docs-sync requirement | Correctness | `docs/04_DESIGN.md` | Fixed by adding a Phase 2 command-surface table with shared refine flags and a `--dry-run` note; bumped metadata to 2.1.0 / 2026-06-22. |
+
+**Requirements traceability:** all requirements MET after the documentation fix. No scope drift found. `/magent-refine` alias remains unflipped.
+
+**Gate:** `bun run lint` → pass; `bun run test` → pass (993/993, 0 skips); `bun run build` → pass.
+
+**Fix-pass:** 1 fixed, 0 failed, 0 skipped.
+
 
 ### Work-item traceability
 - **M1 (--dry-run)** — MET. `magentRefine` (magent.ts:80), `handleMagentRefine` (magent.ts:160),
@@ -103,24 +117,18 @@ M4 adds regression coverage.
   argument-hint, description mentions preview, Arguments table includes `--dry-run` row, examples
   include `--dry-run`, frontmatter-OPTIONAL note added.
 - **M4 (regression)** — MET. 2 new refine tests (auto-on-frontmatter-less, dry-run-unchanged)
-  pass within the 992-test suite. Both confirm no crash, no frontmatter insertion, score monotonic.
+  pass within the 993-test suite. Both confirm no crash, no frontmatter insertion, score monotonic.
 
-## Testing
+### Testing
 
-- **Command:** `bun run lint && bun run test && bun run build` (Ran at 2026-06-22T00:45:00Z)
-- **Scope:** Full project — 992 tests across 58 files. Refine-specific: 56 tests in `refine.test.ts`
-  (was 54; +2 new for 0059).
-- **Result:** PASS — 992/992 tests, 0 failures, 0 skips. Aggregate coverage 99.69% funcs /
-  98.76% lines. `magent.ts` 100/100. `refine.ts` 100.00% funcs / 94.15% lines. Lint clean. Build
-  3.43 MB.
-- **Evidence:** 2 new regression tests: `--auto on frontmatter-less magent applies no structural
-  fixes, no crash, score monotonic` and `--dry-run on frontmatter-less magent leaves file unchanged,
-  no crash` — both pass.
-- **Next action:** None — all gates pass.
+- **Command:** `bun run lint` (2026-06-22T01:39Z)
+- **Result:** PASS — Biome checked 138 files; workspace typecheck passed for `@gobing-ai/superskill-core` and `@gobing-ai/superskill`.
+- **Command:** `bun run test` (2026-06-22T01:39Z)
+- **Result:** PASS — 993/993 tests, 0 failures, 0 skips, 2470 assertions across 58 files. Coverage: 99.69% funcs / 98.76% lines aggregate.
+- **Command:** `bun run build` (2026-06-22T01:39Z)
+- **Result:** PASS — bundled CLI entrypoint `index.js` at 3.43 MB.
+- **Regression evidence:** `apps/cli/tests/operations/refine.test.ts` includes frontmatter-less magent auto and dry-run cases; `apps/cli/src/commands/magent.ts` keeps `magent.ts` at 100/100 coverage.
+- **Worktree:** intentional 0059 changes plus unrelated in-progress 0064 edits present in `apps/cli/src/commands/magent.ts`, `apps/cli/src/templates/magent/default.md`, `packages/core/tests/operations/scaffold.test.ts`, and `docs/tasks/0064_Make_cc_magent-add_ready_to_replace_rd3_magent-add.md`.
 
-| Type | Path | Agent | Date |
-| ---- | ---- | ----- | ---- |
 
 ### References
-
-

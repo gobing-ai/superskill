@@ -71,19 +71,31 @@ describe('scaffold', () => {
         expect(content).toContain('enabled: true');
     });
 
-    it('creates a magent file with four sections', async () => {
+    it('creates a magent file with governance sections', async () => {
         const filePath = await scaffold('magent', 'my-agent', {
             description: 'My agent',
             output: tmpDir,
         });
 
         const content = readFileSync(filePath, 'utf-8');
-        expect(content).toContain('## IDENTITY');
-        expect(content).toContain('## SOUL');
-        expect(content).toContain('## AGENTS');
-        expect(content).toContain('## USER');
-        expect(content).toContain('platforms:');
-        expect(content).toContain('claude');
+        expect(content).toContain('## Project');
+        expect(content).toContain('## Commands');
+        expect(content).toContain('## Verification');
+        expect(content).toContain('## Safety');
+        expect(content).toContain('[CRITICAL]');
+        expect(content).toContain('NEVER');
+    });
+
+    it('magent scaffold output scores PASS on evaluate', async () => {
+        const { evaluate } = await import('../../src/quality/evaluate');
+        const filePath = await scaffold('magent', 'my-agent', {
+            description: 'My agent',
+            output: tmpDir,
+        });
+
+        const content = readFileSync(filePath, 'utf-8');
+        const report = evaluate('magent', content, filePath);
+        expect(report.aggregate).toBeGreaterThanOrEqual(0.7);
     });
 
     it('throws when file exists without force', async () => {

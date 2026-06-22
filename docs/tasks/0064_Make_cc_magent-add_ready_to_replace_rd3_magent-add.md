@@ -1,9 +1,9 @@
 ---
 name: Make cc magent-add ready to replace rd3 magent-add
 description: Make cc magent-add ready to replace rd3 magent-add
-status: Backlog
+status: Done
 created_at: 2026-06-21T21:14:21.069Z
-updated_at: 2026-06-21T21:14:21.069Z
+updated_at: 2026-06-22T01:43:55.594Z
 folder: docs/tasks
 type: task
 feature-id: ""
@@ -61,6 +61,7 @@ Frontmatter-OPTIONAL magents — enrich the BODY (governance/platforms/safety), 
 
 ### Solution
 
+Enrich `apps/cli/src/templates/magent/default.md` with full governance sections (Project, Commands, Verification, Conventions, Safety, Docs), platform mentions in prose, tone/style markers, and safety keywords so scaffold→evaluate scores >= PASS (0.70+). Forward `--template`, `--skills`, `--tools` through the magent scaffold command to the shared engine. Fix wrapper drift in `plugins/cc/commands/magent-add.md` to cover all CLI flags. Existing tests updated; regression: `magent scaffold` then `evaluate --json` must return aggregate >= 0.70.
 
 
 ### Plan
@@ -72,10 +73,40 @@ regression. Gate: lint/test/build/git clean. Do NOT flip alias until ship.
 
 ### Review
 
+## Review — 2026-06-22
+
+**Status:** 0 findings
+**Verdict:** PASS
+**Scope:** `apps/cli/src/templates/magent/default.md`, `apps/cli/src/commands/magent.ts`, `plugins/cc/commands/magent-add.md`, `packages/core/tests/operations/scaffold.test.ts`
+**Mode:** verify
+**Channel:** current
+**Gate:** `bun run test` → 993 pass, 0 fail
+
+### SECU — No Findings
+
+| # | Title | Dimension | Location | Recommendation |
+|---|-------|-----------|----------|----------------|
+| — | — | — | — | — |
+
+### Requirements Traceability
+
+- [x] **M1** Enrich magent template to PASS evaluator → **MET** | Evidence: `apps/cli/src/templates/magent/default.md` scores aggregate 1.0
+- [x] **M2** Register --template on magent.ts → **MET** | Evidence: `apps/cli/src/commands/magent.ts:24-46`, `:134-145`, `:203-218`
+- [x] **M3** Fix wrapper drift → **MET** | Evidence: `plugins/cc/commands/magent-add.md` updated with all CLI flags
+- [x] **M4** Regression: scaffold->evaluate >= PASS → **MET** | Evidence: `packages/core/tests/operations/scaffold.test.ts` — governance section + evaluate score tests pass
+- [x] **Gates** lint/test/build/git clean → **MET** | Evidence: 993 pass, 0 fail, coverage 99.69%
+- [x] **DOCS SYNC** → **MET** | Evidence: `docs/design/design-doc-phase2.md` already documents shared --template/--skills/--tools from task 0062
+- [x] **Do NOT flip alias** → **MET** | No alias changes made
 
 
 ### Testing
 
+- Command: `bun run test` (full suite)
+- Scope: scaffold tests, magent command tests, all regression tests
+- Result: 993 pass, 0 fail across 58 files
+- Coverage: 99.69% funcs, 98.76% lines
+- Regression: magent scaffold → evaluate aggregate = 1.0 (>= 0.70 PASS threshold)
+- Key evidence: `packages/core/tests/operations/scaffold.test.ts` — "creates a magent file with governance sections" and "magent scaffold output scores PASS on evaluate" both pass
 
 
 ### Artifacts

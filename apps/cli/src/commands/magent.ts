@@ -27,6 +27,9 @@ export async function magentScaffold(opts: {
     target?: string;
     output?: string;
     force?: boolean;
+    template?: string;
+    skills?: string[] | string;
+    tools?: string[] | string;
 }): Promise<number | undefined> {
     const target = resolveTarget(opts);
     const createdPath = await scaffold('magent', opts.name, {
@@ -34,6 +37,9 @@ export async function magentScaffold(opts: {
         target,
         output: opts.output,
         force: opts.force,
+        template: opts.template,
+        skills: opts.skills,
+        tools: opts.tools,
     });
     echo(`Created: ${createdPath}`);
     return undefined;
@@ -131,6 +137,9 @@ export async function handleMagentScaffold(opts: {
     target?: string;
     output?: string;
     force?: boolean;
+    template?: string;
+    skills?: string[] | string;
+    tools?: string[] | string;
 }): Promise<void> {
     await runOperation(() => magentScaffold(opts));
 }
@@ -192,7 +201,18 @@ export function registerMagent(program: Command): void {
     const cmd = program.command('magent').description('Manage magent definitions');
 
     addScaffoldOptions(cmd.command('scaffold <name>').description('Create a new magent from template')).action(
-        async (name: string, opts: { description?: string; target?: string; output?: string; force?: boolean }) => {
+        async (
+            name: string,
+            opts: {
+                description?: string;
+                target?: string;
+                output?: string;
+                force?: boolean;
+                template?: string;
+                skills?: string[] | string;
+                tools?: string[] | string;
+            },
+        ) => {
             await handleMagentScaffold({ name, ...opts });
         },
     );
