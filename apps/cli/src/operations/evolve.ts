@@ -115,6 +115,14 @@ export interface SkepticVerdict {
 // ── Pure Helpers ─────────────────────────────────────────────────────────────
 
 /**
+ * Task 0056 decision C: hooks are analyze-only. Detect whether any apply-capable
+ * option is set so `evolve()` can refuse early for hook content.
+ */
+export function isHookApplyCapableOpt(opts?: EvolveOptions): boolean {
+    if (!opts) return false;
+    return Boolean(opts.proposeOnly || opts.acceptId || opts.rejectId || opts.ingest || opts.history || opts.rollback);
+}
+/**
  * Compute per-dimension trends from a list of evaluations (sorted by created_at ASC).
  * Returns empty array when fewer than 2 evaluations exist.
  *
@@ -1038,6 +1046,11 @@ export async function evolve(type: ContentType, name: string, opts?: EvolveOptio
         return { baselineScore: 0, postScore: 0, delta: 0, changesApplied: 0, proposalPath: '' };
     }
     const contentName = resolveContentName(resolvedPath);
+    // Task 0056 decision C: hooks are analyze-only. No apply/history/rollback.
+    if (type === 'hook' && isHookApplyCapableOpt(opts)) {
+        echoError('hook evolve is analyze-only — apply/history/rollback are not supported for hooks.');
+        return { baselineScore: 0, postScore: 0, delta: 0, changesApplied: 0, proposalPath: '' };
+    }
 
     let db: DbAdapter;
     try {

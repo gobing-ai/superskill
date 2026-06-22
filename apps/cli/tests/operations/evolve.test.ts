@@ -12,6 +12,7 @@ import {
     generateChanges,
     generateProposalId,
     interactiveReview,
+    isHookApplyCapableOpt,
 } from '../../src/operations/evolve';
 import type { Evaluation, Proposal } from '../../src/store';
 import { EvaluationDao } from '../../src/store/evaluations';
@@ -1077,6 +1078,156 @@ describe('evolve — skill type, directory-based (0055)', () => {
         const r = await evolve('skill', 'skills/my-skill/SKILL.md', { adapter, rollback: 'some-id' });
         expect(r.changesApplied).toBe(0);
         expect(readFileSync(skillPath, 'utf-8')).toBe(originalContent);
+    });
+});
+// ── Hook-type: analyze-only guard (task 0056 decision C) ──────────────────────
+
+describe('evolve — hook type, analyze-only (0056)', () => {
+    let dir: string;
+    let prevCwd: string;
+    let adapter: DbAdapter;
+
+    async function makeAdapter(): Promise<DbAdapter> {
+        const a = await createDbAdapter({ driver: 'bun-sqlite', url: ':memory:' });
+        await a.exec(evaluations.createTableSql);
+        await a.exec(proposals.createTableSql);
+        return a;
+    }
+
+    /** Seed hook evaluations so trend analysis has declining history. */
+    async function seedHookHistory(a: DbAdapter, scores: number[]): Promise<void> {
+        const dao = new EvaluationDao(a);
+        for (let i = 0; i < scores.length; i++) {
+            const score = scores[i];
+            if (score === undefined) continue;
+            const id = await dao.insertEvaluation({
+                content_type: 'hook',
+                content_name: 'pre-tool',
+                target_agent: 'claude',
+                operation: 'evaluate',
+                aggregate: score,
+                dimensions: { safety: { score, note: 'safety trend' } },
+                file_hash: 'abc',
+            });
+            await a.exec(`UPDATE evaluations SET created_at = ${Date.UTC(2026, 5, 1, 0, 0, i)} WHERE id = ${id}`);
+        }
+    }
+
+    const HOOK_CONTENT = [
+        '---',
+        'name: pre-tool',
+        'description: A pre-tool-use hook for validation',
+        'event: PreToolUse',
+        'enabled: true',
+        '---',
+        '',
+        '<!-- TODO: hook script or matcher -->',
+    ].join('\n');
+
+    beforeEach(async () => {
+        prevCwd = cwd();
+        dir = mkdtempSync(join(tmpdir(), 'superskill-evolve-hook-'));
+        mkdirSync(join(dir, '.superskill'), { recursive: true });
+        writeFileSync(join(dir, 'pre-tool.md'), HOOK_CONTENT);
+        chdir(dir);
+        adapter = await makeAdapter();
+        spyOn(process.stdout, 'write').mockImplementation(() => true);
+        spyOn(process.stderr, 'write').mockImplementation(() => true);
+    });
+    afterEach(() => {
+        chdir(prevCwd);
+        rmSync(dir, { recursive: true, force: true });
+    });
+
+    it('--analyze prints trend summary for hooks without writing a proposal (0056 C)', async () => {
+        await seedHookHistory(adapter, [0.9, 0.5]); // declining safety
+        const writes: string[] = [];
+        const spy = spyOn(process.stdout, 'write').mockImplementation((data) => {
+            writes.push(typeof data === 'string' ? data : data.toString());
+            return true;
+        });
+        const r = await evolve('hook', 'pre-tool', { adapter, analyze: true });
+        spy.mockRestore();
+        const output = writes.join('');
+        expect(output).toContain('=== Evolution Analysis ===');
+        expect(output).toContain('Score:');
+        expect(output).toContain('declining');
+        expect(r.proposalPath).toBe('');
+        expect(r.changesApplied).toBe(0);
+    });
+
+    it('--analyze works with a single hook evaluation (0056 C)', async () => {
+        await seedHookHistory(adapter, [0.85]);
+        const r = await evolve('hook', 'pre-tool', { adapter, analyze: true });
+        expect(r.proposalPath).toBe('');
+        expect(r.changesApplied).toBe(0);
+    });
+
+    it('--propose-only is rejected for hooks (0056 C — analyze-only)', async () => {
+        await seedHookHistory(adapter, [0.9, 0.5]);
+        const writes: string[] = [];
+        const spy = spyOn(process.stderr, 'write').mockImplementation((data) => {
+            writes.push(typeof data === 'string' ? data : data.toString());
+            return true;
+        });
+        const r = await evolve('hook', 'pre-tool', { adapter, proposeOnly: true });
+        spy.mockRestore();
+        const output = writes.join('');
+        expect(output).toContain('analyze-only');
+        expect(r.proposalPath).toBe('');
+        expect(r.changesApplied).toBe(0);
+    });
+
+    it('--accept is rejected for hooks (0056 C — analyze-only)', async () => {
+        await seedHookHistory(adapter, [0.9, 0.5]);
+        const r = await evolve('hook', 'pre-tool', { adapter, acceptId: 'some-id', margin: -1 });
+        expect(r.proposalPath).toBe('');
+        expect(r.changesApplied).toBe(0);
+    });
+
+    it('--reject is rejected for hooks (0056 C — analyze-only)', async () => {
+        await seedHookHistory(adapter, [0.9, 0.5]);
+        const r = await evolve('hook', 'pre-tool', { adapter, rejectId: 'some-id' });
+        expect(r.proposalPath).toBe('');
+        expect(r.changesApplied).toBe(0);
+    });
+
+    it('--ingest is rejected for hooks (0056 C — analyze-only)', async () => {
+        await seedHookHistory(adapter, [0.9, 0.5]);
+        const r = await evolve('hook', 'pre-tool', { adapter, ingest: '/tmp/fake.json' });
+        expect(r.proposalPath).toBe('');
+        expect(r.changesApplied).toBe(0);
+    });
+
+    it('--history is rejected for hooks (0056 C — analyze-only)', async () => {
+        await seedHookHistory(adapter, [0.9, 0.5]);
+        const r = await evolve('hook', 'pre-tool', { adapter, history: true });
+        expect(r.proposalPath).toBe('');
+        expect(r.changesApplied).toBe(0);
+    });
+
+    it('--rollback is rejected for hooks (0056 C — analyze-only)', async () => {
+        await seedHookHistory(adapter, [0.9, 0.5]);
+        const originalContent = readFileSync(join(dir, 'pre-tool.md'), 'utf-8');
+        const r = await evolve('hook', 'pre-tool', { adapter, rollback: 'some-id', confirm: true });
+        expect(r.proposalPath).toBe('');
+        expect(r.changesApplied).toBe(0);
+        // File must not be mutated
+        expect(readFileSync(join(dir, 'pre-tool.md'), 'utf-8')).toBe(originalContent);
+    });
+
+    it('isHookApplyCapableOpt detects apply-capable options', () => {
+        expect(isHookApplyCapableOpt()).toBe(false);
+        expect(isHookApplyCapableOpt({})).toBe(false);
+        expect(isHookApplyCapableOpt({ analyze: true })).toBe(false);
+        expect(isHookApplyCapableOpt({ from: '2026-01-01' })).toBe(false);
+        expect(isHookApplyCapableOpt({ json: true })).toBe(false);
+        expect(isHookApplyCapableOpt({ proposeOnly: true })).toBe(true);
+        expect(isHookApplyCapableOpt({ acceptId: 'x' })).toBe(true);
+        expect(isHookApplyCapableOpt({ rejectId: 'x' })).toBe(true);
+        expect(isHookApplyCapableOpt({ ingest: '/tmp/f.json' })).toBe(true);
+        expect(isHookApplyCapableOpt({ history: true })).toBe(true);
+        expect(isHookApplyCapableOpt({ rollback: 'x' })).toBe(true);
     });
 });
 // ── Interactive review (injectable readline) ───────────────────────────────────

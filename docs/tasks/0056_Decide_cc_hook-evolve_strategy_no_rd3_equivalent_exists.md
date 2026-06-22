@@ -1,9 +1,9 @@
 ---
 name: Decide cc hook-evolve strategy (no rd3 equivalent exists)
 description: Decide cc hook-evolve strategy (no rd3 equivalent exists)
-status: Backlog
+status: WIP
 created_at: 2026-06-21T20:57:07.001Z
-updated_at: 2026-06-21T20:57:07.001Z
+updated_at: 2026-06-22T04:08:42.425Z
 folder: docs/tasks
 type: task
 feature-id: ""
@@ -101,14 +101,28 @@ de-scope, no false claims. If A: gated build with strict safety + `--confirm`.
 
 ### Solution
 
+**Approach: analyze-only surface for hooks, apply/history/rollback blocked.**
+
+The shared `evolve()` engine already supports `--analyze` for all content types (G2/A2, task 0052). For hooks, the apply-capable paths (`--propose-only`, `--accept`, `--reject`, `--ingest`, `--history`, `--rollback`) must be gated off per decision C.
+
+**Two-layer fix:**
+
+1. **Command layer** (`commands/hook.ts`): Replace `addEvolveOptions` on `hook evolve` with a hook-specific `addHookEvolveOptions` that only registers `--target`, `--from`, `--analyze`, `--json`. The apply/history/rollback flags are never advertised in help text.
+
+2. **Engine layer** (`operations/evolve.ts`): Add a `guardHookAnalyzeOnly()` check at the top of `evolve()` that refuses `--history`, `--rollback`, `--propose-only`, `--accept`, `--reject`, `--ingest` when `type === 'hook'`. Defense-in-depth: even if a user passes the flag via a raw API call, the engine rejects it.
+
+**No new files** — both changes are surgical edits to existing files. Tests cover both layers.
 
 
 ### Plan
 
-GATED on the A/B/C decision. Phase 0: operator confirms. If B (likely): document de-scope, verify no
-hook-evolve is advertised anywhere, stop. If C: add `--analyze`-only hook path (trend safety/coverage,
-no apply) + tests. If A: build gated hook evolve (strict safety, `--confirm`) + tests. Lower priority than
-0052-0055; no user-facing command to break. Gates if code ships: lint/test/build/git clean.
+**Decision C confirmed (2026-06-21). Implementation plan:**
+
+1. `commands/helpers.ts`: Add `addHookEvolveOptions(cmd)` — registers only `--target`, `--from`, `--analyze`, `--json` (no apply/history/rollback flags).
+2. `commands/hook.ts`: Replace `addEvolveOptions` with `addHookEvolveOptions` on `hook evolve`. Update description to "Analyze hook evaluation trends (analyze-only, no apply)". Update `hookEvolve` handler + `evolveHook` inner fn to only forward analyze-safe opts.
+3. `operations/evolve.ts`: Add `guardHookAnalyzeOnly(type, opts)` at top of `evolve()` — emits `echoError` and returns zero result if hook + any apply/history/rollback opt is set.
+4. Tests: `evolve.test.ts` — add "evolve — hook type, analyze-only (0056)" describe block covering: `--analyze` works, `--history`/`--rollback`/`--propose-only`/`--accept`/`--reject`/`--ingest` all rejected for hooks. `hook.test.ts` — verify `hook evolve --help` does NOT list apply/history/rollback flags.
+5. Gates: `bun run lint`, `bun run test`, `bun run build`, `git status` clean.
 
 
 ### Review

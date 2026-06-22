@@ -35,6 +35,19 @@ export function addEvolveOptions(cmd: Command): Command {
         .option('--rollback <id>', 'Rollback to a prior version by proposal_id (requires --confirm)')
         .option('--confirm', 'Confirm a destructive operation (required for --rollback)');
 }
+/**
+ * Add hook-evolve-specific options (task 0056 decision C: analyze-only, no apply).
+ * Hooks evolve by hand-edit + re-validate; --analyze surfaces the safety/coverage
+ * trend from evaluation history without file mutation. Apply/history/rollback
+ * paths are NOT exposed for hooks.
+ */
+export function addHookEvolveOptions(cmd: Command): Command {
+    return cmd
+        .option('-t, --target <agent>', 'Target agent platform', 'claude')
+        .option('--from <date>', 'Analyze evaluations since date (ISO 8601)')
+        .option('--analyze', 'Print analysis summary (trends, score, data sources) — analyze-only, no apply')
+        .option('--json', 'Output machine-readable JSON');
+}
 
 /** Add --json option. */
 export function addJsonOption(cmd: Command): Command {

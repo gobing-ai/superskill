@@ -11,7 +11,7 @@ import { formatValidationResult, validate } from '../operations/validate';
 import {
     addAutoOption,
     addEvaluateOptions,
-    addEvolveOptions,
+    addHookEvolveOptions,
     addJsonOption,
     addSaveOption,
     addScaffoldOptions,
@@ -65,24 +65,16 @@ async function evolveHook(
     opts: {
         target?: string;
         from?: string;
-        proposeOnly?: boolean;
-        accept?: string;
-        reject?: string;
         json?: boolean;
-        ingest?: string;
-        margin?: number;
+        analyze?: boolean;
     },
 ) {
     const target = resolveTarget(opts);
     return evolve('hook', name, {
         target,
         from: opts.from,
-        proposeOnly: opts.proposeOnly,
-        acceptId: opts.accept,
-        rejectId: opts.reject,
         json: opts.json,
-        ingest: opts.ingest,
-        margin: opts.margin,
+        analyze: opts.analyze,
     });
 }
 
@@ -197,16 +189,13 @@ export async function hookRefine(opts: {
     return undefined;
 }
 
-/** Evolve a hook definition with optional propose-only/ingest generation seam. */
+/** Evolve a hook definition — analyze-only (task 0056 decision C). No apply/history/rollback. */
 export async function hookEvolve(opts: {
     name: string;
     target?: string;
     from?: string;
-    proposeOnly?: boolean;
-    accept?: string;
-    reject?: string;
     json?: boolean;
-    ingest?: string;
+    analyze?: boolean;
 }): Promise<number | undefined> {
     await evolveHook(opts.name, opts);
     return undefined;
@@ -269,16 +258,11 @@ export function registerHook(program: Command): void {
         await runOperation(() => hookRefine({ nameOrPath, ...opts }));
     });
 
-    addEvolveOptions(
-        cmd.command('evolve <name>').description('Longitudinal improvement from evaluation history'),
-    ).action(
-        async (
-            name: string,
-            opts: { target?: string; from?: string; proposeOnly?: boolean; accept?: string; reject?: string },
-        ) => {
-            await runOperation(() => hookEvolve({ name, ...opts }));
-        },
-    );
+    addHookEvolveOptions(
+        cmd.command('evolve <name>').description('Analyze hook evaluation trends (analyze-only, no apply)'),
+    ).action(async (name: string, opts: { target?: string; from?: string; analyze?: boolean; json?: boolean }) => {
+        await runOperation(() => hookEvolve({ name, ...opts }));
+    });
     addTargetOption(
         cmd
             .command('emit <name>')
