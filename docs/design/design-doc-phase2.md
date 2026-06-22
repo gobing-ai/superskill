@@ -247,6 +247,16 @@ from_evaluations: 5
 ...
 ```
 
+**Frontmatter-OPTIONAL configs (magents).** Magents are plain-markdown main-agent configs
+(`AGENTS.md`/`CLAUDE.md`/`GEMINI.md`) that may carry no YAML frontmatter by design (task 0050). The
+evolve engine and validator tolerate frontmatter absence for the `magent` type: `generateChanges`
+targets `location: 'body'` (appending the suggestion to the first non-empty line) instead of
+`frontmatter.description`, `validate` treats a missing frontmatter block as valid (malformed frontmatter
+is still an error), and the anchor-hash path degrades to an empty frontmatter mapping. The `--analyze`,
+`--history`, and `--rollback` flags work uniformly across frontmatter-bearing and frontmatter-less
+magents. This keeps the deterministic gate (`runGate`) passable for `--accept` on a frontmatter-less
+config. Other content types still require frontmatter.
+
 ## 3. Quality dimensions by content type
 
 ### Skill dimensions
