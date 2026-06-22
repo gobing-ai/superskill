@@ -135,15 +135,15 @@ priority than 0062-0065; no user-facing command to break. Gates if code ships: l
 
 ### Review
 
-## Review
+**Verdict: PASS** — All acceptance criteria met (decision B: de-scope + clean up). SECU and requirements traceability below.
 
-### Phase 7 - SECU (diff: hook.ts, scaffold.ts, 2 test files, 3 docs, 1 template deleted)
+#### Phase 7 — SECU (diff: hook.ts, scaffold.ts, 2 test files, 3 docs, 1 template deleted)
 
 - **Security:** Removal is purely subtractive — eliminates the `scaffold('hook',...)` write path (wrote `.md` to user-controlled `--output`). No new code paths, no new I/O, no secrets/eval/external input. Attack surface reduced.
 - **Correctness:** `ContentType` retains `'hook'` (validate/evaluate/refine/evolve need it). `scaffold('hook',...)` now throws `Unknown content type: "hook"` — defense-in-depth, no silent wrong emission. No orphan imports (verified hook.ts imports clean).
 - **Usability:** `hook --help` shows 5 commands (validate/evaluate/refine/evolve/emit); `hook scaffold` returns clean "unknown command". Docs explain hooks are hand-authored in `hooks.json`.
 
-### Phase 8 - Requirements traceability (decision B: de-scope + clean up)
+#### Phase 8 — Requirements traceability (decision B: de-scope + clean up)
 
 | Item | Verdict | Evidence |
 |------|---------|----------|
@@ -160,9 +160,9 @@ priority than 0062-0065; no user-facing command to break. Gates if code ships: l
 
 ### Testing
 
-## Testing
+Date: 2026-06-22T05:55:00Z
 
-### Gate results (all pass)
+#### Gate results (all pass)
 - `bun run lint` — clean (Biome + turbo typecheck exit 0)
 - `bun run test` — 1026 pass / 0 fail / 0 skipped
 - `bun run build` — success (index.js 3.44 MB, 768 modules)
@@ -171,7 +171,7 @@ priority than 0062-0065; no user-facing command to break. Gates if code ships: l
 
 **Coverage:** 99.68% functions / 98.76% lines aggregate. All files above 90/90 threshold.
 
-### Functional smoke (live)
+#### Functional smoke (live)
 ```
 hook --help                     → 5 commands (validate/evaluate/refine/evolve/emit), no scaffold
 hook scaffold test              → "error: unknown command 'scaffold'"
@@ -179,11 +179,9 @@ hook validate plugins/cc/hooks/hooks.json → works (reports findings; ContentTy
 hook refine plugins/cc/hooks/hooks.json   → works (suggest-only, [SUGGEST] findings)
 ```
 
-### Template deletion
+#### Template deletion
 - `apps/cli/src/templates/hook/default.md` — tracked, deleted (shows as D in git)
 - `apps/cli/templates/hook/default.md` — gitignored (build output copy), deleted from filesystem
-
-
 ### Artifacts
 
 | Type | Path | Agent | Date |
