@@ -91,6 +91,25 @@ Consume the 0057 shared-engine fix (R1 reorder + R3 real defaults + R2 --dry-run
 
 SECU: no new trust-boundary inputs, no error suppression, no secrets, no skipped tests. Monotonic guard inherited from 0057.
 
+---
+
+## Re-verification — 2026-06-21 (`/rd3:dev-verify 0058 --force --fix all`)
+
+**Verdict: PASS** (Phase 7 SECU + Phase 8 traceability, re-audit of Done task via `--force`)
+
+**Scope:** commit `4965647` (7 files). **Gate:** `bun run lint` clean · `bun run test` 978/0 · `bun run build` OK (3.43 MB).
+
+**Phase 8 — traceability:** all requirements MET (C1, C2, C3a-c, Docs, Gates, Do-not-drift). No unmet requirements, no scope drift. `--dry-run` confirmed in `command refine --help`.
+
+**Phase 7 — SECU findings:** no P1/P2. One P3 found and FIXED.
+
+| # | Title | Dimension | Location | Resolution |
+|---|---|---|---|---|
+| 1 | `handleCommandRefine` opts type omitted `dryRun?: boolean` | Correctness (type safety) | `command.ts:161-168` | **FIXED** — added `dryRun?: boolean` to the handler's opts type. Runtime was already correct (spread forwarded it; test at `command.test.ts:135` green); fix closes the type-contract gap so the CLI-action boundary type-checks `dryRun`. |
+
+**Fix-pass 2026-06-21:** 1 fixed (P3 type-contract), 0 failed, 0 skipped. Gate re-run after fix: lint clean, 978/0 tests. Working tree carries a single type-only edit to `command.ts` (not yet committed).
+
+
 ### Testing
 
 - Command: `bun run test` (full suite)
