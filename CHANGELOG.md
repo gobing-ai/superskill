@@ -4,6 +4,62 @@ All notable changes to `@gobing-ai/superskill` are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Conventional Commits](https://www.conventionalcommits.org/).
 
+## [0.2.0] - 2026-06-22
+
+### New Features
+
+#### Scaffold Template Tiers — Agent, Command, and Skill
+
+- **Agent template tiers**: `--template` flag now accepts `default`, `minimal`, `standard`, or `specialist` — each tier provides progressively richer system-prompt content and frontmatter. Agent scaffold also accepts `--skills <list>` and `--tools <list>` flags for direct frontmatter population. All four templates score PASS on `agent evaluate`. (`apps/cli/src/templates/agent/`)
+- **Command template tiers**: `--template` flag now accepts `simple` (one-shot, no sub-steps), `workflow` (multi-step with gates), `plugin` (delegates to a plugin command), or `default`. (`apps/cli/src/templates/command/`)
+- **Skill template tiers**: `--template` flag now accepts `technique` (narrow how-to), `pattern` (reusable design pattern), `reference` (canonical lookup), or `default`. (`apps/cli/src/templates/skill/`)
+- **Directory-based skill scaffold**: `superskill skill scaffold <name>` now writes to `<name>/SKILL.md` (a skill directory) instead of a bare `<name>.md` file — matching the convention used by the rest of the ecosystem.
+
+#### Evolve System Completion — Heuristic Proposals + Full Lifecycle Flags
+
+- **Seeded heuristic proposals**: `evolve` no longer requires an external agent for basic improvements. The CLI now seeds proposals from evaluation history — suggesting concrete changes for low-scoring dimensions without any model call. The generation seam (`--propose-only --json` / `--ingest`) remains for model-driven refinement.
+- **`--analyze` flag**: Compute trends and emit analysis without generating proposals — useful for reviewing quality history before committing to changes.
+- **`--history` flag**: Display the evaluation timeline for a given entity — per-dimension scores over time with trend direction.
+- **`--rollback` flag**: Revert the most recently accepted proposal, restoring the file from its pre-proposal backup.
+- **`--confirm` flag**: Accept a `draft` proposal by ID without re-running the double-loop gate (for pre-vetted proposals).
+- **Frontmatter-less magent support**: `magent evolve` now works on plain-markdown main-agent configs (`AGENTS.md`, `CLAUDE.md`, `GEMINI.md`) — no YAML frontmatter required. Body-based anchor hashing and governance section detection handle the seed/validate/anchor paths.
+
+#### Hook Command Surface — Settled Design
+
+Three design decisions codified for the `hook` command, resolving the surface divergence from other types:
+
+- **`hook scaffold` removed** (task 0066 decision B): Hooks are hand-authored JSON in `hooks.json` — a markdown scaffold template was the wrong artifact type and misleading.
+- **`hook refine` locked to suggest-only** (task 0061 decision C): No `--auto` flag; `--dry-run` is the only mode. Hook `command` strings are security-critical shell code — automated mutation is too dangerous.
+- **`hook evolve` locked to analyze-only** (task 0056 decision C): No `--history`/`--rollback`/`--confirm` or apply path. Hook quality trends can be analyzed but content changes remain manual.
+
+`hook validate` and `hook evaluate` continue to work normally — scoring against correctness, event-coverage, safety, and pattern-match-quality dimensions.
+
+### Improvements
+
+#### Refine — Dry-Run and Structural-First Auto-Apply
+
+- **`--dry-run` flag on all refine commands**: Agent, command, magent, and skill `refine` now support `--dry-run`, which classifies findings and projects the score delta in-memory without writing files or creating backups.
+- **Structural auto-apply before validation exit**: `refine --auto` now applies structural fixes (missing required frontmatter fields, wrong model aliases) before the validation step — a missing-`description` agent is fixed in one pass instead of being refused with "validation failed." Missing-field defaults are schema-aware (`model`→`inherit`, `tools`→`[]`), never `TODO` placeholders.
+
+#### CC Plugin Command Wrappers — Realigned
+
+All 17 plugin slash commands (`plugins/cc/commands/*.md`) re-aligned to match the CLI's actual capabilities after v0.2.0 changes:
+- `agent-add`: updated to reflect template tiers, `--skills`, `--tools` flags
+- `agent-evolve` / `command-evolve` / `magent-evolve` / `skill-evolve`: updated to reflect `--analyze`/`--history`/`--rollback`/`--confirm` flags
+- `agent-refine` / `command-refine` / `magent-refine` / `skill-refine`: updated to reflect `--dry-run` support
+- `skill-add`: updated to reflect template tiers and directory-based output
+- Fixed missing header row in `agent-evolve` Arguments table
+
+#### Meta-Agent Skills Refreshed
+
+All six `cc-*` skills (`anti-hallucination`, `cc-agents`, `cc-commands`, `cc-hooks`, `cc-magents`, `cc-skills`) and the `expert-hook` agent refreshed to reflect the settled hook command surface and current CLI capabilities.
+
+### Bug Fixes
+
+- **Six correctness defects across core + CLI (F1-F6)**: Fixed issues including `resolveContentPath` doubling `.md` on bare names, command evaluator scoring wrong schema fields, `dedupeLines` content corruption across heading blocks, backtick token score inflation, slash-command colon swallowed before translation, and parity test normalization. Each fix has a dedicated regression test.
+- **`handleCommandRefine` dryRun type contract**: Command refine's handler was missing the `dryRun` field in its type contract, causing a type error on the `--dry-run` path. Fixed and covered.
+- **Pi subagent parser hardened**: Replaced hand-rolled `parseFrontmatter` with the canonical parser from `content/frontmatter.ts` (ADR-012), fixing block-style YAML array and nested-value matching in the pipeline.
+
 
 ## [0.1.8] - 2026-06-21
 
