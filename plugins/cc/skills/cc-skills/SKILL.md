@@ -132,14 +132,6 @@ superskill skill evolve my-skill --propose-only --json
 superskill skill evolve my-skill --ingest <proposal.json> --accept <id>
 ```
 
-## When to Use
-
-- Creating a new skill from scratch → use **add**
-- Checking skill structure and frontmatter → use **validate**
-- Scoring skill quality → use **evaluate**
-- Fixing quality issues → use **refine**
-- Planning longitudinal improvement → use **evolve**
-
 ## Core Principles
 
 ### Single Source of Truth
@@ -230,13 +222,13 @@ skill-name/
 
 ## Platform Adapters
 
-| Platform | Extensions | Companion Files |
-|----------|------------|-----------------|
-| **Claude Code** | Inline command syntax, argument placeholders, forked context mode, hooks | None (native) |
-| **Codex** | `agents/openai.yaml` (UI metadata) | agents/openai.yaml |
-| **OpenClaw** | Frontmatter `openclaw` metadata (emoji, requires) | None (embedded) |
-| **OpenCode** | Config-level `permission.skill` | None (hints only) |
-| **Antigravity** | Gemini CLI compatible | None (validates) |
+| Platform | Extensions | Companion Files | Validates |
+|----------|------------|-----------------|-----------|
+| **Claude Code** | Inline command syntax, argument placeholders, forked context mode, hooks | None (native) | Frontmatter, structure, syntax compatibility |
+| **Codex** | `agents/openai.yaml` (UI metadata) | agents/openai.yaml | openai.yaml format, agent metadata |
+| **OpenClaw** | Frontmatter `openclaw` metadata (emoji, requires) | None (embedded) | frontmatter `openclaw` metadata, emoji, requirements |
+| **OpenCode** | Config-level `permission.skill` | None (hints only) | Permission hints, configuration |
+| **Antigravity** | Gemini CLI compatible | None (validates) | Gemini CLI compatibility |
 
 ## Detailed Workflows
 
@@ -256,18 +248,6 @@ assets/templates/
 │   ├── SKILL.md.template
 │   └── config.json
 ```
-
-### Platform-Specific Validation
-
-Each platform adapter validates different aspects:
-
-| Platform | Validates |
-|----------|-----------|
-| Claude Code | Frontmatter, structure, syntax compatibility |
-| Codex | openai.yaml format, agent metadata |
-| OpenClaw | frontmatter `openclaw` metadata, emoji, requirements |
-| OpenCode | Permission hints, configuration |
-| Antigravity | Gemini CLI compatibility |
 
 ## Platform Notes
 
@@ -298,17 +278,7 @@ Follow these best practices to create effective, maintainable skills. See [refer
 
 ## Evaluation Dimensions
 
-Skills are scored across **5 dimensions** using rubric-weighted heuristics (see `superskill skill evaluate`):
-
-| Dimension | Weight | What It Checks |
-|-----------|--------|----------------|
-| **completeness** | 0.25 | Are required frontmatter fields present and sections structured? |
-| **clarity** | 0.25 | Is the instruction unambiguous to a fresh agent? Penalizes vague verbs. |
-| **trigger-accuracy** | 0.20 | Does the skill fire on the right inputs? Counts trigger phrases. |
-| **anti-hallucination** | 0.15 | Does the skill prevent fabrication? Checks verification language. |
-| **conciseness** | 0.15 | Is the skill as short as possible while complete? Penalizes bloat. |
-
-The canonical rubric lives at `packages/core/src/rubrics/skill.yaml`. Do not restate weights elsewhere — they drift.
+Skills are scored across **5 dimensions** — completeness, clarity, trigger-accuracy, anti-hallucination, and conciseness — using rubric-weighted heuristics (see `superskill skill evaluate`). The canonical rubric at `packages/core/src/rubrics/skill.yaml` owns each dimension's weight and criterion; read it there. Do not restate weights here — they drift.
 
 Verdict: **PASS** (≥0.70) / **FAIL** (<0.70). Grade: A (≥0.90) / B (0.75–0.89) / C (0.60–0.749) / D (0.45–0.599) / F (<0.45).
 
