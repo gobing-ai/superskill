@@ -13,7 +13,6 @@ deliverables:
   - apps/cli/src/templates/skill/default.md
   - apps/cli/src/templates/command/default.md
   - apps/cli/src/templates/agent/default.md
-  - apps/cli/src/templates/hook/default.md
   - apps/cli/src/templates/magent/default.md
   - apps/cli/src/operations/scaffold.ts
 created: 2026-06-16
@@ -81,10 +80,9 @@ Every other Phase 2 command depends on (a) creating content from templates and (
 - YAML frontmatter with `name`, `description`, `tools` (empty array), `model` (default), and `agentType` fields.
 - Body: `<!-- TODO: agent system prompt and configuration -->`.
 
-### `templates/hook/default.md`
+### `templates/hook/default.md` — REMOVED (task 0066)
 
-- YAML frontmatter with `name`, `description`, `event`, and `enabled` fields.
-- Body: `<!-- TODO: hook script or matcher -->`.
+Hooks are hand-authored in `hooks.json` (JSON config, not markdown). The scaffold path emitted the wrong artifact type and was removed; `'hook'` is no longer in `scaffold.ts` `validTypes`. `ContentType` retains `'hook'` for validate/evaluate/refine/evolve. See `04_DESIGN.md` "Hook divergence".
 
 ### `templates/magent/default.md`
 

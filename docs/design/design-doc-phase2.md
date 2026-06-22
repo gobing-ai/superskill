@@ -28,7 +28,7 @@ superskill <type> <operation> [target] [options]
   target:    content name or file path
 ```
 
-Each operation is described below in terms of `skill` — the other four types are structurally identical, with type-specific quality dimensions (see §3).
+Each operation is described below in terms of `skill` — the other four types are structurally identical, with type-specific quality dimensions (see §3). **Exception: `hook` diverges** — it is hand-authored as `hooks.json` (JSON, security-critical), so `hook scaffold` is removed (emits the wrong artifact type), `hook refine` is suggest-only (no `--auto`/`--save`), and `hook evolve` is analyze-only. See `04_DESIGN.md` "Hook divergence" for the authoritative note (tasks 0056, 0061, 0066).
 
 ### 2.1 `scaffold` — generate from template
 
@@ -164,6 +164,8 @@ In `--auto` mode, only auto-apply fixes are made. In interactive mode (default),
 `--dry-run` classifies findings and projects the score delta in-memory (no write, no backup); combine with `--auto` to preview the auto-apply set.
 
 After refinements, re-evaluates and shows the score delta.
+
+**Hook refine is suggest-only** (task 0061): `hook refine` registers only `--target`/`--dry-run` (no `--auto`/`--save`); the engine forces the dry-run path so no fix is ever applied. `hooks.json` is security-critical config (arbitrary shell commands), so auto-applying frontmatter-oriented fixes to JSON is both broken and dangerous. See `04_DESIGN.md` "Hook divergence".
 
 ### 2.5 `evolve` — longitudinal improvement
 
@@ -436,8 +438,7 @@ apps/cli/src/
     │   └── default.md
     ├── agent/
     │   └── default.md
-    ├── hook/
-    │   └── default.md
+    (no hook/ directory — removed task 0066; hooks are hand-authored in hooks.json, not scaffolded)
     └── magent/
         └── default.md
 ```
