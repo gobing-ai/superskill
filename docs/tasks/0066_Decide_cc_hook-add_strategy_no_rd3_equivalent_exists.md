@@ -135,27 +135,33 @@ priority than 0062-0065; no user-facing command to break. Gates if code ships: l
 
 ### Review
 
-**Verdict: PASS** — All acceptance criteria met (decision B: de-scope + clean up). SECU and requirements traceability below.
+## Review — 2026-06-21 (re-verify, --force)
 
-#### Phase 7 — SECU (diff: hook.ts, scaffold.ts, 2 test files, 3 docs, 1 template deleted)
+**Status:** 0 findings — re-verification confirms original PASS
+**Scope:** commit 6d791c2 (hook.ts, scaffold.ts, 2 tests, 3 docs, 1 template deleted)
+**Mode:** verify (Phase 7 + 8, --focus all)
+**Channel:** inline
+**Gate:** `bun run lint` pass · `bun run test` 1026/0/0 · `bun run build` exit 0 · git clean
 
-- **Security:** Removal is purely subtractive — eliminates the `scaffold('hook',...)` write path (wrote `.md` to user-controlled `--output`). No new code paths, no new I/O, no secrets/eval/external input. Attack surface reduced.
-- **Correctness:** `ContentType` retains `'hook'` (validate/evaluate/refine/evolve need it). `scaffold('hook',...)` now throws `Unknown content type: "hook"` — defense-in-depth, no silent wrong emission. No orphan imports (verified hook.ts imports clean).
-- **Usability:** `hook --help` shows 5 commands (validate/evaluate/refine/evolve/emit); `hook scaffold` returns clean "unknown command". Docs explain hooks are hand-authored in `hooks.json`.
+### Phase 7 — SECU (no findings)
 
-#### Phase 8 — Requirements traceability (decision B: de-scope + clean up)
+- **Security:** Purely subtractive diff — removes the `scaffold('hook',…)` write path (wrote `.md` to user-controlled `--output`). No new code, I/O, secrets, or external input. Attack surface reduced.
+- **Efficiency:** N/A — deletions only.
+- **Correctness:** No orphaned symbols (`hookScaffold`/`scaffoldHook` fully removed, verified via rg). `addScaffoldOptions` correctly retained — still used by skill/command/magent/agent. `scaffold` import dropped from hook.ts. `ContentType` keeps `'hook'` for validate/evaluate/refine/evolve. `scaffold('hook',…)` throws "Unknown content type" (defense-in-depth, no silent wrong emission — verified live).
+- **Usability:** `hook --help` shows 5 commands (validate/evaluate/refine/evolve/emit), no scaffold. Docs explain hooks are hand-authored in `hooks.json`.
 
-| Item | Verdict | Evidence |
-|------|---------|----------|
-| No hook-add command or wrapper exists or is advertised | MET | `hook --help` lists 5 commands (no scaffold); `hook scaffold` → "unknown command 'scaffold'"; no /cc:hook-add wrapper exists (verified plugins/cc/commands/) |
-| Misleading 'hook' .md scaffold path removed | MET | `scaffold.ts:170` validTypes drops 'hook'; both template files deleted; `scaffold('hook',...)` throws "Unknown content type" |
-| Nothing advertises hook-add | MET | expert-hook.md routing table, cmd_hook.md, SKILL.md all cleaned; trigger phrases updated; scaffold sections removed |
-| Gates pass | MET | lint clean, 1026 pass / 0 fail / 0 skips, build exit 0, git clean (8 tracked + 1 gitignored deletion) |
+### Phase 8 — Requirements traceability (decision B: de-scope + clean up)
 
-**Functional smoke:**
-- `hook --help` → 5 commands (validate/evaluate/refine/evolve/emit), no scaffold ?
-- `hook scaffold test` → "error: unknown command 'scaffold'" ?
-- `hook validate plugins/cc/hooks/hooks.json` → still works (ContentType retains 'hook') ?
+| # | Requirement | Verdict | Evidence |
+|---|-------------|---------|----------|
+| 1 | No hook-add command or wrapper exists/advertised | MET | `hook --help` → 5 cmds; `hook scaffold test` → "unknown command 'scaffold'"; no /cc:hook-add wrapper |
+| 2 | Misleading 'hook' .md scaffold path removed | MET | `scaffold.ts:170` validTypes drops 'hook'; both `templates/hook/default.md` deleted; `scaffold('hook',…)` throws (verified live) |
+| 3 | Nothing advertises hook-add | MET | cmd_hook.md, expert-hook.md, cc-hooks SKILL.md carry only negative "no scaffold (decision B)" references |
+| 4 | Gates pass if code ships | MET | lint clean, 1026 pass / 0 skips, build exit 0, git clean |
+
+**P1: 0 · P2: 0 · P3: 0 · P4: 0 · Unmet: 0 · Partial: 0**
+
+**Verdict: PASS** (re-verified). No new findings; original verdict upheld. No fixes required despite `--fix all` — nothing to fix.
 
 
 ### Testing
