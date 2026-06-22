@@ -2,10 +2,10 @@
 doc: 05_FEATURES
 owns: STATUS — feature decomposition + state (✅ done / 🔶 partial / ⏳ planned / 💤 deferred)
 authority: derived
-version: 4.4.0
+version: 5.0.0
 derived_from: [01_PRD, 02_ROADMAP]
 owner: Robin Min
-updated_at: 2026-06-17
+updated_at: 2026-06-22
 read_before: finding a feature's state; edit when a feature's status changes
 edit_rules: 99 §6.6
 sync: [T4]
@@ -23,12 +23,12 @@ Design: [design-doc-phase1.md](design/design-doc-phase1.md)
 
 | ID | Feature | Deps | Status | Files |
 |----|---------|------|--------|-------|
-| F001 | [Target taxonomy + config schema](features/F001-target-taxonomy-config.md) | — | ⏳ | `targets.ts`, `config.ts` |
-| F002 | [Plugin → .rulesync/ mapper](features/F002-plugin-mapper.md) | — | ⏳ | `mapper.ts` |
-| F003 | [Conversion pipeline + rulesync integration](features/F003-conversion-pipeline.md) | F001 | ⏳ | `pipeline/*`, `rulesync.ts` |
-| F004 | [superskill install command + target dispatch](features/F004-install-command.md) | F001, F002, F003, F006 | ⏳ | `commands/install.ts` |
-| F005 | [Tests + verification](features/F005-tests-verification.md) | F001–F004, F006 | ⏳ | `tests/*` |
-| F006 | [Marketplace manifest resolver](features/F006-marketplace-resolver.md) | — | ⏳ | `marketplace.ts` |
+| F001 | [Target taxonomy + config schema](features/F001-target-taxonomy-config.md) | — | ✅ | `targets.ts`, `config.ts` |
+| F002 | [Plugin → .rulesync/ mapper](features/F002-plugin-mapper.md) | — | ✅ | `mapper.ts` |
+| F003 | [Conversion pipeline + rulesync integration](features/F003-conversion-pipeline.md) | F001 | ✅ | `pipeline/*`, `rulesync.ts` |
+| F004 | [superskill install command + target dispatch](features/F004-install-command.md) | F001, F002, F003, F006 | ✅ | `commands/install.ts` |
+| F005 | [Tests + verification](features/F005-tests-verification.md) | F001–F004, F006 | ✅ | `tests/*` |
+| F006 | [Marketplace manifest resolver](features/F006-marketplace-resolver.md) | — | ✅ | `marketplace.ts` |
 
 ### Foundation (already done)
 
@@ -78,18 +78,15 @@ Design: [design-doc-phase2.md](design/design-doc-phase2.md)
 
 | ID | Feature | Deps | Size | Status | Files |
 |----|---------|------|------|--------|-------|
-| F007 | [Template + content-IO foundation + scaffold](features/F007-template-scaffold.md) | — | M | ⏳ | `content/*` (5), `templates/*/default.md` (5), `operations/scaffold.ts` |
-| F008 | [SQLite data store (via @gobing-ai/ts-db)](features/F008-sqlite-store.md) | F007 | M | ⏳ | `store/schema.ts`, `store/db.ts`, `store/evaluations.ts`, `store/proposals.ts` |
-| F009 | [Quality dimension definitions](features/F009-quality-dimensions.md) | F007 | M | ⏳ | `quality/dimensions.ts` + 5 type-specific evaluators |
-| F010 | [Validate operation](features/F010-validate-operation.md) | F007, F009 | S | ⏳ | `operations/validate.ts` |
-| F011 | [Evaluate operation](features/F011-evaluate-operation.md) | F007, F008, F009 | S | ⏳ | `operations/evaluate.ts` |
-| F012 | [Refine operation](features/F012-refine-operation.md) | F007, F010, F011 | S | ⏳ | `operations/refine.ts` |
-| F013 | [Evolve operation](features/F013-evolve-operation.md) | F007, F008, F011 | M | ⏳ | `operations/evolve.ts` |
-| F014 | [Five type command files](features/F014-type-commands.md) | F007–F013 | M | ⏳ | `commands/helpers.ts` + `commands/{agent,skill,command,hook,magent}.ts` + `cli.ts` |
-| F015 | [Phase 2 tests](features/F015-phase2-tests.md) | F007–F014 | M | ⏳ | `apps/cli/tests/{content,scaffold,validate,evaluate,refine,evolve,store,commands}.test.ts` |
-
-**Size key**: S = ≤2 files, completable in one session. M = 3–6 files, may span sessions.
-
+| F007 | [Template + content-IO foundation + scaffold](features/F007-template-scaffold.md) | — | M | ✅ | `content/*` (5), `templates/*/default.md` (5), `operations/scaffold.ts` |
+| F008 | [SQLite data store (via @gobing-ai/ts-db)](features/F008-sqlite-store.md) | F007 | M | ✅ | `store/schema.ts`, `store/db.ts`, `store/evaluations.ts`, `store/proposals.ts` |
+| F009 | [Quality dimension definitions](features/F009-quality-dimensions.md) | F007 | M | ✅ | `quality/dimensions.ts` + 5 type-specific evaluators |
+| F010 | [Validate operation](features/F010-validate-operation.md) | F007, F009 | S | ✅ | `operations/validate.ts` |
+| F011 | [Evaluate operation](features/F011-evaluate-operation.md) | F007, F008, F009 | S | ✅ | `operations/evaluate.ts` |
+| F012 | [Refine operation](features/F012-refine-operation.md) | F007, F010, F011 | S | ✅ | `operations/refine.ts` |
+| F013 | [Evolve operation](features/F013-evolve-operation.md) | F007, F008, F011 | M | ✅ | `operations/evolve.ts` |
+| F014 | [Five type command files](features/F014-type-commands.md) | F007–F013 | M | ✅ | `commands/helpers.ts` + `commands/{agent,skill,command,hook,magent}.ts` + `cli.ts` |
+| F015 | [Phase 2 tests](features/F015-phase2-tests.md) | F007–F014 | M | ✅ | `apps/cli/tests/{content,scaffold,validate,evaluate,refine,evolve,store,commands}.test.ts` |
 ### Dependency graph
 
 ```
@@ -114,8 +111,7 @@ F007 is no longer parallel with F008/F009 — it owns the shared `content/*` pri
 | Project scaffold + tooling | ✅ |
 | Spur rule catalog (21 rules) | ✅ |
 | Documentation 00–05 | ✅ |
-| `superskill install` command | 🔶 |
-
+| `superskill install` command | ✅ |
 ### Task creation plan
 
 | Order | Feature | Task | Rationale |
@@ -156,16 +152,11 @@ Cleanup/consolidation only — touches `plugins/cc/`, not the CLI. Renames `rd3`
 
 | ID | Feature | Deps | Size | Status | Files |
 |----|---------|------|------|--------|-------|
-| F016 | [Namespace migration (`rd3`→`cc`) + companion configs](features/F016-namespace-migration.md) | — | M | ⏳ | `plugins/cc/**` (~123 files w/ `rd3`) |
-| F017 | [Skill + expert-subagent rewrite → `superskill`](features/F017-skill-subagent-rewrite.md) | F016 | M | ⏳ | `plugins/cc/skills/*/SKILL.md` (5), `plugins/cc/agents/expert-*.md` (5) |
-| F018 | [Slash-command disposition + `hooks.json` fix](features/F018-command-disposition-hooks.md) | F016 | M | ⏳ | `plugins/cc/commands/*.md` (25), `plugins/cc/hooks/hooks.json` |
-| F019 | [Embedded-code deletion](features/F019-embedded-code-deletion.md) | F017, F018 | S | ⏳ | delete `plugins/cc/skills/*/{scripts,templates,tests}/`, `cc-hooks/{emitters,schema}/`, `references/scripts-usage.md` |
-| F020 | [Binary-on-PATH + Phase 3 verification](features/F020-binary-path-verification.md) | F016–F019 | S | ⏳ | `apps/cli/package.json` (verify bin), docs/runbook; no plugin code |
-
-**Size key**: S = ≤2 files/dirs + checks, one session. M = multi-file, may span sessions.
-
-### Dependency graph
-
+| F016 | [Namespace migration (`rd3`→`cc`) + companion configs](features/F016-namespace-migration.md) | — | M | ✅ | `plugins/cc/**` (~123 files w/ `rd3`) |
+| F017 | [Skill + expert-subagent rewrite → `superskill`](features/F017-skill-subagent-rewrite.md) | F016 | M | ✅ | `plugins/cc/skills/*/SKILL.md` (5), `plugins/cc/agents/expert-*.md` (5) |
+| F018 | [Slash-command disposition + `hooks.json` fix](features/F018-command-disposition-hooks.md) | F016 | M | ✅ | `plugins/cc/commands/*.md` (17), `plugins/cc/hooks/hooks.json` |
+| F019 | [Embedded-code deletion](features/F019-embedded-code-deletion.md) | F017, F018 | S | ✅ | delete `plugins/cc/skills/*/{scripts,templates,tests}/`, `cc-hooks/{emitters,schema}/`, `references/scripts-usage.md` |
+| F020 | [Binary-on-PATH + Phase 3 verification](features/F020-binary-path-verification.md) | F016–F019 | S | ✅ | `apps/cli/package.json` (verify bin), docs/runbook; no plugin code |
 ```
 F016 (rename rd3→cc)   ← must land first; every ref-bearing file depends on the final names
   │
@@ -212,22 +203,11 @@ drive the non-determinism through clean I/O seams (P4-D2). Touches the CLI (`ope
 
 | ID | Feature | Deps | Size | Status | Files |
 |----|---------|------|------|--------|-------|
-| F021 | [Rubric config format + package defaults + override resolution](features/F021-rubric-config.md) | — | M | ⏳ | `quality/rubric.ts`, `rubrics/<type>.yaml` (5), `quality/dimensions.ts` (weights) |
-| F022 | [Scorer seam (`evaluate --rubric`/`--ingest`)](features/F022-scorer-seam.md) | F021 | M | ⏳ | `operations/evaluate.ts`, `store/schema.ts` (rubric_version), `commands/helpers.ts` |
-| F023 | [Generation seam (`evolve --propose-only --json`/`--ingest`)](features/F023-generation-seam.md) | F021 | M | ⏳ | `operations/evolve.ts` (replace `generateChanges` placeholder), `commands/helpers.ts` |
-| F024 | [Double-loop gate (validate + Δ-margin + anchor)](features/F024-double-loop-gate.md) | F022, F023 | M | ⏳ | `operations/evolve.ts` (gate on ingest), `operations/validate.ts` (precondition) |
-| F025 | [`cc` skill + Spur personas + hide `validate` (P4-D3)](features/F025-cc-personas-hide-validate.md) | F022, F023, F024 | M | ⏳ | `plugins/cc/skills/cc-*/SKILL.md`, `plugins/cc/agents/expert-*.md`, delete `commands/hook-validate.md` |
-
-**Size key**: S = ≤2 files + tests, one session. M = 3–6 files + tests, may span sessions.
-
-> **Tests live inside each feature** (design rule: a task owns its own tests — no pure-test feature
-> or task). The fixture-replay tests are written **in the task that implements the code they cover**:
-> `rubric.test.ts` in F021, `evaluate-ingest.test.ts` in F022, `evolve-ingest.test.ts` in F023,
-> `gate.test.ts` in F024. The whole-phase closing gate (full suite green, ≥90% coverage, zero model
-> calls reachable) is owned by **F025** as the last implementing feature.
-
-### Dependency graph
-
+| F021 | [Rubric config format + package defaults + override resolution](features/F021-rubric-config.md) | — | M | ✅ | `quality/rubric.ts`, `rubrics/<type>.yaml` (5), `quality/dimensions.ts` (weights) |
+| F022 | [Scorer seam (`evaluate --rubric`/`--ingest`)](features/F022-scorer-seam.md) | F021 | M | ✅ | `operations/evaluate.ts`, `store/schema.ts` (rubric_version), `commands/helpers.ts` |
+| F023 | [Generation seam (`evolve --propose-only --json`/`--ingest`)](features/F023-generation-seam.md) | F021 | M | ✅ | `operations/evolve.ts` (replace `generateChanges` placeholder), `commands/helpers.ts` |
+| F024 | [Double-loop gate (validate + Δ-margin + anchor)](features/F024-double-loop-gate.md) | F022, F023 | M | ✅ | `operations/evolve.ts` (gate on ingest), `operations/validate.ts` (precondition) |
+| F025 | [`cc` skill + Spur personas + hide `validate` (P4-D3)](features/F025-cc-personas-hide-validate.md) | F022, F023, F024 | M | ✅ | `plugins/cc/skills/cc-*/SKILL.md`, `plugins/cc/agents/expert-*.md`, delete `commands/hook-validate.md` |
 ```
 F021 (rubric config)   ← fitness function; both seams read it
   │
@@ -283,12 +263,12 @@ targets (codex, opencode, antigravity-cli/ide) — `runRulesync` already forward
 
 | ID | Feature | Deps | Size | Status | Files |
 |----|---------|------|------|--------|-------|
-| F027 | [Surface hook counts in install + validation checklist](features/F027-install-hook-counts.md) | — | S | ⏳ | `commands/install.ts` (`InstallResultCounts` + accumulate) |
-| F028 | [Pi/omp/hermes hook enablement (shim/copy)](features/F028-pi-omp-hook-shim.md) | F027 | M | ⏳ | `commands/install.ts` (copy/shim step), shim assets |
-| F029 | [`cc:cc-hooks` re-author + `hook emit` wrapper](features/F029-cc-hooks-emit.md) | F027 | M | ⏳ | `commands/hook.ts` (`emit`), `plugins/cc/skills/cc-hooks/SKILL.md`, `plugins/cc/agents/expert-hook.md` |
-| F030 | [Restore `skill package`](features/F030-skill-package.md) | — | M | ⏳ | `commands/skill.ts` (`package`), `operations/package.ts` |
-| F031 | [Restore `skill migrate` (refinement via Phase 4)](features/F031-skill-migrate.md) | F023, F030 | M | ⏳ | `commands/skill.ts` (`migrate`), `operations/migrate.ts` |
-| F032 | [Confirm/close `adapt` gap inside `install`](features/F032-adapt-gap.md) | — | S | ⏳ | `pipeline/convert.ts` (add only what's missing) |
+| F027 | [Surface hook counts in install + validation checklist](features/F027-install-hook-counts.md) | — | S | ✅ | `commands/install.ts` (`InstallResultCounts` + accumulate) |
+| F028 | [Pi/omp/hermes hook enablement (shim/copy)](features/F028-pi-omp-hook-shim.md) | F027 | M | ✅ | `commands/install.ts` (copy/shim step), shim assets |
+| F029 | [`cc:cc-hooks` re-author + `hook emit` wrapper](features/F029-cc-hooks-emit.md) | F027 | M | ✅ | `commands/hook.ts` (`emit`), `plugins/cc/skills/cc-hooks/SKILL.md`, `plugins/cc/agents/expert-hook.md` |
+| F030 | [Restore `skill package`](features/F030-skill-package.md) | — | M | ✅ | `commands/skill.ts` (`package`), `operations/package.ts` |
+| F031 | [Restore `skill migrate` (refinement via Phase 4)](features/F031-skill-migrate.md) | F023, F030 | M | ✅ | `commands/skill.ts` (`migrate`), `operations/migrate.ts` |
+| F032 | [Confirm/close `adapt` gap inside `install`](features/F032-adapt-gap.md) | — | S | ✅ | `pipeline/convert.ts` (add only what's missing) |
 
 **Size key**: S = ≤2 files + tests, one session. M = 3–6 files + tests, may span sessions.
 
@@ -322,9 +302,8 @@ F032 (adapt gap + phase closing gate) ── independent
 
 | Item | Status |
 |------|--------|
-| `superskill install` hooks already emit for 4 targets | ✅ (F027 surfaces the count) |
+| Phase 4 generation seam (F023) | ✅ (F031 refinement depends on it) |
 | rulesync `HookDefinitionSchema` + per-tool matrix | ✅ (vendored; F029 authors against it) |
-| Phase 4 generation seam (F023) | ⏳ (F031 refinement depends on it) |
 | Phase 3 thin `cc:cc-hooks` skill | ✅ (F029 re-authors it) |
 
 ### Task creation plan

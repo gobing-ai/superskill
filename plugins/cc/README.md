@@ -4,7 +4,7 @@
 
 The `cc` plugin is the canonical Claude Code plugin for the superskill ecosystem. It provides a full lifecycle toolkit (scaffold → validate → evaluate → refine → evolve) for every entity type superskill manages — skills, slash commands, subagents, hooks, and main-agent configs — and ships an anti-hallucination guard that enforces verification-before-generation at the `Stop` hook.
 
-- **Marketplace entry:** `name: "cc"`, `version: "0.1.1"`, `source: "./plugins/cc"` (`.claude-plugin/marketplace.json`)
+- **Marketplace entry:** `name: "cc"`, `version: "0.1.8"`, `source: "./plugins/cc"` (`.claude-plugin/marketplace.json`)
 - **Owner:** Robin Min
 
 ## Directory Layout
@@ -17,8 +17,7 @@ plugins/cc/
 │   ├── cc-commands/                 # Slash command lifecycle (v3.0.0, 6 platforms)
 │   ├── cc-hooks/                    # Multi-agent hook system (v3.0.0, 6 platforms)
 │   ├── cc-magents/                  # Main-agent config (v5.0.0, 15 platforms)
-│   └── cc-skills/                   # Skill lifecycle (v3.0.0, 5 platforms)
-├── commands/                        # Slash command definitions (16)
+├── commands/                        # Slash command definitions (17)
 ├── agents/                          # Expert subagent definitions (5)
 ├── hooks/                           # Hook definitions
 │   └── hooks.json
@@ -61,15 +60,14 @@ The `cc-hooks` skill additionally ships an `examples/` directory with ready-to-u
 
 **Purpose:** Thin slash-command wrappers that parse user arguments and delegate to the corresponding skill. Each command is a user-facing entry point that bridges natural language to skill invocation.
 
-There are **16 commands**, organized as a 4×4 matrix — four lifecycle operations × four entity types:
+There are **17 commands** — four lifecycle operations × four entity types, plus dedicated `hook-evaluate` (hooks are security-critical JSON; scaffold/refine/evolve are handled differently — see design doc):
 
-| Operation | Agent | Command | Magent | Skill |
-|-----------|-------|---------|--------|-------|
-| **add** (scaffold) | `/cc:agent-add` | `/cc:command-add` | `/cc:magent-add` | `/cc:skill-add` |
-| **evaluate** | `/cc:agent-evaluate` | `/cc:command-evaluate` | `/cc:magent-evaluate` | `/cc:skill-evaluate` |
-| **refine** | `/cc:agent-refine` | `/cc:command-refine` | `/cc:magent-refine` | `/cc:skill-refine` |
-| **evolve** | `/cc:agent-evolve` | `/cc:command-evolve` | `/cc:magent-evolve` | `/cc:skill-evolve` |
-
+| Operation | Agent | Command | Magent | Skill | Hook |
+|-----------|-------|---------|--------|-------|------|
+| **add** (scaffold) | `/cc:agent-add` | `/cc:command-add` | `/cc:magent-add` | `/cc:skill-add` | — |
+| **evaluate** | `/cc:agent-evaluate` | `/cc:command-evaluate` | `/cc:magent-evaluate` | `/cc:skill-evaluate` | `/cc:hook-evaluate` |
+| **refine** | `/cc:agent-refine` | `/cc:command-refine` | `/cc:magent-refine` | `/cc:skill-refine` | — |
+| **evolve** | `/cc:agent-evolve` | `/cc:command-evolve` | `/cc:magent-evolve` | `/cc:skill-evolve` | — |
 Each command file contains:
 - YAML frontmatter (`description`, `argument-hint`, `allowed-tools`)
 - A delegation block: `Skill(skill="cc:cc-XXX", args="<op> $ARGUMENTS")`
@@ -152,11 +150,10 @@ The guard checks for:
 ```mermaid
 graph TB
     subgraph "User Entry Points"
-        CMD["Commands<br/>16 slash commands<br/>/cc:skill-add, /cc:agent-evaluate, ..."]
+        CMD["Commands<br/>17 slash commands<br/>/cc:skill-add, /cc:agent-evaluate, ..."]
         AGENT["Agents<br/>5 expert subagents<br/>expert-skill, expert-agent, ..."]
         HOOK["Stop Hook<br/>hooks.json"]
     end
-
     subgraph "Knowledge Layer"
         SKILL_AH["anti-hallucination<br/>Verification protocol"]
         SKILL_AGENTS["cc-agents<br/>Subagent lifecycle"]

@@ -206,12 +206,11 @@ Since ts-ai-runner 0.3.21, `omp`, `hermes`, and `antigravity-cli` are canonical 
 | **OpenClaw agents/hooks** | OpenClaw reads skills from `~/.agents/skills/` (implicitly covered). Dedicated agent YAML config and webhook-based hooks are not managed by superskill. |
 ## Bundled `cc` plugin
 
-superskill ships with a Claude Code plugin at [`plugins/cc/`](plugins/cc/) (marketplace name: `cc`, version `0.1.1`) that demonstrates the full authoring lifecycle and provides the meta-agent skills the expert personas reference:
+superskill ships with a Claude Code plugin at [`plugins/cc/`](plugins/cc/) (marketplace name: `cc`, version `0.1.8`) that demonstrates the full authoring lifecycle and provides the meta-agent skills the expert personas reference:
 
 | Entity | Count | Purpose |
 |--------|-------|---------|
-| **skills** | 6 | `anti-hallucination`, `cc-agents`, `cc-commands`, `cc-hooks`, `cc-magents`, `cc-skills` — domain knowledge for each entity type |
-| **commands** | 16 | 4 operations × 4 entity types — thin slash-command wrappers that delegate to skills |
+| **commands** | 17 | 4 operations × 4 types + `hook-evaluate` — thin slash-command wrappers that delegate to skills |
 | **agents** | 5 | `expert-agent`, `expert-command`, `expert-hook`, `expert-magent`, `expert-skill` — specialist subagents that route to skills |
 | **hooks** | 1 | `Stop` hook running the anti-hallucination guard |
 | **scripts** | 3 | `ah_guard.ts`, `validate_response.ts`, `logger.ts` — deterministic enforcement for the anti-hallucination protocol |

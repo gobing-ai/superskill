@@ -6,7 +6,7 @@
 
 Two layers:
 
-1. **Distribution** — `superskill install` takes a Claude Code plugin and distributes its skills, commands, subagents, hooks, and MCP config to any supported target agent (Claude Code, Codex, Pi, omp, OpenCode, Antigravity, Hermes).
+1. **Distribution** — `superskill install` takes a Claude Code plugin and distributes its skills, commands, subagents, hooks, and MCP config to any supported target agent (Claude Code, Codex, Pi, omp, OpenCode, Antigravity, Hermes, OpenClaw).
 2. **Authoring + quality** — Five type commands (`agent`, `skill`, `command`, `hook`, `magent`) provide scaffold → validate → evaluate → refine → evolve workflows with persistent quality history in SQLite.
 
 ## Documentation map
@@ -54,7 +54,6 @@ flowchart LR
 Each operation is detailed in its command page, including usage, options, implementation architecture, and sequence diagrams.
 
 ## Supported targets
-
 | Target | Engine | Output location |
 |--------|--------|-----------------|
 | `claude` | Direct `claude plugin install` | Claude Code marketplace |
@@ -64,8 +63,8 @@ Each operation is detailed in its command page, including usage, options, implem
 | `opencode` | rulesync | `~/.agents/skills/` |
 | `antigravity-cli` | rulesync | `~/.gemini/antigravity-cli/skills/` |
 | `antigravity-ide` | rulesync | `~/.gemini/config/skills/` |
-| `hermes` | superscript copy (via `opencode` surrogate) | `~/.hermes/skills/` |
-
+| `hermes` | superskill copy (via `opencode` surrogate) | `~/.hermes/skills/` |
+| `openclaw` | implicit (reads `~/.agents/skills/`) | Shared skills root — no dedicated dispatch |
 ## Further reading
 
 The authoritative project docs live in [`docs/`](../):

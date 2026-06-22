@@ -16,8 +16,12 @@ apps/
   cli/          # Commander-based CLI entry (the binary); imports @gobing-ai/superskill-core
 packages/
   core/         # reusable domain logic and no-app operation APIs
+plugins/
+  cc/           # bundled Claude Code plugin (skills, commands, agents, hooks, scripts)
+skills/         # top-level skill directories (distribution artifacts)
 tooling/
   typescript/   # shared tsconfig presets
+vendors/        # reference-only copies of upstream agent source code
 turbo.json      # Turborepo task graph
 ```
 
@@ -76,17 +80,16 @@ touches a command/config/schema keeps `04_DESIGN.md` in sync in the **same commi
 - Imports/exports are auto-sorted by Biome — don't hand-order them.
 - `any` is an **error** (`noExplicitAny`). Narrow the type; if unavoidable, justify with `// biome-ignore`.
 - TS source imports use extensionless relative specifiers. Library builds patch emitted `dist/*.js` after `tsc`.
-- Workspace imports: always use the `@<scope>/*` alias, never deep relative paths into a sibling package.
-
-## Commands
-
 ```bash
-bun run lint       # biome check + turbo run typecheck  (the gate)
-bun run format     # biome check --write                (autofix)
-bun run autofix    # format then turbo typecheck
-bun run test       # turbo run test (all workspaces)
-bun run build      # turbo run build (all workspaces with a build script)
-bun run dev        # turbo run dev (watch / runs the CLI)
+bun run lint       # biome check + typecheck  (the gate)
+bun run format     # biome check --write       (autofix)
+bun run autofix    # format then typecheck
+bun run test       # bun test with coverage
+bun run test:full  # bun test with lcov coverage + snapshots
+bun run build      # compile to standalone binary
+bun run dev        # watch mode (runs CLI from source)
+bun run check      # lint + test (CI gate)
+bun run spur-check # lint + pre-check rules + test + post-check rules
 ```
 
 CLI binary: `apps/cli` exposes `bin: { cli: "./src/index.ts" }`. The `.ts` entry runs only under Bun — plain `node` cannot resolve it. After `bun run build`, the bundled binary lives at `apps/cli/dist/index.js`; if you intend to ship the CLI for Node consumers, repoint `bin` to `./dist/index.js` and run `bun run build` before publishing.
@@ -97,8 +100,7 @@ CLI binary: `apps/cli` exposes `bin: { cli: "./src/index.ts" }`. The `.ts` entry
 2. `bun run test` passes; no test skipped, `.skip`'d, or commented out to go green.
 3. `bun run build` succeeds across all workspaces that declare a `build` script.
 4. `git status` shows only intentional changes.
-
-If a check fails, fix the root cause. **Never** bypass with `--no-verify`, `--force`, or new `biome-ignore` suppressions added solely to silence the gate.
+5. `bun run spur-check` — pre-check rules (22) + post-check rules (coverage-gate + tsdoc-export) all green.
 
 ## Testing
 
