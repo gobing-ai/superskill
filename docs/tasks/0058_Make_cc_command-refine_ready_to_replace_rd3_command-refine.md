@@ -1,20 +1,19 @@
 ---
 name: Make cc command-refine ready to replace rd3 command-refine
 description: Make cc command-refine ready to replace rd3 command-refine
-status: Backlog
-created_at: 2026-06-21T21:05:31.647Z
-updated_at: 2026-06-21T21:05:31.647Z
+status: Done
+updated_at: 2026-06-21T23:30:00.000Z
 folder: docs/tasks
 type: task
 feature-id: ""
 priority: high
 tags: ["cc-commands","refine","dogfood","migration","rd3-parity"]
 impl_progress:
-  planning: pending
-  design: pending
-  implementation: pending
-  review: pending
-  testing: pending
+  planning: complete
+  design: complete
+  implementation: complete
+  review: complete
+  testing: complete
 ---
 
 ## 0058. Make cc command-refine ready to replace rd3 command-refine
@@ -59,20 +58,48 @@ No engine changes beyond 0057 — flag registration + wrapper + tests only. Coor
 
 ### Solution
 
+Consume the 0057 shared-engine fix (R1 reorder + R3 real defaults + R2 --dry-run) for the **command** type:
 
+- **C1 — Register `--dry-run` on `command refine`** (`apps/cli/src/commands/command.ts`): mirror agent.ts. Import `addDryRunOption` from helpers; add `dryRun?: boolean` to `commandRefine` opts and the register action; wrap the refine subcommand registration with `addDryRunOption(...)`; forward `dryRun` into `refine('command', ...)`.
+- **C2 — Wrapper doc-drift fix** (`plugins/cc/commands/command-refine.md`): drop the false "LLM content improvement" claim (refine is structural only); correct `--save` to "Persist the evaluation to the evaluation store" (not "to file"); add `--dry-run` to argument-hint + Arguments table + a preview example. Mirror the post-0057 `agent-refine.md`.
+- **C3 — Command-type regression** (`apps/cli/tests/operations/refine.test.ts`): command's required field set is `['description']`. Add a regression: a command missing `description` (with a body H1) gets a real humanized default, not TODO; refine is monotonic (post >= pre); `--dry-run` leaves the file byte-identical.
 
 ### Plan
 
-1. Consume 0057 engine. 2. Register --dry-run on command.ts. 3. Fix command-refine.md drift. 4. Command-type
-regression (real fix not TODO, --dry-run no write, score monotonic). Gate: lint/test/build/git clean. Do
-NOT flip alias until ship.
-
+- [x] Consume 0057 engine (already landed, Done)
+- [x] Register --dry-run on command.ts refine subcommand (C1)
+- [x] Fix command-refine.md wrapper drift (C2)
+- [x] Add command-type regression test (C3)
+- [x] Sync docs/help/cmd_command.md + docs/help/cmd_agent.md refine section with --dry-run
+- [x] Gate: bun run lint / test / build + git clean
+- [ ] Do NOT flip /command-refine alias until ship + parity confirmed (out of scope for this task)
 
 ### Review
 
+**Verdict: PASS** (SECU + requirements traceability, 2026-06-21)
 
+| # | Acceptance criterion | Evidence |
+|---|---|---|
+| C1 | `--dry-run` on command refine | `command.ts:86,89,226-232`; `command refine --help` lists `--dry-run` |
+| C2 | Wrapper drift fixed | `command-refine.md` rewritten: structural-only claim, "evaluation store", `--dry-run` in hint/table/example |
+| C3a | Broken command → real fix | E2E: missing `description` → `Deploy Prod` (H1-derived), 0.42→0.66, no TODO |
+| C3b | Monotonic (never lower score) | Regression asserts `postScore >= preScore`; E2E +0.25 |
+| C3c | `--dry-run` writes nothing | Regression + E2E: byte-identical, no `.bak` |
+| Docs | CLI surface sync (CLAUDE.md) | `cmd_agent.md` refine table + `cmd_command.md` example carry `--dry-run`; `04_DESIGN.md`/`design-doc-phase2.md` already current via 0057 |
+| Gates | lint/test/build/git | 978/0 tests, lint clean, build OK, 7-file surgical diff |
+| Do-not-drift | No engine changes beyond 0057 | Zero touches to `refine.ts` |
+
+SECU: no new trust-boundary inputs, no error suppression, no secrets, no skipped tests. Monotonic guard inherited from 0057.
 
 ### Testing
+
+- Command: `bun run test` (full suite)
+- Scope: all 58 test files; new cases in `apps/cli/tests/operations/refine.test.ts` (command-type regression) + `apps/cli/tests/commands/command.test.ts` (dryRun forwarding + `--dry-run` flag registration)
+- Result: **978 pass / 0 fail**; coverage 98.63% lines / 99.69% funcs (threshold 90%); `command.ts` 100/100
+- Evidence: artifact://40 (full suite output); E2E smoke — `command refine broken.md --auto` → 0.42→0.66 real fix; `--dry-run` → byte-identical + no backup
+- Lint: `bun run lint` clean; Build: `bun run build` OK (3.43 MB bundle)
+- Next action: none
+
 
 
 

@@ -81,8 +81,9 @@ superskill agent refine <nameOrPath> [options]
 | `-t, --target <agent>` | Target agent formatting rules | `claude` |
 | `--auto` | Apply low-risk fixes without prompting | `false` |
 | `--save` | Persist the post-remediation report to SQLite | `false` |
+| `--dry-run` | Preview classified fixes and projected delta without writing | `false` |
 
-Classifies each validation finding into `auto-apply` (safe defaults like missing `model`), `suggest` (requires judgment), or `flag` (manual review needed). Interactive mode prompts accept/reject/skip/quit per finding when `--auto` is not set.
+Classifies each validation finding into `auto-apply` (safe defaults like missing `model`), `suggest` (requires judgment), or `flag` (manual review needed). Structural auto-apply fixes (missing required fields) run before the validation-error early-return, so a missing-`description` agent is fixed in one step rather than refused. Missing-field defaults are schema-aware (`model`→`inherit`, `tools`→`[]`, `description` humanized from `name`), never `TODO` placeholders — refine is monotonic-or-neutral. Interactive mode prompts accept/reject/skip/quit per finding when `--auto` is not set. `--dry-run` classifies findings and projects the score delta in-memory (no write, no backup).
 
 #### `evolve` — longitudinal improvement
 

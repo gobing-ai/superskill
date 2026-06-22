@@ -7,6 +7,7 @@ import { scaffold } from '../operations/scaffold';
 import { formatValidationResult, validate } from '../operations/validate';
 import {
     addAutoOption,
+    addDryRunOption,
     addEvaluateOptions,
     addEvolveOptions,
     addJsonOption,
@@ -82,9 +83,10 @@ export async function commandRefine(opts: {
     target?: string;
     auto?: boolean;
     save?: boolean;
+    dryRun?: boolean;
 }): Promise<number | undefined> {
     const target = resolveTarget(opts);
-    await refine('command', opts.nameOrPath, { target, auto: opts.auto, save: opts.save });
+    await refine('command', opts.nameOrPath, { target, auto: opts.auto, save: opts.save, dryRun: opts.dryRun });
     return undefined;
 }
 
@@ -221,13 +223,17 @@ export function registerCommand(program: Command): void {
         },
     );
 
-    addSaveOption(
-        addTargetOption(
-            addAutoOption(cmd.command('refine <nameOrPath>').description('Evaluate and auto-fix a command')),
+    addDryRunOption(
+        addSaveOption(
+            addTargetOption(
+                addAutoOption(cmd.command('refine <nameOrPath>').description('Evaluate and auto-fix a command')),
+            ),
         ),
-    ).action(async (nameOrPath: string, opts: { target?: string; auto?: boolean; save?: boolean }) => {
-        await handleCommandRefine({ nameOrPath, ...opts });
-    });
+    ).action(
+        async (nameOrPath: string, opts: { target?: string; auto?: boolean; save?: boolean; dryRun?: boolean }) => {
+            await handleCommandRefine({ nameOrPath, ...opts });
+        },
+    );
 
     addEvolveOptions(
         cmd.command('evolve <name>').description('Longitudinal improvement from evaluation history'),

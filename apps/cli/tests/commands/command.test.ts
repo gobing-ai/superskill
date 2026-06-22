@@ -131,6 +131,18 @@ describe('commandRefine', () => {
         const result = await commandRefine({ nameOrPath: 'my-command', save: true });
         expect(result).toBeUndefined();
     });
+
+    it('forwards dryRun option to the refine operation', async () => {
+        const { commandRefine } = await import('../../src/commands/command');
+        const result = await commandRefine({ nameOrPath: 'my-command', auto: true, dryRun: true });
+        expect(result).toBeUndefined();
+        expect(refineOp.refine).toHaveBeenCalledWith('command', 'my-command', {
+            target: 'claude',
+            auto: true,
+            save: undefined,
+            dryRun: true,
+        });
+    });
 });
 
 describe('commandEvolve', () => {
@@ -297,5 +309,16 @@ describe('registerCommand', () => {
         expect(flagNames).toContain('--history');
         expect(flagNames).toContain('--rollback');
         expect(flagNames).toContain('--confirm');
+    });
+
+    it('registers refine subcommand with --dry-run flag (task 0058 C1)', async () => {
+        const { registerCommand } = await import('../../src/commands/command');
+        const program = new Command();
+        registerCommand(program);
+        const commandCmd = program.commands.find((c: Command) => c.name() === 'command');
+        const refineCmd = commandCmd?.commands.find((c: Command) => c.name() === 'refine');
+        expect(refineCmd).toBeDefined();
+        const refineFlagNames = (refineCmd?.options ?? []).map((o) => o.long);
+        expect(refineFlagNames).toContain('--dry-run');
     });
 });

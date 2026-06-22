@@ -612,6 +612,62 @@ describe('refine — dry-run', () => {
         expect(readFileSync(file, 'utf8')).toBe(before);
     });
 });
+
+// ── refine — command type regression (task 0058) ──────────────────────────────
+
+describe('refine — command type', () => {
+    let tmpDir: string;
+
+    beforeEach(() => {
+        tmpDir = mkdtempSync(join(tmpdir(), 'superskill-refine-command-'));
+        spyOn(process.stdout, 'write').mockImplementation(() => true);
+        spyOn(process.stderr, 'write').mockImplementation(() => true);
+    });
+
+    afterEach(() => {
+        if (tmpDir) rmSync(tmpDir, { recursive: true, force: true });
+    });
+
+    it('fixes a missing-description command with a real default, not TODO (C3, R1+R3)', async () => {
+        // Command's required field set is ['description']. A command missing
+        // description but with a body H1 gets a humanized default derived from
+        // the heading — never a TODO placeholder, and refine is monotonic.
+        const content = `---
+name: deploy
+---
+
+# Deploy Command
+
+You are a deployment specialist. Wrap the deploy workflow.
+`;
+        const file = createTempFile(content, tmpDir);
+        const r = await refine('command', file, { auto: true });
+        // R1: structural auto-apply is reachable — a real fix is applied.
+        expect(r.fixesApplied.length).toBeGreaterThan(0);
+        // R3: the inserted value is schema-aware, never TODO.
+        const after = readFileSync(file, 'utf8');
+        expect(after).toContain('description:');
+        expect(after).not.toContain('TODO');
+        // Monotonic-or-neutral: score never drops.
+        expect(r.postScore).toBeGreaterThanOrEqual(r.preScore);
+    });
+
+    it('--dry-run leaves a command file byte-identical and writes no backup (C3, R2)', async () => {
+        const content = `---
+name: deploy
+---
+
+# Deploy Command
+
+You are a deployment specialist. Wrap the deploy workflow.
+`;
+        const file = createTempFile(content, tmpDir);
+        const before = readFileSync(file, 'utf8');
+        await refine('command', file, { auto: true, dryRun: true });
+        expect(readFileSync(file, 'utf8')).toBe(before);
+        expect(existsSync(`${file}.bak`)).toBe(false);
+    });
+});
 // ── refine — file not found ──────────────────────────────────────────────────
 
 describe('refine — file not found', () => {

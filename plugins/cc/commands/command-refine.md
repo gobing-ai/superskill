@@ -1,6 +1,6 @@
 ---
 description: Evaluate and fix command issues in one step
-argument-hint: "<command-path> [--auto] [--save] [--target <platform>]"
+argument-hint: "<command-path> [--auto] [--save] [--dry-run] [--target <platform>]"
 allowed-tools: ["Read", "Write", "Glob", "Bash", "Skill"]
 ---
 
@@ -8,7 +8,7 @@ allowed-tools: ["Read", "Write", "Glob", "Bash", "Skill"]
 
 Wraps **cc:cc-commands** skill.
 
-Run evaluation, apply deterministic fixes, then perform LLM content improvement — all in one step. Delegates to **cc:cc-commands** skill.
+Run evaluation, apply deterministic structural fixes (missing fields, type coercion, whitespace), then re-evaluate — all in one step. Delegates to **cc:cc-commands** skill.
 
 ## When to Use
 
@@ -21,16 +21,19 @@ Run evaluation, apply deterministic fixes, then perform LLM content improvement 
 |----------|-------------|---------|
 | `command-path` | Path to the command .md file | (required) |
 | `--auto` | Skip interactive prompts (auto-apply fixes) | false |
-| `--save` | Save evaluation results to file | false |
+| `--save` | Persist the evaluation to the evaluation store | false |
+| `--dry-run` | Preview classified fixes and projected delta without writing | false |
 | `--target` | Target platform | claude-code |
 
 ## Examples
 
 ```bash
-# Refine a command
+# Refine a command (evaluate + structural fixes + re-evaluate)
 /cc:command-refine ./commands/my-command.md
 # Auto-refine without prompts
 /cc:command-refine ./commands/my-command.md --auto --save
+# Preview fixes without writing
+/cc:command-refine ./commands/my-command.md --dry-run
 ```
 
 ## Implementation

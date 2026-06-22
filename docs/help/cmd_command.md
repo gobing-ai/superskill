@@ -41,10 +41,11 @@ superskill command evaluate deploy --save
 
 # Auto-fix low-risk findings
 superskill command refine deploy --auto
+# Preview classified fixes without writing
+superskill command refine deploy --dry-run
 
 # Generate a proposal envelope for an external agent to author a rewrite
 superskill command evolve deploy --propose-only --json > proposal-brief.json
-```
 
 ## How it's implemented
 
