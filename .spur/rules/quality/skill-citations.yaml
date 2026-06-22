@@ -2,8 +2,9 @@
 #
 # Catches documentation drift the pure content heuristics cannot see: dead
 # `path:line` code citations and rubric dimension-count claims that disagree
-# with the rubric YAML a skill documents. See scripts/check-skill-citations.ts
-# for the two defect classes and why this lives outside packages/core.
+# with the rubric YAML a skill documents. See the check-skill-citations command
+# in scripts/builder.ts for the two defect classes and why this lives outside
+# packages/core.
 rules:
   - id: skill-citations-resolve
     description: >
@@ -16,6 +17,7 @@ rules:
       config:
         command: bun
         args:
-          - scripts/check-skill-citations.ts
+          - scripts/builder.ts
+          - check-skill-citations
     include:
       - "plugins/**/SKILL.md"

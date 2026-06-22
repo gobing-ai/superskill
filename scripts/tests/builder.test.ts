@@ -1,10 +1,5 @@
 import { describe, expect, it } from 'bun:test';
-import {
-    checkCitations,
-    checkDimensionDrift,
-    countRubricDimensions,
-    type FileResolver,
-} from '../check-skill-citations';
+import { checkCitations, checkDimensionDrift, countRubricDimensions, type FileResolver } from '../builder';
 
 /** In-memory resolver: any path in `present` exists with the given line count. */
 function fakeFs(present: Record<string, number>): FileResolver {
