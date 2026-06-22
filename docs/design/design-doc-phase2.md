@@ -52,6 +52,7 @@ YAML frontmatter structure plus placeholder body sections. `--template` selects 
 defaults so the scaffolded artifact starts with the requested skill/tool list.
 
 **Tier names per type** (all ship a `default.md` fallback tier):
+- `skill`: `technique` / `pattern` / `reference`
 - `agent`: `minimal` / `standard` / `specialist`
 - `command`: `simple` / `workflow` / `plugin`
 
@@ -60,15 +61,16 @@ by user templates at `~/.superskill/templates/<type>/`. If a user template exist
 the same tier name, it wins.
 
 **What it produces** (for `skill`):
-```markdown
----
-name: <name>
-description: <description or placeholder>
----
 
-# <name>
+Skills are **directory-based**: scaffold writes `<name>/SKILL.md` inside a directory
+(not a flat `<name>.md`). All other types (agent, command, hook, magent) remain flat
+`<name>.md` files. The enriched default template PASSes the project's own evaluator
+out of the box.
 
-<!-- TODO: skill body -->
+```
+<output>/
+  └── <name>/
+      └── SKILL.md
 ```
 
 ### 2.2 `validate` — structural + schema check
@@ -516,7 +518,7 @@ Five operations and five quality evaluators all read frontmatter, derive a conte
 | `content/frontmatter.ts` | `parseFrontmatter(content: string): { data: Record<string, unknown>, body: string, raw: string }` | Splits the `---`-delimited block; `data` is the parsed object (`yaml.parse`), `body` is everything after, `raw` is the original frontmatter text. Throws `FrontmatterError` on malformed YAML (callers convert to a validation finding). |
 | `content/frontmatter.ts` | `applyFrontmatterChange(content: string, mutate: (doc: yaml.Document) => void): string` | Round-trips via `yaml.parseDocument` so comments and key order survive. |
 | `content/identity.ts` | `resolveContentName(path: string): string` | Strips directory and `.md`; `SKILL.md` → parent dir name. The canonical `content_name` for store rows, queries, and proposal paths. |
-| `content/identity.ts` | `resolveContentPath(type: ContentType, name: string, opts: { target?: Target }): string` | Name → file path. Looks in cwd, then target-specific locations. If `name` is already a path to an existing file, returns it unchanged. |
+| `content/identity.ts` | `resolveContentPath(type: ContentType, name: string, opts: { target?: Target }): string` | Name → file path. Looks in cwd, then target-specific locations. For `skill`, also resolves the directory form `<cwd>/<name>/SKILL.md`. If `name` is already a path to an existing file or directory, returns it (directories resolved to `<dir>/SKILL.md`). |
 | `content/hash.ts` | `hashContent(filePath: string): string` | SHA-256 hex of the file bytes (`Bun.CryptoHasher` / `node:crypto`). The single source of `file_hash`. |
 | `content/edit.ts` | `applyChange(content: string, change: Change): string` | The **one** mutation primitive used by both refine and evolve. `Change` is `{ kind: 'frontmatter', key, value }` (round-trip edit) or `{ kind: 'text', current, proposed }` (locate + replace nearest match). |
 | `content/paths.ts` | `getDataRoot(opts?: { projectRoot?: string }): string` | Returns `<projectRoot>` when given; else `<cwd>` if `<cwd>/.superskill/` exists; else `homedir()`. The single store/proposals location rule (ADR-013). |

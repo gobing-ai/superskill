@@ -15,20 +15,20 @@ describe('scaffold', () => {
         if (tmpDir) rmSync(tmpDir, { recursive: true, force: true });
     });
 
-    it('creates a skill file with substituted variables', async () => {
+    it('creates a skill directory with SKILL.md and substituted variables', async () => {
         const filePath = await scaffold('skill', 'my-skill', {
             description: 'A test skill',
             output: tmpDir,
         });
 
-        expect(filePath).toBe(join(tmpDir, 'my-skill.md'));
+        // Skills are directory-based: <name>/SKILL.md
+        expect(filePath).toBe(join(tmpDir, 'my-skill', 'SKILL.md'));
         expect(existsSync(filePath)).toBe(true);
 
         const content = readFileSync(filePath, 'utf-8');
         expect(content).toContain('name: my-skill');
         expect(content).toContain('description: A test skill');
         expect(content).toContain('# my-skill');
-        expect(content).toContain('<!-- TODO: skill body -->');
         // Verify <!-- NAME --> was replaced
         expect(content).not.toContain('<!-- NAME -->');
     });
@@ -99,14 +99,17 @@ describe('scaffold', () => {
     });
 
     it('throws when file exists without force', async () => {
-        const filePath = join(tmpDir, 'my-skill.md');
+        const skillDir = join(tmpDir, 'my-skill');
+        mkdirSync(skillDir, { recursive: true });
+        const filePath = join(skillDir, 'SKILL.md');
         writeFileSync(filePath, 'existing content');
 
         await expect(scaffold('skill', 'my-skill', { output: tmpDir })).rejects.toThrow('already exists');
     });
-
     it('overwrites when force is true', async () => {
-        const filePath = join(tmpDir, 'my-skill.md');
+        const skillDir = join(tmpDir, 'my-skill');
+        mkdirSync(skillDir, { recursive: true });
+        const filePath = join(skillDir, 'SKILL.md');
         writeFileSync(filePath, 'existing content');
 
         const result = await scaffold('skill', 'my-skill', {
@@ -313,5 +316,85 @@ describe('scaffold', () => {
             const report = evaluateCommand(content, 'claude');
             expect(report.aggregate).toBeGreaterThanOrEqual(0.7);
         }
+    });
+    // ── S3/S5: skill template tiers and scaffold→evaluate regressions ──
+
+    it('resolves a named skill template tier (--template technique)', async () => {
+        const filePath = await scaffold('skill', 'tiered-skill', {
+            description: 'Technique skill',
+            output: tmpDir,
+            template: 'technique',
+        });
+
+        // Skills are directory-based
+        expect(filePath).toBe(join(tmpDir, 'tiered-skill', 'SKILL.md'));
+        const content = readFileSync(filePath, 'utf-8');
+        expect(content).toContain('Template type**: technique');
+        expect(content).toContain('## Workflow');
+    });
+
+    it('resolves the pattern skill template tier (--template pattern)', async () => {
+        const filePath = await scaffold('skill', 'pattern-skill', {
+            description: 'Pattern skill',
+            output: tmpDir,
+            template: 'pattern',
+        });
+
+        const content = readFileSync(filePath, 'utf-8');
+        expect(content).toContain('Template type**: pattern');
+        expect(content).toContain('## Core principles');
+    });
+
+    it('resolves the reference skill template tier (--template reference)', async () => {
+        const filePath = await scaffold('skill', 'ref-skill', {
+            description: 'Reference skill',
+            output: tmpDir,
+            template: 'reference',
+        });
+
+        const content = readFileSync(filePath, 'utf-8');
+        expect(content).toContain('Template type**: reference');
+        expect(content).toContain('## Quick reference');
+    });
+
+    it('errors clearly on an unknown skill template tier', async () => {
+        await expect(
+            scaffold('skill', 'bad-skill-tier', {
+                description: 'x',
+                output: tmpDir,
+                template: 'nonexistent-tier',
+            }),
+        ).rejects.toThrow('Unknown template tier "nonexistent-tier"');
+    });
+
+    it('passes its own evaluator for every skill tier (scaffold→evaluate ≥ 0.7)', async () => {
+        const { evaluateSkill } = await import('../../src/quality/skill');
+        const tiers = ['default', 'technique', 'pattern', 'reference'] as const;
+        for (const tier of tiers) {
+            const filePath = await scaffold('skill', `skill-eval-${tier}`, {
+                description: `Evaluation target for ${tier} skill tier`,
+                output: tmpDir,
+                template: tier === 'default' ? undefined : tier,
+                force: true,
+            });
+            const content = readFileSync(filePath, 'utf-8');
+            const report = evaluateSkill(content, `skill-eval-${tier}`);
+            expect(report.aggregate).toBeGreaterThanOrEqual(0.7);
+        }
+    });
+
+    it('resolveContentPath finds skill directory form after scaffold', async () => {
+        const { resolveContentPath } = await import('../../src/content/identity');
+        const filePath = await scaffold('skill', 'resolvable-skill', {
+            description: 'Resolvable skill',
+            output: tmpDir,
+        });
+
+        // The scaffolded path is <tmpDir>/resolvable-skill/SKILL.md
+        expect(filePath).toBe(join(tmpDir, 'resolvable-skill', 'SKILL.md'));
+
+        // Bare-name resolution from tmpDir should find the directory form
+        const resolved = resolveContentPath('skill', 'resolvable-skill', { baseDir: tmpDir });
+        expect(resolved).toBe(filePath);
     });
 });

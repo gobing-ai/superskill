@@ -190,7 +190,13 @@ export async function scaffold(type: ContentType, name: string, opts: ScaffoldOp
 
     const outDir = opts.output ?? cwd();
     mkdirSync(outDir, { recursive: true });
-    const filePath = join(outDir, `${name}.md`);
+
+    // Skills are directory-based: write <name>/SKILL.md inside a directory.
+    // All other types remain flat <name>.md files.
+    const filePath = type === 'skill' ? join(outDir, name, 'SKILL.md') : join(outDir, `${name}.md`);
+    if (type === 'skill') {
+        mkdirSync(join(outDir, name), { recursive: true });
+    }
 
     if (existsSync(filePath) && !opts.force) {
         throw new Error(`${filePath} already exists — pass --force to overwrite`);

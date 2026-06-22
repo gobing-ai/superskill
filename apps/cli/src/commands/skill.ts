@@ -29,6 +29,9 @@ export async function skillScaffold(opts: {
     target?: string;
     output?: string;
     force?: boolean;
+    template?: string;
+    skills?: string;
+    tools?: string;
 }): Promise<number | undefined> {
     const target = resolveTarget(opts);
     const createdPath = await scaffold('skill', opts.name, {
@@ -36,6 +39,9 @@ export async function skillScaffold(opts: {
         target,
         output: opts.output,
         force: opts.force,
+        template: opts.template,
+        skills: opts.skills,
+        tools: opts.tools,
     });
     echo(`Created: ${createdPath}`);
     return undefined;
@@ -131,7 +137,15 @@ export async function skillEvolve(opts: {
 /** Run skill scaffold as a CLI action. */
 export async function handleSkillScaffold(
     name: string,
-    opts: { description?: string; target?: string; output?: string; force?: boolean },
+    opts: {
+        description?: string;
+        target?: string;
+        output?: string;
+        force?: boolean;
+        template?: string;
+        skills?: string;
+        tools?: string;
+    },
 ): Promise<void> {
     await runOperation(() => skillScaffold({ name, ...opts }));
 }

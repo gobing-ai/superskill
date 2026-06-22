@@ -63,6 +63,12 @@ export function resolveContentPath(type: ContentType, name: string, opts?: Resol
     const asIs = join(base, name);
     if (existsSync(asIs) && statSync(asIs).isFile()) return asIs;
 
+    // Skills are directory-based: resolve <base>/<name>/SKILL.md before flat .md
+    if (type === 'skill') {
+        const skillDirForm = join(base, name, 'SKILL.md');
+        if (existsSync(skillDirForm)) return skillDirForm;
+    }
+
     // Direct match: baseDir/<name>.md
     const direct = join(base, `${name}.md`);
     if (existsSync(direct)) return direct;
