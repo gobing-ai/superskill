@@ -42,7 +42,11 @@ describe('scaffold', () => {
 
         const content = readFileSync(filePath, 'utf-8');
         expect(content).toContain('target: codex');
-        expect(content).toContain('```text\n/deploy\n```');
+        // Name is substituted into a slash-syntax invocation block
+        expect(content).toContain('/deploy');
+        // Enriched default template ships argument-hint + allowed-tools (completeness signals)
+        expect(content).toContain('argument-hint:');
+        expect(content).toContain('allowed-tools:');
     });
 
     it('creates an agent file with model alias', async () => {
@@ -256,6 +260,45 @@ describe('scaffold', () => {
             });
             const content = readFileSync(filePath, 'utf-8');
             const report = evaluateAgent(content, filePath);
+            expect(report.aggregate).toBeGreaterThanOrEqual(0.7);
+        }
+    });
+
+    it('resolves a named command template tier (--template workflow)', async () => {
+        const filePath = await scaffold('command', 'tiered-command', {
+            description: 'Workflow command',
+            output: tmpDir,
+            template: 'workflow',
+        });
+
+        const content = readFileSync(filePath, 'utf-8');
+        // workflow.md ships 6 allowed-tools (includes Task + Skill); simple/plugin ship 4
+        expect(content).toContain('Task');
+        expect(content).toContain('orchestrates a multi-stage');
+    });
+
+    it('errors clearly on an unknown command template tier', async () => {
+        await expect(
+            scaffold('command', 'bad-cmd-tier', {
+                description: 'x',
+                output: tmpDir,
+                template: 'nonexistent-tier',
+            }),
+        ).rejects.toThrow('Unknown template tier "nonexistent-tier"');
+    });
+
+    it('passes its own evaluator for every command tier (scaffold→evaluate ≥ 0.7)', async () => {
+        const { evaluateCommand } = await import('../../src/quality/command');
+        const tiers = ['default', 'simple', 'workflow', 'plugin'] as const;
+        for (const tier of tiers) {
+            const filePath = await scaffold('command', `cmd-eval-${tier}`, {
+                description: `Evaluation target for ${tier} command tier`,
+                output: tmpDir,
+                template: tier === 'default' ? undefined : tier,
+                force: true,
+            });
+            const content = readFileSync(filePath, 'utf-8');
+            const report = evaluateCommand(content, 'claude');
             expect(report.aggregate).toBeGreaterThanOrEqual(0.7);
         }
     });

@@ -27,6 +27,9 @@ export async function commandScaffold(opts: {
     target?: string;
     output?: string;
     force?: boolean;
+    template?: string;
+    skills?: string;
+    tools?: string;
 }): Promise<number | undefined> {
     const target = resolveTarget(opts);
     const createdPath = await scaffold('command', opts.name, {
@@ -34,6 +37,9 @@ export async function commandScaffold(opts: {
         target,
         output: opts.output,
         force: opts.force,
+        template: opts.template,
+        skills: opts.skills,
+        tools: opts.tools,
     });
     echo(`Created: ${createdPath}`);
     return undefined;
@@ -131,6 +137,9 @@ export async function handleCommandScaffold(opts: {
     target?: string;
     output?: string;
     force?: boolean;
+    template?: string;
+    skills?: string;
+    tools?: string;
 }): Promise<void> {
     await runOperation(() => commandScaffold(opts));
 }
@@ -163,6 +172,7 @@ export async function handleCommandRefine(opts: {
     target?: string;
     auto?: boolean;
     save?: boolean;
+    dryRun?: boolean;
 }): Promise<void> {
     await runOperation(() => commandRefine(opts));
 }
@@ -191,7 +201,18 @@ export function registerCommand(program: Command): void {
     const cmd = program.command('command').description('Manage command definitions');
 
     addScaffoldOptions(cmd.command('scaffold <name>').description('Create a new command from template')).action(
-        async (name: string, opts: { description?: string; target?: string; output?: string; force?: boolean }) => {
+        async (
+            name: string,
+            opts: {
+                description?: string;
+                target?: string;
+                output?: string;
+                force?: boolean;
+                template?: string;
+                skills?: string;
+                tools?: string;
+            },
+        ) => {
             await handleCommandScaffold({ name, ...opts });
         },
     );

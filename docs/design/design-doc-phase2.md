@@ -39,7 +39,7 @@ Options:
   --description <text>  Skill description
   --target <agent>      Generate for a specific agent (default: claude)
   --output <dir>        Write to a directory (default: cwd)
-  --template <tier>     Template tier (e.g. minimal / standard / specialist)
+  --template <tier>     Template tier; names are type-specific (see below)
   --skills <list>       Comma-separated skill names to pre-populate frontmatter
   --tools <list>        Comma-separated tool names to pre-populate frontmatter
   --force               Overwrite an existing file
@@ -50,6 +50,10 @@ YAML frontmatter structure plus placeholder body sections. `--template` selects 
 (`--template specialist` resolves `templates/<type>/specialist.md`); omitting it uses
 `templates/<type>/default.md`. `--skills`/`--tools` override the template's frontmatter
 defaults so the scaffolded artifact starts with the requested skill/tool list.
+
+**Tier names per type** (all ship a `default.md` fallback tier):
+- `agent`: `minimal` / `standard` / `specialist`
+- `command`: `simple` / `workflow` / `plugin`
 
 **Template location**: Shipped with the npm package at `templates/<type>/`. Overridable
 by user templates at `~/.superskill/templates/<type>/`. If a user template exists with
