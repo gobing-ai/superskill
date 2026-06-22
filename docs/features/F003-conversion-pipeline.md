@@ -38,12 +38,12 @@ The bash scripts in cc-agents/scripts do these transformations by hand with rege
 - Applied to ALL targets
 - Regex: `/\b(rd3|wt):([a-z][a-z0-9-]*)/g` → `$1-$2`
 
-### `pipeline/pi-subagent.ts`
+### `pipeline/adapt-subagent.ts`
 
-- `convertToPiSubagent(content: string): string` — Skills 2.0 YAML → Pi native agent YAML
-- Applied only to Pi target subagents
-- Frontmatter transformation: `tools:` → CSV, `model: inherit` → removed, `skill:` field remapped
-- References `@gobing-ai/ts-ai-runner` for tool name normalization
+- `adaptSubagentToPi(source, expectedName, pluginPrefix, skillExists): string` — Skills 2.0 YAML → Pi native agent YAML
+- Applied only to Pi target subagents (`install.ts` dispatches it for `pi`/`omp`)
+- Frontmatter transformation: `tools:` → CSV, `model: inherit` → removed, `skill:` field remapped (filtered to existing skills via the injected `skillExists` predicate)
+- Tool-name normalization primitives live in `pipeline/pi-tools.ts`
 
 ### Target → AgentName bridge (for slash translation)
 

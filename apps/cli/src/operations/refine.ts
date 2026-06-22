@@ -151,10 +151,15 @@ function readFrontmatterName(content: string): string | null {
 
 /** Extract the text of the first `# ` heading in the body, or `null`. */
 function extractFirstHeading(content: string): string | null {
-    const bodyStart = content.indexOf('---', 3);
-    const body = bodyStart === -1 ? content : content.slice(bodyStart + 3);
-    const match = /^\s*#\s+(.+?)\s*$/m.exec(body);
-    return match?.[1] ? match[1].trim() : null;
+    // Find the body after a bare `---` closing line (matching the core frontmatter
+    // parser), so a body line like `---note` is not treated as the delimiter.
+    let body = content;
+    if (content.startsWith('---\n')) {
+        const closer = content.slice(4).match(/\n---(?=\n|$)/);
+        if (closer?.index !== undefined) body = content.slice(closer.index + 4 + 4);
+    }
+    const headingMatch = /^\s*#\s+(.+?)\s*$/m.exec(body);
+    return headingMatch?.[1] ? headingMatch[1].trim() : null;
 }
 
 /** Turn a slug (`code-reviewer`) into a readable label (`Code reviewer`). */

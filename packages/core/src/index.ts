@@ -29,7 +29,6 @@ export * from './operations/validate';
 export * from './pipeline/adapt-command';
 export * from './pipeline/adapt-subagent';
 export * from './pipeline/frontmatter-walk';
-export * from './pipeline/pi-subagent';
 export * from './pipeline/pi-tools';
 export * from './pipeline/rewrite-references';
 export * from './pipeline/slash-command';

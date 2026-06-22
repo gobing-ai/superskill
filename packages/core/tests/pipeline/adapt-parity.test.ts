@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'bun:test';
 import { adaptCommandToSkill } from '../../src/pipeline/adapt-command';
 import { adaptSubagentToPi, adaptSubagentToSkill } from '../../src/pipeline/adapt-subagent';
-import { convertToPiSubagent } from '../../src/pipeline/pi-subagent';
 import { rewriteSkillReferences } from '../../src/pipeline/rewrite-references';
 import { translateSlashCommands } from '../../src/pipeline/slash-command';
 import type { Target } from '../../src/targets';
@@ -242,7 +241,7 @@ You are a helper. Use rd3:dev-run.`;
             expect(typeof translateSlashCommands).toBe('function');
             expect(typeof adaptCommandToSkill).toBe('function');
             expect(typeof adaptSubagentToSkill).toBe('function');
-            expect(typeof convertToPiSubagent).toBe('function');
+            expect(typeof adaptSubagentToPi).toBe('function');
 
             // Pure: same input → same output, no side effects
             const input = 'Use rd3:dev-run';

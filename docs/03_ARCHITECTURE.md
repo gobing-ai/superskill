@@ -95,8 +95,7 @@ packages/core/src/                # ── Reusable domain logic (@gobing-ai/sup
 │   ├── adapt-command.ts          # Adapt Claude command .md → Skills 2.0 skill entry
 │   ├── adapt-subagent.ts         # Adapt Claude subagent .md → skill entry / Pi native agent
 │   ├── frontmatter-walk.ts       # Shared frontmatter-block walker for the adapt-* stages
-│   ├── pi-subagent.ts            # pi subagent conversion stage
-│   ├── pi-tools.ts               # Claude → Pi tool-name normalization
+│   ├── pi-tools.ts               # Claude → Pi tool-name normalization + skill-ref extraction
 │   ├── rewrite-references.ts     # Rewrite scoped plugin:name colon references
 │   └── slash-command.ts          # Slash-dialect translation mappings
 │
@@ -280,7 +279,7 @@ Carried from cc-agents/scripts. Pipeline stages are pure functions per invariant
 | `rewriteColonRefs` | all prose | `plugin:command` → `plugin-command` |
 | `translateSlashCommand` | commands | `/plugin:cmd` → per-agent dialect (delegates to `@gobing-ai/ts-ai-runner`); superskill `Target` is bridged to `AgentName` via `TARGET_TO_AGENT_NAME` (ADR-009 amendment) |
 | `normalizeFrontmatter` | commands, subagents | Inject `name:`, normalize `allowed-tools:` |
-| `convertToPiSubagent` | Pi subagents | Skills 2.0 → Pi native agent YAML |
+| `adaptSubagentToPi` | Pi subagents | Skills 2.0 → Pi native agent YAML (skill refs filtered to existing skills) |
 
 `translateSlashCommand` accepts a ts-ai-runner `AgentName`, not a superskill `Target`; the two sets are disjoint on `antigravity-cli`/`antigravity-ide`/`hermes`/`omp`. `TARGET_TO_AGENT_NAME` (in [targets.ts](file:///Users/robin/xprojects/superskill/packages/core/src/targets.ts), consumed by [config.ts](file:///Users/robin/xprojects/superskill/apps/cli/src/config.ts)) bridges them: `omp→pi`, the antigravity/hermes targets fall to the function's `default` branch (`/plugin-command`).
 

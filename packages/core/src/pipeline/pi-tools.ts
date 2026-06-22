@@ -1,9 +1,8 @@
 /**
- * Pi tool-name normalization.
+ * Pi tool-name normalization and skill-reference extraction.
  *
- * Extracted from the monolithic `pi-subagent.ts` so the mapper and install pipeline
- * can share the canonical mapping without importing Pi-subagent-specific logic.
- * Mirrors `common.sh:189-324`.
+ * The canonical home for Pi conversion primitives shared by the mapper and the
+ * install pipeline (`adaptSubagentToPi`). Mirrors `common.sh:189-324`.
  */
 
 /** Map Claude Code tool names to Pi tool names. Some expand to multiple tokens. */
@@ -45,6 +44,16 @@ export function expandPiToolName(raw: string): string {
     if (DROPPED_TOOLS.has(trimmed)) return '';
     if (trimmed.startsWith('mcp__') || trimmed.startsWith('mcp:')) return 'mcp';
     return PI_TOOL_MAP[trimmed] ?? '';
+}
+
+/** Extract colon-separated skill references from prose text (`plugin:name` → `plugin-name`), deduplicated. */
+export function extractSkillsFromBody(body: string): string[] {
+    const matches = body.matchAll(/\b([a-z][a-z0-9-]*):([a-z][a-z0-9-]*)\b/gi);
+    const skills = new Set<string>();
+    for (const m of matches) {
+        skills.add(`${m[1]}-${m[2]}`);
+    }
+    return [...skills];
 }
 
 /** Parse a YAML list value (e.g. `[Read, Write]`) into an array of trimmed strings. */
