@@ -1,9 +1,9 @@
 ---
 name: Make cc command-add ready to replace rd3 command-add
 description: Make cc command-add ready to replace rd3 command-add
-status: Testing
+status: Done
 created_at: 2026-06-21T21:14:01.215Z
-updated_at: 2026-06-22T00:09:57.525Z
+updated_at: 2026-06-22T00:12:03.617Z
 folder: docs/tasks
 type: task
 feature-id: ""
