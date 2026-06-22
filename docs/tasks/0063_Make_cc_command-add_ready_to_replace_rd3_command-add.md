@@ -92,25 +92,17 @@ Gate: lint/test/build/git clean. Do NOT flip alias until ship.
 
 ### Review
 
-## Review — 2026-06-22
+_2026-06-22_
 
-**Status:** 0 findings
-**Scope:** `apps/cli/src/commands/command.ts`, `apps/cli/src/templates/command/{default,simple,workflow,plugin}.md`, `plugins/cc/commands/command-add.md`, `packages/core/tests/operations/scaffold.test.ts`, `docs/design/design-doc-phase2.md`
-**Mode:** verify (Phase 7 SECU + Phase 8 traceability)
-**Channel:** inline (current)
-**Gate:** `bun run lint` clean · `bun run test` 981/981 · `bun run build` success · git clean (0063-scoped changes only; one pre-existing uncommitted 0058 re-verification diff left untouched)
+**Status:** 0 findings · **Scope:** `apps/cli/src/commands/command.ts`, `apps/cli/src/templates/command/{default,simple,workflow,plugin}.md`, `plugins/cc/commands/command-add.md`, `packages/core/tests/operations/scaffold.test.ts`, `docs/design/design-doc-phase2.md` · **Mode:** verify (Phase 7 SECU + Phase 8 traceability) · **Channel:** inline (current) · **Gate:** `bun run lint` clean · `bun run test` 981/981 · `bun run build` success
 
-### P1 — Blockers
-_None._
+**P1 — Blockers:** _None._
 
-### P2 — Warnings
-_None._
+**P2 — Warnings:** _None._
 
-### P3 — Info
-_None._
+**P3 — Info:** _None._
 
-### P4 — Suggestions
-_None._
+**P4 — Suggestions:** _None._
 
 **Phase 7 (SECU):** No security findings. No untrusted input handling, no dynamic code eval, no new network/filesystem surface. The `commandScaffold` opt-forwarding addition reuses the existing `scaffold()` engine path already audited in 0062; no new code paths introduced — only signature widening and template content.
 
@@ -127,7 +119,7 @@ _None._
 
 **Deployment discipline:** alias NOT flipped — parity confirmed but global binary must ship first (matches 0062 policy; tracked separately).
 
-**Verification verdict: PASS** — no P1/P2/P3/P4 findings; all acceptance criteria MET with live evidence; gates green.
+**Verdict: PASS** — no P1/P2/P3/P4 findings; all acceptance criteria MET with live evidence; gates green.
 
 
 ### Testing
