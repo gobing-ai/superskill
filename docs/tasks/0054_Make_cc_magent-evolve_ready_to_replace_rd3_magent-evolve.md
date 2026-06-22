@@ -10,11 +10,11 @@ feature-id: ""
 priority: high
 tags: ["cc-magents","evolve","dogfood","migration","rd3-parity"]
 impl_progress:
-  planning: pending
-  design: pending
-  implementation: pending
-  review: pending
-  testing: pending
+  planning: completed
+  design: completed
+  implementation: completed
+  review: completed
+  testing: completed
 ---
 
 ## 0054. Make cc magent-evolve ready to replace rd3 magent-evolve
@@ -111,6 +111,24 @@ magent-type regression block matching the command-type block added in 0053.
 
 ## Review
 
+_2026-06-22T00:44:40Z, forced re-verify (`rd3-dev-verify 0054 --auto --fix all --force`)_
+
+**Verdict: PASS after fix pass.** One current-tree syntax blocker in
+`apps/cli/src/commands/magent.ts` prevented the gate from starting cleanly: the pre-existing
+`magent refine --dry-run` wiring had been inserted before closing the preceding `magent evaluate`
+`.action(...)` call. Fixed by inserting the missing `);` while preserving the dry-run wiring.
+
+**SECU findings after fix:** 0 P1, 0 P2, 0 P3, 0 P4. Security, efficiency, correctness, and usability
+review of the 0054 scope found no remaining issues. `magent evolve --help` exposes `--analyze`,
+`--history`, `--rollback`, and `--confirm`; frontmatter-less magent tests still prove body-targeted
+proposals, no bogus `frontmatter.description`, JSON envelope no-crash, history, and rollback.
+
+**Requirements traceability:** MET. M1 flag forwarding is present in `magentEvolve`,
+`handleMagentEvolve`, and the Commander action option type. M2 frontmatter-less behavior is present in
+`generateChanges`, `computeBaselineAnchorHash`, `emitGenerationEnvelope`, and the text-apply path.
+M3 wrapper drift is fixed in `plugins/cc/commands/magent-evolve.md`. M4 regression coverage is present
+in `apps/cli/tests/operations/evolve.test.ts`.
+
 _2026-06-22, dev-run, inline verify_
 
 
@@ -150,6 +168,10 @@ No engine rewrite beyond the additive frontmatter-less guard. Reused F024 (runGa
 
 ### Testing
 
+- **Command:** `bun run lint`; `bun run test`; `bun run build`; `bun apps/cli/src/index.ts magent evolve --help` (Ran at 2026-06-22T00:44:40Z)
+- **Result:** PASS — lint/typecheck clean; full suite 992/992 tests, 0 failures, 2469 `expect()` calls, coverage 99.69% funcs / 98.76% lines; build bundled 768 modules; help output lists `--analyze`, `--history`, `--rollback`, and `--confirm`.
+- **Focused note:** `bun test apps/cli/tests/operations/evolve.test.ts` functionally passed 59/59 tests, including all 0054 magent tests, but exited 1 because the repo coverage threshold is enforced on focused single-file runs. The full `bun run test` gate passed.
+
 - **Command:** `bun run lint && bun run test && bun run build` (Ran at 2026-06-22T00:35:00Z)
 - **Scope:** Full project — 990 tests across 58 files, coverage gate (90/90), Biome lint, TypeScript
   typecheck, Bun bundle build. Evolve-specific: 59 tests in `evolve.test.ts` (was 50; +9 new for 0054).
@@ -174,5 +196,4 @@ No engine rewrite beyond the additive frontmatter-less guard. Reused F024 (runGa
 | ---- | ---- | ----- | ---- |
 
 ### References
-
 
