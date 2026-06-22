@@ -24,60 +24,100 @@ function fail(msg: string): never {
     console.error(msg);
     process.exit(1);
 }
-
-async function bumpVersion(ver: string, shouldPush: boolean) {
+/** Validates a semver string; returns null when valid, error message when invalid. */
+export function validateVersion(ver: string): string | null {
     if (!/^\d+\.\d+\.\d+(-.+)?$/.test(ver)) {
-        fail(`Invalid version: ${ver}. Use semver (e.g. 0.1.0, 0.2.0-beta.1).`);
+        return `Invalid version: ${ver}. Use semver (e.g. 0.1.0, 0.2.0-beta.1).`;
     }
+    return null;
+}
+
+/** Compute the git tag name for a version. */
+export function computeTag(ver: string): string {
+    return `${PKG_NAME}-v${ver}`;
+}
+
+export interface BumpResult {
+    /** Updated marketplace JSON string (null if marketplace absent). */
+    marketplace: string | null;
+    /** Relative paths modified (e.g. "plugins/cc/plugin.json"). */
+    paths: string[];
+}
+
+/**
+ * Pure: given marketplace JSON text and a version, update all plugin
+ * entry versions and their plugin.json manifests. Returns the updated marketplace
+ * text and the set of relative paths modified. Does no I/O.
+ */
+export function bumpMarketplaceManifests(marketplaceText: string | null, ver: string): BumpResult {
+    const paths: string[] = [];
+    if (marketplaceText === null) return { marketplace: null, paths };
+
+    const marketplace = JSON.parse(marketplaceText);
+    const plugins: Array<{ name: string; version: string; source: string }> = marketplace.plugins ?? [];
+    let mpUpdated = false;
+    for (const entry of plugins) {
+        if (entry.version !== ver) {
+            entry.version = ver;
+            mpUpdated = true;
+        }
+    }
+    const mpText = `${JSON.stringify(marketplace, null, 4)}\n`;
+
+    for (const entry of plugins) {
+        if (entry.version !== ver) continue; // already at version → skip plugin.json
+        // We can't check plugin.json without I/O, so we always report the path.
+        // The caller handles existence checking and actual writes.
+        paths.push(`${entry.source}/plugin.json`);
+    }
+
+    return { marketplace: mpUpdated ? mpText : marketplaceText, paths };
+}
+
+/** Pure: given package.json text and a version, return the updated JSON string. */
+export function bumpPackageVersion(jsonText: string, ver: string): { updated: string; oldVer: string } {
+    const pkg = JSON.parse(jsonText) as { version: string };
+    const oldVer = pkg.version;
+    pkg.version = ver;
+    return { updated: `${JSON.stringify(pkg, null, 4)}\n`, oldVer };
+}
+async function bumpVersion(ver: string, shouldPush: boolean) {
+    const err = validateVersion(ver);
+    if (err) fail(err);
 
     const pathsToAdd: string[] = [];
-
     // 1. apps/cli/package.json
-    const pkg = JSON.parse(readFileSync(PKG_PATH, 'utf-8'));
-    const oldVer = pkg.version;
-
-    pkg.version = ver;
-    writeFileSync(PKG_PATH, `${JSON.stringify(pkg, null, 4)}\n`);
+    const { updated: pkgUpdated, oldVer } = bumpPackageVersion(readFileSync(PKG_PATH, 'utf-8'), ver);
+    writeFileSync(PKG_PATH, pkgUpdated);
     pathsToAdd.push(PKG_PATH);
-
     console.log(`Bumped ${PKG_NAME}: ${oldVer} → ${ver}`);
 
-    // 2. .claude-plugin/marketplace.json — update version for each plugin entry
     const marketplacePath = resolve(ROOT, '.claude-plugin/marketplace.json');
-    if (existsSync(marketplacePath)) {
-        const marketplace = JSON.parse(readFileSync(marketplacePath, 'utf-8'));
-        const plugins: Array<{ name: string; version: string; source: string }> = marketplace.plugins ?? [];
-        let mpUpdated = false;
-        for (const entry of plugins) {
-            if (entry.version !== ver) {
-                entry.version = ver;
-                mpUpdated = true;
-            }
-        }
-        if (mpUpdated) {
-            writeFileSync(marketplacePath, `${JSON.stringify(marketplace, null, 4)}\n`);
-            pathsToAdd.push(marketplacePath);
-            console.log(`Bumped marketplace plugins to ${ver}`);
-        }
+    const mpText = existsSync(marketplacePath) ? readFileSync(marketplacePath, 'utf-8') : null;
+    const { marketplace: updated, paths: mpPaths } = bumpMarketplaceManifests(mpText, ver);
 
-        // 3. plugins/<name>/plugin.json — update version in each plugin's own manifest
-        for (const entry of plugins) {
-            const pluginJsonPath = resolve(ROOT, entry.source, 'plugin.json');
-            if (!existsSync(pluginJsonPath)) {
-                console.warn(`  ⚠ plugin.json not found at ${pluginJsonPath} — skipping`);
-                continue;
-            }
-            const pluginJson = JSON.parse(readFileSync(pluginJsonPath, 'utf-8'));
-            if (pluginJson.version !== ver) {
-                pluginJson.version = ver;
-                writeFileSync(pluginJsonPath, `${JSON.stringify(pluginJson, null, 4)}\n`);
-                pathsToAdd.push(pluginJsonPath);
-                console.log(`Bumped ${entry.source}/plugin.json to ${ver}`);
-            }
+    if (updated !== null && updated !== mpText) {
+        writeFileSync(marketplacePath, updated);
+        pathsToAdd.push(marketplacePath);
+        console.log(`Bumped marketplace plugins to ${ver}`);
+    }
+
+    for (const rel of mpPaths) {
+        const pluginJsonPath = resolve(ROOT, rel);
+        if (!existsSync(pluginJsonPath)) {
+            console.warn(`  ⚠ plugin.json not found at ${pluginJsonPath} — skipping`);
+            continue;
+        }
+        const pluginJson = JSON.parse(readFileSync(pluginJsonPath, 'utf-8'));
+        if (pluginJson.version !== ver) {
+            pluginJson.version = ver;
+            writeFileSync(pluginJsonPath, `${JSON.stringify(pluginJson, null, 4)}\n`);
+            pathsToAdd.push(pluginJsonPath);
+            console.log(`Bumped ${rel} to ${ver}`);
         }
     }
 
-    const tag = `${PKG_NAME}-v${ver}`;
+    const tag = computeTag(ver);
 
     await $`git add ${pathsToAdd}`;
     await $`git commit -m ${`chore: release ${PKG_NAME} v${ver}`}`;
@@ -98,7 +138,7 @@ async function bumpVersion(ver: string, shouldPush: boolean) {
 }
 
 async function dropTags(ver: string, isRemote: boolean) {
-    const tag = `${PKG_NAME}-v${ver}`;
+    const tag = computeTag(ver);
     console.log(`Dropping local tag: ${tag}`);
     await $`git tag -d ${tag}`.nothrow();
 
@@ -214,7 +254,7 @@ export function countRubricDimensions(rubricYaml: string): number {
 }
 
 /** Read a rubric's dimension count from disk; -1 when the rubric is absent. */
-function diskRubricCount(rubricType: string): number {
+export function diskRubricCount(rubricType: string): number {
     const path = resolve(ROOT, `packages/core/src/rubrics/${rubricType}.yaml`);
     if (!existsSync(path)) return -1;
     return countRubricDimensions(readFileSync(path, 'utf8'));
@@ -225,7 +265,7 @@ function diskRubricCount(rubricType: string): number {
  * and checking rubric dimension claims. Prints findings and fails the process
  * when any are found (so it gates spur-check via the exit-code rule).
  */
-function checkSkillCitations(skillGlob: string) {
+export function checkSkillCitations(skillGlob: string) {
     const fs: FileResolver = {
         exists: (rel) => existsSync(resolve(ROOT, rel)),
         lineCount: (rel) => readFileSync(resolve(ROOT, rel), 'utf8').split('\n').length,
@@ -256,7 +296,7 @@ function checkSkillCitations(skillGlob: string) {
  * the shebang, so only prepend when missing (otherwise a duplicate shebang on
  * line 2 causes a syntax error at runtime).
  */
-async function postbuild(outfile: string) {
+export async function postbuild(outfile: string) {
     const content = await Bun.file(outfile).text();
     if (content.startsWith('#!/usr/bin/env bun\n')) return;
     await Bun.write(outfile, `#!/usr/bin/env bun\n${content}`);
