@@ -60,17 +60,6 @@ describe('scaffold', () => {
         expect(content).toContain('tools:');
     });
 
-    it('creates a hook file', async () => {
-        const filePath = await scaffold('hook', 'pre-commit', {
-            description: 'Pre-commit hook',
-            output: tmpDir,
-        });
-
-        const content = readFileSync(filePath, 'utf-8');
-        expect(content).toContain('event: PreToolUse');
-        expect(content).toContain('enabled: true');
-    });
-
     it('creates a magent file with governance sections', async () => {
         const filePath = await scaffold('magent', 'my-agent', {
             description: 'My agent',

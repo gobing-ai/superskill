@@ -6,7 +6,6 @@ import type { Command } from 'commander';
 import { evaluate, formatEvaluationReport } from '../operations/evaluate';
 import { evolve } from '../operations/evolve';
 import { refine } from '../operations/refine';
-import { scaffold } from '../operations/scaffold';
 import { formatValidationResult, validate } from '../operations/validate';
 import {
     addEvaluateOptions,
@@ -14,7 +13,6 @@ import {
     addHookRefineOptions,
     addJsonOption,
     addSaveOption,
-    addScaffoldOptions,
     addStrictOption,
     addTargetOption,
     exitFor,
@@ -24,19 +22,6 @@ import {
 import { emitHooksForSurrogateTarget, prepareTargetRulesyncInput, resolvePluginRoot } from './install';
 
 // ── Inner Operation Functions ─────────────────────────────────────────────
-
-async function scaffoldHook(
-    name: string,
-    opts: { description?: string; target?: string; output?: string; force?: boolean },
-): Promise<string> {
-    const target = resolveTarget(opts);
-    return scaffold('hook', name, {
-        description: opts.description,
-        target,
-        output: opts.output,
-        force: opts.force,
-    });
-}
 
 async function validateHook(nameOrPath: string, opts: { target?: string; strict?: boolean }) {
     const target = resolveTarget(opts);
@@ -135,19 +120,6 @@ async function emitHook(
 
 // ── Exported Handler Functions ────────────────────────────────────────────
 
-/** Scaffold a hook definition and print the created path. */
-export async function hookScaffold(opts: {
-    name: string;
-    description?: string;
-    target?: string;
-    output?: string;
-    force?: boolean;
-}): Promise<number | undefined> {
-    const createdPath = await scaffoldHook(opts.name, opts);
-    echo(`Created: ${createdPath}`);
-    return undefined;
-}
-
 /** Validate a hook definition and return the mapped exit code. */
 export async function hookValidate(opts: {
     nameOrPath: string;
@@ -218,12 +190,6 @@ export async function hookEmit(opts: {
 /** Register the hook command group. */
 export function registerHook(program: Command): void {
     const cmd = program.command('hook').description('Manage hook definitions');
-
-    addScaffoldOptions(cmd.command('scaffold <name>').description('Create a new hook from template')).action(
-        async (name: string, opts: { description?: string; target?: string; output?: string; force?: boolean }) => {
-            await runOperation(() => hookScaffold({ name, ...opts }));
-        },
-    );
 
     addStrictOption(
         addTargetOption(addJsonOption(cmd.command('validate <nameOrPath>').description('Validate a hook file'))),

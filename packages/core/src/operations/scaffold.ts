@@ -161,13 +161,13 @@ function resolveTemplate(type: ContentType, tier?: string): string {
 /**
  * Scaffold a new content file from a resolved template.
  *
- * @param type  Content type: `'skill' | 'command' | 'agent' | 'hook' | 'magent'`.
+ * @param type  Content type: `'skill' | 'command' | 'agent' | 'magent'`.
  * @param name  Content name used in `<!-- NAME -->` substitution and filename.
  * @param opts  Optional description, target, output directory, tier, skills, tools, and force flag.
  * @returns     The resolved absolute path of the created file.
  */
 export async function scaffold(type: ContentType, name: string, opts: ScaffoldOptions = {}): Promise<string> {
-    const validTypes: ContentType[] = ['skill', 'command', 'agent', 'hook', 'magent'];
+    const validTypes: ContentType[] = ['skill', 'command', 'agent', 'magent'];
     if (!validTypes.includes(type)) {
         throw new Error(`Unknown content type: "${type}". Expected one of: ${validTypes.join(', ')}`);
     }

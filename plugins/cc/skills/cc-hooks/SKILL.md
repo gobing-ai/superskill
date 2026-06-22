@@ -150,12 +150,12 @@ Per-tool event support: see `CURSOR_HOOK_EVENTS`, `CLAUDE_HOOK_EVENTS`, `OPENCOD
 
 Author, validate, emit, evaluate, and evolve all live in the `superskill hook` command group.
 
-### Scaffold
+### Author (no scaffold — hooks are hand-authored)
 
-```bash
-# Create a new hook definition (canonical template)
-superskill hook scaffold my-hooks --output ./hooks
-```
+Hooks are authored by hand as entries in `hooks.json` (event → matcher → command → timeout).
+There is no `scaffold` operation (task 0066 decision B) — the markdown scaffold emitted the
+wrong artifact type for JSON config. Create or merge entries directly in your `hooks.json`,
+then validate.
 
 ### Validate (lint against HookDefinitionSchema)
 

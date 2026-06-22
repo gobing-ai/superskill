@@ -2,7 +2,7 @@
 
 Manage **hook** definitions — JSON configs that register shell commands to fire on agent lifecycle events (e.g. `PreToolUse`, `PostToolUse`, `Stop`). Hooks let you validate, block, or augment agent actions automatically.
 
-The `hook` command exposes the five standard operations (`scaffold`, `validate`, `evaluate`, `refine`, `evolve`) plus one hook-only operation: **`emit`**. Note: `refine` is **suggest-only** for hooks (task 0061) — it surfaces findings as recommendations without file mutation; `evolve` is **analyze-only** (task 0056).
+The `hook` command exposes four operations (`validate`, `evaluate`, `refine`, `evolve`) plus one hook-only operation: **`emit`**. Note: `refine` is **suggest-only** for hooks (task 0061) — it surfaces findings as recommendations without file mutation; `evolve` is **analyze-only** (task 0056). Hooks are authored as entries in `hooks.json` (event → matcher → command → timeout), typically merged into an existing file; there is no scaffold operation (task 0066 decision B) — author hooks by hand and validate with `hook validate`.
 
 ## How to use it
 
@@ -14,7 +14,7 @@ superskill hook <operation> <name> [options]
 
 ### Standard operations
 
-The standard operations mirror the other type commands, with two exceptions for hooks: `refine` is **suggest-only** (surfaces findings, no auto-apply — task 0061) and `evolve` is **analyze-only** (no apply/history/rollback — task 0056). See [`cmd_agent.md`](cmd_agent.md#how-to-use-it) for the shared option table.
+The standard operations (`validate`, `evaluate`, `refine`, `evolve`) mirror the other type commands, with two exceptions for hooks: `refine` is **suggest-only** (surfaces findings, no auto-apply — task 0061) and `evolve` is **analyze-only** (no apply/history/rollback — task 0056). There is no `scaffold` operation for hooks (task 0066 decision B) — author hooks directly in `hooks.json`. See [`cmd_agent.md`](cmd_agent.md#how-to-use-it) for the shared option table.
 
 **Required frontmatter:** `name`, `description`, `event`.
 
@@ -28,10 +28,6 @@ The standard operations mirror the other type commands, with two exceptions for 
 | `pattern-match-quality` | 0.15 | Are the matchers precise? Penalize over-matching (fires on unrelated commands) or under-matching. |
 
 ```bash
-# Create a hook from template
-superskill hook scaffold block-force-push \
-  --description "Block git push --force to protected branches"
-
 # Validate and score
 superskill hook validate block-force-push --strict
 superskill hook evaluate block-force-push --save
@@ -158,10 +154,9 @@ For `pi` and `omp`, canonical hook event names (camelCase) map to Pi lifecycle e
 
 | File | Role |
 |------|------|
-| `apps/cli/src/commands/hook.ts` | Commander registration (6 subcommands) + `emitHook` |
+| `apps/cli/src/commands/hook.ts` | Commander registration (5 subcommands: validate/evaluate/refine/evolve/emit) + `emitHook` |
 | `apps/cli/src/quality/hook.ts` | Hook-specific dimension evaluators (correctness, event-coverage, safety, pattern-match-quality) |
 | `apps/cli/src/rubrics/hook.yaml` | Rubric criteria + weights + anchors |
-| `apps/cli/src/templates/hook/` | Default hook template |
 | `apps/cli/src/hooks.ts` | Canonical → Pi-hooks conversion; `emitPiStyleHooks` / `emitHermesHooks` |
 | `apps/cli/src/commands/install.ts` | `emitHooksForSurrogateTarget` (reused by `hook emit`) |
 

@@ -1,20 +1,20 @@
 ---
 name: Decide cc hook-add strategy (no rd3 equivalent exists)
 description: Decide cc hook-add strategy (no rd3 equivalent exists)
-status: Backlog
+status: Done
 created_at: 2026-06-21T21:15:15.292Z
-updated_at: 2026-06-21T21:15:15.292Z
+updated_at: 2026-06-22T05:44:55.398Z
 folder: docs/tasks
 type: task
 feature-id: ""
 priority: medium
 tags: ["cc-hooks","add","scaffold","dogfood","design-decision","missing-command"]
 impl_progress:
-  planning: pending
-  design: pending
-  implementation: pending
-  review: pending
-  testing: pending
+  planning: done
+  design: done
+  implementation: done
+  review: done
+  testing: done
 ---
 
 ## 0066. Decide cc hook-add strategy (no rd3 equivalent exists)
@@ -94,6 +94,35 @@ the misleading hook .md scaffold path cleaned up or documented; no false claims.
 
 ### Solution
 
+## Solution
+
+### Decision: Option B (removal, not neutralization)
+
+Verified the misleading `hook scaffold` path is fully wired up despite the task background claiming otherwise:
+- `apps/cli/src/commands/hook.ts:28-39,138-149,222-226` — `scaffoldHook` inner fn, `hookScaffold` handler, `hook scaffold <name>` subcommand registration
+- `packages/core/src/operations/scaffold.ts:170` — `validTypes` includes `'hook'`
+- `apps/cli/{templates,src/templates}/hook/default.md` — markdown frontmatter template
+
+Confirmed wrong artifact type via live run: `hook scaffold test-hook` writes `test-hook.md` (markdown with `event: PreToolUse` frontmatter), but real hooks are `hooks.json` entries (JSON). The markdown scaffold is misleading and unused in practice (no callers produce hooks this way; hooks are authored by hand in `hooks.json`).
+
+**Removal over neutralize because:** the only caller of `scaffold('hook', ...)` is the `scaffoldHook` function in `hook.ts` (being removed); the only other callers are 2 test files that are easily updated. No production code path depends on `scaffold('hook', ...)`.
+
+### Implementation
+
+1. **`apps/cli/src/commands/hook.ts`** — remove `scaffoldHook`, `hookScaffold`, and the `hook scaffold` subcommand registration.
+2. **`packages/core/src/operations/scaffold.ts`** — remove `'hook'` from `validTypes` (line 170). Engine throws `Unknown content type: "hook"` if anyone calls it directly.
+3. **`apps/cli/templates/hook/default.md`** + **`apps/cli/src/templates/hook/default.md`** — delete both.
+4. **`apps/cli/tests/commands/content-command-modules.test.ts`** — drop `hookScaffold(...)` call and `program.parseAsync(['hook','scaffold',...])` parse.
+5. **`packages/core/tests/operations/scaffold.test.ts`** — drop the "creates a hook file" test case.
+6. **`docs/help/cmd_hook.md`** — drop `scaffold` from the five standard ops list + the scaffold section/example.
+7. **`plugins/cc/agents/expert-hook.md`** — drop `scaffold` from routing table + the scaffold section/example.
+8. **`plugins/cc/skills/cc-hooks/SKILL.md`** — drop the `superskill hook scaffold` reference.
+
+### Not changed (intentionally)
+
+- `packages/core/src/content/types.ts` `ContentType` keeps `'hook'` — `validate`/`evaluate`/`refine`/`evolve` all need it.
+- `docs/04_DESIGN.md` — describes the *design intent* of all-5-types; it's the design doc, not advertising.
+- Completed task files (0014, 0024) — historical record.
 
 
 ### Plan
@@ -106,10 +135,53 @@ priority than 0062-0065; no user-facing command to break. Gates if code ships: l
 
 ### Review
 
+## Review
+
+### Phase 7 - SECU (diff: hook.ts, scaffold.ts, 2 test files, 3 docs, 1 template deleted)
+
+- **Security:** Removal is purely subtractive — eliminates the `scaffold('hook',...)` write path (wrote `.md` to user-controlled `--output`). No new code paths, no new I/O, no secrets/eval/external input. Attack surface reduced.
+- **Correctness:** `ContentType` retains `'hook'` (validate/evaluate/refine/evolve need it). `scaffold('hook',...)` now throws `Unknown content type: "hook"` — defense-in-depth, no silent wrong emission. No orphan imports (verified hook.ts imports clean).
+- **Usability:** `hook --help` shows 5 commands (validate/evaluate/refine/evolve/emit); `hook scaffold` returns clean "unknown command". Docs explain hooks are hand-authored in `hooks.json`.
+
+### Phase 8 - Requirements traceability (decision B: de-scope + clean up)
+
+| Item | Verdict | Evidence |
+|------|---------|----------|
+| No hook-add command or wrapper exists or is advertised | MET | `hook --help` lists 5 commands (no scaffold); `hook scaffold` → "unknown command 'scaffold'"; no /cc:hook-add wrapper exists (verified plugins/cc/commands/) |
+| Misleading 'hook' .md scaffold path removed | MET | `scaffold.ts:170` validTypes drops 'hook'; both template files deleted; `scaffold('hook',...)` throws "Unknown content type" |
+| Nothing advertises hook-add | MET | expert-hook.md routing table, cmd_hook.md, SKILL.md all cleaned; trigger phrases updated; scaffold sections removed |
+| Gates pass | MET | lint clean, 1026 pass / 0 fail / 0 skips, build exit 0, git clean (8 tracked + 1 gitignored deletion) |
+
+**Functional smoke:**
+- `hook --help` → 5 commands (validate/evaluate/refine/evolve/emit), no scaffold ?
+- `hook scaffold test` → "error: unknown command 'scaffold'" ?
+- `hook validate plugins/cc/hooks/hooks.json` → still works (ContentType retains 'hook') ?
 
 
 ### Testing
 
+## Testing
+
+### Gate results (all pass)
+- `bun run lint` — clean (Biome + turbo typecheck exit 0)
+- `bun run test` — 1026 pass / 0 fail / 0 skipped
+- `bun run build` — success (index.js 3.44 MB, 768 modules)
+
+**Test delta:** -2 tests (removed `hookScaffold(...)` assertion from content-command-modules.test.ts, removed "creates a hook file" test from scaffold.test.ts). No new tests needed — this is a removal task. The existing hook command-module test still verifies `hook validate/evaluate/refine/evolve/emit` registration and execution.
+
+**Coverage:** 99.68% functions / 98.76% lines aggregate. All files above 90/90 threshold.
+
+### Functional smoke (live)
+```
+hook --help                     → 5 commands (validate/evaluate/refine/evolve/emit), no scaffold
+hook scaffold test              → "error: unknown command 'scaffold'"
+hook validate plugins/cc/hooks/hooks.json → works (reports findings; ContentType retains 'hook')
+hook refine plugins/cc/hooks/hooks.json   → works (suggest-only, [SUGGEST] findings)
+```
+
+### Template deletion
+- `apps/cli/src/templates/hook/default.md` — tracked, deleted (shows as D in git)
+- `apps/cli/templates/hook/default.md` — gitignored (build output copy), deleted from filesystem
 
 
 ### Artifacts

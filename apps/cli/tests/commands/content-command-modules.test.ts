@@ -93,11 +93,10 @@ describe('agent command module', () => {
 
 describe('hook command module', () => {
     it('runs direct operations and registers subcommands', async () => {
-        const { hookScaffold, hookValidate, hookEvaluate, hookRefine, hookEvolve, registerHook } = await import(
+        const { hookValidate, hookEvaluate, hookRefine, hookEvolve, registerHook } = await import(
             '../../src/commands/hook'
         );
 
-        expect(await hookScaffold({ name: 'pre-tool', description: 'desc', target: 'codex' })).toBeUndefined();
         expect(await hookValidate({ nameOrPath: 'pre-tool', strict: true })).toBe(0);
         expect(await hookEvaluate({ nameOrPath: 'pre-tool', json: true, save: true })).toBeUndefined();
         expect(await hookRefine({ nameOrPath: 'pre-tool', dryRun: true })).toBeUndefined();
@@ -106,7 +105,6 @@ describe('hook command module', () => {
         const program = new Command();
         registerHook(program);
         expect(program.commands.find((cmd) => cmd.name() === 'hook')?.commands.map((cmd) => cmd.name())).toEqual([
-            'scaffold',
             'validate',
             'evaluate',
             'refine',
@@ -116,7 +114,6 @@ describe('hook command module', () => {
 
         const exit = spyOn(process, 'exit').mockImplementation(() => undefined as never);
         try {
-            await program.parseAsync(['hook', 'scaffold', 'pre-tool'], { from: 'user' });
             await program.parseAsync(['hook', 'validate', 'pre-tool'], { from: 'user' });
             await program.parseAsync(['hook', 'evaluate', 'pre-tool'], { from: 'user' });
             await program.parseAsync(['hook', 'refine', 'pre-tool'], { from: 'user' });
