@@ -284,6 +284,24 @@ Verdict: **PASS** (≥0.70) / **FAIL** (<0.70). Grade: A (≥0.90) / B (0.75–0
 
 The rubric scoring seam: heuristic dimension scores (deterministic) → rubric weights → aggregate + verdict. For LLM-scored enrichment: envelope-out → Scorer → ingest-in path. See [references/evaluation-framework.md](references/evaluation-framework.md) for the two-call seam, rubric resolution tiers, and persistent evaluation history.
 
+### Source-Grounding Discipline (anti-drift)
+
+A skill that documents code MUST point to the source, not restate it — restated facts drift
+out of sync silently and the content heuristics cannot detect the rot. When authoring or
+refining any skill body:
+
+- **Cite, do not copy.** Reference the owning file (`packages/core/src/rubrics/<type>.yaml`,
+  a `path.ts:line`, or a named symbol) instead of inlining its dimension counts, weights,
+  field lists, or type shapes. The cited file is the single source of truth.
+- **Every citation must resolve.** A `path:line` must name a real file with the line in range;
+  a cited symbol must exist in the cited source. Verify before writing — a dead citation
+  actively misleads.
+- **Dimension counts come from the rubric.** State "scored across the dimensions in
+  `<type>.yaml`," not a hardcoded number — the count changes when the rubric changes.
+
+A CI gate (`skill-citations-resolve`, in the post-check preset) fails the build on dead
+citations and on dimension claims that disagree with the rubric a skill documents.
+
 ## Additional Resources
 
 - **Workflows**: [references/workflows.md](references/workflows.md) - Detailed operation workflows
