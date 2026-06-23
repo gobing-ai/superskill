@@ -19,6 +19,7 @@ import { $, Glob } from 'bun';
 const ROOT = resolve(import.meta.dirname, '..');
 const PKG_PATH = resolve(ROOT, 'apps/cli/package.json');
 const PKG_NAME = '@gobing-ai/superskill';
+type ShellRunner = typeof $;
 
 function fail(msg: string): never {
     console.error(msg);
@@ -60,16 +61,10 @@ export function bumpMarketplaceManifests(marketplaceText: string | null, ver: st
         if (entry.version !== ver) {
             entry.version = ver;
             mpUpdated = true;
+            paths.push(`${entry.source}/plugin.json`);
         }
     }
     const mpText = `${JSON.stringify(marketplace, null, 4)}\n`;
-
-    for (const entry of plugins) {
-        if (entry.version !== ver) continue; // already at version → skip plugin.json
-        // We can't check plugin.json without I/O, so we always report the path.
-        // The caller handles existence checking and actual writes.
-        paths.push(`${entry.source}/plugin.json`);
-    }
 
     return { marketplace: mpUpdated ? mpText : marketplaceText, paths };
 }
@@ -81,7 +76,7 @@ export function bumpPackageVersion(jsonText: string, ver: string): { updated: st
     pkg.version = ver;
     return { updated: `${JSON.stringify(pkg, null, 4)}\n`, oldVer };
 }
-async function bumpVersion(ver: string, shouldPush: boolean) {
+export async function bumpVersion(ver: string, shouldPush: boolean, shell: ShellRunner = $) {
     const err = validateVersion(ver);
     if (err) fail(err);
 
@@ -119,16 +114,16 @@ async function bumpVersion(ver: string, shouldPush: boolean) {
 
     const tag = computeTag(ver);
 
-    await $`git add ${pathsToAdd}`;
-    await $`git commit -m ${`chore: release ${PKG_NAME} v${ver}`}`;
-    await $`git tag -a ${tag} -m ${`${PKG_NAME} v${ver}`}`;
+    await shell`git add ${pathsToAdd}`;
+    await shell`git commit -m ${`chore: release ${PKG_NAME} v${ver}`}`;
+    await shell`git tag -a ${tag} -m ${`${PKG_NAME} v${ver}`}`;
 
     console.log(`\nTag: ${tag}`);
 
     if (shouldPush) {
         console.log('Pushing commit and tag…');
-        await $`git push origin main`;
-        await $`git push origin ${tag}`;
+        await shell`git push origin main`;
+        await shell`git push origin ${tag}`;
         console.log('Pushed main and tag. Publish workflow will trigger on the tag push.');
         return;
     }
@@ -137,14 +132,14 @@ async function bumpVersion(ver: string, shouldPush: boolean) {
     console.log(`  git push origin main && git push origin ${tag}`);
 }
 
-async function dropTags(ver: string, isRemote: boolean) {
+export async function dropTags(ver: string, isRemote: boolean, shell: ShellRunner = $) {
     const tag = computeTag(ver);
     console.log(`Dropping local tag: ${tag}`);
-    await $`git tag -d ${tag}`.nothrow();
+    await shell`git tag -d ${tag}`.nothrow();
 
     if (isRemote) {
         console.log(`Dropping remote tag: ${tag}`);
-        await $`git push origin :refs/tags/${tag}`.nothrow();
+        await shell`git push origin :refs/tags/${tag}`.nothrow();
     }
 }
 
@@ -302,8 +297,8 @@ export async function postbuild(outfile: string) {
     await Bun.write(outfile, `#!/usr/bin/env bun\n${content}`);
 }
 
-async function main() {
-    const [command, ...args] = process.argv.slice(2);
+export async function runBuilderCommand(argv: string[], shell: ShellRunner = $) {
+    const [command, ...args] = argv;
     const version = args.find((a) => !a.startsWith('--'));
     const shouldPush = args.includes('--push');
     const isRemote = args.includes('--remote');
@@ -312,18 +307,17 @@ async function main() {
         case 'bump-ver':
         case 'bump-version': {
             if (!version) fail('Usage: bun scripts/builder.ts bump-ver <version> [--push]');
-            await bumpVersion(version, shouldPush);
+            await bumpVersion(version, shouldPush, shell);
             break;
         }
         case 'drop-tags': {
             if (!version) fail('Usage: bun scripts/builder.ts drop-tags <version> [--remote]');
-            await dropTags(version, isRemote);
+            await dropTags(version, isRemote, shell);
             break;
         }
         case 'postbuild': {
-            const outfile = args[0];
-            if (!outfile) fail('Usage: bun scripts/builder.ts postbuild <outfile>');
-            await postbuild(outfile);
+            if (!version) fail('Usage: bun scripts/builder.ts postbuild <outfile>');
+            await postbuild(version);
             break;
         }
         case 'check-skill-citations': {
@@ -336,6 +330,10 @@ async function main() {
                     'Usage: bun scripts/builder.ts <bump-ver|drop-tags|postbuild|check-skill-citations> [args]',
             );
     }
+}
+
+export async function main() {
+    await runBuilderCommand(process.argv.slice(2));
 }
 
 if (import.meta.main) {

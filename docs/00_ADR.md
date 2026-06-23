@@ -2,9 +2,9 @@
 doc: 00_ADR
 owns: WHY — which cross-cutting decision was made, and the one-line reason
 authority: authoritative
-version: 1.5.0
+version: 1.6.0
 owner: Robin Min
-updated_at: 2026-06-20
+updated_at: 2026-06-22
 read_before: any structural change; add a dated entry before diverging from a decision
 edit_rules: 99 §6.1
 sync: [T1, T2]
@@ -214,3 +214,15 @@ Reversals = new entries naming what they supersede. Burned numbers get a `Skippe
 **Why.** The current CLI is a 6-line fire-and-forget Commander dispatcher with no diagnostic logging, no startup DB, no telemetry, and no config file. `runCliApplication` provides exit-code normalization and service lifecycle (logger, telemetry, DB cleanup) — none of which the CLI uses today. Commander's action callbacks call `process.exit` directly inside `runOperation`, so the exit-code mapping in `runCliApplication`'s `start` would never be reached without refactoring all 6 command actions to return codes instead of exiting. That refactor is real work touching the command layer for zero functional gain. `runCliApplication` earns its keep when superskill grows a service that needs lifecycle management (diagnostic logging in evaluate/evolve ops, a persistent store opened at startup, or telemetry/audit logging).
 
 **Detail.** ts-libs: `packages/infra/src/application-cli.ts` (100% coverage, 10 tests). When superskill adopts it, the prerequisite is removing `process.exit` from `runOperation` (`apps/cli/src/commands/helpers.ts:72-82`) and the 6 command action callbacks, letting each return an exit code that Commander's action propagates up to `runCliApplication`'s `start`. This decision may be revisited when Phase 2+ adds diagnostic logging or a startup-opened store.
+
+---
+
+## ADR-017: repo-local script utilities are builder subcommands
+
+**Status:** Accepted · **Date:** 2026-06-22
+
+**Decision.** Repo-local build/release/guard utilities live as subcommands of `scripts/builder.ts`; do not add sibling `scripts/*.ts` utility wrappers unless a separate runtime boundary is required.
+
+**Why.** One script with multiple command patterns keeps release/test seams discoverable and avoids tiny helper files that exist only to support one command.
+
+**Detail:** `scripts/builder.ts` owns `bump-ver`, `drop-tags`, `postbuild`, and `check-skill-citations`; tests inject seams through exported builder functions/subcommand dispatch.

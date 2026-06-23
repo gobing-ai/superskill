@@ -1,18 +1,65 @@
-import { afterAll, afterEach, beforeEach, describe, expect, it, mock } from 'bun:test';
-import { rmSync } from 'node:fs';
+import { afterAll, afterEach, beforeEach, describe, expect, it, mock, spyOn } from 'bun:test';
+import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import {
     bumpMarketplaceManifests,
     bumpPackageVersion,
+    bumpVersion,
     checkCitations,
     checkDimensionDrift,
     checkSkillCitations,
     computeTag,
     countRubricDimensions,
     diskRubricCount,
+    dropTags,
     type FileResolver,
     postbuild,
+    runBuilderCommand,
     validateVersion,
 } from '../builder';
+
+const ROOT = resolve(import.meta.dir, '..', '..');
+
+function captureFile(path: string): { path: string; existed: boolean; content: string } {
+    return {
+        path,
+        existed: existsSync(path),
+        content: existsSync(path) ? readFileSync(path, 'utf-8') : '',
+    };
+}
+
+function restoreFiles(files: Array<{ path: string; existed: boolean; content: string }>) {
+    for (const file of files) {
+        if (file.existed) {
+            writeFileSync(file.path, file.content);
+        } else {
+            rmSync(file.path, { force: true });
+        }
+    }
+}
+
+function commandText(strings: TemplateStringsArray, values: unknown[]): string {
+    let command = strings[0] ?? '';
+    for (const [index, value] of values.entries()) {
+        command += String(value);
+        command += strings[index + 1] ?? '';
+    }
+    return command;
+}
+
+function spyShell() {
+    const calls: string[] = [];
+    const nothrow = mock(() => Promise.resolve());
+    const shell = (strings: TemplateStringsArray, ...values: unknown[]) => {
+        calls.push(commandText(strings, values));
+        return { nothrow } as never;
+    };
+    return { calls, nothrow, shell: shell as never };
+}
+
+afterEach(() => {
+    mock.restore();
+});
 
 function $rmrf(path: string) {
     try {
@@ -189,6 +236,8 @@ describe('checkSkillCitations — integration', () => {
     const fixturesDir = '/tmp/superskill-citation-test';
     const skillPath = `${fixturesDir}/test-skill/SKILL.md`;
     let exitSpy: ReturnType<typeof mock>;
+    let logSpy: ReturnType<typeof spyOn<typeof console, 'log'>>;
+    let errorSpy: ReturnType<typeof spyOn<typeof console, 'error'>>;
     const origExit = process.exit;
 
     beforeEach(async () => {
@@ -204,6 +253,8 @@ describe('checkSkillCitations — integration', () => {
             throw new Error('process.exit mocked');
         });
         process.exit = exitSpy as unknown as typeof process.exit;
+        logSpy = spyOn(console, 'log').mockImplementation(() => {});
+        errorSpy = spyOn(console, 'error').mockImplementation(() => {});
     });
 
     afterEach(() => {
@@ -222,6 +273,9 @@ describe('checkSkillCitations — integration', () => {
         // Glob that matches nothing — no skill files to scan
         expect(() => checkSkillCitations(`${fixturesDir}/nonexistent-*/SKILL.md`)).not.toThrow();
         expect(exitSpy).not.toHaveBeenCalled();
+        expect(logSpy).toHaveBeenCalledWith(
+            `OK: skill citations resolve and dimension claims match rubrics (${fixturesDir}/nonexistent-*/SKILL.md)`,
+        );
     });
 
     it('detects a dead citation in a fixture skill and calls fail', async () => {
@@ -231,6 +285,10 @@ describe('checkSkillCitations — integration', () => {
         expect(() => checkSkillCitations(`${fixturesDir}/*/SKILL.md`)).toThrow('process.exit mocked');
         expect(exitSpy).toHaveBeenCalledTimes(1);
         expect(exitSpy).toHaveBeenCalledWith(1);
+        expect(logSpy).toHaveBeenCalledWith(
+            `${fixturesDir}/test-skill/SKILL.md: dead citation: ${deadPath} (file does not exist)`,
+        );
+        expect(errorSpy).toHaveBeenCalledWith('\n1 citation/drift finding(s).');
     });
 });
 
@@ -299,6 +357,7 @@ describe('bumpMarketplaceManifests', () => {
         )}\n`;
         const result = bumpMarketplaceManifests(already, '0.2.0');
         expect(result.marketplace).toBe(already);
+        expect(result.paths).toEqual([]);
     });
 
     it('handles marketplace with no plugins array', () => {
@@ -325,5 +384,141 @@ describe('bumpPackageVersion', () => {
         const parsed = JSON.parse(updated);
         expect(parsed.description).toBe('hello');
         expect(parsed.name).toBe('test');
+    });
+});
+
+describe('release helpers', () => {
+    const manifestPaths = [
+        resolve(ROOT, 'apps/cli/package.json'),
+        resolve(ROOT, '.claude-plugin/marketplace.json'),
+        resolve(ROOT, 'plugins/cc/plugin.json'),
+    ];
+
+    it('bumpVersion updates manifests, creates commit/tag, and prints push instructions', async () => {
+        const snapshots = manifestPaths.map(captureFile);
+        const { calls, shell } = spyShell();
+        const logs: string[] = [];
+        spyOn(console, 'log').mockImplementation((message?: unknown) => {
+            logs.push(String(message ?? ''));
+        });
+
+        try {
+            await bumpVersion('0.9.9-test.1', false, shell);
+
+            expect(JSON.parse(readFileSync(manifestPaths[0], 'utf-8')).version).toBe('0.9.9-test.1');
+            expect(JSON.parse(readFileSync(manifestPaths[1], 'utf-8')).plugins[0].version).toBe('0.9.9-test.1');
+            expect(JSON.parse(readFileSync(manifestPaths[2], 'utf-8')).version).toBe('0.9.9-test.1');
+            expect(calls.some((call) => call.includes('@gobing-ai/superskill-v0.9.9-test.1'))).toBeTrue();
+            expect(calls.some((call) => call.startsWith('git add '))).toBeTrue();
+            expect(calls.some((call) => call.startsWith('git commit -m chore: release'))).toBeTrue();
+            expect(calls.some((call) => call.startsWith('git tag -a @gobing-ai/superskill-v0.9.9-test.1'))).toBeTrue();
+            expect(calls.some((call) => call.startsWith('git push '))).toBeFalse();
+            expect(logs.join('\n')).toContain('To push now:');
+        } finally {
+            restoreFiles(snapshots);
+        }
+    });
+
+    it('bumpVersion pushes commit and tag when requested', async () => {
+        const snapshots = manifestPaths.map(captureFile);
+        const { calls, shell } = spyShell();
+        spyOn(console, 'log').mockImplementation(() => {});
+
+        try {
+            await bumpVersion('0.9.9-test.2', true, shell);
+            expect(calls).toContain('git push origin main');
+            expect(calls).toContain('git push origin @gobing-ai/superskill-v0.9.9-test.2');
+        } finally {
+            restoreFiles(snapshots);
+        }
+    });
+
+    it('dropTags deletes local and optional remote tags without throwing on missing tags', async () => {
+        const { calls, nothrow, shell } = spyShell();
+        spyOn(console, 'log').mockImplementation(() => {});
+
+        await dropTags('0.9.9-test.3', false, shell);
+        await dropTags('0.9.9-test.4', true, shell);
+
+        expect(calls).toEqual([
+            'git tag -d @gobing-ai/superskill-v0.9.9-test.3',
+            'git tag -d @gobing-ai/superskill-v0.9.9-test.4',
+            'git push origin :refs/tags/@gobing-ai/superskill-v0.9.9-test.4',
+        ]);
+        expect(nothrow).toHaveBeenCalledTimes(3);
+    });
+});
+
+describe('runBuilderCommand', () => {
+    const originalArgv = process.argv;
+    const manifestPaths = [
+        resolve(ROOT, 'apps/cli/package.json'),
+        resolve(ROOT, '.claude-plugin/marketplace.json'),
+        resolve(ROOT, 'plugins/cc/plugin.json'),
+    ];
+
+    afterEach(() => {
+        process.argv = originalArgv;
+    });
+
+    it('dispatches bump-version aliases with push', async () => {
+        const snapshots = manifestPaths.map(captureFile);
+        const { calls, shell } = spyShell();
+        spyOn(console, 'log').mockImplementation(() => {});
+        try {
+            await runBuilderCommand(['bump-version', '0.9.9-test.5', '--push'], shell);
+            expect(calls).toContain('git push origin main');
+        } finally {
+            restoreFiles(snapshots);
+        }
+    });
+
+    it('dispatches drop-tags remote mode', async () => {
+        const { calls, shell } = spyShell();
+        spyOn(console, 'log').mockImplementation(() => {});
+
+        await runBuilderCommand(['drop-tags', '0.9.9-test.6', '--remote'], shell);
+
+        expect(calls).toContain('git push origin :refs/tags/@gobing-ai/superskill-v0.9.9-test.6');
+    });
+
+    it('dispatches postbuild', async () => {
+        const tmp = '/tmp/superskill-main-postbuild-test.js';
+        try {
+            await Bun.write(tmp, 'console.log("main");\n');
+            await runBuilderCommand(['postbuild', tmp]);
+            expect(await Bun.file(tmp).text()).toBe('#!/usr/bin/env bun\nconsole.log("main");\n');
+        } finally {
+            try {
+                await Bun.file(tmp).delete();
+            } catch {
+                /* ok */
+            }
+        }
+    });
+
+    it('dispatches check-skill-citations with the default glob', async () => {
+        spyOn(console, 'log').mockImplementation(() => {});
+
+        await runBuilderCommand(['check-skill-citations']);
+    });
+
+    it('fails on missing arguments and unknown commands', async () => {
+        const exits: number[] = [];
+        spyOn(console, 'error').mockImplementation(() => {});
+        spyOn(process, 'exit').mockImplementation((code?: string | number | null) => {
+            exits.push(Number(code));
+            throw new Error('process.exit mocked');
+        });
+
+        await expect(runBuilderCommand(['bump-ver'])).rejects.toThrow('process.exit mocked');
+
+        await expect(runBuilderCommand(['drop-tags'])).rejects.toThrow('process.exit mocked');
+
+        await expect(runBuilderCommand(['postbuild'])).rejects.toThrow('process.exit mocked');
+
+        await expect(runBuilderCommand(['unknown'])).rejects.toThrow('process.exit mocked');
+
+        expect(exits).toEqual([1, 1, 1, 1]);
     });
 });
