@@ -1,6 +1,6 @@
 {
     "name": "@gobing-ai/superskill",
-    "version": "0.2.2",
+    "version": "0.2.3",
     "description": "A manager for multi-agent skill, slash command, subagent, hook, MCP and etc.",
     "keywords": [
         "cli",
