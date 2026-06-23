@@ -21,8 +21,14 @@ const PKG_PATH = resolve(ROOT, 'apps/cli/package.json');
 const PKG_NAME = '@gobing-ai/superskill';
 type ShellRunner = typeof $;
 
+const logger = {
+    info: (msg: string) => console.log(msg),
+    warn: (msg: string) => console.warn(msg),
+    error: (msg: string) => console.error(msg),
+};
+
 function fail(msg: string): never {
-    console.error(msg);
+    logger.error(msg);
     process.exit(1);
 }
 /** Validates a semver string; returns null when valid, error message when invalid. */
@@ -85,7 +91,7 @@ export async function bumpVersion(ver: string, shouldPush: boolean, shell: Shell
     const { updated: pkgUpdated, oldVer } = bumpPackageVersion(readFileSync(PKG_PATH, 'utf-8'), ver);
     writeFileSync(PKG_PATH, pkgUpdated);
     pathsToAdd.push(PKG_PATH);
-    console.log(`Bumped ${PKG_NAME}: ${oldVer} → ${ver}`);
+    logger.info(`Bumped ${PKG_NAME}: ${oldVer} → ${ver}`);
 
     const marketplacePath = resolve(ROOT, '.claude-plugin/marketplace.json');
     const mpText = existsSync(marketplacePath) ? readFileSync(marketplacePath, 'utf-8') : null;
@@ -94,21 +100,21 @@ export async function bumpVersion(ver: string, shouldPush: boolean, shell: Shell
     if (updated !== null && updated !== mpText) {
         writeFileSync(marketplacePath, updated);
         pathsToAdd.push(marketplacePath);
-        console.log(`Bumped marketplace plugins to ${ver}`);
+        logger.info(`Bumped marketplace plugins to ${ver}`);
     }
 
     for (const rel of mpPaths) {
         const pluginJsonPath = resolve(ROOT, rel);
-        if (!existsSync(pluginJsonPath)) {
-            console.warn(`  ⚠ plugin.json not found at ${pluginJsonPath} — skipping`);
-            continue;
-        }
-        const pluginJson = JSON.parse(readFileSync(pluginJsonPath, 'utf-8'));
-        if (pluginJson.version !== ver) {
-            pluginJson.version = ver;
-            writeFileSync(pluginJsonPath, `${JSON.stringify(pluginJson, null, 4)}\n`);
-            pathsToAdd.push(pluginJsonPath);
-            console.log(`Bumped ${rel} to ${ver}`);
+        if (existsSync(pluginJsonPath)) {
+            const pluginJson = JSON.parse(readFileSync(pluginJsonPath, 'utf-8'));
+            if (pluginJson.version !== ver) {
+                pluginJson.version = ver;
+                writeFileSync(pluginJsonPath, `${JSON.stringify(pluginJson, null, 4)}\n`);
+                pathsToAdd.push(pluginJsonPath);
+                logger.info(`Bumped ${rel} to ${ver}`);
+            }
+        } else {
+            logger.warn(`  ⚠ plugin.json not found at ${pluginJsonPath} — skipping`);
         }
     }
 
@@ -118,27 +124,27 @@ export async function bumpVersion(ver: string, shouldPush: boolean, shell: Shell
     await shell`git commit -m ${`chore: release ${PKG_NAME} v${ver}`}`;
     await shell`git tag -a ${tag} -m ${`${PKG_NAME} v${ver}`}`;
 
-    console.log(`\nTag: ${tag}`);
+    logger.info(`\nTag: ${tag}`);
 
     if (shouldPush) {
-        console.log('Pushing commit and tag…');
+        logger.info('Pushing commit and tag…');
         await shell`git push origin main`;
         await shell`git push origin ${tag}`;
-        console.log('Pushed main and tag. Publish workflow will trigger on the tag push.');
+        logger.info('Pushed main and tag. Publish workflow will trigger on the tag push.');
         return;
     }
 
-    console.log('Publish workflow will trigger on tag push. To push now:');
-    console.log(`  git push origin main && git push origin ${tag}`);
+    logger.info('Publish workflow will trigger on tag push. To push now:');
+    logger.info(`  git push origin main && git push origin ${tag}`);
 }
 
 export async function dropTags(ver: string, isRemote: boolean, shell: ShellRunner = $) {
     const tag = computeTag(ver);
-    console.log(`Dropping local tag: ${tag}`);
+    logger.info(`Dropping local tag: ${tag}`);
     await shell`git tag -d ${tag}`.nothrow();
 
     if (isRemote) {
-        console.log(`Dropping remote tag: ${tag}`);
+        logger.info(`Dropping remote tag: ${tag}`);
         await shell`git push origin :refs/tags/${tag}`.nothrow();
     }
 }
@@ -191,22 +197,24 @@ const SKILL_TO_RUBRIC: Record<string, string> = {
     'cc-magents': 'magent',
 };
 
+function isResolvablePath(path: string): boolean {
+    return RESOLVABLE_PREFIXES.some((p) => path.startsWith(p));
+}
+
 /** Resolve every code citation in a skill body; collect dead ones. */
 export function checkCitations(file: string, body: string, fs: FileResolver): Finding[] {
     const findings: Finding[] = [];
     for (const match of body.matchAll(CITATION_RE)) {
         const [, path, lineStr] = match;
-        if (!RESOLVABLE_PREFIXES.some((p) => path.startsWith(p))) continue;
-
-        if (!fs.exists(path)) {
-            findings.push({ file, message: `dead citation: ${path} (file does not exist)` });
-            continue;
-        }
-        if (lineStr) {
-            const total = fs.lineCount(path);
-            const line = Number(lineStr);
-            if (line > total) {
-                findings.push({ file, message: `dead citation: ${path}:${line} (file has ${total} lines)` });
+        if (isResolvablePath(path)) {
+            if (!fs.exists(path)) {
+                findings.push({ file, message: `dead citation: ${path} (file does not exist)` });
+            } else if (lineStr) {
+                const total = fs.lineCount(path);
+                const line = Number(lineStr);
+                if (line > total) {
+                    findings.push({ file, message: `dead citation: ${path}:${line} (file has ${total} lines)` });
+                }
             }
         }
     }
@@ -255,6 +263,14 @@ export function diskRubricCount(rubricType: string): number {
     return countRubricDimensions(readFileSync(path, 'utf8'));
 }
 
+function fsExists(rel: string): boolean {
+    return existsSync(resolve(ROOT, rel));
+}
+
+function fsLineCount(rel: string): number {
+    return readFileSync(resolve(ROOT, rel), 'utf8').split('\n').length;
+}
+
 /**
  * Scan every plugin SKILL.md matched by `skillGlob`, resolving code citations
  * and checking rubric dimension claims. Prints findings and fails the process
@@ -262,25 +278,26 @@ export function diskRubricCount(rubricType: string): number {
  */
 export function checkSkillCitations(skillGlob: string) {
     const fs: FileResolver = {
-        exists: (rel) => existsSync(resolve(ROOT, rel)),
-        lineCount: (rel) => readFileSync(resolve(ROOT, rel), 'utf8').split('\n').length,
+        exists: fsExists,
+        lineCount: fsLineCount,
     };
     const findings: Finding[] = [];
 
     for (const rel of new Glob(skillGlob).scanSync({ cwd: ROOT })) {
-        if (rel.includes('node_modules') || rel.includes('/vendors/')) continue;
-        const body = readFileSync(resolve(ROOT, rel), 'utf8');
-        const skillName = rel.split('/').at(-2) ?? '';
-        findings.push(...checkCitations(rel, body, fs));
-        findings.push(...checkDimensionDrift(rel, body, skillName, diskRubricCount));
+        if (!rel.includes('node_modules') && !rel.includes('/vendors/')) {
+            const body = readFileSync(resolve(ROOT, rel), 'utf8');
+            const skillName = rel.split('/').at(-2) ?? '';
+            findings.push(...checkCitations(rel, body, fs));
+            findings.push(...checkDimensionDrift(rel, body, skillName, diskRubricCount));
+        }
     }
 
     if (findings.length === 0) {
-        console.log(`OK: skill citations resolve and dimension claims match rubrics (${skillGlob})`);
+        logger.info(`OK: skill citations resolve and dimension claims match rubrics (${skillGlob})`);
         return;
     }
     for (const f of findings) {
-        console.log(`${f.file}: ${f.message}`);
+        logger.info(`${f.file}: ${f.message}`);
     }
     fail(`\n${findings.length} citation/drift finding(s).`);
 }
@@ -297,9 +314,13 @@ export async function postbuild(outfile: string) {
     await Bun.write(outfile, `#!/usr/bin/env bun\n${content}`);
 }
 
+function isNonFlag(arg: string): boolean {
+    return !arg.startsWith('--');
+}
+
 export async function runBuilderCommand(argv: string[], shell: ShellRunner = $) {
     const [command, ...args] = argv;
-    const version = args.find((a) => !a.startsWith('--'));
+    const version = args.find(isNonFlag);
     const shouldPush = args.includes('--push');
     const isRemote = args.includes('--remote');
 
@@ -332,10 +353,14 @@ export async function runBuilderCommand(argv: string[], shell: ShellRunner = $) 
     }
 }
 
+export function handleMainError(err: unknown): never {
+    fail(err instanceof Error ? err.message : String(err));
+}
+
 export async function main() {
     await runBuilderCommand(process.argv.slice(2));
 }
 
 if (import.meta.main) {
-    main().catch((err) => fail(err instanceof Error ? err.message : String(err)));
+    main().catch(handleMainError);
 }

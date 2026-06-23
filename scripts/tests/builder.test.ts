@@ -1,5 +1,5 @@
 import { afterAll, afterEach, beforeEach, describe, expect, it, mock, spyOn } from 'bun:test';
-import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import {
     bumpMarketplaceManifests,
@@ -13,6 +13,8 @@ import {
     diskRubricCount,
     dropTags,
     type FileResolver,
+    handleMainError,
+    main,
     postbuild,
     runBuilderCommand,
     validateVersion,
@@ -433,6 +435,30 @@ describe('release helpers', () => {
         }
     });
 
+    it('warns when a plugin.json is missing (cover continue branch)', async () => {
+        const snapshots = manifestPaths.map(captureFile);
+        const { shell } = spyShell();
+        const warns: string[] = [];
+        spyOn(console, 'log').mockImplementation(() => {});
+        spyOn(console, 'warn').mockImplementation((message?: unknown) => {
+            warns.push(String(message ?? ''));
+        });
+
+        // Temporarily hide the plugin.json so existsSync returns false
+        const pluginJsonPath = manifestPaths[2];
+        const backupPath = `${pluginJsonPath}.bak`;
+        renameSync(pluginJsonPath, backupPath);
+
+        try {
+            await bumpVersion('0.9.9-test.3', false, shell);
+            expect(warns.some((w) => w.includes('plugin.json not found'))).toBeTrue();
+        } finally {
+            // Restore plugin.json before restoreFiles (which expects it to exist)
+            if (existsSync(backupPath)) renameSync(backupPath, pluginJsonPath);
+            restoreFiles(snapshots);
+        }
+    });
+
     it('dropTags deletes local and optional remote tags without throwing on missing tags', async () => {
         const { calls, nothrow, shell } = spyShell();
         spyOn(console, 'log').mockImplementation(() => {});
@@ -520,5 +546,41 @@ describe('runBuilderCommand', () => {
         await expect(runBuilderCommand(['unknown'])).rejects.toThrow('process.exit mocked');
 
         expect(exits).toEqual([1, 1, 1, 1]);
+    });
+});
+
+describe('main', () => {
+    const origArgv = process.argv;
+
+    afterEach(() => {
+        process.argv = origArgv;
+    });
+
+    it('delegates to runBuilderCommand with process.argv', async () => {
+        spyOn(console, 'log').mockImplementation(() => {});
+        process.argv = ['node', 'builder.ts', 'check-skill-citations', 'nonexistent-test-glob-xyz/*/SKILL.md'];
+
+        await main();
+        // No findings for a non-matching glob — resolves without error
+    });
+});
+
+describe('handleMainError', () => {
+    it('calls fail with the error message', () => {
+        spyOn(console, 'error').mockImplementation(() => {});
+        spyOn(process, 'exit').mockImplementation((code?: string | number | null) => {
+            throw new Error(`exit ${code}`);
+        });
+
+        expect(() => handleMainError(new Error('boom'))).toThrow('exit 1');
+    });
+
+    it('converts non-Error values to string', () => {
+        spyOn(console, 'error').mockImplementation(() => {});
+        spyOn(process, 'exit').mockImplementation((code?: string | number | null) => {
+            throw new Error(`exit ${code}`);
+        });
+
+        expect(() => handleMainError('raw string')).toThrow('exit 1');
     });
 });
