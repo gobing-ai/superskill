@@ -142,8 +142,8 @@ describe('executeInstall', () => {
         expect(output).toContain('Mapping plugin to .rulesync/ canonical layout');
         expect(output).toContain('Claude Code: registering marketplace and installing plugin');
         expect(output).toContain('Copying to Hermes');
-        expect(output).toContain('Copying to omp');
-        expect(output).toContain('[DRY-RUN] No files were written.');
+        // OMP no longer copies skills — reads from ~/.agents/skills/ natively
+        expect(output).not.toContain('Copying to omp');
         stdout.mockRestore();
     });
 

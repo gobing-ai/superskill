@@ -143,6 +143,8 @@ Reversals = new entries naming what they supersede. Burned numbers get a `Skippe
 
 **Amendment (2026-06-21, task 0045 R1).** `RulesyncOptions` gains an optional `outputRoot?: string` that overrides the root rulesync writes into. When omitted, the original ADR-010 derivation holds (`global ? homedir() : process.cwd()`). This widens — does not replace — the original decision: production install never sets `outputRoot` (global → `$HOME` is correct), but tests and a future `--output <dir>` flag can isolate writes to a temp root. The override is threaded uniformly into `runRulesync`, surrogate copies (hermes/omp), and Pi native-agent dispatch, closing the gap where the rulesync skill payload silently ignored `outputRoot` and leaked to `$HOME`/`cwd`. Additionally, `executeInstall` pre-creates per-target skills parent dirs (via `TARGET_SKILLS_RELDIR`, project mode) before rulesync writes, preventing an `ENOENT mkdir` crash on `install --no-global` from a clean cwd (task 0045 R2).
 
+
+**Amendment (2026-06-23).** Pi, codex, and antigravity (cli + ide) now all route to the `codexcli` rulesync target, which writes skills to `~/.agents/skills/` (global) / `.agents/skills/` (project). Research confirms Pi, OMP, and Antigravity 2.0 all natively support `~/.agents/skills/`. This eliminates duplicate skill copies when an agent reads from both its own directory and `~/.agents/skills/`. OMP's superskill-owned copy step is removed — it reads from `~/.agents/skills/` natively. Only hermes retains a superskill copy (from opencode). `TARGET_TO_RULESYNC` updated: `pi` and `antigravity-*` now map to `'codexcli'`. `TARGET_SKILLS_RELDIR` updated to match.
 ---
 
 ## ADR-011: plugin resolution via Claude Code marketplace manifest

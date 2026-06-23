@@ -18,11 +18,13 @@ export type Target = (typeof TARGETS)[number];
 
 /** Map superskill targets to rulesync `ToolTarget` strings. Claude Code, omp, and hermes are not in rulesync. */
 export const TARGET_TO_RULESYNC: Partial<Record<Target, ToolTarget>> = {
+    // Agents supporting ~/.agents/skills/ all share 'codexcli' to avoid
+    // duplicate skill copies when an agent reads from multiple directories.
     codex: 'codexcli',
-    pi: 'pi',
+    pi: 'codexcli',
     opencode: 'opencode',
-    'antigravity-cli': 'antigravity-cli',
-    'antigravity-ide': 'antigravity-ide',
+    'antigravity-cli': 'codexcli',
+    'antigravity-ide': 'codexcli',
 };
 
 /**
@@ -32,12 +34,11 @@ export const TARGET_TO_RULESYNC: Partial<Record<Target, ToolTarget>> = {
  *
  * Verified empirically against rulesync 8.29.0 (2026-06-21) by running
  * `generate({ features:['skills'], global:false })` per target. Global-mode
- * paths differ (e.g. pi→`.pi/agent/skills`, opencode→`.config/opencode/skills`)
- * but global installs land under `$HOME` where the parent typically exists.
+ * paths differ (e.g. codex/pi/antigravity→`.agents/skills`, opencode→`.config/opencode/skills`)
  */
 export const TARGET_SKILLS_RELDIR: Partial<Record<Target, string>> = {
     codex: '.agents/skills',
-    pi: '.pi/skills',
+    pi: '.agents/skills',
     opencode: '.opencode/skills',
     'antigravity-cli': '.agents/skills',
     'antigravity-ide': '.agents/skills',

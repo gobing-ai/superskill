@@ -287,20 +287,18 @@ Carried from cc-agents/scripts. Pipeline stages are pure functions per invariant
 
 superskill maps each `Target` to a rulesync `ToolTarget` (`TARGET_TO_RULESYNC`) and to a ts-ai-runner `AgentName` for slash-dialect translation (`TARGET_TO_AGENT_NAME`, ADR-009 amendment). **superskill does not own per-target install paths** — rulesync resolves them from `<outputRoot>/<relativeDirPath>` (ADR-010). The global skill paths below are rulesync's resolved output *given* `outputRoot = ~`; they are documented for reference, not reimplemented in superskill.
 
-| Target | rulesync target | AgentName (slash) | Global skill path (rulesync-resolved, `outputRoot=~`) | Note |
-|--------|----------------|-------------------|-------------------------------------------------------|------|
-| `claude` | — | `claude` | plugin marketplace | Not rulesync — direct `claude plugin install` |
-| `codex` | `codexcli` | `codex` | `~/.agents/skills/` (under `$CODEX_HOME`) | |
-| `pi` | `pi` | `pi` | `~/.pi/agent/skills/` | subagents → Pi native agent format |
-| `omp` | — | `pi` | `~/.omp/agent/skills/` | Pi variant — copied by superskill, not rulesync |
-| `opencode` | `opencode` | `opencode` | `~/.agents/skills/` | |
-| `antigravity-cli` | `antigravity-cli` | default (`/plugin-command`) | `~/.gemini/antigravity-cli/skills/` | |
-| `antigravity-ide` | `antigravity-ide` | default (`/plugin-command`) | `~/.gemini/config/skills/` | |
-| `hermes` | — | default (`/plugin-command`) | `~/.hermes/skills/` | Custom — copied by superskill, not rulesync |
+| Target | rulesync target | AgentName (slash) | Global skill path | Note |
+|--------|----------------|-------------------|------------------|------|
+| `claude` | — | `claude` | plugin marketplace | Not rulesync |
+| `codex` | `codexcli` | `codex` | `~/.agents/skills/` | |
+| `pi` | `codexcli` | `pi` | `~/.agents/skills/` | Unified — subagents → Pi native agent format |
+| `omp` | — | `pi` | `~/.agents/skills/` | Native — reads shared ~/.agents/skills/ |
+| `opencode` | `opencode` | `opencode` | `~/.config/opencode/skills/` | |
+| `antigravity-cli` | `codexcli` | default (`/plugin-command`) | `~/.agents/skills/` | Unified |
+| `antigravity-ide` | `codexcli` | default (`/plugin-command`) | `~/.agents/skills/` | Unified |
+| `hermes` | — | default (`/plugin-command`) | `~/.hermes/skills/` | Copied by superskill |
 
-**Deprecated:** `gemini` (Gemini CLI), `antigravity` (old unified target).
-
-**Output root (ADR-010).** rulesync writes to `<outputRoot>/<relativeDirPath>` and never resolves `~`. `runRulesync` sets `outputRoots: [os.homedir()]` for `--global`, `[process.cwd()]` otherwise; rulesync's `global` flag only swaps the relative subdir. The `hermes` and `omp` targets are absent from rulesync's `ToolTarget` set, so superskill copies their generated content to the paths above after `generate()`.
+**Output root (ADR-010).** rulesync writes to `<outputRoot>/<relativeDirPath>` and never resolves `~`. `runRulesync` sets `outputRoots: [os.homedir()]` for `--global`, `[process.cwd()]` otherwise; rulesync's `global` flag only swaps the relative subdir. Only `hermes` is absent from rulesync's `ToolTarget` set — superskill copies opencode-generated skills to `~/.hermes/skills/`. OMP reads from the shared `~/.agents/skills/` directory natively (ADR-010 amendment 2026-06-23).
 
 ## CLI Commands Surface
 

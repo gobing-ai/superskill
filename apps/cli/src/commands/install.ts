@@ -223,14 +223,10 @@ export async function executeInstall(
         }
 
         if (target === 'omp') {
-            const srcTarget = 'pi';
-            const dest = join(outputRoot, '.omp', 'agent', 'skills');
-            if (options.verbose) echo(`Copying to omp (via pi rulesync): ${dest}...`);
-            if (!options.dryRun)
-                copyDirectory(join(rulesyncSourceRoot(targetInputRoots.get(srcTarget), outputDir), 'skills'), dest);
-            // Rung (b): superskill-installed shim — omp hooks via @vahor/pi-hooks format (design §1.2)
+            // Skills: omp reads from ~/.agents/skills/ natively (shared with codex/pi/antigravity).
+            // Hooks only — emitted via @vahor/pi-hooks format (design §1.2).
             const hookResult = emitPiStyleHooks(
-                rulesyncSourceRoot(targetInputRoots.get(srcTarget), outputDir),
+                rulesyncSourceRoot(targetInputRoots.get('pi'), outputDir),
                 outputRoot,
                 '.omp',
                 'omp',

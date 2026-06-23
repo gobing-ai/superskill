@@ -291,7 +291,8 @@ describe('executeInstall', () => {
         });
 
         expect(existsSync(join(outRoot, '.hermes', 'skills', 'demo-a', 'SKILL.md'))).toBe(true);
-        expect(existsSync(join(outRoot, '.omp', 'agent', 'skills', 'demo-b', 'SKILL.md'))).toBe(true);
+        // OMP reads from .agents/skills/ natively (unified with codex/pi/antigravity)
+        expect(existsSync(join(outRoot, '.agents', 'skills', 'demo-b', 'SKILL.md'))).toBe(true);
     });
 
     it('throws when plugin not found', () => {

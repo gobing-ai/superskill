@@ -16,10 +16,11 @@ describe('targets', () => {
 
     it('TARGET_TO_RULESYNC maps rulesync-supported targets to ToolTarget strings', () => {
         expect(TARGET_TO_RULESYNC.codex).toBe('codexcli');
-        expect(TARGET_TO_RULESYNC.pi).toBe('pi');
+        // Pi, codex, and antigravity all share 'codexcli' to write to ~/.agents/skills/
+        expect(TARGET_TO_RULESYNC.pi).toBe('codexcli');
         expect(TARGET_TO_RULESYNC.opencode).toBe('opencode');
-        expect(TARGET_TO_RULESYNC['antigravity-cli']).toBe('antigravity-cli');
-        expect(TARGET_TO_RULESYNC['antigravity-ide']).toBe('antigravity-ide');
+        expect(TARGET_TO_RULESYNC['antigravity-cli']).toBe('codexcli');
+        expect(TARGET_TO_RULESYNC['antigravity-ide']).toBe('codexcli');
     });
 
     it('TARGET_TO_RULESYNC excludes targets handled outside rulesync', () => {

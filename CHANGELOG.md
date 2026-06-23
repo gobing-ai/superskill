@@ -4,6 +4,25 @@ All notable changes to `@gobing-ai/superskill` are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Conventional Commits](https://www.conventionalcommits.org/).
 
+## [0.2.4] - 2026-06-23
+
+### New Features
+
+- **Cross-Target Hook Installation**: Plugin hooks are now converted from Claude Code format to rulesync canonical format and distributed to all supported targets (codex, pi, opencode, omp, hermes, antigravity). Previously only pi/omp/hermes received hooks via a superskill shim. (`packages/core/src/mapper.ts`)
+- **Skill Name Prefixing**: Native plugin skills now have their `name:` frontmatter prefixed with the plugin name (e.g., `spur-dev` → `sp-spur-dev`), matching adapted commands and subagents. Fixes skill lookup failures in agents that resolve skills by frontmatter name. (`packages/core/src/mapper.ts`)
+- **Unified `~/.agents/skills/` Directory**: Pi, codex, and antigravity now all write skills to the shared `~/.agents/skills/` directory. Research confirmed Pi, OMP, and Antigravity 2.0 natively support this path. Eliminates duplicate skill copies when agents read from multiple directories. OMP's redundant copy step removed. (`packages/core/src/targets.ts`, `apps/cli/src/commands/install.ts`)
+
+### Improvements
+
+- **Clean `.rulesync/` Per Install**: The mapper now clears the `.rulesync/` staging directory before each mapping, preventing stale hooks and skills from previous plugin installs from polluting the current one. (`packages/core/src/mapper.ts`)
+- **Structured Logger in Builder**: All `console.*` calls in `scripts/builder.ts` replaced with a `logger` seam (`logger.info/warn/error`), providing a single output surface for testing and integration. (`scripts/builder.ts`)
+
+### Bug Fixes
+
+- **CI False-Pass in Builder Tests**: A test calling `checkSkillCitations` without a safe glob would trigger `process.exit(1)` via `fail()`, silently killing `bun test` mid-run while the reporter showed all tests passing. Fixed with a file-level `process.exit` guard and a safe non-matching test glob. (`scripts/tests/builder.test.ts`)
+- **Hooks Dead for Codex/OpenCode/Antigravity**: The mapper was writing hooks in Claude Code PascalCase format, which rulesync couldn't parse — hooks ended up empty for all rulesync-distributed targets. Fixed by converting to canonical format with `hooks` key, camelCase events, and flattened structure. (`packages/core/src/mapper.ts`)
+- **Duplicate OMP Skills**: OMP received skills via a superskill copy step from Pi, creating duplicates since OMP also reads `~/.agents/skills/` natively. Removed the redundant copy. (`apps/cli/src/commands/install.ts`)
+
 ## [0.2.1] - 2026-06-23
 
 ### New Features

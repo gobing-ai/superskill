@@ -16,25 +16,6 @@ export interface MapResult {
     mcp: boolean;
 }
 
-/**
- * Map a Claude Code plugin directory into the `.rulesync/skills/` canonical layout
- * for `rulesync.generate()`.
- *
- * All entities — skills, commands, and subagents — are mapped into skill
- * directories under `.rulesync/skills/<plugin>-<name>/SKILL.md`. Commands and
- * subagents are adapted (frontmatter injection, reference rewriting) before
- * writing. This "downgrade to skills" design is required because rulesync's
- * `commands`/`subagents` features have non-uniform target coverage (empirically
- * verified against rulesync 8.29.0), while `skills` emits uniformly.
- *
- * - Skills: `skills/<name>/SKILL.md` → `.rulesync/skills/<plugin>-<name>/SKILL.md` (+ subdirs)
- * - Commands: `commands/<name>.md` → `.rulesync/skills/<plugin>-<name>/SKILL.md` (adapted)
- * - Subagents: `agents/<name>.md` → `.rulesync/skills/<plugin>-<name>/SKILL.md` (adapted)
- * - hooks.json / mcp.json are deep-merged with existing output files
- *
- * Missing optional directories (e.g. no `agents/`, no `hooks.json`) are handled
- * gracefully — nothing is created for absent inputs.
- */
 /** Claude Code PascalCase → rulesync canonical camelCase event names. */
 const CLAUDE_TO_CANONICAL_EVENT: Record<string, string> = {
     SessionStart: 'sessionStart',
@@ -97,6 +78,32 @@ function convertClaudeHooksToCanonical(claudeJson: JsonObject): JsonObject {
     return { hooks: canonical };
 }
 
+/** Update the `name:` frontmatter field to the prefixed canonical name. */
+function setSkillName(content: string, newName: string): string {
+    return content.replace(/^name:\s*.+$/m, `name: ${newName}`);
+}
+
+/**
+ * Map a Claude Code plugin directory into the `.rulesync/skills/` canonical layout
+ * for `rulesync.generate()`.
+ *
+ * All entities — skills, commands, and subagents — are mapped into skill
+ * directories under `.rulesync/skills/<plugin>-<name>/SKILL.md`. Commands and
+ * subagents are adapted (frontmatter injection, reference rewriting) before
+ * writing. This "downgrade to skills" design is required because rulesync's
+ * `commands`/`subagents` features have non-uniform target coverage (empirically
+ * verified against rulesync 8.29.0), while `skills` emits uniformly.
+ *
+ * - Skills: `skills/<name>/SKILL.md` → `.rulesync/skills/<plugin>-<name>/SKILL.md` (+ subdirs)
+ * - Commands: `commands/<name>.md` → `.rulesync/skills/<plugin>-<name>/SKILL.md` (adapted)
+ * - Subagents: `agents/<name>.md` → `.rulesync/skills/<plugin>-<name>/SKILL.md` (adapted)
+ * - hooks.json is converted from Claude Code format to rulesync canonical format and
+ *   written directly (no cross-plugin merge — output dir is cleaned before mapping)
+ * - mcp.json is deep-merged with existing output files (if any remain after cleanup)
+ *
+ * Missing optional directories (e.g. no `agents/`, no `hooks.json`) are handled
+ * gracefully — nothing is created for absent inputs.
+ */
 export function mapPluginToRulesync(pluginPath: string, pluginName: string, outputDir: string): MapResult {
     assertSafePathSegment(pluginName, 'plugin name');
     // Clean the output directory to prevent stale data from previous installs
@@ -133,9 +140,11 @@ export function mapPluginToRulesync(pluginPath: string, pluginName: string, outp
 
             if (!skillName || !sourcePath) continue;
 
-            const dir = join(skillsOut, `${pluginName}-${skillName}`);
+            const expectedName = `${pluginName}-${skillName}`;
+            const dir = join(skillsOut, expectedName);
             mkdirSync(dir, { recursive: true });
-            const content = rewriteSkillReferences(readFileSync(sourcePath, 'utf-8'), pluginName);
+            const rawContent = readFileSync(sourcePath, 'utf-8');
+            const content = rewriteSkillReferences(setSkillName(rawContent, expectedName), pluginName);
             writeFileSync(join(dir, 'SKILL.md'), content);
 
             // Copy support subdirectories (scripts/, references/, templates/, assets/)
