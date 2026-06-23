@@ -4,6 +4,19 @@ All notable changes to `@gobing-ai/superskill` are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Conventional Commits](https://www.conventionalcommits.org/).
 
+## [0.2.1] - 2026-06-23
+
+### New Features
+
+- **Citation-Resolution Gate**: A new Spur post-check rule (`skill-citations-resolve`) catches two documentation-drift defect classes that pure content heuristics miss — dead `path:line` and symbol citations in `SKILL.md` bodies, and rubric dimension-count claims that disagree with the actual rubric. Runs automatically in `spur-check`. (`.spur/rules/quality/skill-citations.yaml`, `scripts/builder.ts`)
+- **Builder Script as Library**: The release builder script is now importable as a library with pure, testable exports (`bumpMarketplaceManifests`, `bumpPackageVersion`, `validateVersion`, `computeTag`, `checkSkillCitations`, `postbuild`) — enabling server-side and web application integration. (`scripts/builder.ts`)
+- **Meta-Agent Skill Refresh**: All five meta-agent skills (cc-agents, cc-commands, cc-hooks, cc-magents, cc-skills) updated with improved content, platform compatibility references, higher evaluation scores, and a new Source-Grounding Discipline section in cc-skills. (`plugins/cc/skills/*/SKILL.md`)
+
+### Improvements
+
+- **Unified Script Surface**: The citation-resolution checker consolidated from a standalone `scripts/check-skill-citations.ts` into the `scripts/builder.ts` dispatcher, reducing the scripts directory to one entry point. (`93ae033`)
+- **Builder Test Suite**: 524 new unit tests covering version bumping, marketplace manifest updates, and citation-resolution checking — both defect classes, across 10+ scenarios. (`scripts/tests/builder.test.ts`)
+
 ## [0.2.0] - 2026-06-22
 
 ### New Features
