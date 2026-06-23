@@ -13,6 +13,7 @@ import {
     diskRubricCount,
     dropTags,
     type FileResolver,
+    fsLineCount,
     handleMainError,
     main,
     postbuild,
@@ -58,6 +59,18 @@ function spyShell() {
     };
     return { calls, nothrow, shell: shell as never };
 }
+
+(function installProcessExitGuard() {
+    const origExit = process.exit;
+    beforeEach(() => {
+        process.exit = ((code?: string | number | null) => {
+            throw new Error(`UNGUARDED process.exit(${code}) — mock it in your describe block`);
+        }) as typeof process.exit;
+    });
+    afterAll(() => {
+        process.exit = origExit;
+    });
+})();
 
 afterEach(() => {
     mock.restore();
@@ -189,6 +202,14 @@ describe('diskRubricCount', () => {
 
     it('returns -1 for a non-existent rubric', () => {
         expect(diskRubricCount('nonexistent-xyz')).toBe(-1);
+    });
+});
+
+describe('fsLineCount', () => {
+    it('returns the line count of a real file', () => {
+        // apps/cli/package.json is known to exist and have multiple lines
+        const count = fsLineCount('apps/cli/package.json');
+        expect(count).toBeGreaterThan(0);
     });
 });
 
@@ -523,10 +544,11 @@ describe('runBuilderCommand', () => {
         }
     });
 
-    it('dispatches check-skill-citations with the default glob', async () => {
+    it('dispatches check-skill-citations with a safe glob', async () => {
         spyOn(console, 'log').mockImplementation(() => {});
 
-        await runBuilderCommand(['check-skill-citations']);
+        // Use a relative glob that matches nothing so we don't scan real skills
+        await runBuilderCommand(['check-skill-citations', 'nonexistent-test-glob-xyz/*/SKILL.md']);
     });
 
     it('fails on missing arguments and unknown commands', async () => {

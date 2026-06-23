@@ -267,7 +267,7 @@ function fsExists(rel: string): boolean {
     return existsSync(resolve(ROOT, rel));
 }
 
-function fsLineCount(rel: string): number {
+export function fsLineCount(rel: string): number {
     return readFileSync(resolve(ROOT, rel), 'utf8').split('\n').length;
 }
 
