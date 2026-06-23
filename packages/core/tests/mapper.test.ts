@@ -68,7 +68,7 @@ describe('mapPluginToRulesync', () => {
         expect(existsSync(join(outDir, 'hooks.json'))).toBe(true);
     });
 
-    it('deep-merges hooks.json with an existing output file', () => {
+    it('writes hooks in canonical format (no cross-plugin deep-merge)', () => {
         tmpDir = mkdtempSync('superskill-mapper-');
         const pluginDir = join(tmpDir, 'plugin-with-hooks');
         mkdirSync(pluginDir, { recursive: true });
@@ -83,23 +83,21 @@ describe('mapPluginToRulesync', () => {
         );
 
         const outDir = join(tmpDir, '.rulesync');
+        // Pre-existing hooks.json should be cleaned up, not merged
         mkdirSync(outDir, { recursive: true });
         writeFileSync(
             join(outDir, 'hooks.json'),
-            JSON.stringify({
-                hooks: {
-                    PreToolUse: [{ matcher: 'Edit', hooks: [{ type: 'command', command: 'existing-hook' }] }],
-                    PostToolUse: [{ hooks: [{ type: 'command', command: 'existing-post' }] }],
-                },
-            }),
+            JSON.stringify({ n: { preToolUse: [{ type: 'command', command: 'stale' }] } }),
         );
 
         mapPluginToRulesync(pluginDir, 'has-hooks', outDir);
 
-        const merged = JSON.parse(readFileSync(join(outDir, 'hooks.json'), 'utf-8'));
-        expect(merged.hooks.PostToolUse[0].hooks[0].command).toBe('existing-post');
-        expect(merged.hooks.Stop[0].hooks[0].command).toBe('plugin-stop');
-        expect(merged.hooks.PreToolUse[0].matcher).toBe('Write');
+        const written = JSON.parse(readFileSync(join(outDir, 'hooks.json'), 'utf-8'));
+        // Only the plugin's hooks, converted to canonical format, not merged with stale
+        expect(written.hooks.preToolUse[0].command).toBe('plugin-hook');
+        expect(written.hooks.preToolUse[0].matcher).toBe('Write');
+        expect(written.hooks.stop[0].command).toBe('plugin-stop');
+        expect(written.hooks.stop[0].matcher).toBeUndefined();
     });
 
     it('copies mcp.json when present', () => {
@@ -116,7 +114,7 @@ describe('mapPluginToRulesync', () => {
         expect(existsSync(join(outDir, 'mcp.json'))).toBe(true);
     });
 
-    it('deep-merges mcp.json with an existing output file', () => {
+    it('writes mcp.json directly (no cross-plugin deep-merge)', () => {
         tmpDir = mkdtempSync('superskill-mapper-');
         const pluginDir = join(tmpDir, 'plugin-with-mcp');
         mkdirSync(pluginDir, { recursive: true });
@@ -125,30 +123,20 @@ describe('mapPluginToRulesync', () => {
             JSON.stringify({
                 mcpServers: {
                     plugin: { command: 'plugin-mcp' },
-                    shared: { args: ['from-plugin'] },
                 },
             }),
         );
 
         const outDir = join(tmpDir, '.rulesync');
         mkdirSync(outDir, { recursive: true });
-        writeFileSync(
-            join(outDir, 'mcp.json'),
-            JSON.stringify({
-                mcpServers: {
-                    existing: { command: 'existing-mcp' },
-                    shared: { command: 'existing-shared', args: ['from-existing'] },
-                },
-            }),
-        );
+        writeFileSync(join(outDir, 'mcp.json'), JSON.stringify({ mcpServers: { stale: { command: 'stale-mcp' } } }));
 
         mapPluginToRulesync(pluginDir, 'has-mcp', outDir);
 
-        const merged = JSON.parse(readFileSync(join(outDir, 'mcp.json'), 'utf-8'));
-        expect(merged.mcpServers.existing.command).toBe('existing-mcp');
-        expect(merged.mcpServers.plugin.command).toBe('plugin-mcp');
-        expect(merged.mcpServers.shared.command).toBe('existing-shared');
-        expect(merged.mcpServers.shared.args).toEqual(['from-plugin']);
+        const written = JSON.parse(readFileSync(join(outDir, 'mcp.json'), 'utf-8'));
+        // Only the plugin's mcp, not merged with stale
+        expect(written.mcpServers.plugin.command).toBe('plugin-mcp');
+        expect(written.mcpServers.stale).toBeUndefined();
     });
 
     it('handles missing optional directories gracefully', () => {
@@ -225,8 +213,9 @@ describe('mapPluginToRulesync', () => {
 
         expect(result.hooks).toBe(true);
         const hooks = JSON.parse(readFileSync(join(outDir, 'hooks.json'), 'utf-8'));
-        expect(hooks.hooks.Stop).toBeDefined();
-        expect(hooks.hooks.Stop[0].hooks[0].command).toBe('echo stop');
+        expect(hooks.hooks.stop).toBeDefined();
+        expect(hooks.hooks.stop[0].command).toBe('echo stop');
+        expect(hooks.hooks.stop[0].timeout).toBe(5);
     });
 
     it('maps directory-layout commands and agents as skills', () => {

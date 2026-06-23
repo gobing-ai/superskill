@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { assertSafePathSegment } from './content/identity';
 import { adaptCommandToSkill } from './pipeline/adapt-command';
@@ -35,8 +35,75 @@ export interface MapResult {
  * Missing optional directories (e.g. no `agents/`, no `hooks.json`) are handled
  * gracefully — nothing is created for absent inputs.
  */
+/** Claude Code PascalCase → rulesync canonical camelCase event names. */
+const CLAUDE_TO_CANONICAL_EVENT: Record<string, string> = {
+    SessionStart: 'sessionStart',
+    SessionEnd: 'sessionEnd',
+    PreToolUse: 'preToolUse',
+    PostToolUse: 'postToolUse',
+    PreModelInvocation: 'preModelInvocation',
+    PostModelInvocation: 'postModelInvocation',
+    BeforeSubmitPrompt: 'beforeSubmitPrompt',
+    Stop: 'stop',
+    SubagentStop: 'subagentStop',
+    PreCompact: 'preCompact',
+    Notification: 'notification',
+    WorktreeCreate: 'worktreeCreate',
+    WorktreeRemove: 'worktreeRemove',
+    MessageDisplay: 'messageDisplay',
+};
+
+/**
+ * Convert a Claude Code-format hooks object to the rulesync canonical format.
+ *
+ * Claude Code wraps hooks in `{ hooks: { PascalCase: [{ matcher, hooks: [...] }] } }`.
+ * Rulesync expects `{ n: { camelCase: [{ type, command, matcher, timeout }] } }`.
+ */
+function convertClaudeHooksToCanonical(claudeJson: JsonObject): JsonObject {
+    const claudeHooks = claudeJson.hooks as JsonObject | undefined;
+    if (!claudeHooks || typeof claudeHooks !== 'object') return claudeJson;
+
+    const canonical: Record<string, unknown[]> = {};
+    for (const [claudeEvent, matcherEntries] of Object.entries(claudeHooks)) {
+        const canonicalEvent = CLAUDE_TO_CANONICAL_EVENT[claudeEvent] ?? claudeEvent;
+        if (!Array.isArray(matcherEntries)) continue;
+
+        const defs: unknown[] = [];
+        for (const entry of matcherEntries) {
+            if (typeof entry !== 'object' || entry === null) continue;
+            const e = entry as JsonObject;
+            const hookList = e.hooks;
+            if (Array.isArray(hookList)) {
+                // Claude Code format: nested { matcher, hooks: [...] }
+                const matcher = e.matcher;
+                for (const hook of hookList) {
+                    if (typeof hook !== 'object' || hook === null) continue;
+                    const h = hook as JsonObject;
+                    const def: JsonObject = { ...h };
+                    if (matcher !== undefined && matcher !== '*') {
+                        def.matcher = matcher;
+                    }
+                    defs.push(def);
+                }
+            } else {
+                // Already-canonical flat format: { type, command, matcher } directly
+                defs.push({ ...e });
+            }
+        }
+        if (defs.length > 0) {
+            canonical[canonicalEvent] = defs;
+        }
+    }
+    return { hooks: canonical };
+}
+
 export function mapPluginToRulesync(pluginPath: string, pluginName: string, outputDir: string): MapResult {
     assertSafePathSegment(pluginName, 'plugin name');
+    // Clean the output directory to prevent stale data from previous installs
+    // leaking into this plugin's mapping.
+    if (existsSync(outputDir)) {
+        rmSync(outputDir, { recursive: true, force: true });
+    }
     mkdirSync(outputDir, { recursive: true });
 
     const result: MapResult = { skills: 0, commands: 0, subagents: 0, hooks: false, mcp: false };
@@ -118,13 +185,14 @@ export function mapPluginToRulesync(pluginPath: string, pluginName: string, outp
         }
     }
 
-    // hooks.json — check both the plugin root and the Claude Code standard
-    // `hooks/hooks.json` location.
+    // hooks.json — convert from Claude Code format to rulesync canonical format.
     const hooksRootPath = join(pluginPath, 'hooks.json');
     const hooksSubdirPath = join(pluginPath, 'hooks', 'hooks.json');
     const hooksPath = existsSync(hooksRootPath) ? hooksRootPath : hooksSubdirPath;
     if (existsSync(hooksPath)) {
-        deepMergeJsonFile(hooksPath, join(outputDir, 'hooks.json'));
+        const claudeHooks = readJsonObject(hooksPath);
+        const canonical = convertClaudeHooksToCanonical(claudeHooks);
+        writeFileSync(join(outputDir, 'hooks.json'), `${JSON.stringify(canonical, null, 4)}\n`);
         result.hooks = true;
     }
 
