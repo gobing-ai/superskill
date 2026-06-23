@@ -185,6 +185,7 @@ Options:
   --ingest <file>       Agent-authored proposal JSON (ingest-in mode)
   --json                Output machine-readable JSON (envelope-out with --propose-only)
   --margin <n>          Δ-margin gate threshold for accept (default 0.05)
+  --eval-gate            Enable empirical behavior gate (requires skills/<name>/eval/cases.yaml)
 ```
 
 The self-evolution loop:

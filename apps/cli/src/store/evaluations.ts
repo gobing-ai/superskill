@@ -1,6 +1,15 @@
 import { type DbAdapter, EntityDao } from '@gobing-ai/ts-db';
 import { evaluations } from './schema';
 
+/** Serialized score for one evaluation dimension. */
+export interface EvaluationDimension {
+    score: number;
+    note: string;
+    hard?: number;
+    holdout_n?: number;
+    train_n?: number;
+}
+
 /** Input shape for inserting an evaluation record. */
 export interface EvaluationInput {
     content_type: string;
@@ -8,7 +17,7 @@ export interface EvaluationInput {
     target_agent: string;
     operation: 'evaluate' | 'refine' | 'evolve';
     aggregate: number;
-    dimensions: Record<string, { score: number; note: string }>;
+    dimensions: Record<string, EvaluationDimension>;
     file_hash?: string;
     /** Scoring method: 'heuristic' (default) or 'rubric'. F022 scorer seam. */
     scorer?: string;

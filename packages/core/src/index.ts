@@ -35,10 +35,12 @@ export * from './pipeline/slash-command';
 // ── Quality ──────────────────────────────────────────────────────────────────
 export * from './quality/agent';
 export * from './quality/command';
+export * from './quality/eval-cases';
 export * from './quality/evaluate';
 export * from './quality/heuristics';
 export * from './quality/hook';
 export * from './quality/magent';
+export * from './quality/replay';
 export * from './quality/rubric';
 export * from './quality/skill';
 export * from './quality/types';

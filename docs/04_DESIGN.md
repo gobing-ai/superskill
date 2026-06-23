@@ -24,6 +24,25 @@ sync: [T3]
 
 `--dry-run` previews classified refine fixes and projected score delta without writing files or creating backups.
 
+`agent|command|magent|skill evolve` share the evolve surface from phase 2, including `--eval-gate`.
+When `--eval-gate` is set and `skills/<name>/eval/cases.yaml` exists, the evolve accept path runs
+the empirical behavior gate after the form Δ-margin gate and before anchor/skeptic checks. The
+`cases.yaml` artifact shape is:
+
+```yaml
+version: 1
+cases:
+  - id: unique-case-id
+    split: train | holdout
+    prompt: "case prompt"
+    reference_kind: exact | rule
+    reference: "exact reference text"
+```
+
+For `reference_kind: rule`, `reference` is `{ checks: [{ op: contains | regex | equals | not_contains | tool_called, arg: string }] }`.
+The gate is opt-in and skip-when-absent: without the flag or without `cases.yaml`, no replay backend
+is constructed and evolve behavior remains unchanged.
+
 **Hook divergence (tasks 0061, 0066):** `hook` does NOT share the full surface above. Hooks are hand-authored in `hooks.json` (JSON, security-critical), so: (1) `hook scaffold` is removed — scaffold emits markdown, which is the wrong artifact type for JSON config; (2) `hook refine` is **suggest-only** — it registers only `--target`/`--dry-run` (no `--auto`/`--save`), and the engine forces the dry-run path so no fix is ever applied; (3) `hook evolve` is **analyze-only** (task 0056) — no `--history`/`--rollback`/`--confirm`. `hook validate` and `hook evaluate` work normally. `ContentType` retains `'hook'` for all lifecycle operations; only scaffold/refine/evolve diverge.
 
 ## Plugin-level scripts directory

@@ -104,6 +104,7 @@ The **evaluate** and **evolve** operations use a two-call seam pattern that sepa
 3. **Skeptic persona:** receives the proposal + the **verbatim** goal anchor, checks for violations/omissions, produces `{ ok, violations[] }`.
 4. **Judge persona (if multiple candidates):** pairwise tournament comparison, selects the winner.
 5. **Ingest-in:** `superskill skill evolve <name> --ingest <proposal.json> --accept <id>` — CLI double-loop gate decides: deterministic validate-zero-errors + Δ-margin + anchor-hash match + skeptic veto. Failing any gate → proposal stays `draft`, file restored.
+6. **Optional empirical gate:** `superskill skill evolve <name> --ingest <proposal.json> --accept <id> --eval-gate` additionally replays `skills/<name>/eval/cases.yaml` holdout cases and accepts only if candidate behavior strictly improves by the configured margin. Use this only for high-value, frequently-run skills with stable checkable references; it is not a default requirement for every skill.
 
 ### Goal-Anchor Verbatim Discipline
 

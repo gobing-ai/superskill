@@ -109,6 +109,7 @@ export async function magentEvolve(opts: {
     history?: boolean;
     rollback?: string;
     confirm?: boolean;
+    evalGate?: boolean;
 }): Promise<number | undefined> {
     const target = resolveTarget(opts);
     await evolve('magent', opts.name, {
@@ -124,6 +125,7 @@ export async function magentEvolve(opts: {
         history: opts.history,
         rollback: opts.rollback,
         confirm: opts.confirm,
+        evalGate: opts.evalGate,
     });
     return undefined;
 }
@@ -189,6 +191,7 @@ export async function handleMagentEvolve(opts: {
     history?: boolean;
     rollback?: string;
     confirm?: boolean;
+    evalGate?: boolean;
 }): Promise<void> {
     await runOperation(() => magentEvolve(opts));
 }
@@ -269,6 +272,7 @@ export function registerMagent(program: Command): void {
                 history?: boolean;
                 rollback?: string;
                 confirm?: boolean;
+                evalGate?: boolean;
             },
         ) => {
             await handleMagentEvolve({ name, ...opts });

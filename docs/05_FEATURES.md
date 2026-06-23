@@ -208,6 +208,7 @@ drive the non-determinism through clean I/O seams (P4-D2). Touches the CLI (`ope
 | F023 | [Generation seam (`evolve --propose-only --json`/`--ingest`)](features/F023-generation-seam.md) | F021 | M | ✅ | `operations/evolve.ts` (replace `generateChanges` placeholder), `commands/helpers.ts` |
 | F024 | [Double-loop gate (validate + Δ-margin + anchor)](features/F024-double-loop-gate.md) | F022, F023 | M | ✅ | `operations/evolve.ts` (gate on ingest), `operations/validate.ts` (precondition) |
 | F025 | [`cc` skill + Spur personas + hide `validate` (P4-D3)](features/F025-cc-personas-hide-validate.md) | F022, F023, F024 | M | ✅ | `plugins/cc/skills/cc-*/SKILL.md`, `plugins/cc/agents/expert-*.md`, delete `commands/hook-validate.md` |
+| F026 | [Empirical behavior gate (`evolve --eval-gate`)](features/F026-empirical-behavior-gate.md) | F024 | M | ✅ | `quality/eval-cases.ts`, `quality/replay.ts`, `operations/replay-runner.ts`, `operations/evolve.ts` (gate + persistence), `commands/helpers.ts` |
 ```
 F021 (rubric config)   ← fitness function; both seams read it
   │

@@ -29,6 +29,7 @@ export function addEvolveOptions(cmd: Command): Command {
         .option('--json', 'Output machine-readable JSON (envelope-out with --propose-only)')
         .option('--ingest <file>', 'Agent-authored proposal JSON (ingest-in mode)')
         .option('--margin <n>', 'Δ-margin gate threshold for accept (default 0.05)', Number.parseFloat, 0.05)
+        .option('--eval-gate', 'Enable empirical behavior gate (requires skills/<name>/eval/cases.yaml)')
         .option('--analyze', 'Print analysis summary (trends, score, data sources) without writing a proposal')
         .option('--history', 'List applied proposal versions from the store')
         .option('--rollback <id>', 'Rollback to a prior version by proposal_id (requires --confirm)')

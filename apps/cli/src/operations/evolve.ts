@@ -7,6 +7,7 @@ import {
     type Change,
     type ContentType,
     getProposalsDir,
+    loadEvalCases,
     loadRubric,
     parseFrontmatter,
     type QualityReport,
@@ -20,6 +21,7 @@ import type { DbAdapter, Evaluation, Proposal } from '../store';
 import { EvaluationDao } from '../store/evaluations';
 import { ProposalDao } from '../store/proposals';
 import { evaluate } from './evaluate';
+import { createReplayBackend, type ReplayBackend, replaySplit } from './replay-runner';
 import { validate } from './validate';
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -49,6 +51,10 @@ export interface EvolveOptions {
     rollback?: string;
     /** Confirm a destructive operation (required for --rollback). */
     confirm?: boolean;
+    /** Enable the empirical behavior gate (requires skills/<name>/eval/cases.yaml). */
+    evalGate?: boolean;
+    /** Internal test seam for deterministic empirical-gate replay without model calls. */
+    replayBackend?: ReplayBackend;
     /** Inject an already-open DbAdapter for testing. */
     adapter?: DbAdapter;
 }
@@ -362,13 +368,24 @@ interface GateInput {
     baselineAnchorHash?: string;
     /** Skeptic persona verdict (optional — absent ⇒ treated as ok). */
     skeptic?: SkepticVerdict;
+    /** Empirical behavior gate context (optional — absent ⇒ empirical gate skipped). */
+    evalGate?: {
+        name: string;
+        candidateSkillText: string;
+        baselineSkillText: string;
+        margin: number;
+        target: Target;
+        replayBackend?: ReplayBackend;
+    };
 }
 
 /** Outcome of the double-loop gate: ok, plus the failed gate name + reason when ok=false. */
 interface GateResult {
     ok: boolean;
-    failedGate?: 'deterministic' | 'delta-margin' | 'anchor' | 'skeptic';
+    failedGate?: 'deterministic' | 'delta-margin' | 'empirical' | 'anchor' | 'skeptic';
     reason?: string;
+    /** Empirical scores persisted when the empirical gate ran and passed. */
+    empirical?: { hard: number; holdout_n: number; train_n: number };
 }
 
 /**
@@ -402,6 +419,27 @@ async function runGate(input: GateInput): Promise<GateResult> {
         };
     }
 
+    // 2.5. Empirical gate (R3): candidate must strictly improve behavior on holdout eval cases.
+    // Skip when no evalGate is supplied OR no cases.yaml exists for the skill (skip-when-absent).
+    let empiricalScores: { hard: number; holdout_n: number; train_n: number } | undefined;
+    if (input.evalGate) {
+        const cases = loadEvalCases(input.evalGate.name);
+        if (cases) {
+            const backend = createReplayBackend(input.evalGate.target, input.evalGate.replayBackend);
+            const base = await replaySplit(backend, input.evalGate.baselineSkillText, cases.cases, 'holdout');
+            const cand = await replaySplit(backend, input.evalGate.candidateSkillText, cases.cases, 'holdout');
+            if (!(cand.hard > base.hard && cand.hard - base.hard >= input.evalGate.margin)) {
+                return {
+                    ok: false,
+                    failedGate: 'empirical',
+                    reason: `Empirical gate failed: candidate behavior ${cand.hard.toFixed(2)} ≤ baseline ${base.hard.toFixed(2)} (margin ${input.evalGate.margin.toFixed(2)}).`,
+                };
+            }
+            const trainResult = await replaySplit(backend, input.evalGate.candidateSkillText, cases.cases, 'train');
+            empiricalScores = { hard: cand.hard, holdout_n: cand.n, train_n: trainResult.n };
+        }
+    }
+
     // 3. Anchor gate (R3): the ingested anchor_hash must match the recomputed baseline hash.
     if (input.ingestedAnchorHash !== undefined && input.baselineAnchorHash !== undefined) {
         if (input.ingestedAnchorHash !== input.baselineAnchorHash) {
@@ -424,8 +462,7 @@ async function runGate(input: GateInput): Promise<GateResult> {
             reason: `Skeptic gate failed: the Skeptic reported an anchor/invariant violation.${violations}`,
         };
     }
-
-    return { ok: true };
+    return { ok: true, ...(empiricalScores ? { empirical: empiricalScores } : {}) };
 }
 
 /**
@@ -582,10 +619,21 @@ async function ingestProposal(
         // R6: back up before applying so a gate failure can restore the file byte-identical.
         const backupPath = await backupFile(resolvedPath);
         const appliedCount = await stepApply(parsed.changes, resolvedPath, proposalRecord.id, db);
+        const evalGate = opts?.evalGate
+            ? {
+                  name,
+                  candidateSkillText: await Bun.file(resolvedPath).text(),
+                  baselineSkillText: readFileSync(backupPath, 'utf-8'),
+                  margin: opts?.margin ?? 0.05,
+                  target: opts?.target ?? 'claude',
+                  replayBackend: opts?.replayBackend,
+              }
+            : undefined;
         const verdict = await stepVerify(type, name, resolvedPath, baselineScore, proposalRecord.id, opts, db, {
             backupPath,
             ingestedAnchorHash: parsed.anchor_hash,
             skeptic: parsed.skeptic,
+            evalGate,
         });
         if (!verdict.rejected && verdict.backupPath) {
             await persistVersionSnapshot(verdict.backupPath, resolvedPath, proposalId);
@@ -886,6 +934,15 @@ interface GateContext {
     ingestedAnchorHash?: string;
     /** Skeptic persona verdict (optional). */
     skeptic?: SkepticVerdict;
+    /** Empirical behavior gate context (optional — absent ⇒ empirical gate skipped). */
+    evalGate?: {
+        name: string;
+        candidateSkillText: string;
+        baselineSkillText: string;
+        margin: number;
+        target: Target;
+        replayBackend?: ReplayBackend;
+    };
 }
 
 async function stepVerify(
@@ -935,6 +992,7 @@ async function stepVerify(
             ingestedAnchorHash: gate.ingestedAnchorHash,
             baselineAnchorHash,
             skeptic: gate.skeptic,
+            evalGate: gate.evalGate,
         });
 
         if (!gateResult.ok) {
@@ -943,6 +1001,33 @@ async function stepVerify(
             await new ProposalDao(db).updateProposalStatus(proposalDbId, 'draft');
             echoError(`Gate rejected proposal — ${gateResult.reason} File restored; proposal stays draft.`);
             return { postScore: baselineScore, delta: 0, rejected: true, reason: gateResult.reason };
+        }
+
+        // R4: persist empirical behavior score alongside the form evaluation.
+        if (gateResult.empirical) {
+            try {
+                await new EvaluationDao(db).insertEvaluation({
+                    content_type: type,
+                    content_name: name,
+                    target_agent: opts?.target ?? 'claude',
+                    operation: 'evolve',
+                    aggregate: gateResult.empirical.hard,
+                    dimensions: {
+                        empirical: {
+                            score: gateResult.empirical.hard,
+                            hard: gateResult.empirical.hard,
+                            holdout_n: gateResult.empirical.holdout_n,
+                            train_n: gateResult.empirical.train_n,
+                            note: `Behavior gate: holdout_n=${gateResult.empirical.holdout_n}, train_n=${gateResult.empirical.train_n}`,
+                        },
+                    },
+                });
+                echo(
+                    `Empirical behavior: holdout ${gateResult.empirical.hard.toFixed(2)} (holdout_n=${gateResult.empirical.holdout_n}, train_n=${gateResult.empirical.train_n})`,
+                );
+            } catch {
+                echoError('Cannot persist empirical behavior score.');
+            }
         }
     }
 
@@ -1191,13 +1276,23 @@ export async function evolve(type: ContentType, name: string, opts?: EvolveOptio
         } catch {
             acceptedFromStore = [];
         }
-        // R6: back up before applying so the gate can restore on failure.
         const backupPath = await backupFile(resolvedPath);
         const appliedCount = await stepApply(acceptedFromStore, resolvedPath, target.id, db);
+        const evalGateCtx = opts?.evalGate
+            ? {
+                  name: contentName,
+                  candidateSkillText: await Bun.file(resolvedPath).text(),
+                  baselineSkillText: readFileSync(backupPath, 'utf-8'),
+                  margin: opts?.margin ?? 0.05,
+                  target: opts?.target ?? 'claude',
+                  replayBackend: opts?.replayBackend,
+              }
+            : undefined;
         const verdict = await stepVerify(type, contentName, resolvedPath, baselineScore, target.id, opts, db, {
             backupPath,
             ingestedAnchorHash: storedAnchorHash,
             skeptic: storedSkeptic,
+            evalGate: evalGateCtx,
         });
         if (!verdict.rejected && verdict.backupPath) {
             await persistVersionSnapshot(verdict.backupPath, resolvedPath, opts.acceptId);
@@ -1239,6 +1334,17 @@ export async function evolve(type: ContentType, name: string, opts?: EvolveOptio
     const backupPath = await backupFile(resolvedPath);
     const changesApplied = await stepApply(acceptedChanges, resolvedPath, proposalDbId, db);
 
+    const evalGateCtx = opts?.evalGate
+        ? {
+              name: contentName,
+              candidateSkillText: await Bun.file(resolvedPath).text(),
+              baselineSkillText: readFileSync(backupPath, 'utf-8'),
+              margin: opts?.margin ?? 0.05,
+              target: opts?.target ?? 'claude',
+              replayBackend: opts?.replayBackend,
+          }
+        : undefined;
+
     // Step 5: VERIFY
     const { postScore, delta } = await stepVerify(
         type,
@@ -1248,6 +1354,7 @@ export async function evolve(type: ContentType, name: string, opts?: EvolveOptio
         proposalDbId,
         opts,
         db,
+        evalGateCtx ? { backupPath, evalGate: evalGateCtx } : undefined,
     );
 
     // Persist version snapshot for --rollback

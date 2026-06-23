@@ -109,6 +109,7 @@ export async function commandEvolve(opts: {
     history?: boolean;
     rollback?: string;
     confirm?: boolean;
+    evalGate?: boolean;
 }): Promise<number | undefined> {
     const target = resolveTarget(opts);
     await evolve('command', opts.name, {
@@ -124,6 +125,7 @@ export async function commandEvolve(opts: {
         history: opts.history,
         rollback: opts.rollback,
         confirm: opts.confirm,
+        evalGate: opts.evalGate,
     });
     return undefined;
 }
@@ -188,6 +190,7 @@ export async function handleCommandEvolve(opts: {
     history?: boolean;
     rollback?: string;
     confirm?: boolean;
+    evalGate?: boolean;
 }): Promise<void> {
     await runOperation(() => commandEvolve(opts));
 }
@@ -267,6 +270,7 @@ export function registerCommand(program: Command): void {
                 history?: boolean;
                 rollback?: string;
                 confirm?: boolean;
+                evalGate?: boolean;
             },
         ) => {
             await handleCommandEvolve({ name, ...opts });

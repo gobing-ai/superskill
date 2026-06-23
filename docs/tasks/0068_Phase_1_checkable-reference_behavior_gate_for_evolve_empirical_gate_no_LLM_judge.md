@@ -1,7 +1,7 @@
 ---
 name: "Phase 1 — checkable-reference behavior gate for evolve (empirical gate, no LLM judge)"
 description: "Phase 1 — checkable-reference behavior gate for evolve (empirical gate, no LLM judge)"
-status: Backlog
+status: Done
 created_at: 2026-06-22T23:56:53.190Z
 updated_at: 2026-06-22T23:56:53.190Z
 folder: docs/tasks
@@ -11,11 +11,11 @@ priority: high
 estimated_hours: 52
 tags: ["evolve","behavior-gate","empirical","eval-cases","replay","core","cli"]
 impl_progress:
-  planning: pending
-  design: pending
-  implementation: pending
-  review: pending
-  testing: pending
+  planning: completed
+  design: completed
+  implementation: completed
+  review: completed
+  testing: completed
 ---
 
 ## 0068. "Phase 1 — checkable-reference behavior gate for evolve (empirical gate, no LLM judge)"
@@ -175,9 +175,56 @@ the four doc-map docs.
 
 ### Review
 
+_2026-06-23T15:58:00-07:00_
+
+**Verdict: PASS**
+
+**Scope reviewed:** task 0068 implementation and docs sync for the opt-in empirical behavior gate:
+`packages/core/src/quality/eval-cases.ts`, `packages/core/src/quality/replay.ts`,
+`apps/cli/src/operations/replay-runner.ts`, `apps/cli/src/operations/evolve.ts`,
+`apps/cli/src/commands/{agent,command,magent,skill}.ts`, `apps/cli/src/commands/helpers.ts`,
+`apps/cli/src/store/evaluations.ts`, task-owned tests, and docs.
+
+**Findings fixed during verification:**
+
+| # | Title | Dimension | Location | Resolution |
+|---|-------|-----------|----------|------------|
+| 1 | `--eval-gate` flag was declared but not forwarded by evolve wrappers | Correctness | `apps/cli/src/commands/{agent,command,magent,skill}.ts` | Forwarded `evalGate` from all four wrappers into `evolve()`; hook remains analyze-only. |
+| 2 | Empirical gate had no operation-boundary improve/regression coverage | Correctness | `apps/cli/tests/operations/evolve.test.ts` | Added accept-pass and regression-block tests with a deterministic injected replay backend. |
+| 3 | Eval-case schema accepted versions beyond `version: 1` and did not name known case ids in errors | Correctness | `packages/core/src/quality/eval-cases.ts` | Tightened schema to `z.literal(1)` and improved malformed-case errors to include the case id when present. |
+| 4 | Empirical behavior score persistence did not carry the hard/holdout/train fields required by R4 | Correctness | `apps/cli/src/store/evaluations.ts`, `apps/cli/src/operations/evolve.ts` | Widened dimension JSON typing and persisted `hard`, `holdout_n`, and `train_n` alongside score/note. |
+| 5 | R5/R7 documentation surface was incomplete | Usability | `docs/04_DESIGN.md`, `plugins/cc/skills/cc-skills/SKILL.md` | Added `--eval-gate` artifact shape/scope note and the cc-skills empirical-gate usage note. |
+| 6 | Production empirical gate defaulted to an empty mock backend | Correctness | `apps/cli/src/operations/evolve.ts`, `apps/cli/src/operations/replay-runner.ts` | Added `createReplayBackend()` so production `--eval-gate` uses `TsAiRunnerBackend(TARGET_TO_AGENT_NAME[target])`; deterministic tests still inject a mock backend. Backend construction still happens only after `cases.yaml` exists. |
+
+**Requirements traceability:**
+
+| Req | Verdict | Evidence |
+|---|---|---|
+| R1 eval-case artifact | MET | `packages/core/src/quality/eval-cases.ts`; `packages/core/tests/quality/eval-cases.test.ts` covers valid load, absent-file skip, bad kind/type, missing field with case id, duplicate ids, invalid op, explicit path, and exact `version: 1`. |
+| R2 replay harness | MET | `packages/core/src/quality/replay.ts`; `apps/cli/src/operations/replay-runner.ts`; tests cover exact/rule scorers, split aggregation, mock backend, ts-ai-runner DI seam, and production backend factory defaulting. |
+| R3 empirical gate stage | MET | `apps/cli/src/operations/evolve.ts`; operation tests cover improve pass, behavior regression block, skip-when-absent, restore-to-backup, and proposal draft status on rejection. |
+| R4 score persistence | MET | `apps/cli/src/store/evaluations.ts`; `apps/cli/tests/operations/evolve.test.ts` asserts `dimensions.empirical.score`, `hard`, `holdout_n`, and `train_n`. |
+| R5 CLI wiring/reporting | MET | `apps/cli/src/commands/helpers.ts`, four evolve wrappers, and `apps/cli/src/operations/evolve.ts`; flag is forwarded and empirical pass/rejection is surfaced. |
+| R6 opt-in zero default cost | MET | Default-path regression covers no `--eval-gate`; skip-when-absent covers `--eval-gate` with no `cases.yaml`. |
+| R7 scope guard | MET | `docs/04_DESIGN.md` and `plugins/cc/skills/cc-skills/SKILL.md` document high-value/checkable-reference scope and non-default usage. |
+| R8 no Python dependency | MET | Strict-improve gate and rule judge are implemented in TypeScript; no runtime dependency on `vendors/SkillOpt`. |
+
 
 
 ### Testing
+
+_2026-06-23T15:58:00-07:00_
+
+**Gate evidence: PASS**
+
+| Command | Result |
+|---|---|
+| `bun run lint` | PASS — Biome clean; typecheck clean across apps/packages. |
+| `bun run test` | PASS — 1140 tests, 0 failures, coverage 99.70% funcs / 98.76% lines. |
+| `bun run build` | PASS — CLI bundle built successfully at `apps/cli/dist/index.js`. |
+| `bun run spur-check` | PASS — lint, 20 pre-check rules, full tests, coverage gate, skill citation resolution, and TSDoc export rule all green. |
+
+**Targeted verification also run:** `bun test packages/core/tests/quality/eval-cases.test.ts packages/core/tests/quality/replay.test.ts apps/cli/tests/operations/replay-runner.test.ts apps/cli/tests/operations/evolve.test.ts` passed all 128 tests; the narrow invocation exited non-zero only because project-wide coverage thresholds are enforced even for partial test subsets. Full `bun run test` and `bun run spur-check` passed.
 
 **Strategy.** Every behavior assertion runs against the deterministic `MockReplayBackend` — ZERO token
 spend, CI-safe (mirrors SkillOpt's mock-backend discipline). Tests encode WHY, not just WHAT (R8): the
@@ -232,5 +279,3 @@ green; `git status` shows only intentional changes.
 | ---- | ---- | ----- | ---- |
 
 ### References
-
-

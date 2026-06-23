@@ -113,6 +113,7 @@ export async function skillEvolve(opts: {
     history?: boolean;
     rollback?: string;
     confirm?: boolean;
+    evalGate?: boolean;
 }): Promise<number | undefined> {
     const target = resolveTarget(opts);
     await evolve('skill', opts.name, {
@@ -128,6 +129,7 @@ export async function skillEvolve(opts: {
         history: opts.history,
         rollback: opts.rollback,
         confirm: opts.confirm,
+        evalGate: opts.evalGate,
     });
     return undefined;
 }
@@ -185,6 +187,7 @@ export async function handleSkillEvolve(
         history?: boolean;
         rollback?: string;
         confirm?: boolean;
+        evalGate?: boolean;
     },
 ): Promise<void> {
     await runOperation(() => skillEvolve({ name, ...opts }));

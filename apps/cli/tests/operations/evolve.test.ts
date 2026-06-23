@@ -14,6 +14,7 @@ import {
     interactiveReview,
     isHookApplyCapableOpt,
 } from '../../src/operations/evolve';
+import type { ReplayBackend } from '../../src/operations/replay-runner';
 import type { Evaluation, Proposal } from '../../src/store';
 import { EvaluationDao } from '../../src/store/evaluations';
 import { ProposalDao } from '../../src/store/proposals';
@@ -300,6 +301,34 @@ describe('evolve — orchestrator', () => {
         }
     }
 
+    function writeWidgetEvalCases(): void {
+        mkdirSync(join(dir, 'skills', 'widget', 'eval'), { recursive: true });
+        writeFileSync(
+            join(dir, 'skills', 'widget', 'eval', 'cases.yaml'),
+            `version: 1
+cases:
+  - id: holdout-1
+    split: holdout
+    prompt: "Return the expected marker"
+    reference_kind: exact
+    reference: "PASS"
+  - id: train-1
+    split: train
+    prompt: "Return the training marker"
+    reference_kind: exact
+    reference: "PASS"
+`,
+        );
+    }
+
+    class ContentSensitiveReplayBackend implements ReplayBackend {
+        constructor(private readonly marker: string) {}
+
+        async run(systemPrompt: string): Promise<string> {
+            return systemPrompt.includes(this.marker) ? 'PASS' : 'FAIL';
+        }
+    }
+
     beforeEach(async () => {
         prevCwd = cwd();
         dir = mkdtempSync(join(tmpdir(), 'superskill-evolve-'));
@@ -530,6 +559,89 @@ describe('evolve — orchestrator', () => {
         const r = await evolve('skill', 'widget', { adapter, acceptId: pid });
         // Gate may pass or reject; verify either outcome is clean (no throw)
         expect([true, undefined]).toContain(r.rejected);
+    });
+
+    it('--eval-gate accepts when candidate behavior improves and persists empirical dimensions', async () => {
+        await seedHistory(adapter, [0.9, 0.5]);
+        writeWidgetEvalCases();
+        const pid = 'skill-evolve-empirical-pass-001';
+        await new ProposalDao(adapter).insertProposal({
+            content_type: 'skill',
+            content_name: 'widget',
+            baseline_id: 1,
+            proposal_json: {
+                proposal_id: pid,
+                changes: [
+                    {
+                        dimension: 'body',
+                        location: 'body',
+                        current: 'Body content here',
+                        proposed: 'Body content here with empirical better',
+                        reason: 'exercise empirical gate',
+                    },
+                ],
+            },
+        });
+
+        const r = await evolve('skill', 'widget', {
+            adapter,
+            acceptId: pid,
+            margin: -1,
+            evalGate: true,
+            replayBackend: new ContentSensitiveReplayBackend('empirical better'),
+        });
+
+        expect(r.rejected).toBeUndefined();
+        expect(readFileSync(join(dir, 'widget.md'), 'utf-8')).toContain('empirical better');
+        const rows = await new EvaluationDao(adapter).getEvaluations('skill', 'widget');
+        const empirical = rows.find((row) => row.dimensions.empirical);
+        expect(empirical?.dimensions.empirical?.score).toBe(1);
+        expect(empirical?.dimensions.empirical?.hard).toBe(1);
+        expect(empirical?.dimensions.empirical?.holdout_n).toBe(1);
+        expect(empirical?.dimensions.empirical?.train_n).toBe(1);
+        expect(empirical?.dimensions.empirical?.note).toContain('holdout_n=1');
+    });
+
+    it('--eval-gate blocks behavior regressions and restores the file', async () => {
+        await seedHistory(adapter, [0.9, 0.5]);
+        writeWidgetEvalCases();
+        const before = readFileSync(join(dir, 'widget.md'), 'utf-8');
+        const pid = 'skill-evolve-empirical-block-001';
+        await new ProposalDao(adapter).insertProposal({
+            content_type: 'skill',
+            content_name: 'widget',
+            baseline_id: 1,
+            proposal_json: {
+                proposal_id: pid,
+                changes: [
+                    {
+                        dimension: 'body',
+                        location: 'body',
+                        current: 'Body content here',
+                        proposed: 'Body content here with empirical worse',
+                        reason: 'exercise empirical gate rejection',
+                    },
+                ],
+            },
+        });
+
+        const r = await evolve('skill', 'widget', {
+            adapter,
+            acceptId: pid,
+            margin: -1,
+            evalGate: true,
+            replayBackend: new ContentSensitiveReplayBackend('Body content here for the widget skill.'),
+        });
+
+        expect(r.rejected).toBe(true);
+        expect(r.rejectionReason).toContain('Empirical gate failed');
+        expect(readFileSync(join(dir, 'widget.md'), 'utf-8')).toBe(before);
+        const proposal = (await new ProposalDao(adapter).getProposals('skill', 'widget')).find(
+            (row) => (row.proposal_json as { proposal_id?: string }).proposal_id === pid,
+        );
+        expect(proposal?.status).toBe('draft');
+        const rows = await new EvaluationDao(adapter).getEvaluations('skill', 'widget');
+        expect(rows.some((row) => row.dimensions.empirical)).toBe(false);
     });
 
     // ── G1/A1: seeded proposals ───────────────────────────────────────────────
@@ -1280,5 +1392,87 @@ describe('interactiveReview', () => {
         const r = await interactiveReview([change, { ...change, dimension: 'conciseness' }], trends, rl);
         expect(r.accepted).toHaveLength(0);
         expect(r.rejected).toHaveLength(2);
+    });
+});
+
+// ── Empirical Gate Regression (0068 R6) ──────────────────────────────────────
+
+describe('evolve — empirical gate default-path invariance', () => {
+    let dir: string;
+    let originalCwd: string;
+    let adapter: DbAdapter;
+
+    beforeEach(async () => {
+        originalCwd = cwd();
+        dir = mkdtempSync(join(tmpdir(), 'evolve-empirical-'));
+        chdir(dir);
+        adapter = await createDbAdapter({ driver: 'bun-sqlite', url: ':memory:' });
+        await adapter.exec(evaluations.createTableSql);
+        await adapter.exec(proposals.createTableSql);
+    });
+
+    afterEach(() => {
+        chdir(originalCwd);
+        rmSync(dir, { recursive: true, force: true });
+    });
+
+    async function seedEvals(
+        adapter: DbAdapter,
+        contentType: string,
+        contentName: string,
+        scores: { aggregate: number; dims: Record<string, number>; createdAt: number }[],
+    ): Promise<void> {
+        const dao = new EvaluationDao(adapter);
+        for (const s of scores) {
+            const dims: Record<string, { score: number; note: string }> = {};
+            for (const [k, v] of Object.entries(s.dims)) {
+                dims[k] = { score: v, note: `${k} note` };
+            }
+            await dao.insertEvaluation({
+                content_type: contentType,
+                content_name: contentName,
+                target_agent: 'claude',
+                operation: 'evaluate',
+                aggregate: s.aggregate,
+                dimensions: dims,
+            });
+        }
+    }
+    it('evolve with --eval-gate flag but no cases.yaml does not crash (skip-when-absent)', async () => {
+        const content = '---\nname: noevals\ndescription: No eval cases\n---\n\n# No Evals\n\nBody text.';
+        mkdirSync(join(dir, 'skills', 'noevals'), { recursive: true });
+        writeFileSync(join(dir, 'skills', 'noevals', 'SKILL.md'), content);
+
+        await seedEvals(adapter, 'skill', 'noevals', [
+            { aggregate: 0.5, dims: { clarity: 0.4, completeness: 0.6 }, createdAt: 1000 },
+            { aggregate: 0.7, dims: { clarity: 0.6, completeness: 0.8 }, createdAt: 2000 },
+        ]);
+
+        // --propose-only with evalGate should not crash when cases.yaml is absent
+        const r = await evolve('skill', 'skills/noevals/SKILL.md', {
+            adapter,
+            proposeOnly: true,
+            evalGate: true,
+        });
+
+        // Proposal should be generated (form gate passed, empirical gate skipped)
+        expect(r.proposalPath).toBeTruthy();
+        expect(r.baselineScore).toBeGreaterThan(0);
+    });
+
+    it('evolve without --eval-gate works as before (default-path invariant)', async () => {
+        const content = '---\nname: basic\ndescription: A basic skill\n---\n\n# Basic\n\nSimple body.';
+        mkdirSync(join(dir, 'skills', 'basic'), { recursive: true });
+        writeFileSync(join(dir, 'skills', 'basic', 'SKILL.md'), content);
+
+        await seedEvals(adapter, 'skill', 'basic', [
+            { aggregate: 0.5, dims: { clarity: 0.4, completeness: 0.6 }, createdAt: 1000 },
+            { aggregate: 0.7, dims: { clarity: 0.6, completeness: 0.8 }, createdAt: 2000 },
+        ]);
+
+        // Without evalGate, evolve should work normally
+        const r = await evolve('skill', 'skills/basic/SKILL.md', { adapter, proposeOnly: true });
+        expect(r.proposalPath).toBeTruthy();
+        expect(r.baselineScore).toBeGreaterThan(0);
     });
 });

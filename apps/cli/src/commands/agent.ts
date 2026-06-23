@@ -110,6 +110,7 @@ export async function agentEvolve(opts: {
     history?: boolean;
     rollback?: string;
     confirm?: boolean;
+    evalGate?: boolean;
 }): Promise<number | undefined> {
     const target = resolveTarget(opts);
     await evolve('agent', opts.name, {
@@ -125,6 +126,7 @@ export async function agentEvolve(opts: {
         history: opts.history,
         rollback: opts.rollback,
         confirm: opts.confirm,
+        evalGate: opts.evalGate,
     });
     return undefined;
 }
@@ -189,6 +191,7 @@ export async function handleAgentEvolve(opts: {
     history?: boolean;
     rollback?: string;
     confirm?: boolean;
+    evalGate?: boolean;
 }): Promise<void> {
     await runOperation(() => agentEvolve(opts));
 }
@@ -268,6 +271,7 @@ export function registerAgent(program: Command): void {
                 analyze?: boolean;
                 history?: boolean;
                 rollback?: string;
+                evalGate?: boolean;
                 confirm?: boolean;
             },
         ) => {

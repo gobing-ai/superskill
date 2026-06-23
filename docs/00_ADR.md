@@ -228,3 +228,15 @@ Reversals = new entries naming what they supersede. Burned numbers get a `Skippe
 **Why.** One script with multiple command patterns keeps release/test seams discoverable and avoids tiny helper files that exist only to support one command.
 
 **Detail:** `scripts/builder.ts` owns `bump-ver`, `drop-tags`, `postbuild`, and `check-skill-citations`; tests inject seams through exported builder functions/subcommand dispatch.
+
+---
+
+## ADR-018: Empirical behavior gate for evolve (opt-in, additive, no LLM judge)
+
+**Status:** Accepted · **Date:** 2026-06-23
+
+**Decision.** Add an opt-in empirical behavior gate to the evolve pipeline that replays held-out eval cases against the candidate skill and accepts only when the candidate strictly outperforms the baseline. The gate is additive (layered on top of the existing form gate), uses only deterministic checkable references (exact-match + rule judge), and requires no LLM judge (Phase 1 scope). It is skip-when-absent: no cases.yaml = gate skipped, no flag = gate skipped. YAML eval cases are co-located with the skill (`skills/<name>/eval/cases.yaml`), separate from rubrics. No Python dependency — the strict-improve comparison and rule judge are re-implemented in TypeScript.
+
+**Why.** The current evolve gate closes the loop on FORM (heuristic + rubric scores), not BEHAVIOR. A higher heuristic score does not imply the agent behaves better. SkillOpt (arXiv 2605.23904) demonstrates the mechanism: accept an edit only when replaying held-out tasks scores strictly higher. Phase 1 imports the loop-on-behavior mechanism with checkable references only.
+
+**Detail.** See task 0068. Components: `packages/core/src/quality/eval-cases.ts` (Zod schema + YAML loader), `packages/core/src/quality/replay.ts` (pure exact/rule scorers), `apps/cli/src/operations/replay-runner.ts` (mock + real ts-ai-runner backends), `apps/cli/src/operations/evolve.ts` (empirical gate stage in runGate, persistence). CLI flag: `--eval-gate` on `addEvolveOptions`.
