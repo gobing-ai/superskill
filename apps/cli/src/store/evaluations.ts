@@ -8,6 +8,9 @@ export interface EvaluationDimension {
     hard?: number;
     holdout_n?: number;
     train_n?: number;
+    noise_floor?: number;
+    rubric_delta?: number;
+    skipped?: boolean;
 }
 
 /** Input shape for inserting an evaluation record. */

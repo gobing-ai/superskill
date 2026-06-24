@@ -188,6 +188,8 @@ Options:
   --eval-gate            Enable empirical behavior gate (requires skills/<name>/eval/cases.yaml)
 ```
 
+`--eval-gate` accepts exact/rule/rubric eval cases. Rubric cases are pairwise judged against candidate and baseline outputs, rejected when the signed delta is within the estimated judge noise floor, and fail loud when the model-call budget cap is exceeded.
+
 The self-evolution loop:
 
 ```

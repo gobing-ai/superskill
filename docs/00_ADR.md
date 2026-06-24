@@ -240,3 +240,15 @@ Reversals = new entries naming what they supersede. Burned numbers get a `Skippe
 **Why.** The current evolve gate closes the loop on FORM (heuristic + rubric scores), not BEHAVIOR. A higher heuristic score does not imply the agent behaves better. SkillOpt (arXiv 2605.23904) demonstrates the mechanism: accept an edit only when replaying held-out tasks scores strictly higher. Phase 1 imports the loop-on-behavior mechanism with checkable references only.
 
 **Detail.** See task 0068. Components: `packages/core/src/quality/eval-cases.ts` (Zod schema + YAML loader), `packages/core/src/quality/replay.ts` (pure exact/rule scorers), `apps/cli/src/operations/replay-runner.ts` (mock + real ts-ai-runner backends), `apps/cli/src/operations/evolve.ts` (empirical gate stage in runGate, persistence). CLI flag: `--eval-gate` on `addEvolveOptions`.
+
+---
+
+## ADR-019: Pairwise rubric judge for behavior gate (Phase 2, LLM-as-judge for open-ended cases)
+
+**Status:** Accepted · **Date:** 2026-06-23
+
+**Decision.** Extend the empirical behavior gate (ADR-018) with a `reference_kind: 'rubric'` for open-ended eval cases that require LLM judgment. The judge scores candidate-vs-baseline PAIRWISE in a single call per measured case (not two independent absolute scores), with seed-controlled output ordering across judge replays. A noise-floor estimation (N-replay signed-margin variance) ensures the gate rejects within-noise wins — the judge's non-determinism must not be laundered as improvement. The judge is implemented as a spur-agent (backed by `@gobing-ai/ts-ai-runner`), with a `ScriptedJudgeBackend` for deterministic CI testing at zero token cost.
+
+**Why.** Phase 1's exact-match + rule judge cannot handle open-ended skills where no exact string or rule defines "the agent behaved well." Pairwise comparison is materially more stable than differencing two absolute scores (SkillOpt's contrastive-reflect insight). The noise floor is the credibility core: without it, a noisy judge accepts random variation as improvement — strictly worse than no gate.
+
+**Detail.** See task 0069. Components: `packages/core/src/quality/eval-cases.ts` (rubric reference_kind + RubricRef), `apps/cli/src/operations/pairwise-judge.ts` (pairwise judge + `TsAiRunnerJudgeBackend` + `ScriptedJudgeBackend`), `apps/cli/src/operations/noise-floor.ts` (signed-margin noise-floor estimation + reject-within-noise), `apps/cli/src/operations/evolve.ts` (rubric integration into empirical gate, budget fail-loud, empirical persistence of noise_floor/rubric_delta). Seed/temperature are passed through the local judge seam for runners that support them; noise-floor rejection remains the required protection when the underlying runner ignores those fields.

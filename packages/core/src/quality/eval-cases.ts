@@ -6,7 +6,7 @@ import { z } from 'zod';
 // ── Types ────────────────────────────────────────────────────────────────────
 
 /** Allowed reference kinds for eval-case scoring. */
-export type ReferenceKind = 'exact' | 'rule';
+export type ReferenceKind = 'exact' | 'rule' | 'rubric';
 
 /** Check operators for the rule judge (ports SkillOpt `score_rule_judge` shape deterministically). */
 export type RuleCheckOp = 'contains' | 'regex' | 'equals' | 'not_contains' | 'tool_called';
@@ -22,6 +22,13 @@ export interface RuleJudge {
     checks: RuleCheck[];
 }
 
+/** Rubric reference for open-ended LLM-judged cases. Mirrors `anchors` in rubrics/skill.yaml. */
+export interface RubricRef {
+    criterion: string;
+    excellent?: string;
+    poor?: string;
+}
+
 /** A single evaluation case. */
 export interface EvalCase {
     id: string;
@@ -29,7 +36,7 @@ export interface EvalCase {
     prompt: string;
     reference_kind: ReferenceKind;
     /** Exact-match string or a rule-judge object. */
-    reference: string | RuleJudge;
+    reference: string | RuleJudge | RubricRef;
     tags?: string[];
 }
 
@@ -39,6 +46,20 @@ export interface EvalCaseSet {
     cases: EvalCase[];
 }
 
+function isRuleJudge(value: unknown): value is RuleJudge {
+    return typeof value === 'object' && value !== null && 'checks' in value && Array.isArray(value.checks);
+}
+
+function isRubricRef(value: unknown): value is RubricRef {
+    return (
+        typeof value === 'object' &&
+        value !== null &&
+        'criterion' in value &&
+        typeof value.criterion === 'string' &&
+        !('checks' in value)
+    );
+}
+
 // ── Schema ───────────────────────────────────────────────────────────────────
 
 const RuleCheckSchema: z.ZodType<RuleCheck> = z.object({
@@ -46,6 +67,11 @@ const RuleCheckSchema: z.ZodType<RuleCheck> = z.object({
     arg: z.string().min(1),
 });
 
+const RubricRefSchema: z.ZodType<RubricRef> = z.object({
+    criterion: z.string().min(1),
+    excellent: z.string().optional(),
+    poor: z.string().optional(),
+});
 const RuleJudgeSchema: z.ZodType<RuleJudge> = z.object({
     checks: z.array(RuleCheckSchema).min(1),
 });
@@ -55,8 +81,8 @@ const EvalCaseSchema: z.ZodType<EvalCase> = z
         id: z.string().min(1),
         split: z.enum(['train', 'holdout']),
         prompt: z.string().min(1),
-        reference_kind: z.enum(['exact', 'rule']),
-        reference: z.union([z.string().min(1), RuleJudgeSchema]),
+        reference_kind: z.enum(['exact', 'rule', 'rubric']),
+        reference: z.union([z.string().min(1), RuleJudgeSchema, RubricRefSchema]),
         tags: z.array(z.string().min(1)).optional(),
     })
     .refine(
@@ -64,12 +90,18 @@ const EvalCaseSchema: z.ZodType<EvalCase> = z
             if (c.reference_kind === 'exact' && typeof c.reference !== 'string') {
                 return false;
             }
-            if (c.reference_kind === 'rule' && typeof c.reference === 'string') {
+            if (c.reference_kind === 'rule' && !isRuleJudge(c.reference)) {
+                return false;
+            }
+            if (c.reference_kind === 'rubric' && !isRubricRef(c.reference)) {
                 return false;
             }
             return true;
         },
-        { message: 'reference must match reference_kind: string for "exact", RuleJudge object for "rule"' },
+        {
+            message:
+                'reference must match reference_kind: string for "exact", RuleJudge for "rule", RubricRef for "rubric"',
+        },
     );
 
 /** Zod schema for the cases.yaml shape. */

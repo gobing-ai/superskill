@@ -11,6 +11,7 @@ import {
     loadRubric,
     parseFrontmatter,
     type QualityReport,
+    type RubricRef,
     resolveContentName,
     resolveContentPath,
     restoreFromBackup,
@@ -21,6 +22,8 @@ import type { DbAdapter, Evaluation, Proposal } from '../store';
 import { EvaluationDao } from '../store/evaluations';
 import { ProposalDao } from '../store/proposals';
 import { evaluate } from './evaluate';
+import { estimateNoiseFloor, rejectsWithinNoise } from './noise-floor';
+import { createJudgeBackend, type JudgeBackend, pairwiseJudge, signedMargin } from './pairwise-judge';
 import { createReplayBackend, type ReplayBackend, replaySplit } from './replay-runner';
 import { validate } from './validate';
 
@@ -55,6 +58,12 @@ export interface EvolveOptions {
     evalGate?: boolean;
     /** Internal test seam for deterministic empirical-gate replay without model calls. */
     replayBackend?: ReplayBackend;
+    /** Internal test seam for deterministic rubric judging without model calls. */
+    judgeBackend?: JudgeBackend;
+    /** Number of judge replays used to estimate the rubric noise floor. */
+    judgeReplays?: number;
+    /** Fail-loud model-call cap for the empirical gate. */
+    judgeBudget?: { maxModelCalls?: number };
     /** Inject an already-open DbAdapter for testing. */
     adapter?: DbAdapter;
 }
@@ -376,6 +385,9 @@ interface GateInput {
         margin: number;
         target: Target;
         replayBackend?: ReplayBackend;
+        judgeBackend?: JudgeBackend;
+        judgeReplays?: number;
+        judgeBudget?: { maxModelCalls?: number };
     };
 }
 
@@ -385,7 +397,7 @@ interface GateResult {
     failedGate?: 'deterministic' | 'delta-margin' | 'empirical' | 'anchor' | 'skeptic';
     reason?: string;
     /** Empirical scores persisted when the empirical gate ran and passed. */
-    empirical?: { hard: number; holdout_n: number; train_n: number };
+    empirical?: { hard: number; holdout_n: number; train_n: number; noise_floor?: number; rubric_delta?: number };
 }
 
 /**
@@ -419,24 +431,124 @@ async function runGate(input: GateInput): Promise<GateResult> {
         };
     }
 
-    // 2.5. Empirical gate (R3): candidate must strictly improve behavior on holdout eval cases.
-    // Skip when no evalGate is supplied OR no cases.yaml exists for the skill (skip-when-absent).
-    let empiricalScores: { hard: number; holdout_n: number; train_n: number } | undefined;
+    let empiricalScores:
+        | { hard: number; holdout_n: number; train_n: number; noise_floor?: number; rubric_delta?: number }
+        | undefined;
     if (input.evalGate) {
         const cases = loadEvalCases(input.evalGate.name);
         if (cases) {
-            const backend = createReplayBackend(input.evalGate.target, input.evalGate.replayBackend);
-            const base = await replaySplit(backend, input.evalGate.baselineSkillText, cases.cases, 'holdout');
-            const cand = await replaySplit(backend, input.evalGate.candidateSkillText, cases.cases, 'holdout');
-            if (!(cand.hard > base.hard && cand.hard - base.hard >= input.evalGate.margin)) {
+            const holdout = cases.cases.filter((c) => c.split === 'holdout');
+            const rubricCases = holdout.filter((c) => c.reference_kind === 'rubric');
+            const detCases = holdout.filter((c) => c.reference_kind !== 'rubric');
+            const maxModelCalls = input.evalGate.judgeBudget?.maxModelCalls ?? Number.POSITIVE_INFINITY;
+            let modelCalls = 0;
+            const consumeModelCalls = (count: number, reason: string): GateResult | null => {
+                modelCalls += count;
+                if (modelCalls > maxModelCalls) {
+                    return {
+                        ok: false,
+                        failedGate: 'empirical',
+                        reason: `Empirical gate budget cap hit: ${modelCalls} model call(s) for ${reason} exceeds max ${maxModelCalls}.`,
+                    };
+                }
+                return null;
+            };
+            const replayBackend = createReplayBackend(input.evalGate.target, input.evalGate.replayBackend);
+
+            // Phase 1: score deterministic cases (exact/rule)
+            let detBaseScore = 0;
+            let detCandScore = 0;
+            let detN = 0;
+            if (detCases.length > 0) {
+                const budgetResult = consumeModelCalls(detCases.length * 2, 'deterministic replay');
+                if (budgetResult) return budgetResult;
+                const baseDet = await replaySplit(replayBackend, input.evalGate.baselineSkillText, detCases, 'holdout');
+                const candDet = await replaySplit(
+                    replayBackend,
+                    input.evalGate.candidateSkillText,
+                    detCases,
+                    'holdout',
+                );
+                detBaseScore = baseDet.hard;
+                detCandScore = candDet.hard;
+                detN = detCases.length;
+            }
+
+            // Phase 2: score rubric cases with pairwise judge
+            let rubricBaseScore = 0;
+            let rubricCandScore = 0;
+            let maxNoiseFloor = 0;
+            let signedDeltaTotal = 0;
+            let rubricN = 0;
+            if (rubricCases.length > 0) {
+                const judge = createJudgeBackend(input.evalGate.target, input.evalGate.judgeBackend);
+                const judgeReplays = input.evalGate.judgeReplays ?? 3;
+                for (const rc of rubricCases) {
+                    const replayBudget = consumeModelCalls(2, `rubric replay for ${rc.id}`);
+                    if (replayBudget) return replayBudget;
+                    const prompt = `[case:${rc.id}] ${rc.prompt}`;
+                    const [candOutput, baseOutput] = await Promise.all([
+                        replayBackend.run(input.evalGate.candidateSkillText, prompt),
+                        replayBackend.run(input.evalGate.baselineSkillText, prompt),
+                    ]);
+                    const rubricRef = rc.reference as RubricRef;
+                    const judgeBudget = consumeModelCalls(1, `pairwise rubric judge for ${rc.id}`);
+                    if (judgeBudget) return judgeBudget;
+                    const verdict = await pairwiseJudge(judge, rubricRef, prompt, candOutput, baseOutput, {
+                        seed: 0,
+                        temperature: 0,
+                    });
+                    const noiseBudget = consumeModelCalls(judgeReplays, `noise-floor replay for ${rc.id}`);
+                    if (noiseBudget) return noiseBudget;
+                    const noiseFloor = await estimateNoiseFloor(
+                        judge,
+                        rubricRef,
+                        prompt,
+                        candOutput,
+                        baseOutput,
+                        judgeReplays,
+                    );
+                    const delta = signedMargin(verdict);
+                    maxNoiseFloor = Math.max(maxNoiseFloor, noiseFloor);
+                    signedDeltaTotal += delta;
+                    if (rejectsWithinNoise(delta, noiseFloor)) {
+                        rubricCandScore += 0.5;
+                        rubricBaseScore += 0.5;
+                    } else if (verdict.winner === 'candidate') {
+                        rubricCandScore += 1;
+                    } else if (verdict.winner === 'baseline') {
+                        rubricBaseScore += 1;
+                    } else {
+                        rubricCandScore += 0.5;
+                        rubricBaseScore += 0.5;
+                    }
+                    rubricN++;
+                }
+            }
+
+            // Combine scores: weighted average of deterministic + rubric portions
+            const totalN = detN + rubricN;
+            const baseHard =
+                totalN > 0 ? (detBaseScore * detN + (rubricBaseScore / Math.max(rubricN, 1)) * rubricN) / totalN : 0;
+            const candHard =
+                totalN > 0 ? (detCandScore * detN + (rubricCandScore / Math.max(rubricN, 1)) * rubricN) / totalN : 0;
+            const rubricDelta = rubricN > 0 ? signedDeltaTotal / rubricN : undefined;
+
+            if (!(candHard > baseHard && candHard - baseHard >= input.evalGate.margin)) {
                 return {
                     ok: false,
                     failedGate: 'empirical',
-                    reason: `Empirical gate failed: candidate behavior ${cand.hard.toFixed(2)} ≤ baseline ${base.hard.toFixed(2)} (margin ${input.evalGate.margin.toFixed(2)}).`,
+                    reason: `Empirical gate failed: candidate behavior ${candHard.toFixed(2)} ≤ baseline ${baseHard.toFixed(2)} (margin ${input.evalGate.margin.toFixed(2)}${rubricDelta !== undefined ? `, rubric_delta=${rubricDelta.toFixed(2)}, noise_floor=${maxNoiseFloor.toFixed(2)}` : ''}).`,
                 };
             }
-            const trainResult = await replaySplit(backend, input.evalGate.candidateSkillText, cases.cases, 'train');
-            empiricalScores = { hard: cand.hard, holdout_n: cand.n, train_n: trainResult.n };
+
+            const trainCases = cases.cases.filter((c) => c.split === 'train');
+            empiricalScores = {
+                hard: candHard,
+                holdout_n: totalN,
+                train_n: trainCases.length,
+                ...(rubricN > 0 ? { noise_floor: maxNoiseFloor, rubric_delta: rubricDelta ?? 0 } : {}),
+            };
         }
     }
 
@@ -627,6 +739,9 @@ async function ingestProposal(
                   margin: opts?.margin ?? 0.05,
                   target: opts?.target ?? 'claude',
                   replayBackend: opts?.replayBackend,
+                  judgeBackend: opts?.judgeBackend,
+                  judgeReplays: opts?.judgeReplays,
+                  judgeBudget: opts?.judgeBudget,
               }
             : undefined;
         const verdict = await stepVerify(type, name, resolvedPath, baselineScore, proposalRecord.id, opts, db, {
@@ -942,6 +1057,9 @@ interface GateContext {
         margin: number;
         target: Target;
         replayBackend?: ReplayBackend;
+        judgeBackend?: JudgeBackend;
+        judgeReplays?: number;
+        judgeBudget?: { maxModelCalls?: number };
     };
 }
 
@@ -1018,12 +1136,18 @@ async function stepVerify(
                             hard: gateResult.empirical.hard,
                             holdout_n: gateResult.empirical.holdout_n,
                             train_n: gateResult.empirical.train_n,
-                            note: `Behavior gate: holdout_n=${gateResult.empirical.holdout_n}, train_n=${gateResult.empirical.train_n}`,
+                            ...(gateResult.empirical.noise_floor !== undefined
+                                ? { noise_floor: gateResult.empirical.noise_floor }
+                                : {}),
+                            ...(gateResult.empirical.rubric_delta !== undefined
+                                ? { rubric_delta: gateResult.empirical.rubric_delta }
+                                : {}),
+                            note: `Behavior gate: holdout_n=${gateResult.empirical.holdout_n}, train_n=${gateResult.empirical.train_n}${gateResult.empirical.noise_floor !== undefined ? `, noise_floor=${gateResult.empirical.noise_floor.toFixed(2)}` : ''}${gateResult.empirical.rubric_delta !== undefined ? `, rubric_delta=${gateResult.empirical.rubric_delta.toFixed(2)}` : ''}`,
                         },
                     },
                 });
                 echo(
-                    `Empirical behavior: holdout ${gateResult.empirical.hard.toFixed(2)} (holdout_n=${gateResult.empirical.holdout_n}, train_n=${gateResult.empirical.train_n})`,
+                    `Empirical behavior: holdout ${gateResult.empirical.hard.toFixed(2)} (holdout_n=${gateResult.empirical.holdout_n}, train_n=${gateResult.empirical.train_n}${gateResult.empirical.noise_floor !== undefined ? `, noise_floor=${gateResult.empirical.noise_floor.toFixed(2)}` : ''})`,
                 );
             } catch {
                 echoError('Cannot persist empirical behavior score.');
@@ -1286,6 +1410,9 @@ export async function evolve(type: ContentType, name: string, opts?: EvolveOptio
                   margin: opts?.margin ?? 0.05,
                   target: opts?.target ?? 'claude',
                   replayBackend: opts?.replayBackend,
+                  judgeBackend: opts?.judgeBackend,
+                  judgeReplays: opts?.judgeReplays,
+                  judgeBudget: opts?.judgeBudget,
               }
             : undefined;
         const verdict = await stepVerify(type, contentName, resolvedPath, baselineScore, target.id, opts, db, {
@@ -1342,6 +1469,9 @@ export async function evolve(type: ContentType, name: string, opts?: EvolveOptio
               margin: opts?.margin ?? 0.05,
               target: opts?.target ?? 'claude',
               replayBackend: opts?.replayBackend,
+              judgeBackend: opts?.judgeBackend,
+              judgeReplays: opts?.judgeReplays,
+              judgeBudget: opts?.judgeBudget,
           }
         : undefined;
 

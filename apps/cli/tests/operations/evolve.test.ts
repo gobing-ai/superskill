@@ -14,6 +14,7 @@ import {
     interactiveReview,
     isHookApplyCapableOpt,
 } from '../../src/operations/evolve';
+import type { JudgeBackend, PairwiseVerdict } from '../../src/operations/pairwise-judge';
 import type { ReplayBackend } from '../../src/operations/replay-runner';
 import type { Evaluation, Proposal } from '../../src/store';
 import { EvaluationDao } from '../../src/store/evaluations';
@@ -321,11 +322,75 @@ cases:
         );
     }
 
+    function writeWidgetRubricEvalCases(): void {
+        mkdirSync(join(dir, 'skills', 'widget', 'eval'), { recursive: true });
+        writeFileSync(
+            join(dir, 'skills', 'widget', 'eval', 'cases.yaml'),
+            `version: 1
+cases:
+  - id: open-ended-1
+    split: holdout
+    prompt: "Explain the widget lifecycle clearly"
+    reference_kind: rubric
+    reference:
+      criterion: "The answer explains lifecycle behavior clearly and concretely."
+      excellent: "Specific lifecycle steps and actionable guidance."
+      poor: "Vague or generic prose."
+  - id: train-1
+    split: train
+    prompt: "Training case"
+    reference_kind: exact
+    reference: "PASS"
+`,
+        );
+    }
+
     class ContentSensitiveReplayBackend implements ReplayBackend {
         constructor(private readonly marker: string) {}
 
         async run(systemPrompt: string): Promise<string> {
             return systemPrompt.includes(this.marker) ? 'PASS' : 'FAIL';
+        }
+    }
+
+    class PassFailJudgeBackend implements JudgeBackend {
+        calls = 0;
+
+        async judge(
+            _rubric: Parameters<JudgeBackend['judge']>[0],
+            _prompt: string,
+            candOutput: string,
+            baseOutput: string,
+        ): Promise<PairwiseVerdict> {
+            this.calls++;
+            if (candOutput.includes('PASS') && !baseOutput.includes('PASS')) {
+                return { winner: 'candidate', margin: 0.9 };
+            }
+            if (!candOutput.includes('PASS') && baseOutput.includes('PASS')) {
+                return { winner: 'baseline', margin: 0.9 };
+            }
+            return { winner: 'tie', margin: 0 };
+        }
+    }
+
+    class NoisyJudgeBackend implements JudgeBackend {
+        private replay = 0;
+        calls = 0;
+
+        async judge(): Promise<PairwiseVerdict> {
+            this.calls++;
+            if (this.calls % 2 === 1) this.replay++;
+            return this.replay % 2 === 0 ? { winner: 'candidate', margin: 0.8 } : { winner: 'baseline', margin: 0.8 };
+        }
+    }
+    /** Judge that gives a small candidate win on the primary call but flips across replays, so the noise floor exceeds the delta. */
+    class WithinNoiseJudgeBackend implements JudgeBackend {
+        calls = 0;
+
+        async judge(): Promise<PairwiseVerdict> {
+            this.calls++;
+            if (this.calls === 1) return { winner: 'candidate', margin: 0.3 };
+            return this.calls % 2 === 0 ? { winner: 'candidate', margin: 0.9 } : { winner: 'baseline', margin: 0.9 };
         }
     }
 
@@ -642,6 +707,199 @@ cases:
         expect(proposal?.status).toBe('draft');
         const rows = await new EvaluationDao(adapter).getEvaluations('skill', 'widget');
         expect(rows.some((row) => row.dimensions.empirical)).toBe(false);
+    });
+
+    it('--eval-gate accepts rubric cases using replayed candidate/baseline outputs and persists noise data', async () => {
+        await seedHistory(adapter, [0.9, 0.5]);
+        writeWidgetRubricEvalCases();
+        const judge = new PassFailJudgeBackend();
+        const pid = 'skill-evolve-rubric-pass-001';
+        await new ProposalDao(adapter).insertProposal({
+            content_type: 'skill',
+            content_name: 'widget',
+            baseline_id: 1,
+            proposal_json: {
+                proposal_id: pid,
+                changes: [
+                    {
+                        dimension: 'body',
+                        location: 'body',
+                        current: 'Body content here',
+                        proposed: 'Body content here with rubric better',
+                        reason: 'exercise rubric empirical gate',
+                    },
+                ],
+            },
+        });
+
+        const r = await evolve('skill', 'widget', {
+            adapter,
+            acceptId: pid,
+            margin: -1,
+            evalGate: true,
+            replayBackend: new ContentSensitiveReplayBackend('rubric better'),
+            judgeBackend: judge,
+        });
+
+        expect(r.rejected).toBeUndefined();
+        expect(judge.calls).toBeGreaterThan(0);
+        const rows = await new EvaluationDao(adapter).getEvaluations('skill', 'widget');
+        const empirical = rows.find((row) => row.dimensions.empirical);
+        expect(empirical?.dimensions.empirical?.score).toBe(1);
+        expect(empirical?.dimensions.empirical?.noise_floor).toBe(0);
+        expect(empirical?.dimensions.empirical?.rubric_delta).toBe(0.9);
+        expect(empirical?.dimensions.empirical?.note).toContain('noise_floor=0.00');
+    });
+
+    it('--eval-gate does not call the judge when no rubric cases exist', async () => {
+        await seedHistory(adapter, [0.9, 0.5]);
+        writeWidgetEvalCases();
+        const judge = new PassFailJudgeBackend();
+        const pid = 'skill-evolve-no-rubric-judge-001';
+        await new ProposalDao(adapter).insertProposal({
+            content_type: 'skill',
+            content_name: 'widget',
+            baseline_id: 1,
+            proposal_json: {
+                proposal_id: pid,
+                changes: [
+                    {
+                        dimension: 'body',
+                        location: 'body',
+                        current: 'Body content here',
+                        proposed: 'Body content here with empirical better',
+                        reason: 'exercise exact empirical gate',
+                    },
+                ],
+            },
+        });
+
+        const r = await evolve('skill', 'widget', {
+            adapter,
+            acceptId: pid,
+            margin: -1,
+            evalGate: true,
+            replayBackend: new ContentSensitiveReplayBackend('empirical better'),
+            judgeBackend: judge,
+        });
+
+        expect(r.rejected).toBeUndefined();
+        expect(judge.calls).toBe(0);
+    });
+
+    it('--eval-gate rejects rubric wins that are within the judge noise floor', async () => {
+        await seedHistory(adapter, [0.9, 0.5]);
+        writeWidgetRubricEvalCases();
+        const before = readFileSync(join(dir, 'widget.md'), 'utf-8');
+        const pid = 'skill-evolve-rubric-noisy-001';
+        await new ProposalDao(adapter).insertProposal({
+            content_type: 'skill',
+            content_name: 'widget',
+            baseline_id: 1,
+            proposal_json: {
+                proposal_id: pid,
+                changes: [
+                    {
+                        dimension: 'body',
+                        location: 'body',
+                        current: 'Body content here',
+                        proposed: 'Body content here with noisy better',
+                        reason: 'exercise noise floor',
+                    },
+                ],
+            },
+        });
+
+        const r = await evolve('skill', 'widget', {
+            adapter,
+            acceptId: pid,
+            margin: -1,
+            evalGate: true,
+            replayBackend: new ContentSensitiveReplayBackend('noisy better'),
+            judgeBackend: new NoisyJudgeBackend(),
+        });
+
+        expect(r.rejected).toBe(true);
+        expect(r.rejectionReason).toContain('noise_floor=');
+        expect(readFileSync(join(dir, 'widget.md'), 'utf-8')).toBe(before);
+    });
+    it('--eval-gate downgrades a within-noise candidate win to a tie (split, no strict improve)', async () => {
+        await seedHistory(adapter, [0.9, 0.5]);
+        writeWidgetRubricEvalCases();
+        const before = readFileSync(join(dir, 'widget.md'), 'utf-8');
+        const pid = 'skill-evolve-rubric-within-noise-001';
+        await new ProposalDao(adapter).insertProposal({
+            content_type: 'skill',
+            content_name: 'widget',
+            baseline_id: 1,
+            proposal_json: {
+                proposal_id: pid,
+                changes: [
+                    {
+                        dimension: 'body',
+                        location: 'body',
+                        current: 'Body content here',
+                        proposed: 'Body content here with within-noise better',
+                        reason: 'exercise within-noise split branch',
+                    },
+                ],
+            },
+        });
+
+        const r = await evolve('skill', 'widget', {
+            adapter,
+            acceptId: pid,
+            margin: -1,
+            evalGate: true,
+            replayBackend: new ContentSensitiveReplayBackend('within-noise better'),
+            judgeBackend: new WithinNoiseJudgeBackend(),
+        });
+
+        // Primary verdict is a candidate win (margin 0.3), but the noise floor (~0.85) exceeds the
+        // delta, so rejectsWithinNoise is true → win downgraded to a 0.5/0.5 split → no strict
+        // improve → gate rejects. This exercises evolve.ts:514-516, not a baseline-win rejection.
+        expect(r.rejected).toBe(true);
+        expect(r.rejectionReason).toContain('noise_floor=');
+        expect(r.rejectionReason).toContain('rubric_delta=');
+        expect(readFileSync(join(dir, 'widget.md'), 'utf-8')).toBe(before);
+    });
+
+    it('--eval-gate fails loud when the rubric judge budget cap is exceeded', async () => {
+        await seedHistory(adapter, [0.9, 0.5]);
+        writeWidgetRubricEvalCases();
+        const before = readFileSync(join(dir, 'widget.md'), 'utf-8');
+        const pid = 'skill-evolve-rubric-budget-001';
+        await new ProposalDao(adapter).insertProposal({
+            content_type: 'skill',
+            content_name: 'widget',
+            baseline_id: 1,
+            proposal_json: {
+                proposal_id: pid,
+                changes: [
+                    {
+                        dimension: 'body',
+                        location: 'body',
+                        current: 'Body content here',
+                        proposed: 'Body content here with budget better',
+                        reason: 'exercise budget cap',
+                    },
+                ],
+            },
+        });
+
+        const r = await evolve('skill', 'widget', {
+            adapter,
+            acceptId: pid,
+            margin: -1,
+            evalGate: true,
+            replayBackend: new ContentSensitiveReplayBackend('budget better'),
+            judgeBackend: new PassFailJudgeBackend(),
+            judgeBudget: { maxModelCalls: 1 },
+        });
+
+        expect(r.rejected).toBe(true);
+        expect(r.rejectionReason).toContain('budget cap hit');
+        expect(readFileSync(join(dir, 'widget.md'), 'utf-8')).toBe(before);
     });
 
     // ── G1/A1: seeded proposals ───────────────────────────────────────────────

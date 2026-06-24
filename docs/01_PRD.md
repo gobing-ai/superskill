@@ -82,7 +82,7 @@ Each command supports five operations:
 
 **Key enhancement over the origin skills:** self-evolution. The `evolve` operation reads historical evaluation data and proposes longitudinal improvements — something the Claude Code plugin skills could not do because they lacked persistent state.
 
-**Self-evolution enhancement (2026-06-23):** The `evolve` operation now supports an opt-in empirical behavior gate (`--eval-gate`). When enabled and an `eval/cases.yaml` file is co-located with the skill, held-out eval cases are replayed against the candidate skill; the proposal is accepted only when the candidate strictly outperforms the baseline on checkable references (exact-match + rule judge). This closes the loop on BEHAVIOR, not just form. See ADR-018, task 0068.
+**Self-evolution enhancement (2026-06-23):** The `evolve` operation now supports an opt-in empirical behavior gate (`--eval-gate`). When enabled and an `eval/cases.yaml` file is co-located with the skill, held-out eval cases are replayed against the candidate skill; the proposal is accepted only when the candidate strictly outperforms the baseline. Exact-match and rule references are deterministic; rubric references use a pairwise candidate-vs-baseline judge with noise-floor rejection and budget-cap failure. This closes the loop on BEHAVIOR, not just form. See ADR-018/ADR-019, tasks 0068/0069.
 
 ### Supporting
 

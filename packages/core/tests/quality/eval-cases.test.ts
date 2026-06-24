@@ -32,6 +32,34 @@ cases:
           arg: "purple"
 `;
 
+/** cases.yaml with rubric reference kind (Phase 2 — 0069). */
+const rubricCasesYaml = `version: 1
+cases:
+  - id: greet-fr
+    split: train
+    prompt: "Say hello in French"
+    reference_kind: exact
+    reference: "Bonjour"
+  - id: clarity-judge
+    split: holdout
+    prompt: "Explain the concept"
+    reference_kind: rubric
+    reference:
+      criterion: "Clarity of explanation"
+      excellent: "Crystal clear, step-by-step"
+      poor: "Confusing or circular"
+`;
+
+/** cases.yaml with unknown reference_kind. */
+const unknownKindYaml = `version: 1
+cases:
+  - id: bad-kind
+    split: train
+    prompt: "test"
+    reference_kind: unknown_kind
+    reference: "something"
+`;
+
 /** cases.yaml with bad reference_kind/type mismatch. */
 const mismatchedKindYaml = `version: 1
 cases:
@@ -43,6 +71,17 @@ cases:
       checks:
         - op: contains
           arg: "x"
+`;
+
+/** cases.yaml with rule kind but rubric-shaped object. */
+const mismatchedRuleRubricYaml = `version: 1
+cases:
+  - id: bad-rule-rubric
+    split: train
+    prompt: "test"
+    reference_kind: rule
+    reference:
+      criterion: "Should not pass as a rule judge"
 `;
 
 /** cases.yaml with a missing required field. */
@@ -170,6 +209,18 @@ describe('loadEvalCases', () => {
         }
     });
 
+    it('throws EvalCaseError when rule kind carries a rubric-shaped reference', () => {
+        writeFixture('bad-rule-rubric', mismatchedRuleRubricYaml);
+
+        const cwd = process.cwd;
+        try {
+            process.cwd = () => TMP_DIR;
+            expect(() => loadEvalCases('bad-rule-rubric')).toThrow(EvalCaseError);
+        } finally {
+            process.cwd = cwd;
+        }
+    });
+
     it('throws EvalCaseError naming the offending case field on missing required field', () => {
         writeFixture('missing-field', missingFieldYaml);
 
@@ -230,5 +281,41 @@ describe('loadEvalCases', () => {
         const result = loadEvalCases('unused-name', { path: explicitPath });
         expect(result).not.toBeNull();
         expect(result?.cases).toHaveLength(3);
+    });
+
+    // ── Phase 2 (0069) — rubric reference kind ────────────────────────────
+
+    it('loads a rubric case with criterion + anchors', () => {
+        writeFixture('rubric-skill', rubricCasesYaml);
+
+        const cwd = process.cwd;
+        try {
+            process.cwd = () => TMP_DIR;
+            const result = loadEvalCases('rubric-skill');
+            expect(result).not.toBeNull();
+
+            const rubricCase = result?.cases.find((c) => c.reference_kind === 'rubric');
+            expect(rubricCase).toBeDefined();
+            expect(rubricCase?.reference_kind).toBe('rubric');
+
+            const ref = rubricCase?.reference as { criterion: string; excellent?: string; poor?: string };
+            expect(ref.criterion).toBe('Clarity of explanation');
+            expect(ref.excellent).toBe('Crystal clear, step-by-step');
+            expect(ref.poor).toBe('Confusing or circular');
+        } finally {
+            process.cwd = cwd;
+        }
+    });
+
+    it('throws EvalCaseError on unknown reference_kind', () => {
+        writeFixture('bad-kind', unknownKindYaml);
+
+        const cwd = process.cwd;
+        try {
+            process.cwd = () => TMP_DIR;
+            expect(() => loadEvalCases('bad-kind')).toThrow(EvalCaseError);
+        } finally {
+            process.cwd = cwd;
+        }
     });
 });
