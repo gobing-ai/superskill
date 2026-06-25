@@ -32,10 +32,7 @@ export function scoreClarityFromDensities(body: string): DimensionScore {
 export function parseFrontmatterSafe(content: string): Record<string, unknown> | null {
     try {
         return parseFrontmatter(content).data;
-    } catch (e) {
-        if (e instanceof FrontmatterError) {
-            return null;
-        }
+    } catch {
         return null;
     }
 }

@@ -102,7 +102,7 @@ function resolveRubricContent(type: ContentType, opts?: LoadRubricOptions): stri
     }
 
     // 2. User override (~/.superskill/rubrics/<type>.yaml)
-    const homeDir = process.env.HOME ?? homedir();
+    const homeDir = process.env.HOME || homedir();
     const userPath = join(homeDir, '.superskill', 'rubrics', `${type}.yaml`);
     if (existsSync(userPath)) {
         return readFileSync(userPath, 'utf-8');

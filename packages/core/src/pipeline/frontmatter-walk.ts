@@ -94,7 +94,9 @@ export function walkFrontmatter(content: string, opts: FrontmatterWalkOptions): 
         out.push(line);
     }
 
-    if (!injectedName) {
+    // If we never found a closing `---`, the entire body was absorbed as frontmatter.
+    // Fall back to the fallback block to avoid corrupting the content.
+    if (!injectedName || inFrontmatter) {
         return `${opts.fallbackBlock}\n\n${content}`;
     }
     return out.join('\n');

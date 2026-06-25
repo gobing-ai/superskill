@@ -157,7 +157,7 @@ function countTriggerPhrases(body: string): number {
             const depth = headingMatch[1]?.length ?? 0;
             const title = (headingMatch[2] ?? '').toLowerCase();
 
-            if (/\btrigger|when to use/i.test(title)) {
+            if (/\b(?:trigger|when to use)/i.test(title)) {
                 inTriggerSection = true;
                 sectionDepth = depth;
             } else if (inTriggerSection && depth <= sectionDepth) {
@@ -178,7 +178,7 @@ function countTriggerPhrases(body: string): number {
     // in the entire body as approximate trigger count
     if (count === 0) {
         for (const line of lines) {
-            if (/^\s*[-*+]\s/.test(line)) {
+            if (/^\s*[-*+]\s/.test(line) || /^\s*\d+[.)]\s/.test(line)) {
                 count++;
             }
         }

@@ -2,6 +2,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { parse } from 'yaml';
 import { z } from 'zod';
+import { assertSafePathSegment } from '../content/identity';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -144,6 +145,7 @@ function resolveEvalCasesPath(name: string, opts?: LoadEvalCasesOptions): string
     }
 
     // 2. Co-located with skill: skills/<name>/eval/cases.yaml
+    assertSafePathSegment(name, 'eval cases skill name');
     const coLocated = join(process.cwd(), 'skills', name, 'eval', 'cases.yaml');
     if (existsSync(coLocated)) return coLocated;
 

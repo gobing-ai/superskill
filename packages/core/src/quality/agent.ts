@@ -129,7 +129,7 @@ function scoreSkillLinkage(body: string): DimensionScore {
 function scoreModelFit(data: Record<string, unknown>): DimensionScore {
     const model = data.model;
     const recognizedAliases: Record<string, true> = { inherit: true, sonnet: true, opus: true, haiku: true };
-    const wellFormedPattern = /^claude-(sonnet|opus|haiku)-/i;
+    const wellFormedPattern = /^claude-(\d+-\d+-)?(sonnet|opus|haiku)-/i;
 
     let score: number;
     let note: string;

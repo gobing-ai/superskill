@@ -122,6 +122,7 @@ const TEMPLATE_BASE_DIRS = [
 function resolveTemplate(type: ContentType, tier?: string): string {
     const homeDir = process.env.HOME ?? homedir();
     const tierName = tier?.trim();
+    if (tierName) assertSafePathSegment(tierName, 'template tier');
 
     // Tier-specific resolution.
     if (tierName && tierName !== 'default') {

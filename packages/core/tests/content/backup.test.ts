@@ -48,7 +48,7 @@ describe('backupFile', () => {
 
             // Should have a timestamp suffix, not the plain .bak
             expect(backupPath).not.toBe(`${filePath}.bak`);
-            expect(backupPath).toMatch(/\.bak\.\d{4}-\d{2}-\d{2}T\d{4}$/);
+            expect(backupPath).toMatch(/\.bak\.\d{4}-\d{2}-\d{2}T\d{6}/);
 
             // The new backup content matches original
             const content = await Bun.file(backupPath).text();
@@ -132,7 +132,7 @@ describe('restoreFromBackup', () => {
             const originalPath = writeTemp('test.md', 'unchanged');
             const missingBackup = join(tmpDir, 'nonexistent.bak');
 
-            await expect(restoreFromBackup(missingBackup, originalPath)).rejects.toThrow('ENOENT');
+            await expect(restoreFromBackup(missingBackup, originalPath)).rejects.toThrow('Backup file not found');
 
             // Original file is untouched
             expect(await Bun.file(originalPath).exists()).toBe(true);

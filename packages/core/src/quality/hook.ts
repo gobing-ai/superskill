@@ -77,7 +77,7 @@ function parseHookEntries(raw: unknown): HookEntry[] | null {
 function scoreCorrectness(entries: HookEntry[]): DimensionScore {
     let valid = 0;
     for (const e of entries) {
-        if (e.type === 'command' && e.command.length > 0 && e.matcher.length > 0) valid++;
+        if ((e.type === 'command' || e.type === 'prompt') && e.command.length > 0 && e.matcher.length > 0) valid++;
     }
     const score = entries.length > 0 ? clamp(valid / entries.length) : 0;
     const note = `${valid}/${entries.length} entries valid`;
@@ -88,7 +88,7 @@ function scoreCorrectness(entries: HookEntry[]): DimensionScore {
 function scoreEventCoverage(entries: HookEntry[]): DimensionScore {
     const events = new Set(entries.map((e) => e.event));
     const covered = KNOWN_HOOK_EVENTS.filter((e) => events.has(e)).length;
-    const score = clamp(Math.min(events.size / 3, 1));
+    const score = clamp(Math.min(covered / 3, 1));
     const note = `${covered} of ${KNOWN_HOOK_EVENTS.length} known events covered (${events.size} total)`;
     return { score, note };
 }

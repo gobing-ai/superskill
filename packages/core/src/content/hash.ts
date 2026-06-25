@@ -10,6 +10,6 @@ import { readFileSync } from 'node:fs';
 export function hashContent(filePath: string): string {
     const bytes = readFileSync(filePath);
     const hasher = new Bun.CryptoHasher('sha256');
-    hasher.update(bytes as Uint8Array);
+    hasher.update(bytes);
     return hasher.digest('hex');
 }

@@ -1,5 +1,6 @@
 import { walkFrontmatter } from './frontmatter-walk';
 import { rewriteSkillReferences } from './rewrite-references';
+import { quoteYaml } from './yaml-utils';
 
 /**
  * Adapt a Claude Code command `.md` file into a Skills 2.0 skill directory entry.
@@ -25,7 +26,7 @@ export function adaptCommandToSkill(source: string, expectedName: string, plugin
             .slice(0, 5)
             .find((l) => l.trim() && !l.startsWith('#'));
         const description = firstLine?.trim() || `${expectedName} command`;
-        result = `---\nname: ${expectedName}\ndescription: "${description}"\ndisable-model-invocation: true\n---\n\n${source}`;
+        result = `---\nname: ${expectedName}\ndescription: ${quoteYaml(description)}\ndisable-model-invocation: true\n---\n\n${source}`;
     }
     return rewriteSkillReferences(result, pluginPrefix);
 }
@@ -52,7 +53,9 @@ function normalizeCommandFrontmatter(content: string, expectedName: string): str
                 rewrite: (line) => {
                     const value = line.slice(line.indexOf(':') + 1).trim();
                     if (value.startsWith('[')) return line;
-                    const parts = value
+                    // Strip surrounding quotes before splitting, so '"Read, Write"' → ['Read', 'Write'] not ['"Read', 'Write"']
+                    const unquoted = value.replace(/^["']|["']$/g, '');
+                    const parts = unquoted
                         .split(/,\s*/)
                         .map((p) => p.trim())
                         .filter(Boolean);
@@ -66,10 +69,4 @@ function normalizeCommandFrontmatter(content: string, expectedName: string): str
         },
         fallbackBlock: `---\nname: ${expectedName}\ndisable-model-invocation: true\n---`,
     });
-}
-
-/** Quote a YAML string value, escaping backslashes and double quotes. */
-function quoteYaml(value: string): string {
-    const escaped = value.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
-    return `"${escaped}"`;
 }

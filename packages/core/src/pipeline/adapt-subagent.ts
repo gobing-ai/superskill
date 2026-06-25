@@ -2,6 +2,7 @@ import { parseFrontmatter } from '../content/frontmatter';
 import { walkFrontmatter } from './frontmatter-walk';
 import { normalizePiToolList, parseToolsList } from './pi-tools';
 import { rewriteSkillReferences } from './rewrite-references';
+import { quoteYaml } from './yaml-utils';
 
 /** Coerce a frontmatter value to string (handles flow-style arrays). */
 function asString(value: unknown): string {
@@ -32,7 +33,7 @@ export function adaptSubagentToSkill(source: string, expectedName: string, plugi
             .slice(0, 5)
             .find((l) => l.trim() && !l.startsWith('#'));
         const description = firstLine?.trim() || `${expectedName} subagent`;
-        result = `---\nname: ${expectedName}\ndescription: "${description}"\n---\n\n${source}`;
+        result = `---\nname: ${expectedName}\ndescription: ${quoteYaml(description)}\n---\n\n${source}`;
     }
     return rewriteSkillReferences(result, pluginPrefix);
 }
@@ -90,7 +91,7 @@ export function adaptSubagentToPi(
 
     // Model: drop "inherit"
     let model = asString(data.model);
-    if (model === 'inherit') model = '';
+    if (model.toLowerCase() === 'inherit') model = '';
 
     // Skills: explicit frontmatter first, then body scan (filtered to existing skills)
     const skillsList = resolvePiSkills(data, body, pluginPrefix, skillExists);
@@ -98,9 +99,9 @@ export function adaptSubagentToPi(
 
     // Build Pi-native YAML frontmatter — field order: name, description, tools, model, skill
     const fields: string[] = [`name: ${expectedName}`];
-    if (description) fields.push(`description: ${description}`);
+    if (description) fields.push(`description: ${quoteYaml(description)}`);
     if (piTools) fields.push(`tools: ${piTools}`);
-    if (model) fields.push(`model: ${model}`);
+    if (model) fields.push(`model: ${quoteYaml(model)}`);
     if (skillsCsv) fields.push(`skill: ${skillsCsv}`);
 
     const runtimeNotes = buildPiRuntimeNotes(parseToolsList(rawToolsStr), skillsCsv);

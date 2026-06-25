@@ -1,11 +1,5 @@
 import { clamp, extractBody, keywordDensity, parseErrorNote, parseFrontmatterSafe, scoreLength } from './heuristics';
-import {
-    type ContentType,
-    computeAggregate,
-    DIMENSION_REGISTRY,
-    type DimensionScore,
-    type QualityReport,
-} from './types';
+import { computeAggregate, DIMENSION_REGISTRY, type DimensionScore, type QualityReport } from './types';
 
 // Governance section patterns for main-agent configs (frontmatter-optional)
 const MAGENT_SECTIONS: { re: RegExp; label: string }[] = [
@@ -62,7 +56,7 @@ function scorePlatformCoverage(data: Record<string, unknown>, body: string): Dim
             [/opencode/i, 'opencode'],
             [/openclaw/i, 'openclaw'],
             [/antigravity/i, 'antigravity'],
-            [/pi\b/i, 'pi'],
+            [/\bpi\b/i, 'pi'],
         ];
         for (const [re, name] of platformPatterns) {
             if (re.test(body)) detected.push(name);
@@ -135,7 +129,7 @@ export function evaluateMagent(content: string, target: string): QualityReport {
     const body = extractBody(content);
     // Distinguish "no frontmatter" (valid for magents — AGENTS.md/CLAUDE.md are plain markdown)
     // from "malformed frontmatter" (starts with --- but parse fails — real error)
-    const hasFrontmatter = /^---\s*$/m.test(content);
+    const hasFrontmatter = content.startsWith('---\n') || content.startsWith('---\r\n');
     const fmResult = hasFrontmatter ? parseFrontmatterSafe(content) : undefined;
     const data = fmResult ?? {};
     const fmNote = hasFrontmatter && fmResult === null ? parseErrorNote(content, 'Frontmatter parse error') : null;
@@ -157,7 +151,7 @@ export function evaluateMagent(content: string, target: string): QualityReport {
     }
 
     return {
-        type: 'magent' as ContentType,
+        type: 'magent',
         target,
         content: '',
         aggregate: computeAggregate(dimensions),

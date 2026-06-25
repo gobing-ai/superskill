@@ -40,7 +40,6 @@ export interface ValidationResult {
 
 /** Agent-relative model aliases used in subagent frontmatter. */
 const MODEL_ALIASES = ['inherit', 'sonnet', 'opus', 'haiku'] as const;
-type ModelAlias = (typeof MODEL_ALIASES)[number];
 
 interface FieldTypeDef {
     type: 'string' | 'array' | 'boolean' | 'enum';
@@ -175,13 +174,21 @@ export async function validate(
     const baseDir = dirname(resolvedPath);
     const result = _validateContent(type, content, {
         ...opts,
-        referenceChecker: (refType, refName) => resolveContentPath(refType, refName, { baseDir }) !== null,
+        referenceChecker:
+            opts?.referenceChecker ??
+            ((refType, refName) => resolveContentPath(refType, refName, { baseDir }) !== null),
     });
 
     // Body-link integrity check (E6): flag broken markdown links in the body.
-    const bodyStart = content.indexOf('\n---\n');
-    const body = bodyStart >= 0 ? content.slice(bodyStart + 5) : content;
-    const linkFindings = checkBodyLinks(body, baseDir);
+    // Extract body using the same logic as parseFrontmatter to stay consistent.
+    let bodyForLinks = content;
+    try {
+        const { body } = parseFrontmatter(content);
+        bodyForLinks = body;
+    } catch {
+        // No parseable frontmatter — use full content for link checking.
+    }
+    const linkFindings = checkBodyLinks(bodyForLinks, baseDir);
     result.findings.push(...linkFindings);
 
     return result;
@@ -199,7 +206,7 @@ export function _validateContent(type: ContentType, content: string, opts?: Vali
     // but fails to parse) is still a real error for every type.
     let data: Record<string, unknown>;
     let body: string;
-    const frontmatterPresent = /^---\s*$/m.test(content);
+    const frontmatterPresent = content.startsWith('---\n') || content.startsWith('---\r\n');
     try {
         if (frontmatterPresent) {
             const parsed = parseFrontmatter(content);
@@ -351,7 +358,7 @@ function checkLinkValidity(
 
     // Check event field for hooks
     if (type === 'hook' && typeof data.event === 'string') {
-        if (!KNOWN_HOOK_EVENTS.includes(data.event as (typeof KNOWN_HOOK_EVENTS)[number])) {
+        if (!(KNOWN_HOOK_EVENTS as readonly string[]).includes(data.event)) {
             findings.push({
                 severity: 'warning',
                 field: 'event',
@@ -362,7 +369,7 @@ function checkLinkValidity(
 
     // Check model field for agents
     if (type === 'agent' && typeof data.model === 'string') {
-        const valid = MODEL_ALIASES.includes(data.model as ModelAlias) || /^claude-/.test(data.model);
+        const valid = (MODEL_ALIASES as readonly string[]).includes(data.model) || /^claude-/.test(data.model);
         if (!valid) {
             findings.push({
                 severity: 'warning',
@@ -425,8 +432,13 @@ function strictChecks(type: ContentType, data: Record<string, unknown>, body: st
         });
     }
 
-    // Deprecated field names
-    for (const key of Object.keys(data)) {
+    // Single pass: deprecated fields, trailing whitespace, unknown keys
+    const recognized = new Set([
+        ...Object.keys(FIELD_TYPES[type] ?? {}),
+        ...REQUIRED_FIELDS[type],
+        ...(KNOWN_OPTIONAL[type] ?? []),
+    ]);
+    for (const [key, value] of Object.entries(data)) {
         const replacement = DEPRECATED_FIELDS[key];
         if (replacement) {
             findings.push({
@@ -435,33 +447,20 @@ function strictChecks(type: ContentType, data: Record<string, unknown>, body: st
                 message: `'${key}' is deprecated. ${replacement}`,
             });
         }
-    }
-
-    // Trailing whitespace in frontmatter string values
-    for (const [field, value] of Object.entries(data)) {
         if (typeof value === 'string' && value !== value.trimEnd()) {
             findings.push({
                 severity: 'warning',
-                field,
-                message: `'${field}' has trailing whitespace`,
+                field: key,
+                message: `'${key}' has trailing whitespace`,
             });
         }
-    }
-
-    // Unknown frontmatter keys — only under --strict (F4 fix)
-    const recognized = new Set([
-        ...Object.keys(FIELD_TYPES[type] ?? {}),
-        ...REQUIRED_FIELDS[type],
-        ...(KNOWN_OPTIONAL[type] ?? []),
-    ]);
-    for (const key of Object.keys(data)) {
-        if (recognized.has(key)) continue;
-        if (DEPRECATED_FIELDS[key] !== undefined) continue; // already reported, don't double-count
-        findings.push({
-            severity: 'warning',
-            field: key,
-            message: `Unknown frontmatter key '${key}'`,
-        });
+        if (!recognized.has(key) && DEPRECATED_FIELDS[key] === undefined) {
+            findings.push({
+                severity: 'warning',
+                field: key,
+                message: `Unknown frontmatter key '${key}'`,
+            });
+        }
     }
 
     return findings;

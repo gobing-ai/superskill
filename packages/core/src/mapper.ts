@@ -1,5 +1,6 @@
-import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { homedir } from 'node:os';
+import { join, resolve } from 'node:path';
 import { assertSafePathSegment } from './content/identity';
 import { adaptCommandToSkill } from './pipeline/adapt-command';
 import { adaptSubagentToSkill } from './pipeline/adapt-subagent';
@@ -78,9 +79,14 @@ function convertClaudeHooksToCanonical(claudeJson: JsonObject): JsonObject {
     return { hooks: canonical };
 }
 
-/** Update the `name:` frontmatter field to the prefixed canonical name. */
+/** Update the `name:` frontmatter field to the prefixed canonical name.
+ *  If no `name:` field exists, insert one after the opening `---`. */
 function setSkillName(content: string, newName: string): string {
-    return content.replace(/^name:\s*.+$/m, `name: ${newName}`);
+    if (/^name:\s*.+$/m.test(content)) {
+        return content.replace(/^name:\s*.+$/m, `name: ${newName}`);
+    }
+    // No existing name field — insert after the opening `---` delimiter.
+    return content.replace(/^---\s*$/m, `---\nname: ${newName}`);
 }
 
 /**
@@ -106,6 +112,10 @@ function setSkillName(content: string, newName: string): string {
  */
 export function mapPluginToRulesync(pluginPath: string, pluginName: string, outputDir: string): MapResult {
     assertSafePathSegment(pluginName, 'plugin name');
+    // Guard against destructive recursive deletes: reject paths that resolve
+    // to filesystem root, home dir, or cwd — a CLI bug or bad --output could
+    // otherwise destroy user data irrecoverably.
+    assertSafeOutputDir(outputDir);
     // Clean the output directory to prevent stale data from previous installs
     // leaking into this plugin's mapping.
     if (existsSync(outputDir)) {
@@ -226,7 +236,12 @@ function deepMergeJsonFile(sourcePath: string, targetPath: string): void {
 }
 
 function readJsonObject(path: string): JsonObject {
-    const value = JSON.parse(readFileSync(path, 'utf-8')) as unknown;
+    let value: unknown;
+    try {
+        value = JSON.parse(readFileSync(path, 'utf-8'));
+    } catch (e) {
+        throw new Error(`Failed to parse JSON in ${path}: ${e instanceof Error ? e.message : String(e)}`);
+    }
 
     if (!isJsonObject(value)) {
         throw new Error(`Expected JSON object in ${path}`);
@@ -250,17 +265,77 @@ function isJsonObject(value: unknown): value is JsonObject {
     return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-/** Recursively copy a directory, rewriting skill references in all text files. */
+/** Reject paths that would cause destructive recursive deletes if passed to rmSync. */
+function assertSafeOutputDir(outputDir: string): void {
+    const resolved = resolve(outputDir);
+    const home = homedir();
+    const dangerous = [home, process.cwd(), '/', '/home', '/Users'];
+    for (const danger of dangerous) {
+        if (resolved === resolve(danger)) {
+            throw new Error(
+                `Refusing to delete output directory '${resolved}': resolves to a protected path ` +
+                    `(home, cwd, or filesystem root). Use a subdirectory.`,
+            );
+        }
+    }
+}
+
+/** Recursively copy a directory, rewriting skill references in text files.
+ *  Binary files are copied byte-for-byte; symlinks are skipped to prevent loops. */
 function copyAndRewriteDirectory(source: string, destination: string, pluginName: string): void {
     mkdirSync(destination, { recursive: true });
     for (const entry of readdirSync(source)) {
         const srcPath = join(source, entry);
         const destPath = join(destination, entry);
-        if (statSync(srcPath).isDirectory()) {
+        const stat = lstatSync(srcPath);
+        if (stat.isSymbolicLink()) continue; // skip symlinks — prevent infinite recursion
+        if (stat.isDirectory()) {
             copyAndRewriteDirectory(srcPath, destPath, pluginName);
         } else {
-            const content = readFileSync(srcPath, 'utf-8');
-            writeFileSync(destPath, rewriteSkillReferences(content, pluginName));
+            const bytes = readFileSync(srcPath);
+            // Only rewrite text files; copy binaries (images, fonts, archives) verbatim.
+            if (isTextFile(entry, bytes)) {
+                const content = bytes.toString('utf-8');
+                writeFileSync(destPath, rewriteSkillReferences(content, pluginName));
+            } else {
+                writeFileSync(destPath, bytes);
+            }
         }
     }
+}
+
+/** Heuristic: file is text if extension is known-text or content has no NUL bytes. */
+const TEXT_EXTENSIONS = new Set([
+    '.md',
+    '.ts',
+    '.js',
+    '.json',
+    '.yaml',
+    '.yml',
+    '.txt',
+    '.sh',
+    '.bash',
+    '.py',
+    '.rb',
+    '.go',
+    '.rs',
+    '.java',
+    '.c',
+    '.cpp',
+    '.h',
+    '.css',
+    '.html',
+    '.xml',
+    '.toml',
+    '.ini',
+    '.cfg',
+    '.env',
+    '.gitignore',
+    '.dockerfile',
+]);
+function isTextFile(filename: string, bytes: Buffer): boolean {
+    const ext = filename.slice(filename.lastIndexOf('.'));
+    if (TEXT_EXTENSIONS.has(ext)) return true;
+    // Binary detection: NUL byte in first 8KB means binary.
+    return !bytes.subarray(0, 8192).includes(0);
 }

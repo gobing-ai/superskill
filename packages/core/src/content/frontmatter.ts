@@ -28,13 +28,13 @@ export interface ParsedFrontmatter {
  * @throws {FrontmatterError} if the content lacks a `---` opener, closer, or the YAML is unparseable.
  */
 export function parseFrontmatter(content: string): ParsedFrontmatter {
-    if (!content.startsWith('---\n')) {
+    if (!/^---\r?\n/.test(content)) {
         throw new FrontmatterError('Missing frontmatter: content must start with ---');
     }
 
     // Closer must be a bare `---` line: `\n---` followed by end-of-string or newline,
     // so body lines like `---draft` are not mistaken for the delimiter.
-    const closerMatch = content.slice(4).match(/\n---(?=\n|$)/);
+    const closerMatch = content.slice(4).match(/\r?\n---(?=\r?\n|$)/);
     if (closerMatch?.index === undefined) {
         throw new FrontmatterError('Missing frontmatter closing delimiter (---)');
     }

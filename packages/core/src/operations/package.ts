@@ -1,4 +1,4 @@
-import { cpSync, existsSync, mkdirSync, statSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, rmSync, statSync } from 'node:fs';
 import { basename, dirname, join } from 'node:path';
 import { cwd } from 'node:process';
 import { resolveContentPath } from '../content/identity';
@@ -72,6 +72,10 @@ export async function packageSkill(name: string, opts: PackageOptions = {}): Pro
     const { dir: skillDir, name: skillName } = resolveSkillDir(name);
     const outputDir = join(opts.output ?? cwd(), skillName);
 
+    // Clean existing output to prevent stale companion files from prior packaging.
+    if (existsSync(outputDir)) {
+        rmSync(outputDir, { recursive: true, force: true });
+    }
     mkdirSync(outputDir, { recursive: true });
 
     // Core: SKILL.md + references/

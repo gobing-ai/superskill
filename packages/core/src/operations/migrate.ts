@@ -29,10 +29,11 @@ export function loadSkillSources(sources: string[]): ParsedFrontmatter[] {
     return parsed;
 }
 
-/** Deduplicate an array of primitives, preserving first-occurrence order. */
-export function dedupeArray(values: unknown[]): unknown[] {
-    const seen = new Set<unknown>();
-    const result: unknown[] = [];
+/** Deduplicate an array of primitives (string | number | boolean), preserving first-occurrence order.
+ *  Uses Set reference equality — object elements are NOT deep-compared. */
+export function dedupeArray(values: Array<string | number | boolean>): Array<string | number | boolean> {
+    const seen = new Set<string | number | boolean>();
+    const result: Array<string | number | boolean> = [];
     for (const value of values) {
         if (!seen.has(value)) {
             seen.add(value);

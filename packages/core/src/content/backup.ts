@@ -10,8 +10,14 @@ import { rmSync } from 'node:fs';
 export async function backupFile(filePath: string): Promise<string> {
     let backupPath = `${filePath}.bak`;
     if (await Bun.file(backupPath).exists()) {
-        const ts = new Date().toISOString().replace(/[:.]/g, '').slice(0, 15);
+        // Use millisecond precision to avoid same-minute collisions overwriting prior backups.
+        const ts = new Date().toISOString().replace(/[:.]/g, '').slice(0, 18);
         backupPath = `${filePath}.bak.${ts}`;
+        // If even millisecond-precision collides, append a counter.
+        let counter = 1;
+        while (await Bun.file(backupPath).exists()) {
+            backupPath = `${filePath}.bak.${ts}.${counter++}`;
+        }
     }
     await Bun.write(backupPath, Bun.file(filePath));
     return backupPath;
@@ -22,7 +28,10 @@ export async function backupFile(filePath: string): Promise<string> {
  * remains. Used by `refine` (quit) and `evolve` (gate fail) to roll back a write.
  */
 export async function restoreFromBackup(backupPath: string, originalPath: string): Promise<void> {
+    if (!(await Bun.file(backupPath).exists())) {
+        throw new Error(`Backup file not found: ${backupPath} — cannot restore ${originalPath}`);
+    }
     await Bun.write(originalPath, Bun.file(backupPath));
-    // R12: delete the backup after a successful restore so quit leaves no residue.
+    // Delete the backup after a successful restore so quit leaves no residue.
     rmSync(backupPath, { force: true });
 }
