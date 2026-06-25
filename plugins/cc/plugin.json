@@ -1,5 +1,5 @@
 {
     "name": "cc",
-    "version": "0.2.4",
+    "version": "0.2.5",
     "description": "superskill - a manager for multi-agent skill, slash command, subagent, hook, MCP and etc"
 }
