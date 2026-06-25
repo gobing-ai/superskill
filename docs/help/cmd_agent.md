@@ -101,6 +101,15 @@ superskill agent evolve <name> [options]
 | `--json` | Machine-readable JSON (envelope-out with `--propose-only`) | `false` |
 | `--ingest <file>` | Agent-authored proposal JSON (ingest-in mode) | — |
 | `--margin <n>` | Δ-margin gate threshold | `0.05` |
+| `--eval-gate` | Enable empirical behavior gate (requires `skills/<name>/eval/cases.yaml`) | `false` |
+| `--analyze` | Print analysis summary (trends, score, data sources) without writing a proposal | `false` |
+| `--history` | List applied proposal versions from the store | `false` |
+| `--rollback <id>` | Rollback to a prior version by proposal_id (requires `--confirm`) | — |
+| `--confirm` | Confirm a destructive operation (required for `--rollback`) | `false` |
+
+See the [quality system guide](quality_system.md) for the empirical behavior gate, noise-floor estimation, and the full eval-cases schema.
+
+> **Hook divergence:** `hook refine` is suggest-only (no `--auto`), and `hook evolve` is analyze-only (no `--history` / `--rollback` / `--confirm`).
 
 Reads evaluation history from SQLite, computes per-dimension trends, and either emits a generation envelope (`--propose-only --json`) for an external agent to author a rewrite, or ingests an agent-authored proposal (`--ingest`) through the double-loop gate.
 

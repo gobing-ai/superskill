@@ -11,10 +11,17 @@ Two layers:
 
 ## Documentation map
 
+### Getting started
+
 | Document | Covers |
 |----------|--------|
-| [Installation](installation.md) | Prerequisites, install methods, binary on PATH |
+| [Installation](installation.md) | Prerequisites, install methods, binary on PATH, troubleshooting |
 | [Quick start](quick_start.md) | Get a plugin installed + author your first skill in 5 minutes |
+
+### Commands
+
+| Document | Covers |
+|----------|--------|
 | [`install` command](cmd_install.md) | Distribute a plugin to target agents |
 | [`agent` command](cmd_agent.md) | Manage subagent definitions |
 | [`skill` command](cmd_skill.md) | Manage skill definitions (includes `package`, `migrate`) |
@@ -22,15 +29,24 @@ Two layers:
 | [`hook` command](cmd_hook.md) | Manage hook definitions (includes `emit`) |
 | [`magent` command](cmd_magent.md) | Manage main-agent configurations |
 
+### Reference
+
+| Document | Covers |
+|----------|--------|
+| [Quality system](quality_system.md) | Rubrics, scoring dimensions, two-call seam, double-loop gate, empirical behavior gate |
+| [Entity locations](entity_locations.md) | Where superskill writes each entity type per target agent |
+| [Bundled `cc` plugin](bundled_plugin.md) | The shipped Claude Code plugin — entities, delegation pattern, scripts |
+| [Development guide](development.md) | Stack, workspace layout, build commands, verification gate, code style |
+
 ## Command overview
 
 ```
 superskill
 ├── install <plugin>          # distribute a plugin to target agents
 ├── agent <op> <name>         # subagent definitions
-├── skill <op> <name>         # skill definitions
+├── skill <op> <name>         # skill definitions (+ package, migrate)
 ├── command <op> <name>       # slash command definitions
-├── hook <op> <name>          # hook definitions
+├── hook <op> <name>          # hook definitions (+ emit)
 └── magent <op> <name>        # main-agent configs
 ```
 
@@ -54,6 +70,7 @@ flowchart LR
 Each operation is detailed in its command page, including usage, options, implementation architecture, and sequence diagrams.
 
 ## Supported targets
+
 | Target | Engine | Output location |
 |--------|--------|-----------------|
 | `claude` | Direct `claude plugin install` | Claude Code marketplace |
@@ -65,6 +82,9 @@ Each operation is detailed in its command page, including usage, options, implem
 | `antigravity-ide` | rulesync | `~/.gemini/config/skills/` |
 | `hermes` | superskill copy (via `opencode` surrogate) | `~/.hermes/skills/` |
 | `openclaw` | implicit (reads `~/.agents/skills/`) | Shared skills root — no dedicated dispatch |
+
+See [entity locations](entity_locations.md) for the full per-target directory table (global + project-level).
+
 ## Further reading
 
 The authoritative project docs live in [`docs/`](../):
