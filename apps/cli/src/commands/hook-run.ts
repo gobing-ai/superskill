@@ -117,7 +117,7 @@ interface HookContext {
  * Stop hook: block the agent from stopping when its last message claims external facts without the
  * anti-hallucination protocol (source citations / confidence level / verification-tool evidence).
  * Reads the payload from the `ARGUMENTS` env var (Claude Stop-hook convention), emits the canonical
- * Stop JSON via {@link buildStopOutput} (allow → `hookSpecificOutput.{hookEventName,additionalContext}`;
+ * Stop JSON via {@link buildStopOutput} (allow → bare `hookSpecificOutput.hookEventName`, no feedback;
  * block → top-level `decision:"block"` + `reason`), and exits 0 (allow) / 1 (block).
  * Fails open (allow stop) on empty/invalid `ARGUMENTS` or missing content.
  */

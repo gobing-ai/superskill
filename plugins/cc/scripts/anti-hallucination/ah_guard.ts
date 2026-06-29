@@ -16,7 +16,7 @@
  *     1 - Deny stop (protocol not followed, outputs JSON with reason)
  *
  * Output Format (stdout) — Claude Code canonical Stop-hook JSON:
- *     {"hookSpecificOutput":{"hookEventName":"Stop","additionalContext":"…"}}   # Allow stop
+ *     {"hookSpecificOutput":{"hookEventName":"Stop"}}                          # Allow stop (no feedback)
  *     {"decision":"block","reason":"…","hookSpecificOutput":{"hookEventName":"Stop"}}  # Block stop
  */
 
@@ -74,15 +74,18 @@ interface VerificationResult {
 
 /**
  * Build the Claude Code canonical Stop-hook JSON for a verification result. Claude's Stop schema
- * requires `hookSpecificOutput.hookEventName: "Stop"`; an allow carries the feedback as the optional
- * `additionalContext`, while a block rides on the top-level `decision: "block"` + `reason` channel
- * (Stop has no `allowStop`/`feedback` fields — that shape fails Claude's hook-output validation).
- * The exit code stays the allow/deny signal (0 = allow, 1 = deny) for agents that key off it.
+ * requires `hookSpecificOutput.hookEventName: "Stop"`. An allow emits only that bare envelope — it
+ * carries no `additionalContext`, since a permitted stop has nothing the model needs to act on, and
+ * surfacing the allow reason ("Task is complete", "No content to verify") just adds per-turn chat
+ * noise. A block rides on the top-level `decision: "block"` + `reason` channel — that feedback is the
+ * point of blocking (Stop has no `allowStop`/`feedback` fields — that shape fails Claude's
+ * hook-output validation). The exit code stays the allow/deny signal (0 = allow, 1 = deny) for
+ * agents that key off it.
  */
 export function buildStopOutput(result: VerificationResult): string {
     if (result.ok) {
         return JSON.stringify({
-            hookSpecificOutput: { hookEventName: 'Stop', additionalContext: result.reason },
+            hookSpecificOutput: { hookEventName: 'Stop' },
         });
     }
     return JSON.stringify({

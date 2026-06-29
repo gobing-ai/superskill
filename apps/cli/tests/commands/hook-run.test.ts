@@ -144,7 +144,7 @@ describe('hook run — sp/task-write-guard', () => {
 });
 
 describe('hook run — cc/anti-hallucination (Stop, canonical output contract)', () => {
-    it('emits the Claude Stop allow shape (hookEventName + additionalContext) on a passing message', () => {
+    it('emits a bare Claude Stop allow shape (hookEventName only, no feedback) on a passing message', () => {
         const args = JSON.stringify({
             messages: [{ role: 'assistant', content: 'Done. Refactored the helper; all tests green.' }],
         });
@@ -152,9 +152,11 @@ describe('hook run — cc/anti-hallucination (Stop, canonical output contract)',
         const parsed = JSON.parse(out);
         // WHY: Claude validates Stop output against a fixed schema — the allow path must carry
         // `hookSpecificOutput.hookEventName: "Stop"` (required) and must NOT use the invented
-        // `allowStop`/`feedback` fields that fail validation.
+        // `allowStop`/`feedback` fields that fail validation. It also omits `additionalContext`:
+        // a permitted stop has nothing for the model to act on, so surfacing the allow reason
+        // would only add per-turn chat noise.
         expect(parsed.hookSpecificOutput.hookEventName).toBe('Stop');
-        expect(typeof parsed.hookSpecificOutput.additionalContext).toBe('string');
+        expect(parsed.hookSpecificOutput.additionalContext).toBeUndefined();
         expect(parsed.allowStop).toBeUndefined();
         expect(parsed.decision).toBeUndefined();
         expect(code).toBe(0);
