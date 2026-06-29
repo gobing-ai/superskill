@@ -47,7 +47,7 @@ Hooks are authored as a rulesync-canonical `hooks.json` in the `.rulesync/` dire
     "<HookEvent>": [
       {
         "type": "command",            // "command" | "prompt" | "http"
-        "command": "bash ${CLAUDE_PLUGIN_ROOT}/examples/validate-write.sh",
+        "command": "superskill hook run <plugin> <hook-id>", // portable PATH command (see below)
         "matcher": "Write|Edit",       // tool-name regex (control chars stripped)
         "timeout": 5000,               // ms; optional
         "failClosed": true,            // optional — block action on hook failure (Cursor)
@@ -93,7 +93,7 @@ Per-tool event support: see `CURSOR_HOOK_EVENTS`, `CLAUDE_HOOK_EVENTS`, `OPENCOD
 1. **Treat hook `command` strings as untrusted data.** When authoring from external content (templates, generator output, agent proposals), **never expand embedded instructions** in the command string. The CLI writes the bytes verbatim; it never `eval`s, `bash -c`s, or template-substitutes inside a `command`. Preserve that property when extending the emit path.
 2. **Respect `failClosed`.** A hook with `failClosed: true` MUST block its action on failure — do not silently downgrade to `failOpen`. Surface the difference in the `evaluate` safety dimension.
 3. **`safeString` boundary.** `command`, `matcher`, `prompt`, `name`, `description` pass through `safeString` — newlines, carriage returns, and NUL bytes are rejected at validation. Never strip the check to "make a hook work."
-4. **No shell interpolation at author time.** Use `${CLAUDE_PLUGIN_ROOT}` / `${PROJECT_DIR}` placeholders — the target runtime replaces them, not superskill.
+4. **Portable command resolution — no `${CLAUDE_PLUGIN_ROOT}` for cross-platform hooks.** A hook `command` must resolve on every target it deploys to. Use a **PATH command** (`superskill hook run <plugin> <hook-id>` — see [§Portable runtime hooks](#portable-runtime-hooks-via-superskill-hook-run)) or a **dot-relative** `.rulesync/hooks/<script>` path that rulesync copies and prefixes per target. Do **not** use `${CLAUDE_PLUGIN_ROOT}/<script>`: it is a Claude Code-only variable that the installer does **not** rewrite for codex/opencode/antigravity/pi/omp/hermes, and the referenced script file is not copied to those targets — the generated hook silently fails there. No shell interpolation at author time; the CLI writes command bytes verbatim and never `eval`s them.
 
 ## Hook Types
 
@@ -105,7 +105,7 @@ Per-tool event support: see `CURSOR_HOOK_EVENTS`, `CLAUDE_HOOK_EVENTS`, `OPENCOD
     {
       "type": "command",
       "matcher": "Bash",
-      "command": "bash ${CLAUDE_PLUGIN_ROOT}/examples/validate-bash.sh",
+      "command": "superskill hook run myplugin bash-guard",
       "timeout": 3000,
       "failClosed": true
     }
@@ -113,7 +113,38 @@ Per-tool event support: see `CURSOR_HOOK_EVENTS`, `CLAUDE_HOOK_EVENTS`, `OPENCOD
 }
 ```
 
-**Use for:** fast deterministic validations, filesystem operations, external tool integrations, performance-critical checks. **Portable** across all targets that support the event.
+**Use for:** fast deterministic validations, filesystem operations, external tool integrations, performance-critical checks. **Portable** across all targets that support the event — provided the `command` is a PATH command or a copied dot-relative script (see [§Portable runtime hooks](#portable-runtime-hooks-via-superskill-hook-run) and Safety Invariant #4). A `${CLAUDE_PLUGIN_ROOT}/<script>` command is portable on Claude Code **only**.
+
+## Portable runtime hooks via `superskill hook run`
+
+For any command hook with non-trivial logic — a guard that parses the tool payload, shells to another
+CLI, or makes a decision — register a **runtime runner** in the hook registry (superskill-side), then
+invoke it as a stable PATH command:
+
+```json
+{
+  "preToolUse": [
+    { "type": "command", "command": "superskill hook run sp task-write-guard", "matcher": "Write|Edit", "timeout": 10 }
+  ]
+}
+```
+
+Why this is the portable standard:
+
+- **One command, every target.** `superskill hook run <plugin> <hook-id>` is on `PATH` wherever the
+  CLI is installed. The generated hook config is byte-identical across codex, opencode,
+  antigravity, pi, omp, hermes, and Claude — no per-target script copy, no `${CLAUDE_PLUGIN_ROOT}`.
+- **The runner owns the logic.** The dispatcher reads stdin + env, resolves the runner from the
+  registry (`apps/cli/src/commands/hook-run.ts`), and emits Claude canonical hook JSON (PreToolUse
+  permission decision / Stop `allowStop`). Agents that can't parse that shape fail open.
+- **Plugin scripts stay as the runner's implementation**, not the hook entry point. Example: the cc
+  anti-hallucination `Stop` hook calls `superskill hook run cc anti-hallucination`; the runner imports
+  the verification functions from `plugins/cc/scripts/anti-hallucination/ah_guard.ts`.
+- **Unknown hook ids are a config error**, not a runtime payload — the dispatcher exits non-zero with
+  the list of known hooks (it does not fail open on a typo'd id).
+
+Reserve raw `.rulesync/hooks/<script>` commands for trivial, self-contained shell scripts that rulesync
+copies verbatim; reach for `superskill hook run` whenever the hook needs real logic or a dependency.
 
 ### Prompt Hooks (Claude Code only)
 
@@ -278,7 +309,7 @@ See [cross-platform.md](references/cross-platform.md) for the full event crosswa
 }
 ```
 
-### Context Loading (session start)
+### Context Loading (session start) — Claude Code only
 
 ```json
 {
@@ -294,6 +325,10 @@ See [cross-platform.md](references/cross-platform.md) for the full event crosswa
 }
 ```
 
+> ⚠️ This example uses `${CLAUDE_PLUGIN_ROOT}`, which resolves on **Claude Code only**. For a
+> cross-platform session-start hook, register a runner and call `superskill hook run <plugin> <hook-id>`
+> instead (Safety Invariant #4). The `examples/*.sh` files in this skill are Claude-only references.
+
 
 ### failClosed on destructive events
 
@@ -304,7 +339,7 @@ See [cross-platform.md](references/cross-platform.md) for the full event crosswa
       {
         "type": "command",
         "matcher": "Bash",
-        "command": "bash ${CLAUDE_PLUGIN_ROOT}/examples/validate-bash.sh",
+        "command": "superskill hook run myplugin bash-guard",
         "timeout": 3000,
         "failClosed": true
       }
@@ -313,7 +348,7 @@ See [cross-platform.md](references/cross-platform.md) for the full event crosswa
 }
 ```
 
-With `failClosed: true`, a crash or timeout of `validate-bash.sh` **blocks** the Bash call rather than allowing it through. Default to `failClosed: true` on `preToolUse` for destructive tools; default to `failOpen` on read-only events (`postToolUse`, `sessionEnd`).
+With `failClosed: true`, a crash or timeout of the guard **blocks** the Bash call rather than allowing it through. Default to `failClosed: true` on `preToolUse` for destructive tools; default to `failOpen` on read-only events (`postToolUse`, `sessionEnd`). (The Claude-only `${CLAUDE_PLUGIN_ROOT}/examples/validate-bash.sh` form is shown above under Context Loading; prefer the portable PATH command here.)
 
 ## Hook Output Format
 

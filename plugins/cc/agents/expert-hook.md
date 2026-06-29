@@ -42,7 +42,7 @@ Pass the original frontmatter and negative constraints **verbatim** to the Skept
 
 ## Philosophy
 
-**Author canonical, deploy everywhere.** Author hooks in the rulesync-canonical format (`.rulesync/hooks.json` — `HookDefinitionSchema` shape: `type`/`command`/`prompt`/`http`, `matcher`, `timeout`, `failClosed`, `loop_limit`), then deploy via `superskill install` or `superskill hook emit`. Event names are camelCase from the `HookEvent` union (`vendors/rulesync/src/types/hooks.ts:49`). Each target runtime expands its own env-var placeholders.
+**Author canonical, deploy everywhere.** Author hooks in the rulesync-canonical format (`.rulesync/hooks.json` — `HookDefinitionSchema` shape: `type`/`command`/`prompt`/`http`, `matcher`, `timeout`, `failClosed`, `loop_limit`), then deploy via `superskill install` or `superskill hook emit`. Event names are camelCase from the `HookEvent` union (`vendors/rulesync/src/types/hooks.ts:49`). For a portable `command`, prefer the PATH command `superskill hook run <plugin> <hook-id>` (a runtime runner registered in `apps/cli/src/commands/hook-run.ts`) or a dot-relative `.rulesync/hooks/<script>` path that rulesync copies — **not** `${CLAUDE_PLUGIN_ROOT}/<script>`, which resolves on Claude Code only and is not rewritten or copied for other targets.
 
 **Key portability rule:** Always prefer `type: "command"` hooks for cross-platform portability. `type: "prompt"` hooks are Claude Code-only. `failClosed: true` is honored on Cursor and surfaces as a `safety` dimension penalty elsewhere.
 
@@ -188,7 +188,7 @@ Full matrix: `plugins/cc/skills/cc-hooks/references/platform-limits.md`
 | **Tier 1** | Claude Code, Codex, OpenCode | Abstract schema → per-platform JSON config |
 | **Tier 2** | Pi, OpenClaw | Abstract schema → `.pi/settings.json` (via `@hsingjui/pi-hooks`) |
 | **Tier 3** | Gemini CLI | Abstract schema → `.gemini/settings.json` |
-| **Tier 4** | Antigravity | Documentation only (no lifecycle hooks) |
+| **Tier 1** | Antigravity (CLI + IDE) | Native rulesync hook generators → `.agents/hooks.json` (project) / `.gemini/config/hooks.json` (global). Routed via `TARGET_TO_RULESYNC_HOOKS`, not the shared `codexcli` skills map. |
 
 ## Process
 

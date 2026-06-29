@@ -6,7 +6,7 @@
                 "hooks": [
                     {
                         "type": "command",
-                        "command": "bun ${CLAUDE_PLUGIN_ROOT}/scripts/anti-hallucination/ah_guard.ts",
+                        "command": "superskill hook run cc anti-hallucination",
                         "timeout": 10
                     }
                 ]

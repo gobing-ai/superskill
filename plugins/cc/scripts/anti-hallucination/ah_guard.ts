@@ -92,7 +92,7 @@ export function extractLastAssistantMessage(context: HookContext): string | unde
     // Find the last assistant message in messages array
     for (let i = messages.length - 1; i >= 0; i--) {
         const message = messages[i];
-        if (message.role === 'assistant') {
+        if (message?.role === 'assistant') {
             const content = message.content;
             if (Array.isArray(content)) {
                 // Handle mixed content (text + tool_use)

@@ -56,7 +56,14 @@ superskill hook validate hooks.yaml
 
 ## Environment Variables
 
-The abstract schema uses `$PROJECT_DIR` and `$PLUGIN_ROOT` as placeholders. Emitters replace them:
+> ⚠️ **Plugin-root placeholders are not portable for command hooks.** superskill does **not** rewrite
+> `${CLAUDE_PLUGIN_ROOT}` (or rulesync `$PLUGIN_ROOT`) to a per-target installed plugin root, and it
+> does not copy the referenced script file to non-Claude targets — so a `${CLAUDE_PLUGIN_ROOT}/<script>`
+> command silently fails everywhere except Claude Code. For any non-trivial command hook, register a
+> runner and invoke the PATH command `superskill hook run <plugin> <hook-id>` instead (see
+> `cc:cc-hooks` → "Portable runtime hooks via `superskill hook run`" and Safety Invariant #4). The
+> table below documents the per-target *project-dir* variables (which agents do expose) and is retained
+> for reference only; do not read it as a portability guarantee for `$PLUGIN_ROOT`.
 
 | Abstract | Claude Code | Codex | Pi | Gemini |
 |----------|-------------|-------|----|--------|
