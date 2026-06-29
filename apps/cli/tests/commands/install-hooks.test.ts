@@ -364,6 +364,78 @@ describe('executeInstall — Pi/omp/hermes hook enablement (F028)', () => {
     });
 });
 
+describe('executeInstall — Antigravity native hook routing (task 0151)', () => {
+    function createPluginWithHooks(root: string, pluginName: string): string {
+        const pluginRoot = createPlugin(root, pluginName);
+        writeFileSync(
+            join(pluginRoot, 'hooks.json'),
+            JSON.stringify({
+                version: 1,
+                hooks: {
+                    preToolUse: [{ type: 'command', command: 'superskill hook run x guard', matcher: 'Write|Edit' }],
+                },
+            }),
+        );
+        return pluginRoot;
+    }
+
+    it('routes the hooks pass through TARGET_TO_RULESYNC_HOOKS so antigravity-cli is NOT mapped to codexcli', async () => {
+        const workspace = createTempWorkspace();
+        createPluginWithHooks(workspace, 'aghooks');
+        const stdout = spyOn(process.stdout, 'write').mockImplementation(() => true);
+
+        // Capture each runRulesync invocation: its features + the targetMap override (if any).
+        const calls: { features: string[]; antigravityHookTarget?: string }[] = [];
+        await executeInstall(
+            'aghooks',
+            ['antigravity-cli'],
+            { global: false, dryRun: true, verbose: false },
+            {
+                runRulesync: async (_targets, features, _inputRoot, opts) => {
+                    calls.push({
+                        features: [...features],
+                        antigravityHookTarget: opts.targetMap?.['antigravity-cli'],
+                    });
+                    return makeResult({ hooksCount: features.includes('hooks') ? 1 : 0 });
+                },
+            },
+        );
+
+        const hooksPass = calls.find((c) => c.features.includes('hooks'));
+        const skillsPass = calls.find((c) => c.features.includes('skills'));
+        // A dedicated hooks-only pass ran with the hooks-specific map → native antigravity target.
+        expect(hooksPass).toBeDefined();
+        expect(hooksPass?.features).toEqual(['hooks']);
+        expect(hooksPass?.antigravityHookTarget).toBe('antigravity-cli');
+        // The skills pass does NOT carry hooks and does NOT pass the hooks map.
+        expect(skillsPass?.features).not.toContain('hooks');
+        expect(skillsPass?.antigravityHookTarget).toBeUndefined();
+        stdout.mockRestore();
+    });
+
+    it('skips the hooks pass entirely when the plugin has no hooks.json', async () => {
+        const workspace = createTempWorkspace();
+        createPlugin(workspace, 'aghnone'); // no hooks.json
+        const stdout = spyOn(process.stdout, 'write').mockImplementation(() => true);
+
+        const calls: { features: string[] }[] = [];
+        await executeInstall(
+            'aghnone',
+            ['antigravity-cli'],
+            { global: false, dryRun: true, verbose: false },
+            {
+                runRulesync: async (_t, features) => {
+                    calls.push({ features: [...features] });
+                    return makeResult({ skillsCount: 1 });
+                },
+            },
+        );
+
+        expect(calls.some((c) => c.features.includes('hooks'))).toBe(false);
+        stdout.mockRestore();
+    });
+});
+
 describe('validation checklist fixture (design §1.1)', () => {
     it('hook-events-checklist.md fixture exists and documents the four ✅ targets', () => {
         const checklistPath = join(import.meta.dir, '..', 'fixtures', 'phase5', 'hook-events-checklist.md');

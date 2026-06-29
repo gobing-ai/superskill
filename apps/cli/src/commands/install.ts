@@ -18,6 +18,7 @@ import {
     rewriteSkillReferences,
     runRulesync,
     TARGET_SKILLS_RELDIR,
+    TARGET_TO_RULESYNC_HOOKS,
     TARGETS,
     type Target,
     translateSlashCommands,
@@ -129,7 +130,10 @@ export async function executeInstall(
     // Only request features the mapper actually produced — requesting 'mcp' when
     // the plugin has no mcp.json makes rulesync log a per-target ENOENT for the
     // missing .rulesync/mcp.json on every install.
-    const rulesyncFeatures = ['skills', 'hooks', ...(mapResult.mcp ? (['mcp'] as const) : [])] as const;
+    // Hooks are routed in a SEPARATE pass through TARGET_TO_RULESYNC_HOOKS so Antigravity reaches
+    // its native hook generator (.agents/hooks.json) instead of sharing 'codexcli' with skills. The
+    // main pass carries everything except hooks; the hooks-only pass carries just 'hooks'.
+    const rulesyncFeatures = ['skills', ...(mapResult.mcp ? (['mcp'] as const) : [])] as const;
     const rulesyncTargets = targets.filter((t) => t !== 'claude' && t !== 'hermes' && t !== 'omp');
     if (targets.includes('omp') && !targets.includes('pi')) {
         if (!targetInputRoots.has('pi')) {
@@ -180,6 +184,26 @@ export async function executeInstall(
             resultCounts.commandsCount += result.commandsCount;
             resultCounts.subagentsCount += result.subagentsCount;
             resultCounts.hooksCount += result.hooksCount;
+        }
+        // Hooks-only pass: route through TARGET_TO_RULESYNC_HOOKS so Antigravity gets native hook
+        // output. Only runs when the plugin actually produced a canonical hooks.json (mapResult.hooks).
+        if (mapResult.hooks) {
+            for (const target of rulesyncTargets) {
+                if (!TARGET_TO_RULESYNC_HOOKS[target]) continue; // pi handled via surrogate shim below
+                const hookResult = await runRulesyncImpl(
+                    [target],
+                    ['hooks'],
+                    targetInputRoots.get(target) ?? outputDir,
+                    {
+                        global: options.global,
+                        dryRun: options.dryRun,
+                        verbose: options.verbose,
+                        outputRoot: options.outputRoot,
+                        targetMap: TARGET_TO_RULESYNC_HOOKS,
+                    },
+                );
+                resultCounts.hooksCount += hookResult.hooksCount;
+            }
         }
         if (options.verbose) {
             echo(

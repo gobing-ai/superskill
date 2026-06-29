@@ -110,12 +110,12 @@ describe('executeInstall', () => {
         expect(capturedOptions?.dryRun).toBe(true);
     });
 
-    it('passes skills/hooks/mcp features to rulesync (commands and subagents downgraded to skills)', async () => {
+    it('passes skills feature to rulesync; hooks pass is skipped for a hookless plugin (task 0151 two-pass split)', async () => {
         const { marketplacePath } = setupPluginDir();
 
-        let capturedFeatures: string[] = [];
+        const allCapturedFeatures: string[][] = [];
         const mockRunRulesync = async (_targets: Target[], features: string[]) => {
-            capturedFeatures = features;
+            allCapturedFeatures.push([...features]);
             return {
                 rulesCount: 0,
                 rulesPaths: [],
@@ -144,9 +144,12 @@ describe('executeInstall', () => {
             { marketplacePath, global: false, dryRun: true, verbose: false },
             { runRulesync: mockRunRulesync },
         );
-        // plugin-min has no mcp.json, so 'mcp' is omitted — requesting it would make
-        // rulesync log a per-target ENOENT for the missing .rulesync/mcp.json.
-        expect(capturedFeatures).toEqual(['skills', 'hooks']);
+        // plugin-min has no mcp.json (mcp omitted) and no hooks.json (hooks pass skipped). Hooks are
+        // now requested in a SEPARATE pass gated on mapResult.hooks, so a hookless plugin makes a
+        // single skills-only pass — requesting 'hooks'/'mcp' it doesn't have would make rulesync log
+        // a per-target ENOENT for the missing .rulesync/{hooks,mcp}.json.
+        expect(allCapturedFeatures).toEqual([['skills']]);
+        expect(allCapturedFeatures.some((f) => f.includes('hooks'))).toBe(false);
     });
 
     it("includes 'mcp' feature only when the plugin actually ships an mcp.json", async () => {
@@ -154,9 +157,9 @@ describe('executeInstall', () => {
         // Add an mcp.json so the mapper reports mcp: true
         writeFileSync(join(pluginDir, 'mcp.json'), JSON.stringify({ mcpServers: {} }));
 
-        let capturedFeatures: string[] = [];
+        const allCapturedFeatures: string[][] = [];
         const mockRunRulesync = async (_targets: Target[], features: string[]) => {
-            capturedFeatures = features;
+            allCapturedFeatures.push([...features]);
             return {
                 rulesCount: 0,
                 rulesPaths: [],
@@ -185,7 +188,9 @@ describe('executeInstall', () => {
             { marketplacePath, global: false, dryRun: true, verbose: false },
             { runRulesync: mockRunRulesync },
         );
-        expect(capturedFeatures).toEqual(['skills', 'hooks', 'mcp']);
+        // mcp present (no hooks.json) → main pass carries skills+mcp; still no hooks pass.
+        expect(allCapturedFeatures).toEqual([['skills', 'mcp']]);
+        expect(allCapturedFeatures.some((f) => f.includes('hooks'))).toBe(false);
     });
 
     it('filters out claude/hermes/omp from rulesync call', async () => {
