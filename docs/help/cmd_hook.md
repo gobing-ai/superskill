@@ -71,7 +71,7 @@ Installed hook configs invoke this stable PATH command instead of a plugin-check
 | `sp/task-write-guard` | `PreToolUse` | Denies raw `Write`/`Edit` on paths owned by the Spur task corpus; ownership is delegated to `spur task resolve --strict`. Fails open on every other condition; `SPUR_WRITE_GUARD=off` short-circuits. |
 | `cc/anti-hallucination` | `Stop` | Blocks stop when the last assistant message claims external facts without source citations / confidence / verification-tool evidence. Fails open (allow stop) on empty/invalid `ARGUMENTS`. |
 
-Runners emit Claude canonical hook JSON (PreToolUse `permissionDecision` / Stop `allowStop`). Agents that cannot parse that shape fail open (treat as allow) — the intended cross-agent default. Unknown `<plugin>/<hook-id>` exits 2 (never fails open — a config bug, not a runtime payload).
+Runners emit Claude canonical hook JSON (PreToolUse `permissionDecision` / Stop `hookSpecificOutput.hookEventName` + `decision:"block"` on a block). Agents that cannot parse that shape fail open (treat as allow) — the intended cross-agent default. Unknown `<plugin>/<hook-id>` exits 2 (never fails open — a config bug, not a runtime payload).
 
 ## How it's implemented
 

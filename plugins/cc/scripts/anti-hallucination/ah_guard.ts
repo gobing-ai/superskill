@@ -15,9 +15,9 @@
  *     0 - Allow stop (protocol followed)
  *     1 - Deny stop (protocol not followed, outputs JSON with reason)
  *
- * Output Format (stdout):
- *     {"ok": true, "reason": "Task is complete"}           # Allow stop
- *     {"ok": false, "reason": "Add verification for ..."}  # Deny stop
+ * Output Format (stdout) — Claude Code canonical Stop-hook JSON:
+ *     {"hookSpecificOutput":{"hookEventName":"Stop","additionalContext":"…"}}   # Allow stop
+ *     {"decision":"block","reason":"…","hookSpecificOutput":{"hookEventName":"Stop"}}  # Block stop
  */
 
 import { logger } from './logger';
@@ -70,6 +70,26 @@ interface VerificationResult {
     ok: boolean;
     reason: string;
     issues?: string[];
+}
+
+/**
+ * Build the Claude Code canonical Stop-hook JSON for a verification result. Claude's Stop schema
+ * requires `hookSpecificOutput.hookEventName: "Stop"`; an allow carries the feedback as the optional
+ * `additionalContext`, while a block rides on the top-level `decision: "block"` + `reason` channel
+ * (Stop has no `allowStop`/`feedback` fields — that shape fails Claude's hook-output validation).
+ * The exit code stays the allow/deny signal (0 = allow, 1 = deny) for agents that key off it.
+ */
+export function buildStopOutput(result: VerificationResult): string {
+    if (result.ok) {
+        return JSON.stringify({
+            hookSpecificOutput: { hookEventName: 'Stop', additionalContext: result.reason },
+        });
+    }
+    return JSON.stringify({
+        decision: 'block',
+        reason: result.reason,
+        hookSpecificOutput: { hookEventName: 'Stop' },
+    });
 }
 
 interface Message {
@@ -261,13 +281,11 @@ export function main(): number {
         // If ARGUMENTS is not valid JSON, check if it's empty
         if (!argumentsJson || argumentsJson === '{}') {
             // No context available - allow stop
-            const output: VerificationResult = { ok: true, reason: 'Task is complete (no context)' };
-            logger.log(JSON.stringify(output));
+            logger.log(buildStopOutput({ ok: true, reason: 'Task is complete (no context)' }));
             return 0;
         }
         // Invalid JSON - warn but allow
-        const output: VerificationResult = { ok: true, reason: 'Task is complete (invalid context ignored)' };
-        logger.log(JSON.stringify(output));
+        logger.log(buildStopOutput({ ok: true, reason: 'Task is complete (invalid context ignored)' }));
         return 0;
     }
 
@@ -276,15 +294,14 @@ export function main(): number {
 
     // Handle case where content couldn't be extracted
     if (content === undefined) {
-        const output: VerificationResult = { ok: true, reason: 'No content to verify' };
-        logger.log(JSON.stringify(output));
+        logger.log(buildStopOutput({ ok: true, reason: 'No content to verify' }));
         return 0;
     }
 
     // Verify anti-hallucination protocol
     const result = verifyAntiHallucinationProtocol(content);
 
-    logger.log(JSON.stringify(result));
+    logger.log(buildStopOutput(result));
 
     // Exit code: 0 = allow stop, 1 = deny stop
     return result.ok ? 0 : 1;

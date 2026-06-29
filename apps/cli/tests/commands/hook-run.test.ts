@@ -143,20 +143,24 @@ describe('hook run — sp/task-write-guard', () => {
     });
 });
 
-describe('hook run — cc/anti-hallucination (Stop, corrected output contract)', () => {
-    it('emits the Claude Stop shape {hookSpecificOutput:{allowStop,feedback}} and allows a passing message', () => {
+describe('hook run — cc/anti-hallucination (Stop, canonical output contract)', () => {
+    it('emits the Claude Stop allow shape (hookEventName + additionalContext) on a passing message', () => {
         const args = JSON.stringify({
             messages: [{ role: 'assistant', content: 'Done. Refactored the helper; all tests green.' }],
         });
         const { code, out } = capture('cc', 'anti-hallucination', { ARGUMENTS: args }, '');
         const parsed = JSON.parse(out);
-        expect(parsed.hookSpecificOutput).toBeDefined();
-        expect(parsed.hookSpecificOutput.allowStop).toBe(true);
-        expect(typeof parsed.hookSpecificOutput.feedback).toBe('string');
+        // WHY: Claude validates Stop output against a fixed schema — the allow path must carry
+        // `hookSpecificOutput.hookEventName: "Stop"` (required) and must NOT use the invented
+        // `allowStop`/`feedback` fields that fail validation.
+        expect(parsed.hookSpecificOutput.hookEventName).toBe('Stop');
+        expect(typeof parsed.hookSpecificOutput.additionalContext).toBe('string');
+        expect(parsed.allowStop).toBeUndefined();
+        expect(parsed.decision).toBeUndefined();
         expect(code).toBe(0);
     });
 
-    it('blocks the stop (allowStop:false, exit 1) when the protocol fails on a fact-claiming message', () => {
+    it('blocks the stop via decision:"block" + reason (exit 1) when the protocol fails', () => {
         const args = JSON.stringify({
             messages: [
                 {
@@ -168,18 +172,25 @@ describe('hook run — cc/anti-hallucination (Stop, corrected output contract)',
         });
         const { code, out } = capture('cc', 'anti-hallucination', { ARGUMENTS: args }, '');
         const parsed = JSON.parse(out);
-        expect(parsed.hookSpecificOutput.allowStop).toBe(false);
-        expect(parsed.hookSpecificOutput.feedback).toContain('Add verification');
+        // WHY: a Stop hook blocks via the top-level `decision: "block"` + `reason` channel, not via
+        // a non-schema `allowStop:false`. `hookEventName` is still required on the block payload.
+        expect(parsed.decision).toBe('block');
+        expect(parsed.reason).toContain('Add verification');
+        expect(parsed.hookSpecificOutput.hookEventName).toBe('Stop');
         expect(code).toBe(1);
     });
 
-    it('fails open (allowStop:true) on empty/invalid ARGUMENTS', () => {
+    it('fails open with a valid allow shape on empty/invalid ARGUMENTS', () => {
         const empty = capture('cc', 'anti-hallucination', {}, '');
-        expect(JSON.parse(empty.out).hookSpecificOutput.allowStop).toBe(true);
+        const emptyParsed = JSON.parse(empty.out);
+        expect(emptyParsed.hookSpecificOutput.hookEventName).toBe('Stop');
+        expect(emptyParsed.decision).toBeUndefined();
         expect(empty.code).toBe(0);
 
         const invalid = capture('cc', 'anti-hallucination', { ARGUMENTS: 'not json' }, '');
-        expect(JSON.parse(invalid.out).hookSpecificOutput.allowStop).toBe(true);
+        const invalidParsed = JSON.parse(invalid.out);
+        expect(invalidParsed.hookSpecificOutput.hookEventName).toBe('Stop');
+        expect(invalidParsed.decision).toBeUndefined();
         expect(invalid.code).toBe(0);
     });
 });
