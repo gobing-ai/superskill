@@ -1,6 +1,6 @@
 # `superskill install`
 
-Distribute a Claude Code plugin's skills, commands, subagents, hooks, and MCP config to any supported target coding agent.
+Distribute a Claude Code plugin's skills, commands, subagents, hooks, and MCP config to any supported target coding agent. Hooks are routed through a separate rulesync pass so each target reaches its native hook generator.
 
 ## How to use it
 
@@ -131,20 +131,20 @@ Missing optional directories are handled gracefully — nothing is created for a
 | `slash-command.ts` | Translate `/plugin-command` ↔ `/skill:` dialects | pi, omp, opencode, antigravity, hermes |
 | `rewrite-references.ts` | Rewrite `<pluginPrefix>:name` → `<pluginPrefix>-name` (plugin-prefix-scoped) | all non-Claude targets |
 | `pi-subagent.ts` | Convert subagent frontmatter to Pi native agent format | pi, omp |
-Target-to-rulesync and target-to-agent-name mappings live in `targets.ts`:
+Target-to-rulesync and target-to-agent-name mappings live in `targets.ts`. **Skills and hooks use separate maps** (task 0151): skills collapse Antigravity onto `codexcli` so all `~/.agents/skills/` readers share one copy; hooks must NOT share that routing, because rulesync ships native Antigravity hook generators that would emit codex-style files at the wrong path.
 
 ```mermaid
 flowchart LR
     subgraph "TARGETS (superskill)"
         CL[claude] -.->|"no rulesync"| DIRECT[direct CLI]
         CX[codex] --> RCX[codexcli]
-        PI[pi] --> RPI[pi]
+        PI[pi] --> RPI[codexcli]
         OC[opencode] --> ROC[opencode]
-        AG[antigravity-cli/ide] --> RAG[antigravity-*]
+        AG[antigravity-cli/ide] --> RAG[codexcli]
         OMP[omp] -.->|"surrogate"| RPI
         HE[hermes] -.->|"surrogate"| ROC
     end
-    subgraph "rulesync ToolTarget"
+    subgraph "TARGET_TO_RULESYNC (skills)"
         RCX
         RPI
         ROC
@@ -152,13 +152,29 @@ flowchart LR
     end
 ```
 
-`omp` reuses `pi`'s rulesync output; `hermes` reuses `opencode`'s (ADR-010). Claude, omp, and hermes have no rulesync mapping and are skipped by `runRulesync()`.
+```mermaid
+flowchart LR
+    CX[codex] --> RCX[codexcli]
+    OC[opencode] --> ROC[opencode]
+    AGCLI[antigravity-cli] --> RAGCLI[antigravity-cli]
+    AGIDE[antigravity-ide] --> RAGIDE[antigravity-ide]
+    subgraph "TARGET_TO_RULESYNC_HOOKS (hooks-only pass)"
+        RCX
+        ROC
+        RAGCLI
+        RAGIDE
+    end
+```
+
+`omp` reuses `pi`'s rulesync output; `hermes` reuses `opencode`'s (ADR-010). Claude, omp, and hermes have no rulesync mapping and are skipped by `runRulesync()`. The hooks map omits `pi`/`omp`/`hermes` — those targets get hooks via the surrogate shim (pi-hooks format for pi/omp, verbatim copy for hermes).
 
 ### Stage 4 — Generate target outputs
 
 Two generation paths:
 
 1. **rulesync path** (`runRulesync` in `rulesync.ts`) — calls `rulesync.generate()` programmatically (not the CLI) with the mapped `ToolTarget` strings, the per-target input root, and `outputRoots` set to `homedir()` (global) or `process.cwd()` (project). rulesync writes skills, commands, subagents, and MCP configs to each target's native directory.
+
+   **Two-pass hook routing (task 0151):** `hooks` is NOT carried in the main pass. The main pass carries `skills` (+ `mcp` when present) through the skills map (`TARGET_TO_RULESYNC`). When the plugin produced a canonical `hooks.json` (`mapResult.hooks`), a **second hooks-only pass** routes through `TARGET_TO_RULESYNC_HOOKS` so each Antigravity target reaches its own native hook generator (`antigravity-cli` → `.agents/hooks.json` project, `antigravity-ide` → `.gemini/config/hooks.json` global) instead of being collapsed onto `codexcli` (which would emit codex-style hook files at the wrong path). `pi`/`omp` have no rulesync hook target and are handled by the surrogate shim below; `hermes` gets `hooks.json` copied verbatim. A hookless plugin makes a single skills-only pass.
 
 2. **Claude path** — spawns `claude plugin install <plugin>@local --path <pluginRoot>` directly, inheriting stdio.
 
@@ -219,7 +235,7 @@ sequenceDiagram
 | `packages/core/src/marketplace.ts` | Plugin resolution from marketplace manifest (Zod-validated) |
 | `packages/core/src/mapper.ts` | Plugin → `.rulesync/` canonical layout mapping |
 | `packages/core/src/rulesync.ts` | Thin programmatic wrapper over `rulesync.generate()` |
-| `packages/core/src/targets.ts` | Target enum + `TARGET_TO_RULESYNC` / `TARGET_TO_AGENT_NAME` maps |
+| `packages/core/src/targets.ts` | Target enum + `TARGET_TO_RULESYNC` (skills) / `TARGET_TO_RULESYNC_HOOKS` (hooks) / `TARGET_TO_AGENT_NAME` maps |
 | `packages/core/src/pipeline/adapt-command.ts` | Adapt Claude Code command `.md` → Skills 2.0 skill entry |
 | `packages/core/src/pipeline/adapt-subagent.ts` | Adapt Claude Code subagent `.md` → Skills 2.0 skill entry |
 | `packages/core/src/pipeline/slash-command.ts` | Slash-dialect translation per target |
@@ -234,3 +250,4 @@ sequenceDiagram
 - **`outputRoots` is mandatory** — `runRulesync()` always passes `outputRoots: [homedir() | cwd()]`. Relying on rulesync's default (`process.cwd()`) would write to the wrong place.
 - **Hooks are never silently dropped** — every `EmitHooksResult.message` is echoed, even in non-verbose mode, so the user knows what hook shims were installed.
 - **`--dry-run`** propagates through rulesync (`dryRun: true`) and skips all filesystem copies and the `claude plugin install` spawn.
+- **Two-pass hook routing (task 0151)** — Hooks ride in a separate rulesync pass through `TARGET_TO_RULESYNC_HOOKS`. The skills map collapses Antigravity onto `codexcli` (so all `~/.agents/skills/` readers share one copy), but reusing that routing for hooks would make rulesync emit codex-style hook files at the wrong path instead of the native `.agents/hooks.json` (Antigravity CLI, project) / `.gemini/config/hooks.json` (Antigravity IDE, global). The hooks-only pass runs only when the plugin produced a canonical `hooks.json`; a hookless plugin makes a single skills-only pass.

@@ -11,8 +11,8 @@ Each coding agent stores skills, slash commands, subagents, and hooks in differe
 | **Pi** | `~/.pi/agent/skills/` ¹ | `~/.pi/agent/prompts/` | `~/.pi/agent/agents/` ² | extensions ³ |
 | **omp** | `~/.omp/agent/skills/` | `~/.omp/agent/commands/` | `~/.omp/agent/agents/` ² | extensions ³ |
 | **OpenCode** | `~/.opencode/skills/` | `~/.config/opencode/commands/` | `~/.config/opencode/agents/` | — |
-| **Antigravity IDE** | `~/.gemini/config/skills/` | `~/.gemini/antigravity/global_workflows/` | — | — |
-| **Antigravity CLI** | `~/.gemini/antigravity-cli/skills/` | — | — | — |
+| **Antigravity IDE** | `~/.gemini/config/skills/` | `~/.gemini/antigravity/global_workflows/` | — | `~/.gemini/config/hooks.json` |
+| **Antigravity CLI** | `~/.gemini/antigravity-cli/skills/` | — | — | `.agents/hooks.json` (project) |
 | **Hermes** | `~/.hermes/skills/` | config.yaml ⁴ | — ⁵ | `~/.hermes/hooks/<name>/HOOK.yaml` |
 | **OpenClaw** | `~/.openclaw/plugin-skills/` | — ⁶ | — ⁷ | webhooks ⁸ |
 
@@ -25,8 +25,8 @@ Each coding agent stores skills, slash commands, subagents, and hooks in differe
 | **Pi** | `.pi/skills/` | `.pi/prompts/` | `.pi/agents/` ² | `.pi/extensions/` |
 | **omp** | `.omp/skills/` | `.omp/commands/` | `.omp/agents/` ² | `.omp/hooks/` / `.omp/extensions/` |
 | **OpenCode** | `.opencode/skills/` | `.opencode/commands/` | `.opencode/agents/` | — |
-| **Antigravity IDE** | `.agents/skills/` | `.agents/workflows/` | — | — |
-| **Antigravity CLI** | `.agents/skills/` | — | — | — |
+| **Antigravity IDE** | `.agents/skills/` | `.agents/workflows/` | — | `.agents/hooks.json` |
+| **Antigravity CLI** | `.agents/skills/` | — | — | `.agents/hooks.json` |
 | **Hermes** | `.hermes/skills/` | config.yaml ⁴ | — ⁵ | `.hermes/hooks/<name>/` |
 | **OpenClaw** | `skills/` | — ⁶ | — ⁷ | webhooks ⁸ |
 
@@ -57,8 +57,8 @@ Each coding agent stores skills, slash commands, subagents, and hooks in differe
 | **Pi** | rulesync + superskill shim | Subagents adapted as Skills 2.0 skill directories; Pi native agents written directly to `~/.pi/agent/agents/` |
 | **omp** | rulesync + superskill shim | `omp` → `pi` surrogate for rulesync, then copy to `~/.omp/`; omp also reads from other agent dirs |
 | **OpenCode** | rulesync | `opencode` → `opencode` |
-| **Antigravity IDE** | rulesync | `antigravity-ide` → `antigravity-ide` |
-| **Antigravity CLI** | rulesync | `antigravity-cli` → `antigravity-cli`; commands/subagents not supported by rulesync for this target |
+| **Antigravity IDE** | rulesync (two-pass) | Skills via `TARGET_TO_RULESYNC` → `codexcli` (shared `~/.agents/skills/`); hooks via `TARGET_TO_RULESYNC_HOOKS` → `antigravity-ide` (native `~/.gemini/config/hooks.json`) |
+| **Antigravity CLI** | rulesync (two-pass) | Skills → `codexcli` (shared `~/.agents/skills/`); hooks → `antigravity-cli` (native `.agents/hooks.json` project). commands/subagents not supported by rulesync for this target |
 | **Hermes** | rulesync + superskill shim | `hermes` → `opencode` surrogate for rulesync, then copy to `~/.hermes/`; hooks format is HOOK.yaml not hooks.json |
 | **OpenClaw** | implicit (via `~/.agents/skills/`) | Reads skills from `~/.agents/skills/` (shared root with codex/opencode in global mode). No dedicated dispatch needed. |
 

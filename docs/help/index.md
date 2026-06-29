@@ -26,7 +26,7 @@ Two layers:
 | [`agent` command](cmd_agent.md) | Manage subagent definitions |
 | [`skill` command](cmd_skill.md) | Manage skill definitions (includes `package`, `migrate`) |
 | [`command` command](cmd_command.md) | Manage slash command definitions |
-| [`hook` command](cmd_hook.md) | Manage hook definitions (includes `emit`) |
+| [`hook` command](cmd_hook.md) | Manage hook definitions (includes `emit`, `run`) |
 | [`magent` command](cmd_magent.md) | Manage main-agent configurations |
 
 ### Reference
@@ -46,7 +46,7 @@ superskill
 ├── agent <op> <name>         # subagent definitions
 ├── skill <op> <name>         # skill definitions (+ package, migrate)
 ├── command <op> <name>       # slash command definitions
-├── hook <op> <name>          # hook definitions (+ emit)
+├── hook <op> <name>          # hook definitions (+ emit, run)
 └── magent <op> <name>        # main-agent configs
 ```
 

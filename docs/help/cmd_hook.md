@@ -2,7 +2,7 @@
 
 Manage **hook** definitions — JSON configs that register shell commands to fire on agent lifecycle events (e.g. `PreToolUse`, `PostToolUse`, `Stop`). Hooks let you validate, block, or augment agent actions automatically.
 
-The `hook` command exposes four operations (`validate`, `evaluate`, `refine`, `evolve`) plus one hook-only operation: **`emit`**. Note: `refine` is **suggest-only** for hooks (task 0061) — it surfaces findings as recommendations without file mutation; `evolve` is **analyze-only** (task 0056). Hooks are authored as entries in `hooks.json` (event → matcher → command → timeout), typically merged into an existing file; there is no scaffold operation (task 0066 decision B) — author hooks by hand and validate with `hook validate`.
+The `hook` command exposes four operations (`validate`, `evaluate`, `refine`, `evolve`) plus two hook-only operations: **`emit`** (emit hooks to a single target) and **`run`** (the cross-agent hook runtime dispatcher installed hook configs invoke at runtime). Note: `refine` is **suggest-only** for hooks (task 0061) — it surfaces findings as recommendations without file mutation; `evolve` is **analyze-only** (task 0056). Hooks are authored as entries in `hooks.json` (event → matcher → command → timeout), typically merged into an existing file; there is no scaffold operation (task 0066 decision B) — author hooks by hand and validate with `hook validate`.
 
 ## How to use it
 
@@ -14,7 +14,7 @@ superskill hook <operation> <name> [options]
 
 ### Standard operations
 
-The standard operations (`validate`, `evaluate`, `refine`, `evolve`) mirror the other type commands, with two exceptions for hooks: `refine` is **suggest-only** (surfaces findings, no auto-apply — task 0061) and `evolve` is **analyze-only** (no apply/history/rollback — task 0056). There is no `scaffold` operation for hooks (task 0066 decision B) — author hooks directly in `hooks.json`. See [`cmd_agent.md`](cmd_agent.md#how-to-use-it) for the shared option table.
+The standard operations (`validate`, `evaluate`, `refine`, `evolve`) mirror the other type commands, with two exceptions for hooks: `refine` is **suggest-only** (surfaces findings, no auto-apply — task 0061) and `evolve` is **analyze-only** (no apply/history/rollback — task 0056). There is no `scaffold` operation for hooks (task 0066 decision B) — author hooks directly in `hooks.json`. The two hook-only operations are documented below: `emit` (install a hook to one target) and `run` (the runtime dispatcher). See [`cmd_agent.md`](cmd_agent.md#how-to-use-it) for the shared option table.
 
 **Required frontmatter:** `name`, `description`, `event`.
 
@@ -57,6 +57,21 @@ superskill hook emit my-plugin --target pi
 # Preview what would be written
 superskill hook emit my-plugin --target hermes --dry-run
 ```
+
+### `run` — runtime dispatcher for installed hooks (hook-only)
+
+```
+superskill hook run <plugin> <hook-id>
+```
+
+Installed hook configs invoke this stable PATH command instead of a plugin-checkout script path or a Claude-only `${CLAUDE_PLUGIN_ROOT}` reference. The dispatcher (`commands/hook-run.ts`) resolves a runner from its registry by `<plugin>/<hook-id>`, hands it stdin + the process env, writes the runner's Claude-canonical hook JSON to stdout, and exits with the runner's code.
+
+| Runner | Event | Behavior |
+|--------|-------|----------|
+| `sp/task-write-guard` | `PreToolUse` | Denies raw `Write`/`Edit` on paths owned by the Spur task corpus; ownership is delegated to `spur task resolve --strict`. Fails open on every other condition; `SPUR_WRITE_GUARD=off` short-circuits. |
+| `cc/anti-hallucination` | `Stop` | Blocks stop when the last assistant message claims external facts without source citations / confidence / verification-tool evidence. Fails open (allow stop) on empty/invalid `ARGUMENTS`. |
+
+Runners emit Claude canonical hook JSON (PreToolUse `permissionDecision` / Stop `allowStop`). Agents that cannot parse that shape fail open (treat as allow) — the intended cross-agent default. Unknown `<plugin>/<hook-id>` exits 2 (never fails open — a config bug, not a runtime payload).
 
 ## How it's implemented
 
@@ -154,10 +169,11 @@ For `pi` and `omp`, canonical hook event names (camelCase) map to Pi lifecycle e
 
 | File | Role |
 |------|------|
-| `apps/cli/src/commands/hook.ts` | Commander registration (5 subcommands: validate/evaluate/refine/evolve/emit) + `emitHook` |
+| `apps/cli/src/commands/hook.ts` | Commander registration (6 subcommands: validate/evaluate/refine/evolve/emit + `run` registered via `registerHookRun`) + `emitHook` |
 | `apps/cli/src/quality/hook.ts` | Hook-specific dimension evaluators (correctness, event-coverage, safety, pattern-match-quality) |
 | `apps/cli/src/rubrics/hook.yaml` | Rubric criteria + weights + anchors |
 | `apps/cli/src/hooks.ts` | Canonical → Pi-hooks conversion; `emitPiStyleHooks` / `emitHermesHooks` |
 | `apps/cli/src/commands/install.ts` | `emitHooksForSurrogateTarget` (reused by `hook emit`) |
+| `apps/cli/src/commands/hook-run.ts` | `run` subcommand: dispatcher + runner registry (`sp/task-write-guard`, `cc/anti-hallucination`); `hookRun`, `registerHookRun` |
 
 The shared modules (`operations/*.ts`, `commands/helpers.ts`, `quality/dimensions.ts`, `store/*`) are documented in [`cmd_agent.md`](cmd_agent.md#key-source-files).

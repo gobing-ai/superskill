@@ -41,7 +41,7 @@ Executable logic a skill invokes at the user's install site lives in `plugins/<p
 | Guard engine | `scripts/anti-hallucination/ah_guard.ts` | Pure `verifyAntiHallucinationProtocol(text)` + Stop-hook `main()` reading `$ARGUMENTS` |
 | Validate adapter | `scripts/anti-hallucination/validate_response.ts` | Thin wrapper: `RESPONSE_TEXT`/stdin → verify → exit 0/1 |
 | Shared logger | `scripts/anti-hallucination/logger.ts` | Single shared copy (dedup'd from per-skill copies) |
-| Stop-hook config | `hooks/hooks.json` | `Stop` command hook → `bun ${CLAUDE_PLUGIN_ROOT}/scripts/anti-hallucination/ah_guard.ts` |
+| Stop-hook config | `hooks/hooks.json` | `Stop` command hook → `superskill hook run cc anti-hallucination` (portable PATH command; the dispatcher routes to `ah_guard.ts`) |
 
 Skill folders are prose-only: `skills/anti-hallucination/` holds `SKILL.md`, `references/*.md`, `agents/openai.yaml`, `metadata.openclaw` — no `.ts` runtime.
 

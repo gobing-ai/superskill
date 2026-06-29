@@ -4,7 +4,7 @@
 
 The `cc` plugin is the canonical Claude Code plugin for the superskill ecosystem. It provides a full lifecycle toolkit (scaffold → validate → evaluate → refine → evolve) for every entity type superskill manages — skills, slash commands, subagents, hooks, and main-agent configs — and ships an anti-hallucination guard that enforces verification-before-generation at the `Stop` hook.
 
-- **Marketplace entry:** `name: "cc"`, `version: "0.1.8"`, `source: "./plugins/cc"` (`.claude-plugin/marketplace.json`)
+- **Marketplace entry:** `name: "cc"`, `version: "0.2.5"`, `source: "./plugins/cc"` (`.claude-plugin/marketplace.json`)
 - **Owner:** Robin Min
 
 ## Directory Layout
@@ -119,11 +119,11 @@ Currently registered:
 
 | Event | Matcher | Handler | Timeout |
 |-------|---------|---------|---------|
-| `Stop` | `*` (all responses) | `bun ${CLAUDE_PLUGIN_ROOT}/scripts/anti-hallucination/ah_guard.ts` | 10s |
+| `Stop` | `*` (all responses) | `superskill hook run cc anti-hallucination` | 10s |
 
-The `Stop` hook fires when Claude Code is about to stop and checks whether the response satisfies the anti-hallucination protocol (source citations, confidence levels, tool-usage evidence). If the protocol is not satisfied, the hook denies the stop and requests corrections.
+The installed `hooks.json` invokes a **portable PATH command** (`superskill hook run cc anti-hallucination`) rather than a plugin-root script path (`${CLAUDE_PLUGIN_ROOT}/scripts/...`) or a Claude-only reference. The command resolves on every target with `superskill` on PATH; the dispatcher (`apps/cli/src/commands/hook-run.ts`) routes `cc/anti-hallucination` to the guard engine in `scripts/anti-hallucination/ah_guard.ts`. Targets without `superskill` on PATH fail open (treat the hook as allow).
 
-**Design principle:** Hooks provide **automatic enforcement** that complements skill knowledge. The `anti-hallucination` skill teaches *how* to verify; the `Stop` hook *enforces* that verification happened.
+The `Stop` hook fires when the agent is about to stop and checks whether the response satisfies the anti-hallucination protocol (source citations, confidence levels, tool-usage evidence). If the protocol is not satisfied, the hook denies the stop and requests corrections.
 
 ### 5. Scripts (`scripts/`)
 
@@ -186,7 +186,7 @@ graph TB
     AGENT -->|"skills: [cc:cc-magents]"| SKILL_MAGENTS
 
     %% Hook → Script
-    HOOK -->|"bun scripts/ah_guard.ts"| SCRIPT
+    HOOK -->|"superskill hook run cc anti-hallucination"| SCRIPT
 
     %% Script ↔ Skill knowledge
     SCRIPT -.->|"implements protocol from"| SKILL_AH
@@ -244,8 +244,8 @@ Tier 3 — Execution Layer (superskill CLI + Scripts)
 ### Example: Anti-Hallucination Enforcement
 
 1. Claude Code prepares to stop after generating a response
-2. **Stop Hook** (`hooks.json`) fires, executing `bun scripts/anti-hallucination/ah_guard.ts`
-3. **Script** (`ah_guard.ts`) reads the `Stop` hook context from `ARGUMENTS` env (conversation messages + last assistant message), checks for citations, confidence levels, and tool-usage evidence
+2. **Stop Hook** (`hooks.json`) fires, invoking `superskill hook run cc anti-hallucination`
+3. **Dispatcher** (`hook-run.ts`) routes `cc/anti-hallucination` to the guard engine; `ah_guard.ts` reads the `Stop` hook context from `ARGUMENTS` env (conversation messages + last assistant message), checks for citations, confidence levels, and tool-usage evidence
 4. If protocol satisfied → exit 0 (allow stop)
 5. If protocol violated → exit 1, output JSON with reason (deny stop, request corrections)
 6. The **`anti-hallucination` skill** provides the knowledge the agent uses to satisfy the guard on retry
@@ -268,8 +268,8 @@ The `cc` plugin is the Claude Code native format. On other platforms (Codex, Gem
 | `skills/*.md` | `~/.claude/skills/` | Adapted as Skills 2.0 skill directories — all platforms receive skills uniformly |
 | `commands/*.md` | `~/.claude/commands/` | Adapted as Skills 2.0 skill entries (`disable-model-invocation: true`) via `pipeline/adapt-command.ts` |
 | `agents/*.md` | `~/.claude/agents/` | Adapted as Skills 2.0 skill entries (model-invocable) via `pipeline/adapt-subagent.ts`; Pi additionally gets native agent format via `pipeline/pi-subagent.ts` |
-| `hooks/hooks.json` | `~/.claude/hooks/` | Converted to target-native format (pi-hooks shim for pi/omp, HOOK.yaml for hermes) |
-| `scripts/` | `${CLAUDE_PLUGIN_ROOT}/scripts/` | Copied alongside platform output |
+| `hooks/hooks.json` | `~/.claude/hooks/` | Routed in a separate `hooks`-only pass through `TARGET_TO_RULESYNC_HOOKS` so Antigravity reaches its native generator (`.agents/hooks.json` project / `.gemini/config/hooks.json` global). Pi/omp get the pi-hooks shim; Hermes gets `hooks.json` copied verbatim. Hook commands resolve to `superskill hook run …` (PATH), not plugin-root scripts |
+| `scripts/` | `${CLAUDE_PLUGIN_ROOT}/scripts/` | Invoked via the `superskill hook run` dispatcher at runtime — scripts are no longer referenced by installed hook configs directly |
 Each skill declares its own platform support in `metadata.platforms` frontmatter — not all skills support all platforms. See the per-skill table above.
 
 ## Lifecycle Operations
@@ -283,3 +283,22 @@ All entity types share the same five-operation lifecycle, managed by the `supers
 | **evaluate** | Score quality across dimensions | Rubric-weighted scoring (Scorer persona) |
 | **refine** | Apply low-risk fixes automatically | Fix classification (auto-apply / suggest / flag) |
 | **evolve** | Propose and apply longitudinal improvements | Double-loop gate (Author → Skeptic → Judge) |
+
+## Hook Runtime — `superskill hook run`
+
+Installed hook configs invoke a stable PATH command instead of a plugin-checkout script path:
+
+```
+superskill hook run <plugin> <hook-id>
+```
+
+The dispatcher (`apps/cli/src/commands/hook-run.ts`) resolves a runner from its registry by `<plugin>/<hook-id>`, hands it stdin + the process env, writes the runner's Claude-canonical hook JSON to stdout, and exits with the runner's code. Unknown `<plugin>/<hook-id>` exits 2 with the known-hook list — it never fails open, because an unknown hook id is a config bug, not a runtime payload.
+
+Registered runners (task 0151):
+
+| Runner | Event | Behavior |
+|--------|-------|----------|
+| `sp/task-write-guard` | `PreToolUse` | Denies raw `Write`/`Edit` on paths owned by the Spur task corpus; ownership is delegated to `spur task resolve --strict`'s exit code. Fails open on every other condition; `SPUR_WRITE_GUARD=off` short-circuits to allow. |
+| `cc/anti-hallucination` | `Stop` | Blocks stop when the last assistant message claims external facts without source citations / confidence / verification-tool evidence. Reuses `extractLastAssistantMessage` + `verifyAntiHallucinationProtocol` from `ah_guard.ts`. Fails open (allow stop) on empty/invalid `ARGUMENTS`. |
+
+This is the cross-agent default for non-trivial command hooks: author the hook as a registered runner and invoke the PATH command, never a `${CLAUDE_PLUGIN_ROOT}/<script>` reference (the latter resolves on Claude Code only and silently fails everywhere else). See the `cc-hooks` skill for the full authoring guidance.
