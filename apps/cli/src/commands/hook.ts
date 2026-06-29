@@ -19,6 +19,7 @@ import {
     resolveTarget,
     runOperation,
 } from './helpers';
+import { registerHookRun } from './hook-run';
 import { emitHooksForSurrogateTarget, prepareTargetRulesyncInput, resolvePluginRoot } from './install';
 
 // ── Inner Operation Functions ─────────────────────────────────────────────
@@ -241,4 +242,6 @@ export function registerHook(program: Command): void {
         .action(async (name: string, opts: { target?: string; global?: boolean; dryRun?: boolean }) => {
             await runOperation(() => hookEmit({ name, ...opts }));
         });
+
+    registerHookRun(cmd);
 }

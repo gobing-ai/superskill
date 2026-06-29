@@ -1,4 +1,5 @@
 import { spawnSync } from 'node:child_process';
+import { echo, echoError } from '@gobing-ai/ts-utils';
 import type { Command } from 'commander';
 import {
     extractLastAssistantMessage,
@@ -37,6 +38,9 @@ interface ToolPayload {
     tool_input?: { file_path?: string };
 }
 
+type TaskOwnership = 'owned' | 'unowned' | 'unknown';
+type ResolveTaskOwnership = (filePath: string, cwd: string) => TaskOwnership;
+
 /** Build a PreToolUse decision payload (always exit 0 — the decision rides in the JSON). */
 function preToolUseDecision(decision: 'allow' | 'deny', reason?: string): HookRunResult {
     const out: Record<string, unknown> = {
@@ -46,50 +50,59 @@ function preToolUseDecision(decision: 'allow' | 'deny', reason?: string): HookRu
     return { output: JSON.stringify(out), exitCode: 0 };
 }
 
+/** Resolve whether a path is owned by the Spur task corpus using `spur task resolve`. */
+export function resolveSpurTaskOwnership(filePath: string, cwd: string): TaskOwnership {
+    const res = spawnSync('spur', ['task', 'resolve', filePath, '--strict', '--json'], {
+        cwd,
+        encoding: 'utf-8',
+        timeout: 8000,
+    });
+    if (res.error || typeof res.status !== 'number') return 'unknown';
+    return res.status === 0 ? 'owned' : 'unowned';
+}
+
 /**
  * Deny a raw Write/Edit whose target path is owned by a Spur task (mutate task files through the
  * `spur task` CLI, never by hand). Pure delegation: ownership is decided by `spur task resolve`'s
  * exit code alone. Fail open on every other condition. `SPUR_WRITE_GUARD=off` short-circuits to allow.
  */
+/** Run the Spur task write guard with an injectable resolver for deterministic tests. */
+export function runSpTaskWriteGuard(
+    env: NodeJS.ProcessEnv,
+    stdinText: string,
+    resolveTaskOwnership: ResolveTaskOwnership = resolveSpurTaskOwnership,
+): HookRunResult {
+    if (env.SPUR_WRITE_GUARD === 'off') return preToolUseDecision('allow');
+
+    let payload: ToolPayload;
+    try {
+        payload = JSON.parse(stdinText) as ToolPayload;
+    } catch {
+        return preToolUseDecision('allow'); // unparseable payload — fail open
+    }
+
+    const toolName = payload.tool_name ?? '';
+    if (toolName !== 'Write' && toolName !== 'Edit') return preToolUseDecision('allow');
+
+    const filePath = payload.tool_input?.file_path ?? '';
+    if (filePath === '') return preToolUseDecision('allow');
+
+    // Delegate ownership entirely to the globally installed `spur`: owned => deny,
+    // unowned/unknown => fail open.
+    const ownership = resolveTaskOwnership(filePath, env.CLAUDE_PROJECT_DIR ?? process.cwd());
+    if (ownership === 'owned') {
+        return preToolUseDecision(
+            'deny',
+            `${filePath} is a task file owned by the spur corpus. Edit it through the spur CLI ` +
+                '(e.g. `spur task update <wbs> --section <name> --from-file <file>`), not a raw ' +
+                'Write/Edit. Set SPUR_WRITE_GUARD=off to bypass.',
+        );
+    }
+    return preToolUseDecision('allow');
+}
+
 const spTaskWriteGuard: HookRunner = {
-    run(env, stdinText) {
-        if (env.SPUR_WRITE_GUARD === 'off') return preToolUseDecision('allow');
-
-        let payload: ToolPayload;
-        try {
-            payload = JSON.parse(stdinText) as ToolPayload;
-        } catch {
-            return preToolUseDecision('allow'); // unparseable payload — fail open
-        }
-
-        const toolName = payload.tool_name ?? '';
-        if (toolName !== 'Write' && toolName !== 'Edit') return preToolUseDecision('allow');
-
-        const filePath = payload.tool_input?.file_path ?? '';
-        if (filePath === '') return preToolUseDecision('allow');
-
-        // Delegate ownership entirely to the globally installed `spur`: exit 0 = owned by a task,
-        // non-zero = not owned. `--strict` matches ONLY the exact corpus path. `spur task resolve`
-        // is cwd-sensitive (it locates the corpus relative to its working dir), so run it in the
-        // project dir the hook fired in — CLAUDE_PROJECT_DIR is the standard env var carrying that.
-        // Any spawn failure (spur not on PATH, timeout, unexpected error) fails open.
-        const res = spawnSync('spur', ['task', 'resolve', filePath, '--strict', '--json'], {
-            cwd: env.CLAUDE_PROJECT_DIR ?? process.cwd(),
-            encoding: 'utf-8',
-            timeout: 8000,
-        });
-        if (res.error || typeof res.status !== 'number') return preToolUseDecision('allow');
-
-        if (res.status === 0) {
-            return preToolUseDecision(
-                'deny',
-                `${filePath} is a task file owned by the spur corpus. Edit it through the spur CLI ` +
-                    '(e.g. `spur task update <wbs> --section <name> --from-file <file>`), not a raw ' +
-                    'Write/Edit. Set SPUR_WRITE_GUARD=off to bypass.',
-            );
-        }
-        return preToolUseDecision('allow');
-    },
+    run: runSpTaskWriteGuard,
 };
 
 // ── cc/anti-hallucination ───────────────────────────────────────────────────
@@ -136,35 +149,34 @@ const HOOK_RUNNERS: Record<string, HookRunner> = {
     'cc/anti-hallucination': ccAntiHallucination,
 };
 
-/** Read all of stdin (blocking) for the dispatcher. Empty string when no stdin is piped. */
-function readStdin(): string {
-    try {
-        return require('node:fs').readFileSync(0, 'utf-8') as string;
-    } catch {
-        return '';
-    }
-}
-
 /** Resolve and run a hook runner, writing its output to stdout and returning the exit code. */
 export function hookRun(plugin: string, hookId: string, env: NodeJS.ProcessEnv, stdinText: string): number {
     const runner = HOOK_RUNNERS[`${plugin}/${hookId}`];
     if (!runner) {
-        process.stderr.write(
-            `Error: unknown hook '${plugin} ${hookId}'. Known hooks: ${Object.keys(HOOK_RUNNERS).join(', ')}\n`,
-        );
+        echoError(`Error: unknown hook '${plugin} ${hookId}'. Known hooks: ${Object.keys(HOOK_RUNNERS).join(', ')}`);
         return 2;
     }
     const result = runner.run(env, stdinText);
-    process.stdout.write(result.output);
+    echo(result.output);
     return result.exitCode;
 }
 
 /** Register `superskill hook run <plugin> <hook-id>` under the hook command group. */
-export function registerHookRun(cmd: Command): void {
+export function registerHookRun(cmd: Command, readInput?: () => string): void {
     cmd.command('run <plugin> <hook-id>')
         .description('Run a registered plugin hook runner (the runtime command installed hook configs call)')
         .action((plugin: string, hookId: string) => {
-            const code = hookRun(plugin, hookId, process.env, readStdin());
+            let stdinText = '';
+            if (readInput) {
+                stdinText = readInput();
+            } else {
+                try {
+                    stdinText = require('node:fs').readFileSync(0, 'utf-8') as string;
+                } catch {
+                    stdinText = '';
+                }
+            }
+            const code = hookRun(plugin, hookId, process.env, stdinText);
             process.exit(code);
         });
 }

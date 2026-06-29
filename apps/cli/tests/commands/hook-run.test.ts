@@ -1,6 +1,6 @@
-import { describe, expect, it } from 'bun:test';
+import { afterEach, describe, expect, it, mock, spyOn } from 'bun:test';
 import { Command } from 'commander';
-import { hookRun, registerHookRun } from '../../src/commands/hook-run';
+import { hookRun, registerHookRun, runSpTaskWriteGuard } from '../../src/commands/hook-run';
 
 /**
  * `superskill hook run <plugin> <hook-id>` — the cross-agent hook runtime trigger (task 0151).
@@ -25,6 +25,10 @@ function capture(plugin: string, hookId: string, env: NodeJS.ProcessEnv, stdinTe
     }
 }
 
+afterEach(() => {
+    mock.restore();
+});
+
 describe('hook run — registration', () => {
     it('registers the run subcommand under the hook group', () => {
         const cmd = new Command('hook');
@@ -34,6 +38,17 @@ describe('hook run — registration', () => {
         // <plugin> <hook-id> are two required positional args
         expect(run?.usage()).toContain('<plugin>');
         expect(run?.usage()).toContain('<hook-id>');
+    });
+
+    it('action reads stdin, runs the dispatcher, and exits with the hook code', async () => {
+        const cmd = new Command('hook');
+        registerHookRun(cmd, () => '{"tool_name":"Read"}');
+        spyOn(process.stderr, 'write').mockImplementation(() => true);
+        const exit = spyOn(process, 'exit').mockImplementation(() => undefined as never);
+
+        await cmd.parseAsync(['node', 'hook', 'run', 'sp', 'does-not-exist']);
+
+        expect(exit).toHaveBeenCalledWith(2);
     });
 });
 
@@ -103,6 +118,28 @@ describe('hook run — sp/task-write-guard', () => {
         );
         expect(code).toBe(0);
         expect(JSON.parse(out).hookSpecificOutput.permissionDecision).toBe('allow');
+    });
+
+    it('fails open (allow) when the resolver reports an unowned path', () => {
+        const result = runSpTaskWriteGuard(
+            { CLAUDE_PROJECT_DIR: process.cwd() },
+            payload('Edit', '/tmp/not-a-task.md'),
+            () => 'unowned',
+        );
+        expect(result.exitCode).toBe(0);
+        expect(JSON.parse(result.output).hookSpecificOutput.permissionDecision).toBe('allow');
+    });
+
+    it('denies Write/Edit when the resolver reports an owned task file', () => {
+        const result = runSpTaskWriteGuard(
+            { CLAUDE_PROJECT_DIR: process.cwd() },
+            payload('Write', '/repo/docs/tasks/0001_example.md'),
+            () => 'owned',
+        );
+        const parsed = JSON.parse(result.output);
+        expect(result.exitCode).toBe(0);
+        expect(parsed.hookSpecificOutput.permissionDecision).toBe('deny');
+        expect(parsed.systemMessage).toContain('owned by the spur corpus');
     });
 });
 

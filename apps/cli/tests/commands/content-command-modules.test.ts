@@ -110,6 +110,7 @@ describe('hook command module', () => {
             'refine',
             'evolve',
             'emit',
+            'run',
         ]);
 
         const exit = spyOn(process, 'exit').mockImplementation(() => undefined as never);
