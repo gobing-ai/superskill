@@ -12,6 +12,10 @@ export interface RulesyncOptions {
     /** Override the root rulesync writes into. When omitted, falls back to the
      *  ADR-010 derivation: global → homedir(), project → process.cwd(). */
     outputRoot?: string;
+    /** Override the superskill `Target` → rulesync `ToolTarget` map. Defaults to
+     *  {@link TARGET_TO_RULESYNC}. The hooks feature pass passes `TARGET_TO_RULESYNC_HOOKS`
+     *  so Antigravity reaches its native hook generator instead of sharing `codexcli`. */
+    targetMap?: Partial<Record<Target, ToolTarget>>;
 }
 
 /**
@@ -40,9 +44,10 @@ export async function runRulesync(
     inputRoot: string,
     options: RulesyncOptions,
 ): Promise<GenerateResult> {
+    const targetMap = options.targetMap ?? TARGET_TO_RULESYNC;
     const mappedTargets: ToolTarget[] = [];
     for (const target of targets) {
-        const rt = TARGET_TO_RULESYNC[target];
+        const rt = targetMap[target];
         if (rt) mappedTargets.push(rt as ToolTarget);
     }
 

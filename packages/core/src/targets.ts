@@ -28,6 +28,22 @@ export const TARGET_TO_RULESYNC: Partial<Record<Target, ToolTarget>> = {
 };
 
 /**
+ * Hook-specific target map. The skills map ({@link TARGET_TO_RULESYNC}) deliberately collapses the
+ * Antigravity targets onto `codexcli` so they share `~/.agents/skills/`. Hooks must NOT share that
+ * routing: rulesync ships native Antigravity hook generators (`.agents/hooks.json` project,
+ * `.gemini/config/hooks.json` global), and routing Antigravity hooks through `codexcli` would emit
+ * codex-style hook files at the wrong path. Route the `hooks` feature pass through this map so each
+ * Antigravity target reaches its own rulesync generator. Targets absent here (claude/pi/omp/hermes)
+ * are handled outside rulesync (native install / surrogate shims).
+ */
+export const TARGET_TO_RULESYNC_HOOKS: Partial<Record<Target, ToolTarget>> = {
+    codex: 'codexcli',
+    opencode: 'opencode',
+    'antigravity-cli': 'antigravity-cli',
+    'antigravity-ide': 'antigravity-ide',
+};
+
+/**
  * Per-target relative skills output directory in PROJECT mode (global=false).
  * Used by `executeInstall` to pre-create parent dirs before rulesync writes,
  * preventing ENOENT on `install --no-global` from a clean cwd (task 0045 R2).
