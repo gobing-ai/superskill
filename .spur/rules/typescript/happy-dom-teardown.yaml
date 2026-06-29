@@ -1,0 +1,27 @@
+# Local override for the portable happy-dom teardown rule.
+#
+# superskill is a CLI-only repo and has no apps/web test tree. The upstream
+# rule's include set can therefore resolve to zero files, which makes rg exit 2
+# and turns the pre-check into a misconfiguration. Keep package.json as a stable
+# harmless anchor so the evaluator is empty-safe here while still catching direct
+# unregister calls if web tests are introduced later.
+include:
+  - "package.json"
+  - "apps/web/tests/**/*.test.ts"
+  - "apps/web/tests/**/*.test.tsx"
+exclude:
+  - "**/node_modules/**"
+  - "**/dist/**"
+  - "apps/web/tests/happy-dom.ts"
+
+rules:
+  - id: happy-dom-teardown-via-helper
+    description: >
+      Do not call `GlobalRegistrator.unregister()` directly in a web test. Use
+      `afterAll(teardownHappyDom)` from apps/web/tests/happy-dom.ts, which drains
+      the React scheduler before tearing the DOM down.
+    severity: warning
+    evaluator:
+      type: rg
+      config:
+        pattern: "GlobalRegistrator\\.unregister\\("
