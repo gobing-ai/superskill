@@ -4,6 +4,12 @@ All notable changes to `@gobing-ai/superskill` are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Conventional Commits](https://www.conventionalcommits.org/).
 
+## [0.2.9] - 2026-06-30
+
+### Bug Fixes
+
+- **`resolveSpurTaskOwnership` hardened for custom binaries and the docs gate**: The task-write guard's ownership probe passed a possibly-`undefined` command to `spawnSync` under `noUncheckedIndexedAccess`, breaking the `typecheck` gate; and the exported function lacked a JSDoc, breaking the `every-export-has-tsdoc` post-check. The probe now honors a `SPUR_BIN` env override (space-separated, args allowed) with a `parts[0] ?? 'spur'` fallback, and carries a documenting JSDoc. `bun run autofix` and `bun run spur-check` now run clean end to end. (`e8a27c8`; `apps/cli/src/commands/hook-run.ts`)
+
 ## [0.2.6] - 2026-06-29
 
 ### New Features
