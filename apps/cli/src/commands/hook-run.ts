@@ -51,9 +51,17 @@ function preToolUseDecision(decision: 'allow' | 'deny', reason?: string): HookRu
     return { output: JSON.stringify(out), exitCode: 0 };
 }
 
-/** Resolve whether a path is owned by the Spur task corpus using `spur task resolve`. */
+/**
+ * Resolve whether a file path is owned by a Spur task. Shells out to `spur task resolve --strict --json`:
+ * exit 0 → owned, non-zero → unowned, spawn/timeout failure → unknown (fail open). Honors `SPUR_BIN`
+ * for a custom binary (args allowed, space-separated).
+ */
 export function resolveSpurTaskOwnership(filePath: string, cwd: string): TaskOwnership {
-    const res = spawnSync('spur', ['task', 'resolve', filePath, '--strict', '--json'], {
+    const spurBin = process.env.SPUR_BIN || 'spur';
+    const parts = spurBin.split(' ');
+    const cmd = parts[0] ?? 'spur';
+    const args = [...parts.slice(1), 'task', 'resolve', filePath, '--strict', '--json'];
+    const res = spawnSync(cmd, args, {
         cwd,
         encoding: 'utf-8',
         timeout: 8000,
