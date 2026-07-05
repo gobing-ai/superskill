@@ -1,0 +1,36 @@
+# Local shadow of the GLOBAL sp-no-vendor-refs rule (~/.config/spur/rules/boundary/).
+# That rule includes only plugins/sp/** — a directory that does not exist in this
+# repo — so its rg evaluator finds zero files and exits 2, failing the whole
+# pre-check as "misconfigured". Disabled here until the fix reaches the binary
+# that `bun run` actually resolves. superskill's own vendor boundary is enforced
+# by the absorb-don't-cite grep in task 0070 (no vendors/skills / study-author
+# citations under plugins/cc or packages/).
+#
+# INTENTIONAL OVERRIDE — not cruft (task 0071, R2-local/D3). The upstream fix
+# (task 0071 R2-upstream, spur-new 0212) is already DONE: @gobing-ai/ts-rule-engine
+# @0.4.3 makes the rg evaluator treat "No files were searched" (exit 2 on an empty
+# include set) as a non-applicable scoped rule instead of a hard error. It is live
+# in spur-new/dist/cli/spur (the shell `spur`), but NOT in the npm-published
+# @gobing-ai/spur@0.3.1 that `bun run` resolves via ~/node_modules — that tarball
+# still predates 0.4.3 (verified: published 0.3.1 has no fix marker). So this
+# shadow stays until @gobing-ai/spur is re-released (bump + publish against
+# ts-rule-engine@0.4.3) and reinstalled. Once `bun run spur-check` passes on the
+# upstream rule alone, remove this file and re-verify.
+include:
+  - "plugins/sp/**/*.md"
+exclude:
+  - "**/node_modules/**"
+rules:
+  - id: sp-no-vendor-refs
+    description: >
+      Disabled local shadow — the global rule targets plugins/sp, which this
+      repository does not contain; running it through the npm-published spur that
+      `bun run` uses fails the gate on an empty rg file set rather than any real
+      violation. See file header for the upstream fix pointer (task 0071 / spur-new
+      0212) and the pending @gobing-ai/spur re-release that closes it.
+    severity: error
+    enabled: false
+    evaluator:
+      type: rg
+      config:
+        pattern: "vendors/"
