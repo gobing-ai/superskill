@@ -25,8 +25,8 @@ Requires [Bun](https://bun.sh/) ≥ 1.3.14. See [Installation guide](docs/help/i
 ## Quick start
 
 ```bash
-# Distribute a plugin to every supported target
-superskill install my-plugin --targets all
+# Distribute a plugin cc in current repo to every supported target
+superskill install cc --targets all
 
 # Author a skill: scaffold → validate → evaluate → refine
 superskill skill scaffold my-skill --description "Deploy a Cloudflare Worker"
