@@ -28,11 +28,8 @@ Create and manage slash commands that work across multiple agent platforms.
 
 ## Overview
 
-This skill provides a complete pipeline for slash command development:
-- **Scaffold** new commands from templates
-- **Validate** structure and frontmatter
-- **Evaluate** quality across 5 rubric dimensions
-- **Refine** based on evaluation feedback
+This skill provides a complete pipeline for slash command development
+(`evolve` is a separate longitudinal loop with snapshot-backed accept/reject):
 
 | Operation | Purpose | CLI |
 |-----------|---------|--------|
@@ -109,7 +106,7 @@ This helps users know available options without consulting documentation.
 
 ### Imperative Form
 
-Write instructions FOR Claude, not messages TO the user. Use imperative form ("Review the code") not second-person ("Avoid second-person phrasing").
+Write instructions FOR Claude, not messages TO the user: imperative form ("Review the code").
 
 ### Wrapped Skill Declaration
 
@@ -149,34 +146,8 @@ This helps users understand which arguments are optional and their default behav
 | **Workflow** | `workflow.md` | Multi-step with Task()/Skill() pseudocode |
 | **Plugin** | `plugin.md` | Uses CLAUDE_PLUGIN_ROOT for portable plugin paths |
 
-### Template Placeholders
-
-When using templates, replace these placeholders:
-
-| Placeholder | Description |
-|--------------|-------------|
-| `{{COMMAND_TITLE}}` | Title of the command (e.g., "Skill Add") |
-| `{{DESCRIPTION}}` | Short description (under 60 chars, start with verb) |
-| `{{ARGUMENT_HINT}}` | CLI argument hint showing all options |
-| `{{TARGET_SKILL}}` | Skill being wrapped (e.g., "cc:cc-skills") |
-| `{{PLUGIN_NAME}}` | Plugin name (e.g., "cc") |
-| `{{PLUGIN_PATH}}` | Plugin path (e.g., "cc/skills/cc-skills") |
-| `{{SKILL_DIR}}` | Skill directory name |
-| `{{HANDLER_NAME}}` | Handler filename |
-| `{{ARG_NAME}}` | Argument name |
-| `{{FLAG_NAME}}` | Flag name |
-| `{{RELATED_COMMAND_1}}` | Related command name |
-| `{{RELATED_COMMAND_2}}` | Another related command |
-
-## Pipeline Architecture
-
-```
-scaffold -> validate -> evaluate -> refine
-
-`evolve` is a separate longitudinal loop for proposal-driven maintenance with snapshot-backed accept/reject.
-```
-
-Each operation is invoked via `superskill command <op>` and can be triggered from CLI or slash commands.
+The template placeholder table (`{{COMMAND_TITLE}}`, `{{DESCRIPTION}}`, `{{ARGUMENT_HINT}}`, ...)
+lives in [references/command-examples.md](references/command-examples.md#template-placeholders).
 
 ## Workflows
 
@@ -197,21 +168,12 @@ LLM content improvement is embedded in the normal workflow for every operation; 
 
 ### Two-Call Seam Pattern (Evaluate & Evolve)
 
-The `evaluate` and `evolve` operations use a **two-call seam pattern** that separates the CLI envelope from offline persona-driven work. The deterministic heuristic path remains as a fallback, but the seam pattern is the primary mode.
-
-**Evaluate (Scorer seam):**
-1. **Envelope-out:** `superskill command evaluate <name> --rubric <file> --json` — emits `{ type, content_name, target, content, rubric, baseline }` as JSON. No scoring, no DB write.
-2. **Scorer persona:** reads the envelope, scores each dimension against the rubric criterion, produces `{ rubric_version, dimensions: { name: { score, note } } }`.
-3. **Ingest-in:** `superskill command evaluate <name> --ingest <scores.json> --save` — validates agent-produced scores against rubric schema, persists as evaluation row.
-
-**Evolve (Generation seam):**
-1. **Envelope-out:** `superskill command evolve <name> --propose-only --json` — emits `{ trends, baseline, rubric, briefs }` as JSON. Each brief carries the immutable goal anchor (frontmatter + rubric criterion + negative constraints) **verbatim** + an `anchor_hash`. No DB write, no model call.
-2. **Author persona:** reads briefs, rewrites the content per dimension, produces `ProposedChange[]` with real `proposed` text + `anchor_hash`.
-3. **Skeptic persona:** receives the proposal + the **verbatim** goal anchor, checks for violations/omissions, produces `{ ok, violations[] }`.
-4. **Judge persona (if multiple candidates):** pairwise tournament comparison, selects the winner.
-5. **Ingest-in:** `superskill command evolve <name> --ingest <proposal.json> --accept <id>` — CLI double-loop gate (F024) decides: deterministic validate-zero-errors + Δ-margin + anchor-hash match + skeptic veto. Failing any gate → proposal stays `draft`, file restored.
-
-**Goal-anchor verbatim discipline:** Pass the original frontmatter and negative constraints verbatim to Skeptic and Judge — do not summarize. The CLI gate enforces via `anchor_hash`.
+The `evaluate` and `evolve` operations run the **two-call seam** — envelope-out, persona judgment
+(Scorer for evaluate; Author → Skeptic → Judge for evolve), ingest-in through the double-loop
+gate. The deterministic heuristic path remains as a fallback. Seam mechanics, personas, and
+vocabulary are owned by **cc:cc-skills** (evaluation-framework reference + glossary); the Quick
+Start above shows the command-noun invocations. Goal anchors pass to Skeptic/Judge **verbatim** —
+the `anchor_hash` gate rejects paraphrased anchors.
 
 ## Evaluation Dimensions
 
@@ -244,28 +206,18 @@ do not restate weights here, they drift.
 - **Simple commands:** verb-noun pattern (e.g., `review-code`)
 - **Always:** Full namespace (`plugin-name:command-name`)
 
-## Examples
-
-See [references/command-examples.md](references/command-examples.md) for detailed examples.
-
 ## Do's and Don'ts
 
-### Do
-- Use imperative form: "Review the code" not "Second-person phrasing"
-- Keep descriptions under 60 characters
-- Start descriptions with a verb (Create, Generate, Review, etc.)
-- Use proper namespace: `plugin-name:command-name`
-- Choose the right template: simple, workflow, or plugin
+The Core Principles above are the rulebook (imperative form, strict frontmatter, wrapped-skill
+declaration, argument tables with defaults). Three additions not stated there:
 
-### Don't
-- Avoid second-person voice - write FOR Claude, not TO user
-- Include non-allowed frontmatter fields (only: description, allowed-tools, model, argument-hint, disable-model-invocation)
-- Create commands over 150 lines - use progressive disclosure
-- Use hardcoded paths - use `CLAUDE_PLUGIN_ROOT` for portability
-- Skip validation before publishing commands
+- Keep descriptions under 60 characters, starting with a verb (Create, Generate, Review, ...)
+- Keep commands under 150 lines — use progressive disclosure
+- Never skip validation before publishing
 
 ## Additional Resources
 
+- **Command Examples:** [references/command-examples.md](references/command-examples.md)
 - **Frontmatter Reference:** [references/frontmatter-reference.md](references/frontmatter-reference.md)
 - **Evaluation Framework:** [references/evaluation-framework.md](references/evaluation-framework.md)
 - **Platform Compatibility:** [references/platform-compatibility.md](references/platform-compatibility.md)
@@ -282,40 +234,22 @@ superskill command evaluate ./commands/my-command.md --target codex --save
 ```
 
 ### Batch Operations
-Process multiple commands:
-```bash
-# Validate all commands in directory
-for f in commands/*.md; do
-  superskill command validate "$f"
-done
-```
-
-## Alternatives and Comparisons
-
-| vs | Difference |
-|----|------------|
-| rd2 Commands | cc uses YAML frontmatter, supports multi-platform adaptation |
-| Codex Skills | cc targets Codex via `--target codex` |
-| Gemini CLI | cc targets Gemini TOML via `--target gemini`, triggers via `/` not `!` |
+Loop the CLI over a directory to process multiple commands (e.g.
+`for f in commands/*.md; do superskill command validate "$f"; done`).
 
 ## Platform Notes
 
-### Claude Code (Primary)
-- Native format: `.md` files in `commands/` directory
-- Full support for `$ARGUMENTS`, `Task()`, `Skill()`, `!`cmd``
-- `CLAUDE_PLUGIN_ROOT` available for plugin commands
-
-### Other Platforms
-These platforms do NOT natively support Claude Code syntax. Validate against each target with `--target`:
+Claude Code is the primary format (`.md` in `commands/`, full `$ARGUMENTS` / `Task()` / `Skill()` /
+`` !`cmd` `` / `CLAUDE_PLUGIN_ROOT` support). Other platforms do NOT natively support that syntax —
+validate against each target with `--target`:
 
 | Platform | Syntax Limitation |
 |----------|-------------------|
-| Codex | `!`cmd\$ syntax not supported - use `agents/openai.yaml` |
+| Codex | `` !`cmd` `` syntax not supported - use `agents/openai.yaml` |
 | Gemini CLI | `$ARGUMENTS` not supported - use TOML triggers |
 | OpenClaw | `Task()`/`Skill()` not supported - use command-dispatch |
 | OpenCode | Claude-specific syntax not supported |
 | Antigravity | Mention-triggered only, not slash commands |
 
-**Limitation:** When creating commands with `$ARGUMENTS`, `Task()`, `Skill()`, or `!`cmd`` syntax, document these as Claude-only features in the command. See [references/platform-compatibility.md](references/platform-compatibility.md) for platform-specific guidance.
-
-See [references/platform-compatibility.md](references/platform-compatibility.md) for full matrix.
+When a command uses Claude-only syntax, document it as such in the command. Full matrix and
+per-platform guidance: [references/platform-compatibility.md](references/platform-compatibility.md).

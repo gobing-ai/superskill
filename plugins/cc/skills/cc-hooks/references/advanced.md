@@ -515,3 +515,38 @@ hooks:
 ```
 
 **Trade-off:** Adds 2-5s latency per hook invocation. Use sparingly, only for high-risk operations.
+
+## Hook Output Format
+
+### Standard output (JSON to stdout)
+
+```json
+{
+  "continue": true,
+  "suppressOutput": false,
+  "systemMessage": "Message for Claude"
+}
+```
+
+### `preToolUse` output
+
+```json
+{
+  "hookSpecificOutput": {
+    "permissionDecision": "allow|deny|ask",
+    "updatedInput": { "field": "modified_value" }
+  },
+  "systemMessage": "Explanation for Claude"
+}
+```
+
+### `stop` / `subagentStop` output
+
+```json
+{
+  "hookSpecificOutput": {
+    "allowStop": false,
+    "feedback": "Tests have not been run."
+  }
+}
+```

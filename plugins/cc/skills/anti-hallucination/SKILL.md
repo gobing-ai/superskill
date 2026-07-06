@@ -27,12 +27,7 @@ metadata:
 
 ## Overview
 
-This skill implements a verification-before-generation protocol that prevents hallucination by requiring source citations, confidence scoring, and tool usage evidence before making factual claims. Based on 16 validated research sources with 2,500+ citations.
-
-**Key benefits:**
-- Reduces hallucination by 24.5% (Counterfactual Probing)
-- Achieves 70%+ preemptive detection (FactCheckMate)
-- Zero training cost using prompt-based techniques
+This skill implements a verification-before-generation protocol that prevents hallucination by requiring source citations, confidence scoring, and tool usage evidence before making factual claims. Measured effect (see Research Foundation): −24.5% hallucination, 70%+ preemptive detection, zero training cost.
 
 ## When to Use
 
@@ -88,16 +83,9 @@ WebSearch "{query} official documentation 2024 2025"
 **Confidence**: HIGH/MEDIUM/LOW | **Reasoning**: {why}
 ```
 
-## Activation Triggers
+## Activation Decision Tree
 
-**IMMEDIATELY activate when:**
-- Query contains external APIs, libraries, frameworks
-- User asks about recent changes, versions, deprecations
-- Task requires factual claims (dates, statistics, specific values)
-- Implementing authentication, security, or integration features
-- Working with technologies not in current codebase
-
-**Decision Tree:**
+The activation conditions are the When-to-Use list above — when any of them hold:
 ```
 Is the claim verifiable?
 ├── YES → Select Tool → Search → Verify → Cite → Generate
@@ -249,44 +237,6 @@ Treat `ah_guard.ts` as the reusable verification engine and hooks as only one ad
 
 See `references/non-hook-enforcement.md` for the validation adapter and cross-agent enforcement patterns, including `validate_response.ts` and the pending spur workflow.
 
-## Workflows
-
-### Step 1: Check - Do I need verification?
-```
-IF query contains external info (API, library, framework, facts):
-  THEN activate protocol
-ELSE:
-  Skip verification (internal discussion only)
-```
-
-### Step 2: Select - Choose best tool
-| Information Type | Tool |
-|-----------------|------|
-| API/Library Docs | ref_search_documentation |
-| GitHub Code | searchCode |
-| Recent Events | WebSearch |
-| Specific URL | ref_read_url |
-| Local Codebase | Read/Grep |
-
-### Step 3: Search - Execute verification
-```
-Use selected tool with specific query
-Parse results for relevant information
-```
-
-### Step 4: Cite - Include source with date
-```
-**Source**: [URL]
-**Verified**: YYYY-MM-DD
-```
-
-### Step 5: Score - Assign confidence level
-```
-HIGH: Direct quote from official docs
-MEDIUM: Synthesized from multiple sources
-LOW: Memory, outdated, or incomplete
-```
-
 ## Additional Resources
 
 For comprehensive patterns and examples, see:
@@ -298,28 +248,12 @@ For comprehensive patterns and examples, see:
 
 ## Research Foundation
 
-**16 validated sources** with 2,500+ combined citations. Core techniques from:
-
-| Source | Citations | Contribution |
-|--------|-----------|--------------|
-| CoVe (Meta AI) | 727+ | Chain-of-Verification pattern |
-| Nature 2024 | 1,017+ | Entropy-based detection |
-| HaluEval 2.0 | 226+ | Fact extraction benchmarks |
-| UQLM | 115+ | Uncertainty quantification |
-| Comprehensive Survey 2024 | 650+ | 32+ technique taxonomy |
+**16 validated sources** with 2,500+ combined citations (CoVe, Nature 2024 entropy detection,
+HaluEval 2.0, UQLM, the 2024 comprehensive survey) — the full per-source validation table lives in
+[references/anti-hallucination-research.md](references/anti-hallucination-research.md).
 
 ## Expert Agent Integration
 
-**When to invoke**: Any task involving external APIs, libraries, frameworks, or factual claims.
-
-**Integration pattern:**
-```
-1. ACTIVATE anti-hallucination protocol
-2. SELECT best tool (ref_search_documentation for docs, searchCode for code)
-3. SEARCH with specific query
-4. VERIFY from official source
-5. CITE sources with dates
-6. SCORE confidence levels
-```
-
-**Auto-routing**: Agents with external library competencies should reference this skill in their verification protocols and use MCP tools before generic web search.
+Agents with external-library competencies should reference this skill in their verification
+protocols and run the 5-step protocol above (MCP tools before generic web search) for any task
+involving external APIs, libraries, frameworks, or factual claims.

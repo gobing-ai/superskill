@@ -303,8 +303,36 @@ refining any skill body:
 A CI gate (`skill-citations-resolve`, in the post-check preset) fails the build on dead
 citations and on dimension claims that disagree with the rubric a skill documents.
 
+## Invocation Axis
+
+Every skill declares an **invocation mode**: model-invoked (default) or user-invoked
+(`disable-model-invocation: true`). This is a first-class scaffold choice, not an afterthought —
+`superskill skill scaffold` accepts it via flag or interactive question and emits the matching
+frontmatter + description shape:
+
+- **Model-invoked** — trigger-rich description (front-loaded identity phrase, one trigger phrase
+  per genuine branch); fires automatically when the model matches a request against it.
+- **User-invoked** — `disable-model-invocation: true` plus a one-line human-facing description;
+  fires only on explicit invocation. A user-invoked skill **cannot** be fired via the Skill tool by
+  another skill, agent, or command body — only a human can invoke it directly. Flipping a skill an
+  expert subagent dispatches to user-invoked silently breaks that dispatch path; `superskill skill
+  validate` flags this mismatch.
+
+Each mode pays a different cost: model-invoked pays *context load* (the description is in the
+window every turn it's a candidate); user-invoked pays *cognitive load* (the human is the index).
+When cognitive-load pileup shows up across many user-invoked skills, the fix is a router skill —
+see `plugins/cc/README.md`'s flow map — not flipping everything back to model-invoked.
+
+`superskill skill validate` flags mode/description mismatches (a user-invoked skill with
+trigger-list phrasing, or a model-invoked skill with no trigger phrasing) and `superskill skill
+evaluate` scores the description against its declared mode. Full theory: the two loads, the
+information hierarchy, and the router-skill cure are in
+[references/skill-engineering-theory.md](references/skill-engineering-theory.md).
+
 ## Additional Resources
 
+- **Skill-Engineering Theory**: [references/skill-engineering-theory.md](references/skill-engineering-theory.md) - The absorbed theory behind cc's rubrics: two invocation loads, information hierarchy, completion criteria, leading words, five named failure modes
+- **Glossary**: [references/glossary.md](references/glossary.md) - cc's own vocabulary (entity type, operation, rubric, dimension, two-call seam, proposal, invocation mode, ...)
 - **Workflows**: [references/workflows.md](references/workflows.md) - Detailed operation workflows
 - **Security Guidelines**: [references/security.md](references/security.md) - Security checklist and patterns
 - **Best Practices Guide**: [references/best-practices.md](references/best-practices.md)

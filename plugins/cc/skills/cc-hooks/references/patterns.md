@@ -94,6 +94,11 @@ fi
 
 **Use for:** Automatically detecting and configuring project-specific settings.
 
+> ⚠️ This example uses `${CLAUDE_PLUGIN_ROOT}`, which resolves on **Claude Code only**. For a
+> cross-platform session-start hook, register a runner and call
+> `superskill hook run <plugin> <hook-id>` instead (SKILL.md Safety Invariant #4). The
+> `examples/*.sh` files in the cc-hooks skill are Claude-only references.
+
 ## Pattern 4: Notification Logging
 
 Log all notifications for audit or analysis:
@@ -393,3 +398,26 @@ hooks:
 - Pi: `if` condition activates the git-push-specific block
 - Other platforms: `if` field is ignored; both hooks run for all Bash commands
 - The `matcher: "Bash"` is translated to lowercase for Pi, PascalCase for Claude Code
+
+## Pattern 11: failClosed on Destructive Events
+
+```json
+{
+  "hooks": {
+    "preToolUse": [
+      {
+        "type": "command",
+        "matcher": "Bash",
+        "command": "superskill hook run myplugin bash-guard",
+        "timeout": 3000,
+        "failClosed": true
+      }
+    ]
+  }
+}
+```
+
+With `failClosed: true`, a crash or timeout of the guard **blocks** the Bash call rather than
+allowing it through. Default to `failClosed: true` on `preToolUse` for destructive tools; default
+to `failOpen` on read-only events (`postToolUse`, `sessionEnd`). Prefer the portable PATH command
+form (`superskill hook run`) over `${CLAUDE_PLUGIN_ROOT}` script paths (see Pattern 3's warning).

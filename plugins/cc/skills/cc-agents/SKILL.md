@@ -62,6 +62,7 @@ superskill agent evolve agents/my-agent --ingest proposal.json --accept <id>
 - **New agent**: scaffold → validate → evaluate → refine
 - **Improve existing agent**: evaluate → refine → evaluate (verify improvement)
 - **Longitudinal improvement planning**: evaluate → refine → collect feedback → evolve
+  (`evolve` is a separate longitudinal loop for proposal-driven maintenance and rollback)
 
 ## Operations
 
@@ -69,71 +70,21 @@ This skill accepts **5 operations**:
 
 | Operation | Purpose | Script |
 |-----------|---------|--------|
-| **scaffold** | Create a new agent from template | `superskill agent scaffold` |
-| **validate** | Check agent structure | `superskill agent validate` |
+| **scaffold** | Create a new agent from template (pick tier, fill placeholders, then validate) | `superskill agent scaffold` |
+| **validate** | Check agent structure; `--target` per platform, `--strict` for all rules; loop to 0 errors | `superskill agent validate` |
 | **evaluate** | Score agent quality (rubric-driven two-call seam) | `superskill agent evaluate` |
-| **refine** | Fix issues and improve quality | `superskill agent refine` |
+| **refine** | Fix issues and improve quality (`--auto --save`, then re-evaluate) | `superskill agent refine` |
 | **evolve** | Propose and apply longitudinal improvements (two-call seam with personas) | `superskill agent evolve` |
 
-## Pipeline Architecture
+Step-by-step workflow details for all five operations live in
+[references/workflows.md](references/workflows.md). Evaluate and evolve run the **two-call seam**
+(envelope-out → Scorer / Author → Skeptic → Judge personas → ingest-in, double-loop gated); the
+seam mechanics and vocabulary are owned by **cc:cc-skills**. Two agent-side facts worth pinning:
 
-```
-scaffold → validate → evaluate → refine
-
-`evolve` is a separate longitudinal loop for proposal-driven maintenance and rollback.
-```
-
-## Operation Workflows
-
-### Scaffold Workflow
-
-Create a new agent from a tiered template:
-
-1. Choose template tier based on agent complexity (minimal/standard/specialist)
-2. Run `superskill agent scaffold <name> --output <dir>`
-3. Edit generated file to complete all placeholder markers
-4. Fill in the description with trigger phrases and `<example>` blocks
-5. For specialist tier: enumerate competencies (20+ items), define verification protocol
-6. Run validate to check structure
-
-### Validate Workflow
-
-Check agent structure and frontmatter:
-
-1. Run `superskill agent validate <agent.md>` for Claude Code validation
-2. Use `--target` to validate a specific platform, or `--strict` to enforce all rules
-3. Fix any reported errors (missing fields, invalid frontmatter, structural issues)
-4. Re-validate until 0 errors
-
-### Evaluate Workflow
-
-Score agent quality via the two-call seam (rubric-driven, persona-scored):
-
-1. **Envelope-out:** `superskill agent evaluate <agent.md> --rubric <rubric.yaml> --json` — emits `{ type, content_name, target, content, rubric, baseline }` as JSON. No scoring, no DB write. Pipe to a file (e.g. `envelope.json`).
-2. **Scorer persona:** read the envelope, score each dimension against its rubric criterion, produce `{ rubric_version, dimensions: { name: { score, note } } }`. Write to `scores.json`.
-3. **Ingest-in:** `superskill agent evaluate <agent.md> --ingest scores.json --save` — validates agent-produced scores against the rubric schema and persists as an evaluation row (tagged `scorer: rubric`).
-
-Target grade: A (90-100) or B (80-89) for production agents. Grade C or below: proceed to refine. Profile auto-detection (thin-wrapper vs specialist) still selects the rubric weighting.
-
-### Refine Workflow
-
-Fix quality issues and apply improvements:
-
-1. Run `superskill agent refine <agent.md> --auto --save` for full cycle
-2. Re-evaluate after refinement to verify score improvement
-3. Fuzzy quality improvements are handled by the invoking agent via checklist (see [references/workflows.md](references/workflows.md))
-
-### Evolve Workflow
-
-Longitudinal improvement via the two-call seam (persona-driven, gate-checked):
-
-1. **Envelope-out:** `superskill agent evolve <name> --propose-only --json` — emits `{ trends, baseline, rubric, briefs }` as JSON. Each brief carries the immutable goal anchor (frontmatter + rubric criterion + negative constraints) **verbatim**, plus an `anchor_hash`. No DB write, no model call. Pipe to `briefs.json`.
-2. **Author persona:** read the briefs, rewrite the content per dimension, produce `ProposedChange[]` with real `proposed` text + `anchor_hash`. Write to `proposal.json`.
-3. **Skeptic persona:** receive the proposal + the **verbatim** goal anchor, check for violations/omissions, produce `{ ok, violations[] }`.
-4. **Judge persona (if multiple candidates):** pairwise tournament comparison against the verbatim goal anchor, select the winner.
-5. **Ingest-in:** `superskill agent evolve <name> --ingest proposal.json --accept <id>` — the CLI double-loop gate decides: deterministic validate-zero-errors + Δ-margin + anchor-hash match + skeptic veto. Failing any gate leaves the proposal in `draft` and restores the file. Reject with `--reject <id>`; analyze changes since a version with `--from`.
-
-**Goal-anchor verbatim discipline:** Pass the original frontmatter and negative constraints verbatim to Skeptic and Judge — do not summarize, compact, or paraphrase. The CLI gate enforces this via `anchor_hash`; stripping the anchor pre-call will cause the gate to reject.
+- Target grade: A or B for production agents; grade C or below → refine. Profile auto-detection
+  (thin-wrapper vs specialist) selects the rubric weighting.
+- Goal anchors pass to Skeptic/Judge **verbatim** — the `anchor_hash` gate rejects paraphrased
+  anchors.
 
 ## Core Principles
 
@@ -165,26 +116,9 @@ Subagent frontmatter MUST follow strict schema rules. The frontmatter IS the con
 | `description` | string | Trigger description with "Use PROACTIVELY for..." + trigger phrases |
 | `body` | string | System prompt content (Markdown body after `---`) |
 
-#### Claude Code Fields (Primary Format)
-
-**Valid Claude Code agent frontmatter fields:**
-
-| Field | Type | Required | Description |
-|-------|------|---------|-------------|
-| `name` | string | Yes | Agent identifier |
-| `description` | string | Yes | Trigger description |
-| `tools` | string[] | No | Allowed tools whitelist |
-| `disallowedTools` | string[] | No | Blocked tools blacklist |
-| `model` | string | No | Model override (`inherit` = use parent model) |
-| `maxTurns` | number | No | Max conversation turns |
-| `permissionMode` | string | No | Permission level (`default`, `bypassPermissions`) |
-| `skills` | string[] | No | Delegate to other skills |
-| `mcpServers` | string[] | No | MCP server connections |
-| `hooks` | object | No | Pre/post hook configuration |
-| `memory` | string | No | Memory file path |
-| `background` | boolean | No | Run in background |
-| `isolation` | string | No | Isolation mode (`worktree`) |
-| `color` | string | No | UI display color (semantic palette only) |
+The full per-platform field tables (Claude Code's 14 valid fields, Gemini CLI, OpenCode, Codex,
+OpenClaw) live in [references/frontmatter-reference.md](references/frontmatter-reference.md) —
+read them there; restating them here drifts.
 
 #### Field Rules
 
@@ -221,15 +155,6 @@ Subagent frontmatter MUST follow strict schema rules. The frontmatter IS the con
 - Format: `skills: [skill-name-1, skill-name-2]`
 - Only for Claude Code; other platforms drop this field
 
-#### Platform-Specific Field Mapping
-
-| Claude Code | Gemini CLI | OpenCode | Codex | OpenClaw |
-|-------------|------------|----------|-------|----------|
-| `maxTurns` | `max_turns` | `steps` | N/A | N/A |
-| `disallowedTools` | N/A | `tools: {X: false}` | N/A | `tools.deny` |
-| `timeout` | `timeout_mins` | N/A | `job_max_runtime_seconds` | `runTimeoutSeconds` |
-| `skills` | N/A | N/A | N/A | N/A |
-
 #### Common Frontmatter Errors
 
 - ❌ Missing required `name` or `description`
@@ -242,26 +167,8 @@ Subagent frontmatter MUST follow strict schema rules. The frontmatter IS the con
 
 ## Best Practices
 
-### Frontmatter
-
-| Field | Best Practice |
-|-------|---------------|
-| `name` | Lowercase hyphen-case, 3-50 chars, alphanumeric start/end |
-| `description` | Start with "Use PROACTIVELY for" + trigger phrases + compact `<example>` blocks, but stay <= 1024 chars |
-| `tools` | Explicit list of allowed tools (whitelist) |
-| `model` | Use `inherit` unless agent requires specific model |
-| `color` | Category-appropriate color (see [references/colors.md](references/colors.md)) |
-| `skills` | List delegated skills in frontmatter, NOT in body |
-
-### Description Field
-
-The description IS the trigger. It determines when the main agent routes to this subagent.
-
-- Start with "Use PROACTIVELY for" for specialist agents
-- Include 3+ trigger phrases in quotes
-- Add 2-3 `<example>` blocks with `<commentary>`
-- End with a summary of capabilities
-- Keep under 500 chars for minimal, up to 1000 chars for specialist
+Frontmatter best practices are the Field Rules above — apply them as written; the description
+rules there are the trigger contract (the description IS the routing signal).
 
 ### Body Structure
 
@@ -298,14 +205,9 @@ The description IS the trigger. It determines when the main agent routes to this
 
 ### Red Flags
 
-- Missing or empty description field
-- No trigger phrases or `<example>` blocks in description
-- Generic persona with no domain specificity
-- Verification protocol without confidence scoring
-- Fewer than 20 competency items in specialist agent
-- Rules section with fewer than 4 items per list
-- No output format template defined
-- Agent body exceeds 500 lines (too complex, consider splitting)
+Reject/greylist patterns (empty descriptions, generic personas, missing verification protocols,
+under-budget competency lists, oversized bodies) are cataloged with penalties in
+[references/red-flags.md](references/red-flags.md).
 
 ## Core Concepts
 

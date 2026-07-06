@@ -53,3 +53,23 @@ Commands that create or refine accept an optional description as the second posi
 ```
 
 The `--description` flag takes priority if both are provided.
+
+## Template Placeholders
+
+When using the scaffold templates (`simple.md`, `workflow.md`, `plugin.md`), replace these
+placeholders:
+
+| Placeholder | Description |
+|--------------|-------------|
+| `{{COMMAND_TITLE}}` | Title of the command (e.g., "Skill Add") |
+| `{{DESCRIPTION}}` | Short description (under 60 chars, start with verb) |
+| `{{ARGUMENT_HINT}}` | CLI argument hint showing all options |
+| `{{TARGET_SKILL}}` | Skill being wrapped (e.g., "cc:cc-skills") |
+| `{{PLUGIN_NAME}}` | Plugin name (e.g., "cc") |
+| `{{PLUGIN_PATH}}` | Plugin path (e.g., "cc/skills/cc-skills") |
+| `{{SKILL_DIR}}` | Skill directory name |
+| `{{HANDLER_NAME}}` | Handler filename |
+| `{{ARG_NAME}}` | Argument name |
+| `{{FLAG_NAME}}` | Flag name |
+| `{{RELATED_COMMAND_1}}` | Related command name |
+| `{{RELATED_COMMAND_2}}` | Another related command |

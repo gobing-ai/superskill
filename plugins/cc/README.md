@@ -284,6 +284,44 @@ All entity types share the same five-operation lifecycle, managed by the `supers
 | **refine** | Apply low-risk fixes automatically | Fix classification (auto-apply / suggest / flag) |
 | **evolve** | Propose and apply longitudinal improvements | Double-loop gate (Author → Skeptic → Judge) |
 
+## Which Operation When — the Flow Map
+
+The lifecycle flow every entity follows is **add → validate → evaluate → refine → evolve**.
+`validate` has no slash command of its own — it runs inside add/refine and directly via
+`superskill <type> validate`. Every `plugins/cc/commands/*.md` appears exactly once in this table
+(structural-test enforced):
+
+| Entity | Create | Score | Fix now | Long-term |
+|--------|--------|-------|---------|-----------|
+| Skill | `/cc:skill-add` | `/cc:skill-evaluate` | `/cc:skill-refine` | `/cc:skill-evolve` |
+| Subagent | `/cc:agent-add` | `/cc:agent-evaluate` | `/cc:agent-refine` | `/cc:agent-evolve` |
+| Command | `/cc:command-add` | `/cc:command-evaluate` | `/cc:command-refine` | `/cc:command-evolve` |
+| Magent | `/cc:magent-add` | `/cc:magent-evaluate` | `/cc:magent-refine` | `/cc:magent-evolve` |
+| Hook | hand-authored (`hooks.json`) | `/cc:hook-evaluate` | — | — |
+
+**Picking the operation:**
+
+- **New artifact** → the entity's *Create* command (grill-style discovery interview first).
+- **"How good is it?"** → *Score* — reads and reports; never writes.
+- **"Fix it now"** → *Fix now* — evaluate + deterministic fixes + content fix types (description
+  prune, pruning pass) in one step.
+- **"It keeps drifting across sessions"** → *Long-term* — trend analysis over saved evaluations,
+  failure-mode-tagged proposals, double-loop gated apply, rollback.
+
+**Expert subagent routing:** `cc:expert-skill`, `cc:expert-agent`, `cc:expert-command`,
+`cc:expert-magent`, and `cc:expert-hook` each wrap their entity's full lifecycle. Delegate to one
+when the work spans several operations or deserves its own context window; invoke a single command
+when you just need one step.
+
+**Heuristic mode vs the two-call LLM seam:** heuristic mode (deterministic scorers, no LLM call)
+is the default for evaluate/refine and the only mode CI gates use. The two-call seam
+(envelope-out → agent judgment → ingest-in) is for genuinely subjective criteria and evolve
+proposals. The dividing rule: deterministic proxies live in `quality/<type>.ts`, judgment criteria
+live in rubric YAML.
+
+**Session-crossing:** run evaluate with `--save` routinely — evolve's trend analysis reads that
+history, and without it `--propose-only` has no drift signal to work from.
+
 ## Hook Runtime — `superskill hook run`
 
 Installed hook configs invoke a stable PATH command instead of a plugin-checkout script path:

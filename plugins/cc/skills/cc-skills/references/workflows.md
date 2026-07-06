@@ -39,6 +39,24 @@ Shared Phase 1 conventions:
 
 Create a new skill from scratch with proper structure.
 
+### Grill-style discovery (shared scaffold behavior)
+
+Every scaffold operation (`skill-add`, `agent-add`, `command-add`, `magent-add`) runs an interview
+discipline BEFORE generating anything. This section is the single copy — the four `*-add` commands
+point here rather than restating it.
+
+1. **Explore before asking.** Read the existing artifacts first: sibling skills/agents/commands in
+   the target directory, the target repo's conventions, and prior evaluations
+   (`superskill <type> evaluate --history`). Never ask the user a question the codebase can answer.
+2. **One question at a time.** Ask a single question, wait for the answer, then decide whether the
+   next question is still needed. No question batteries.
+3. **Every question ships a recommended answer.** Derive the recommendation from what exploration
+   found (e.g. "Sibling skills use the `technique` tier — recommend `technique`. OK?"). The user
+   confirms or overrides; they never start from a blank.
+4. **Stop asking when the remaining unknowns don't change the scaffold.** Description wording can be
+   refined later (`*-refine`); invocation mode and template tier cannot — ask about those, skip the
+   rest.
+
 ### Workflow Steps
 
 ```
@@ -475,6 +493,30 @@ superskill skill evaluate <skill-dir> --save
 ## Refine Workflow
 
 Fix issues and improve quality. Supports multiple refinement modes.
+
+### Content fix types: description prune + pruning pass
+
+Two named fix types complement the deterministic structural fixes. Both are `suggest`-strategy
+fixes (a rewrite judgment call, never auto-applied); this section is the single copy the
+`*-refine` commands point to. Failure-mode definitions (no-op, duplication, sediment, sprawl)
+live in the skill-engineering theory reference.
+
+**Description prune** — rewrite an over-long or synonym-heavy description to budget by applying
+the three description rules: front-load the leading identity phrase; keep one trigger per genuine
+branch (collapse synonym clusters); delete any restatement of the body's identity line. Applies to
+every entity type with a description.
+
+**Pruning pass** (body-level; skills and agents):
+
+1. **No-op hunt** — sentence-level: delete every line the model already obeys by default (the
+   test: does this line change behavior vs. no line?). Delete, don't trim — a shortened no-op is
+   still a no-op.
+2. **Duplication collapse** — one meaning, one home: when a rule is stated in two places, keep the
+   authoritative home and replace the other with a bare term or pointer.
+3. **Sediment removal** — delete stale layers left by past edits (superseded advice, orphaned
+   footers, references to removed sections).
+4. **Disclosure move** — content only some branches need moves into `references/` behind a
+   pointer; content moves, it is never silently deleted.
 
 ### Workflow Steps
 

@@ -27,15 +27,10 @@ Author hooks once in the **rulesync-canonical** format, deploy to Claude Code, C
 
 ## Overview
 
-Hooks execute in response to specific events during a coding agent session. Use this skill when implementing hooks for security validation, quality enforcement, context loading, or workflow automation across multiple coding agents.
-
-**Key capabilities:**
-- Author hooks once in the canonical `hooks.json` (`HookDefinitionSchema`), deploy to 5+ agents
-- Validate tool calls before execution (`preToolUse`)
-- React to tool results (`postToolUse`)
-- Enforce completion standards (`stop`, `subagentStop`)
-- Load project context (`sessionStart`)
-- Automate workflows across the development lifecycle
+Hooks execute in response to specific events during a coding agent session. Use this skill when
+implementing hooks for security validation, quality enforcement, context loading, or workflow
+automation across multiple coding agents: author once in the canonical `hooks.json`
+(`HookDefinitionSchema`), deploy to 5+ agents.
 
 ## Canonical Schema (HookDefinitionSchema)
 
@@ -218,43 +213,25 @@ For multi-target install (skills + commands + subagents + hooks + mcp), use `sup
 superskill install my-plugin --targets codex,opencode,pi
 ```
 
-### Evaluate (Scorer Seam — Phase 4 two-call pattern)
+### Evaluate and Evolve (two-call seam)
 
-Score a hook config against a rubric in two calls.
+Both run through the two-call seam — envelope-out, persona judgment, ingest-in. The seam
+mechanics, personas, and vocabulary are owned by **cc:cc-skills** (evaluation-framework reference +
+glossary); only the hook-specific facts live here:
 
-1. **Envelope-out** — emit the hook content + rubric as JSON (no scoring, no DB write):
-   ```bash
-   superskill hook evaluate <nameOrPath> --rubric <file> --json
-   ```
-   Returns `{ type, content_name, target, content, rubric, baseline }`.
-2. **Scorer persona** — read the envelope, score each dimension, emit `{ rubric_version, dimensions: { name: { score, note } } }`. Hook dimensions: `correctness`, `event-coverage`, `safety`, `pattern-match-quality` (`packages/core/src/quality/hook.ts:226`).
-3. **Ingest-in** — validate the agent-produced scores against the rubric schema and persist:
-   ```bash
-   superskill hook evaluate <nameOrPath> --ingest <scores.json> --save
-   ```
+```bash
+superskill hook evaluate <nameOrPath> --rubric <file> --json     # envelope-out
+superskill hook evaluate <nameOrPath> --ingest <scores.json> --save
+superskill hook evolve <name> --propose-only --json              # envelope-out
+superskill hook evolve <name> --ingest <proposal.json> --accept <id>
+```
 
-The `safety` dimension must penalize hooks that omit `failClosed` on destructive events, or that embed untrusted/templated command strings without a `safeString` boundary.
-
-### Evolve (Generation Seam)
-
-Propose improvements from evaluation history in two calls.
-
-1. **Envelope-out** — emit trends, baseline, rubric, and generation briefs as JSON:
-   ```bash
-   superskill hook evolve <name> --propose-only --json
-   ```
-   Each brief carries the **verbatim** goal anchor (frontmatter + rubric criterion + negative constraints) plus `anchor_hash`.
-2. **Author persona** — rewrite the hook content per dimension; emit `ProposedChange[]` with real `proposed` text + `anchor_hash`.
-3. **Skeptic persona** — receive the proposal + the **verbatim** goal anchor, check for violations, emit `{ ok, violations[] }`.
-4. **Judge persona** *(if multiple candidates)* — pairwise tournament, select winner.
-5. **Ingest-in** — the CLI double-loop gate decides: validate-zero-errors + Δ-margin + anchor-hash match + skeptic veto. Failing any gate leaves the proposal in `draft` and restores the file:
-   ```bash
-   superskill hook evolve <name> --ingest <proposal.json> --accept <id>
-   ```
-
-### Goal-Anchor Verbatim Discipline
-
-Pass the original frontmatter and negative constraints **verbatim** to the Skeptic and Judge — do not summarize, compact, or paraphrase. The CLI gate enforces via `anchor_hash`: a paraphrased anchor defeats the double-loop gate. This is non-negotiable.
+- Hook dimensions: `correctness`, `event-coverage`, `safety`, `pattern-match-quality`
+  (`packages/core/src/quality/hook.ts:226`).
+- The `safety` dimension must penalize hooks that omit `failClosed` on destructive events, or that
+  embed untrusted/templated command strings without a `safeString` boundary.
+- Goal anchors pass to the Skeptic/Judge **verbatim** — a paraphrased anchor defeats the
+  `anchor_hash` gate.
 
 ## Cross-Platform Target Matrix
 
@@ -277,113 +254,17 @@ See [cross-platform.md](references/cross-platform.md) for the full event crosswa
 
 ## Common Patterns
 
-### Security Validation (block dangerous writes)
-
-```json
-{
-  "hooks": {
-    "preToolUse": [
-      {
-        "type": "prompt",
-        "matcher": "Write|Edit",
-        "prompt": "File path: $TOOL_INPUT.file_path. Verify: 1) Not in /etc or system dirs 2) Not .env or credentials 3) No '..' traversal. Return 'approve' or 'deny'."
-      }
-    ]
-  }
-}
-```
-
-### Test Enforcement (block stop without tests)
-
-```json
-{
-  "hooks": {
-    "stop": [
-      {
-        "type": "prompt",
-        "matcher": "*",
-        "prompt": "Review transcript. If code was modified, verify tests were executed. Block with reason 'Tests must run after code changes' if not."
-      }
-    ]
-  }
-}
-```
-
-### Context Loading (session start) — Claude Code only
-
-```json
-{
-  "hooks": {
-    "sessionStart": [
-      {
-        "type": "command",
-        "matcher": "*",
-        "command": "bash ${CLAUDE_PLUGIN_ROOT}/examples/load-context.sh"
-      }
-    ]
-  }
-}
-```
-
-> ⚠️ This example uses `${CLAUDE_PLUGIN_ROOT}`, which resolves on **Claude Code only**. For a
-> cross-platform session-start hook, register a runner and call `superskill hook run <plugin> <hook-id>`
-> instead (Safety Invariant #4). The `examples/*.sh` files in this skill are Claude-only references.
-
-
-### failClosed on destructive events
-
-```json
-{
-  "hooks": {
-    "preToolUse": [
-      {
-        "type": "command",
-        "matcher": "Bash",
-        "command": "superskill hook run myplugin bash-guard",
-        "timeout": 3000,
-        "failClosed": true
-      }
-    ]
-  }
-}
-```
-
-With `failClosed: true`, a crash or timeout of the guard **blocks** the Bash call rather than allowing it through. Default to `failClosed: true` on `preToolUse` for destructive tools; default to `failOpen` on read-only events (`postToolUse`, `sessionEnd`). (The Claude-only `${CLAUDE_PLUGIN_ROOT}/examples/validate-bash.sh` form is shown above under Context Loading; prefer the portable PATH command here.)
+Curated, ready-to-paste patterns live in **[patterns.md](references/patterns.md)** — security
+validation (Pattern 1), test enforcement (Pattern 2), context loading (Pattern 3, with the
+`${CLAUDE_PLUGIN_ROOT}` portability warning), notification logging, MCP monitoring, build
+verification, permission confirmation, quality checks, flag-file activation, config-driven hooks,
+and `failClosed` on destructive events (Pattern 11).
 
 ## Hook Output Format
 
-### Standard output (JSON to stdout)
-
-```json
-{
-  "continue": true,
-  "suppressOutput": false,
-  "systemMessage": "Message for Claude"
-}
-```
-
-### `preToolUse` output
-
-```json
-{
-  "hookSpecificOutput": {
-    "permissionDecision": "allow|deny|ask",
-    "updatedInput": { "field": "modified_value" }
-  },
-  "systemMessage": "Explanation for Claude"
-}
-```
-
-### `stop` / `subagentStop` output
-
-```json
-{
-  "hookSpecificOutput": {
-    "allowStop": false,
-    "feedback": "Tests have not been run."
-  }
-}
-```
+The JSON shapes a hook writes to stdout (standard, `preToolUse` permission decision,
+`stop`/`subagentStop` `allowStop`) are documented in
+**[advanced.md § Hook Output Format](references/advanced.md#hook-output-format)**.
 
 ## See Also
 
