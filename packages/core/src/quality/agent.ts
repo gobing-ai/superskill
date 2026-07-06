@@ -1,21 +1,68 @@
-import { clamp, extractBody, hasPattern, parseFrontmatterSafe, scorePresence } from './heuristics';
+import {
+    clamp,
+    duplicationRatio,
+    extractBody,
+    hasPattern,
+    noOpDensity,
+    parseFrontmatterSafe,
+    scoreDescriptionBudget,
+    scorePresence,
+} from './heuristics';
 import { computeAggregate, type DimensionScore, type QualityReport, REQUIRED_FIELDS } from './types';
 
 // ── Dimension Scorers ──────────────────────────────────────────────────────────
 
-function scoreCompleteness(data: Record<string, unknown>): DimensionScore {
+function scoreCompleteness(data: Record<string, unknown>, body: string): DimensionScore {
     const fieldsPresent = Object.keys(data);
     const required = REQUIRED_FIELDS.agent;
-    const score = scorePresence(fieldsPresent, required);
+    const presence = scorePresence(fieldsPresent, required);
     const missing = required.filter((f) => !fieldsPresent.includes(f));
-    const findings = missing.length > 0 ? [`Missing required fields: ${missing.join(', ')}`] : undefined;
-    const recs = missing.length > 0 ? ['Add the missing frontmatter fields'] : undefined;
+
+    // Description quality (R2): folded into completeness (not a new dimension) since
+    // agent's fixed registry has no separate conciseness/clarity dimension. Description is
+    // the dispatch-time signal the Task-tool orchestrator reads, same context-load concern
+    // as a skill description — but the budget is wider (20-2000, not 20-500): Claude Code's
+    // own convention embeds <example> few-shot blocks directly in an agent's frontmatter
+    // description (real cc agents run 550-850 chars), unlike a skill's single-sentence
+    // dispatch trigger. Copying the skill ceiling verbatim would falsely flag every
+    // convention-following agent description as over budget.
+    //
+    // Progressive-disclosure does NOT transfer from skill (deliberate scoping, not an
+    // oversight): agents in this repo are flat single-file markdown documents with no
+    // companion references/ directory convention — unlike skills, which are directories
+    // (SKILL.md + references/*.md). An agent has no escape hatch to satisfy that check, so
+    // applying it would penalize every long agent regardless of actual quality.
+    const description = typeof data.description === 'string' ? data.description : '';
+    const budgetScore = description ? scoreDescriptionBudget(description, 20, 2000) : 1;
+    const noOp = noOpDensity(description);
+    const descDup = description ? duplicationRatio(description, body, 12) : 0;
+
+    const score = clamp(presence * budgetScore * (1 - noOp) * (1 - descDup));
+
+    const findings: string[] = [];
+    const recs: string[] = [];
+    if (missing.length > 0) {
+        findings.push(`Missing required fields: ${missing.join(', ')}`);
+        recs.push('Add the missing frontmatter fields');
+    }
+    if (budgetScore < 1) {
+        findings.push(`Description is ${description.length} chars, outside the 20\u20132000 char budget.`);
+        recs.push('Tighten the description to the agent\u2019s role and dispatch trigger.');
+    }
+    if (noOp > 0.2) {
+        findings.push('Description contains default-behavior phrases that add no signal (no-op candidates).');
+        recs.push('Delete no-op phrasing from the description rather than trimming it.');
+    }
+    if (descDup > 0.3) {
+        findings.push('Description restates body text near-verbatim (duplication).');
+        recs.push('State the agent\u2019s role once in the description; do not repeat it in the body.');
+    }
 
     return {
-        score: clamp(score),
+        score,
         note: missing.length > 0 ? `Missing: ${missing.join(', ')}` : 'All required fields present',
-        findings,
-        recommendations: recs,
+        findings: findings.length > 0 ? findings : undefined,
+        recommendations: recs.length > 0 ? recs : undefined,
     };
 }
 
@@ -178,7 +225,7 @@ export function evaluateAgent(content: string, target: string): QualityReport {
     const body = extractBody(content);
 
     const dimensions: Record<string, DimensionScore> = {
-        completeness: scoreCompleteness(data),
+        completeness: scoreCompleteness(data, body),
         'role-clarity': scoreRoleClarity(body),
         'tool-selection': scoreToolSelection(data),
         'skill-linkage': scoreSkillLinkage(body),

@@ -353,6 +353,201 @@ describe('evaluateSkill', () => {
         expect(result.dimensions.completeness?.score).toBe(0);
     });
 });
+
+// ── evaluateSkill R2 proxies (task 0070) ──────────────────────────────────────
+
+describe('evaluateSkill R2 proxies', () => {
+    it('does not inflate trigger-accuracy by counting every body bullet when no trigger section exists', () => {
+        const body = makeSample(
+            `name: procedural-skill
+description: Handles a multi-step build and release workflow end to end`,
+            `
+## Procedure
+- Step one: read configuration
+- Step two: compile sources
+- Step three: run the test suite
+- Step four: package artifacts
+- Step five: publish to the registry
+- Step six: tag the release
+- Step seven: notify the channel
+- Step eight: archive logs
+- Step nine: clean workspace
+- Step ten: verify deployment
+- Step eleven: close the ticket
+- Step twelve: update the changelog
+`,
+        );
+        const report = evaluateSkill(body, 'skill/procedural.md');
+        const ta = report.dimensions['trigger-accuracy'];
+        expect(ta?.note).not.toContain('12');
+    });
+
+    it('collapses synonym-cluster description branches instead of counting each separately', () => {
+        const clustered = makeSample(
+            `name: reviewer
+description: "review this code, review the code, review code"`,
+            '## Overview\nReviews code.',
+        );
+        const report = evaluateSkill(clustered, 'skill/clustered.md');
+        const ta = report.dimensions['trigger-accuracy'];
+        expect(ta?.note).toContain('1 distinct trigger branch');
+    });
+
+    it('penalizes conciseness for no-op phrases that restate default model behavior', () => {
+        const withNoOps = makeSample(
+            `name: verbose-skill
+description: Assists with general engineering tasks across the codebase`,
+            `
+## Overview
+Be helpful. Think carefully. Do your best. Be thorough. Stay focused. Use good judgment.
+Be careful. Take your time. Try your best. Work hard. Pay attention. Be concise. Be accurate.
+`,
+        );
+        const withoutNoOps = makeSample(
+            `name: focused-skill
+description: Assists with general engineering tasks across the codebase`,
+            `
+## Overview
+You must validate every change against the test suite. Always run the linter before
+committing. Never merge without a passing build. Ensure the changelog is updated.
+`,
+        );
+        const noisy = evaluateSkill(withNoOps, 'skill/noisy.md');
+        const clean = evaluateSkill(withoutNoOps, 'skill/clean.md');
+        expect(noisy.dimensions.conciseness?.score).toBeLessThan(clean.dimensions.conciseness?.score ?? 1);
+    });
+
+    it('penalizes conciseness when the body restates the description near-verbatim', () => {
+        // Both bodies are padded well past the 500-char length-sweet-spot floor so the
+        // duplication signal is isolated from the unrelated length signal.
+        const description =
+            'creates validates evaluates refines and evolves subagent definitions across coding agent platforms end to end';
+        const filler = 'Unique unrelated padding content describing the workflow in more depth. '.repeat(10);
+        const duplicated = makeSample(
+            `name: dup-skill
+description: ${description}`,
+            `## Overview
+${description}
+${filler}`,
+        );
+        const notDuplicated = makeSample(
+            `name: clean-skill
+description: ${description}`,
+            `## Overview
+${filler}`,
+        );
+        const dup = evaluateSkill(duplicated, 'skill/dup.md');
+        const clean = evaluateSkill(notDuplicated, 'skill/clean2.md');
+        expect(dup.dimensions.conciseness?.score).toBeLessThan(clean.dimensions.conciseness?.score ?? 1);
+    });
+
+    it('flags progressive-disclosure gap in completeness for an over-budget body with no references/ link', () => {
+        const overBudgetNoDisclosure = makeSample(
+            `name: sprawling-skill
+description: Handles a very large workflow with lots of detail`,
+            `## Overview
+${'This paragraph repeats unique padding content to grow the body. '.repeat(200)}`,
+        );
+        const overBudgetWithDisclosure = makeSample(
+            `name: disclosed-skill
+description: Handles a very large workflow with lots of detail`,
+            `## Overview
+${'This paragraph repeats unique padding content to grow the body. '.repeat(200)}
+
+See references/workflow.md for the full procedure.`,
+        );
+        const noDisclosure = evaluateSkill(overBudgetNoDisclosure, 'skill/sprawl.md');
+        const withDisclosure = evaluateSkill(overBudgetWithDisclosure, 'skill/disclosed.md');
+        expect(noDisclosure.dimensions.completeness?.score).toBeLessThan(
+            withDisclosure.dimensions.completeness?.score ?? 1,
+        );
+        expect(noDisclosure.dimensions.completeness?.findings?.join(' ')).toContain('disclosure budget');
+    });
+
+    it('penalizes clarity for step-shaped content using vague completion bounds', () => {
+        const vague = makeSample(
+            `name: vague-steps
+description: Runs a multi-step review workflow`,
+            `
+## Procedure
+1. Investigate the issue as needed
+2. Continue until understanding reached
+3. Stop as appropriate
+`,
+        );
+        const checkable = makeSample(
+            `name: checkable-steps
+description: Runs a multi-step review workflow`,
+            `
+## Procedure
+1. Read the target file and list every function signature
+2. Verify each signature against the test suite
+3. Document any mismatch with a file and line reference
+`,
+        );
+        const vagueReport = evaluateSkill(vague, 'skill/vague.md');
+        const checkableReport = evaluateSkill(checkable, 'skill/checkable.md');
+        expect(vagueReport.dimensions.clarity?.score).toBeLessThan(checkableReport.dimensions.clarity?.score ?? 1);
+    });
+});
+
+// ── evaluateSkill invocation axis (task 0070 R3) ──────────────────────────────
+
+describe('evaluateSkill invocation axis', () => {
+    it('scores a user-invoked skill on description shape, not branch count', () => {
+        const userInvoked = makeSample(
+            `name: release-runner
+description: Run the release checklist end to end
+disable-model-invocation: true`,
+            '## Overview\nWalks the operator through the release checklist.',
+        );
+        const report = evaluateSkill(userInvoked, 'skill/release-runner.md');
+        const ta = report.dimensions['trigger-accuracy'];
+        expect(ta?.note).toContain('User-invoked');
+        expect(ta?.score ?? 0).toBeGreaterThan(0.7);
+        expect(ta?.findings ?? []).toHaveLength(0);
+    });
+
+    it('flags a user-invoked skill whose description reads trigger-rich (mode/description mismatch)', () => {
+        const mismatched = makeSample(
+            `name: release-runner
+description: "Use when releasing, deploying, or tagging; triggers on release requests, deploy requests, whenever a version bump lands"
+disable-model-invocation: true`,
+            '## Overview\nWalks the operator through the release checklist.',
+        );
+        const report = evaluateSkill(mismatched, 'skill/release-runner.md');
+        const ta = report.dimensions['trigger-accuracy'];
+        expect(ta?.score ?? 1).toBeLessThan(0.5);
+        expect((ta?.findings ?? []).join(' ')).toContain('user-invoked');
+    });
+
+    it('penalizes a model-invoked skill with more than 10 distinct trigger branches', () => {
+        const overloaded = makeSample(
+            `name: everything-skill
+description: Handles many unrelated jobs`,
+            `
+## When to Use
+- parsing YAML manifests
+- deploying container images
+- rotating database credentials
+- indexing search documents
+- compressing video streams
+- migrating legacy schemas
+- auditing network firewalls
+- generating invoice reports
+- scheduling nightly cron jobs
+- resizing thumbnail assets
+- validating payment webhooks
+- archiving chat transcripts
+`,
+        );
+        const report = evaluateSkill(overloaded, 'skill/everything.md');
+        const ta = report.dimensions['trigger-accuracy'];
+        expect(ta?.score ?? 1).toBeLessThan(1);
+        expect((ta?.findings ?? []).join(' ')).toContain('overlap');
+    });
+});
+
 describe('evaluateCommand', () => {
     const good = evaluateCommand(COMMAND_GOOD, 'commands/deploy.md');
     const bad = evaluateCommand(COMMAND_BAD, 'commands/x.md');
@@ -445,6 +640,39 @@ describe('evaluateCommand', () => {
     });
 });
 
+describe('evaluateCommand R2 proxies', () => {
+    it('penalizes clarity for a command description with no-op phrases', () => {
+        const noisy = makeSample(
+            'description: Be helpful and think carefully when running this deploy command',
+            'Deploys the application to the target environment.',
+        );
+        const clean = makeSample(
+            'description: Deploys the application to the target environment with rollback support',
+            'Deploys the application to the target environment.',
+        );
+        const noisyReport = evaluateCommand(noisy, 'commands/noisy.md');
+        const cleanReport = evaluateCommand(clean, 'commands/clean.md');
+        expect(noisyReport.dimensions.clarity?.score).toBeLessThan(cleanReport.dimensions.clarity?.score ?? 1);
+    });
+
+    it('flags an out-of-budget command description in clarity findings', () => {
+        const tooLong = makeSample(
+            `description: ${'Deploys the application across every supported target environment. '.repeat(10)}`,
+            'Deploys the application.',
+        );
+        const report = evaluateCommand(tooLong, 'commands/toolong.md');
+        expect(report.dimensions.clarity?.findings?.join(' ')).toContain('char budget');
+    });
+
+    it('flags a command description that restates the body near-verbatim', () => {
+        const description = 'deploys validates and rolls back the application across every target environment safely';
+        const filler = 'Unique unrelated padding content describing the deploy steps in more depth. '.repeat(10);
+        const duplicated = makeSample(`description: ${description}`, `${description}\n${filler}`);
+        const report = evaluateCommand(duplicated, 'commands/dup.md');
+        expect(report.dimensions.clarity?.findings?.join(' ')).toContain('restates body text');
+    });
+});
+
 describe('evaluateAgent', () => {
     const good = evaluateAgent(AGENT_GOOD, 'agents/code-reviewer.md');
     const bad = evaluateAgent(AGENT_BAD, 'agents/x.md');
@@ -487,6 +715,69 @@ describe('evaluateAgent', () => {
         };
         const expected = scorePresence(Object.keys(data), REQUIRED_FIELDS.agent);
         expect(completenessScore).toBe(expected);
+    });
+});
+
+describe('evaluateAgent R2 proxies', () => {
+    it('penalizes completeness for an agent description with no-op phrases', () => {
+        const noisy = makeSample(
+            `name: noisy-agent
+description: Be helpful and think carefully about every code review request
+model: claude-sonnet-4
+tools:
+  - read
+  - edit
+  - search`,
+            '## Role\nYou are a code review specialist.',
+        );
+        const clean = makeSample(
+            `name: clean-agent
+description: Reviews pull requests for correctness and security issues
+model: claude-sonnet-4
+tools:
+  - read
+  - edit
+  - search`,
+            '## Role\nYou are a code review specialist.',
+        );
+        const noisyReport = evaluateAgent(noisy, 'agents/noisy.md');
+        const cleanReport = evaluateAgent(clean, 'agents/clean.md');
+        expect(noisyReport.dimensions.completeness?.score).toBeLessThan(
+            cleanReport.dimensions.completeness?.score ?? 1,
+        );
+    });
+
+    it('flags an out-of-budget agent description in completeness findings', () => {
+        const tooShort = makeSample(
+            `name: terse-agent
+description: fixes bugs
+model: claude-sonnet-4
+tools:
+  - read
+  - edit
+  - search`,
+            '## Role\nYou are a bug-fixing specialist with deep debugging expertise.',
+        );
+        const report = evaluateAgent(tooShort, 'agents/terse.md');
+        expect(report.dimensions.completeness?.findings?.join(' ')).toContain('char budget');
+    });
+
+    it('flags an agent description that restates the body near-verbatim', () => {
+        const description =
+            'reviews validates and audits pull requests for correctness security and style issues end to end';
+        const filler = 'Unique unrelated padding content describing the workflow in more depth. '.repeat(10);
+        const duplicated = makeSample(
+            `name: dup-agent
+description: ${description}
+model: claude-sonnet-4
+tools:
+  - read
+  - edit
+  - search`,
+            `## Role\n${description}\n${filler}`,
+        );
+        const report = evaluateAgent(duplicated, 'agents/dup.md');
+        expect(report.dimensions.completeness?.findings?.join(' ')).toContain('restates body text');
     });
 });
 
@@ -659,6 +950,26 @@ platforms: claude, codex, pi`,
         );
         const report = evaluateMagent(content, 'magent/multi.md');
         expect(report.dimensions['platform-coverage']?.score).toBeGreaterThan(0.3);
+    });
+});
+
+describe('evaluateMagent R2 proxies', () => {
+    it('penalizes conciseness for a body dense with no-op phrases', () => {
+        const noisy = makeSample(
+            'name: noisy-magent\ndescription: Dev agent config',
+            `## Project\nBe helpful. Think carefully. Do your best. Be thorough. Stay focused.
+Use good judgment. Be careful. Take your time. Try your best. Work hard.
+\n## Commands\n\`bun run test\` runs the suite.\n\n## Safety\n[CRITICAL] never force-push.`,
+        );
+        const clean = makeSample(
+            'name: clean-magent\ndescription: Dev agent config',
+            `## Project\nYou must validate every change against the test suite before merging.
+Always run the linter first. Never bypass verification gates.
+\n## Commands\n\`bun run test\` runs the suite.\n\n## Safety\n[CRITICAL] never force-push.`,
+        );
+        const noisyReport = evaluateMagent(noisy, 'AGENTS-noisy.md');
+        const cleanReport = evaluateMagent(clean, 'AGENTS-clean.md');
+        expect(noisyReport.dimensions.conciseness?.score).toBeLessThan(cleanReport.dimensions.conciseness?.score ?? 1);
     });
 });
 

@@ -1,4 +1,4 @@
-version: 1
+version: 2
 type: magent
 dimensions:
   - name: completeness
@@ -27,10 +27,17 @@ dimensions:
     criterion: >
       Is the config as short as possible while remaining complete? Penalize
       redundant rule restating, boilerplate that adds no information, and
-      rules that could be merged without loss.
+      rules that could be merged without loss. Measurable proxies (folded in,
+      not a new dimension): body is free of curated no-op phrases ("be
+      helpful", "think carefully") that restate default model behavior without
+      changing it; body has low within-body n-gram duplication. A magent
+      config (AGENTS.md/CLAUDE.md) has no separate frontmatter description
+      field — it is read wholesale rather than dispatch-selected — so the
+      description-budget check that applies to skill/command/agent does not
+      apply here.
     anchors:
-      excellent: "Minimal length with no redundancy; every rule carries unique information."
-      poor: "Redundant rules and boilerplate; rules could be merged without loss."
+      excellent: "Minimal length with no redundancy; every rule carries unique information; no no-op phrasing."
+      poor: "Redundant rules, boilerplate, or no-op phrasing that adds no signal; rules could be merged without loss."
 
   - name: tone-consistency
     weight: 0.20

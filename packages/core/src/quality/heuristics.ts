@@ -109,6 +109,177 @@ export function hasPattern(text: string, patterns: RegExp[]): number {
     return clamp(matched / patterns.length);
 }
 
+// ── R2 Proxies (task 0070): description budget, no-op density, duplication,
+// trigger-cluster, completion-checkability, progressive-disclosure ────────────
+
+/** Curated phrases that restate default model behavior without changing it (no-op candidates). */
+export const NO_OP_PHRASES = [
+    'be helpful',
+    'be concise',
+    'be accurate',
+    'do your best',
+    'think carefully',
+    'think step by step',
+    'try your best',
+    'work hard',
+    'pay attention',
+    'be thorough',
+    'take your time',
+    'be careful',
+    'stay focused',
+    'use good judgment',
+] as const;
+
+/**
+ * Score a description string against a soft character budget (context-load proxy).
+ * A model-invoked description is loaded into context on every turn it's a candidate,
+ * so shorter-but-sufficient beats longer. 1.0 within [min, max]; ramps down outside.
+ */
+export function scoreDescriptionBudget(description: string, min = 20, max = 500): number {
+    return scoreLength(description, min, max);
+}
+
+/**
+ * No-op density: fraction of curated default-behavior phrases (see {@link NO_OP_PHRASES})
+ * found in `text`, out of the total imperative-keyword hits. High density signals
+ * instructions that don't change default model behavior — candidates for deletion
+ * (see skill-engineering-theory.md "no-op" failure mode). Returns 0.0–1.0; 0 is best.
+ *
+ * This is a CANDIDATE proxy only — genuine no-op-ness for a specific model is LLM-judged.
+ */
+export function noOpDensity(text: string): number {
+    const lower = text.toLowerCase();
+    const noOpHits = NO_OP_PHRASES.filter((p) => lower.includes(p)).length;
+    const imperativeHits = IMPERATIVE_KEYWORDS.filter((k) => lower.includes(k)).length;
+    const denominator = noOpHits + imperativeHits;
+    if (denominator === 0) return 0;
+    return clamp(noOpHits / denominator);
+}
+
+/**
+ * Extract word-shingles (n-grams) of `size` words from `text`, lowercased and
+ * whitespace-normalized. Used by {@link duplicationRatio} to detect repeated phrasing.
+ */
+function shingles(text: string, size: number): string[] {
+    const words = text
+        .toLowerCase()
+        .replace(/[^a-z0-9\s]/g, ' ')
+        .split(/\s+/)
+        .filter(Boolean);
+    if (words.length < size) return [];
+    const result: string[] = [];
+    for (let i = 0; i <= words.length - size; i++) {
+        result.push(words.slice(i, i + size).join(' '));
+    }
+    return result;
+}
+
+/**
+ * Duplication ratio: fraction of `size`-word shingles in `text` that repeat at least
+ * once (within `text` itself, or — when `other` is given — that also appear in `other`).
+ * Returns 0.0–1.0; 0 means no repeated n-grams, 1 means every shingle repeats.
+ *
+ * Used for two checks: description-vs-body duplication (pass `other = body`) and
+ * within-body duplication (omit `other`, self-compare).
+ */
+export function duplicationRatio(text: string, other?: string, size = 8): number {
+    const own = shingles(text, size);
+    if (own.length === 0) return 0;
+
+    if (other !== undefined) {
+        const otherSet = new Set(shingles(other, size));
+        if (otherSet.size === 0) return 0;
+        const dup = own.filter((s) => otherSet.has(s)).length;
+        return clamp(dup / own.length);
+    }
+
+    const counts = new Map<string, number>();
+    for (const s of own) counts.set(s, (counts.get(s) ?? 0) + 1);
+    const repeated = own.filter((s) => (counts.get(s) ?? 0) > 1).length;
+    return clamp(repeated / own.length);
+}
+
+/**
+ * Cluster near-duplicate trigger phrases by word-overlap (Jaccard similarity ≥ 0.5
+ * counts as the same branch) and return the number of DISTINCT branches, not the
+ * raw phrase count. Fixes the "34 triggers because every bullet in the body got
+ * counted" failure. This is a bag-of-words proxy: it catches phrases that differ
+ * only by function words (e.g. "review this code" / "review the code" / "review
+ * code"), NOT verb-level synonyms with no shared words (e.g. "review code" vs
+ * "audit code") — that judgment needs semantics a deterministic heuristic doesn't
+ * have, so it stays a genuinely distinct branch here (consistent with D6: no
+ * heuristic overreach into LLM-judged territory).
+ */
+export function countTriggerBranches(phrases: string[]): number {
+    const wordSets = phrases.map((p) => new Set(p.toLowerCase().split(/\s+/).filter(Boolean)));
+    const branchOf = new Array<number>(phrases.length).fill(-1);
+    let nextBranch = 0;
+
+    for (let i = 0; i < wordSets.length; i++) {
+        if (branchOf[i] !== -1) continue;
+        branchOf[i] = nextBranch;
+        for (let j = i + 1; j < wordSets.length; j++) {
+            if (branchOf[j] !== -1) continue;
+            if (jaccard(wordSets[i] ?? new Set(), wordSets[j] ?? new Set()) >= 0.5) {
+                branchOf[j] = branchOf[i] ?? nextBranch;
+            }
+        }
+        nextBranch++;
+    }
+
+    return nextBranch;
+}
+
+/** Jaccard similarity between two word sets: |intersection| / |union|. */
+function jaccard(a: Set<string>, b: Set<string>): number {
+    if (a.size === 0 && b.size === 0) return 1;
+    let intersection = 0;
+    for (const w of a) if (b.has(w)) intersection++;
+    const union = a.size + b.size - intersection;
+    return union === 0 ? 0 : intersection / union;
+}
+
+/** Vague completion-bound phrases that make a "done" condition undecidable. */
+export const VAGUE_COMPLETION_BOUNDS = [
+    'understanding reached',
+    'as needed',
+    'as appropriate',
+    'when ready',
+    'until satisfied',
+    'good enough',
+    'as necessary',
+    'when done',
+] as const;
+
+/**
+ * For step/workflow-shaped bodies (numbered lists or "## Steps"-like sections),
+ * score whether each step reads as a decidable done-condition. Penalizes vague
+ * bound phrases (see {@link VAGUE_COMPLETION_BOUNDS}); rewards checkable language
+ * (checklists, explicit verification verbs). Returns 0.0–1.0.
+ *
+ * Bodies with no numbered/step structure return 1.0 (not applicable — not penalized).
+ */
+export function completionCheckability(body: string): number {
+    const stepLines = body.split('\n').filter((l) => /^\s*\d+[.)]\s/.test(l) || /^\s*-\s*\[[ x]\]/i.test(l));
+    if (stepLines.length === 0) return 1;
+
+    const lower = body.toLowerCase();
+    const vagueHits = VAGUE_COMPLETION_BOUNDS.filter((v) => lower.includes(v)).length;
+    const penalty = clamp(vagueHits / Math.max(3, VAGUE_COMPLETION_BOUNDS.length));
+    return clamp(1 - penalty);
+}
+
+/**
+ * Progressive-disclosure shape: a body over `budget` chars with no reference to a
+ * `references/` (or `See Also` / `Additional Resources`) disclosure path is a finding —
+ * the content should have moved detail out rather than growing the main body.
+ * Returns 0.0–1.0 (1.0 = under budget, or over budget but discloses).
+ */
+export function progressiveDisclosureShape(body: string, budget = 8000): boolean {
+    if (body.length <= budget) return true;
+    return /references\//i.test(body) || /##\s*(see also|additional resources)/i.test(body);
+}
+
 /**
  * Extract the body text from content (everything after the closing `---`).
  *
@@ -122,6 +293,30 @@ export function extractBody(content: string): string {
     const closerMatch = content.slice(4).match(/\n---(?=\n|$)/);
     if (closerMatch?.index === undefined) return content.slice(4); // opener but no closer
     return content.slice(closerMatch.index + 4 + 4);
+}
+
+/**
+ * Score how "trigger-rich" a description reads (0.0-1.0): distinct branch
+ * delimiters (commas/semicolons/" or "), dispatch-cue phrasing ("use when",
+ * "trigger", "whenever"), and length above a one-liner. Model-invoked
+ * descriptions should score high (the Task-tool orchestrator needs branch
+ * signal); user-invoked descriptions should score low (a human reads one
+ * line and picks the skill directly - branch lists are wasted context for
+ * a reader who already knows what they want).
+ *
+ * This is a shape proxy, not a semantic judge: it counts structural cues,
+ * it does not verify the cues are accurate (that judgment stays in the
+ * rubric YAML's two-call seam, consistent with D6).
+ */
+export function descriptionTriggerRichness(description: string): number {
+    if (!description) return 0;
+    const branchDelimiters = (description.match(/[,;]|\bor\b/gi) ?? []).length;
+    const dispatchCues = (description.match(/\b(use (?:this|it) when|whenever|triggers? on|use when)\b/gi) ?? [])
+        .length;
+    const lengthSignal = clamp(description.length / 300);
+    const branchSignal = clamp(branchDelimiters / 3);
+    const cueSignal = clamp(dispatchCues);
+    return clamp(branchSignal * 0.5 + cueSignal * 0.3 + lengthSignal * 0.2);
 }
 
 /** Clamp a number to [0, 1]. */

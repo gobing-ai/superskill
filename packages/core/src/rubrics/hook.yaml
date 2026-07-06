@@ -1,5 +1,10 @@
 version: 1
 type: hook
+# R2 scoping note (task 0070): description-budget / no-op-density / duplication proxies
+# do NOT transfer to hooks. A hook definition is a JSON matcher/command table with no
+# frontmatter description field and no markdown prose body — there is nothing for those
+# proxies to measure. The trigger-equivalent concept here is the JSON `matcher` field,
+# already scored by pattern-match-quality. This is a deliberate N/A, not a gap.
 dimensions:
   - name: correctness
     weight: 0.25

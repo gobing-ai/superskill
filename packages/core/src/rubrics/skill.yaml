@@ -1,4 +1,4 @@
-version: 1
+version: 2
 type: skill
 dimensions:
   - name: completeness
@@ -6,31 +6,45 @@ dimensions:
     criterion: >
       Does the skill cover its stated purpose end-to-end? Penalize missing
       steps, undocumented preconditions, and gaps between the trigger and the
-      delivered outcome. A complete skill leaves no implicit step.
+      delivered outcome. A complete skill leaves no implicit step. Also check
+      progressive-disclosure shape: a body that has grown past a reasonable
+      length budget without moving supporting detail into references/*.md (or
+      linking a "See Also"/"Additional Resources" section) is incomplete in a
+      structural sense — coverage exists but isn't disclosed in a navigable way.
     anchors:
-      excellent: "Every phase from trigger to outcome is explicit; preconditions and exit conditions stated."
-      poor: "Purpose claims coverage but steps are implicit or preconditions unstated."
+      excellent: "Every phase from trigger to outcome is explicit; preconditions and exit conditions stated; a body over the length budget discloses detail via references/."
+      poor: "Purpose claims coverage but steps are implicit or preconditions unstated; a long body with no references/ link buries detail instead of disclosing it."
 
   - name: clarity
     weight: 0.25
     criterion: >
       Is the skill's instruction unambiguous to a fresh agent? Penalize
       vague verbs ('handle', 'process'), undefined terms, and instructions
-      that require external context the skill does not provide.
+      that require external context the skill does not provide. For
+      step/workflow-shaped content, also check completion-criteria
+      checkability: each step should read as a decidable done-condition.
+      Penalize vague bounds ("understanding reached", "as needed", "as
+      appropriate") that leave a reader unable to tell when a step is done.
     anchors:
-      excellent: "Concrete verbs, defined terms, self-contained instructions an agent can execute without guessing."
-      poor: "Vague verbs and undefined terms; agent must guess the intended behavior."
+      excellent: "Concrete verbs, defined terms, self-contained instructions an agent can execute without guessing; every step has a decidable done-condition."
+      poor: "Vague verbs and undefined terms; agent must guess the intended behavior; steps end on vague bounds like 'as needed' with no checkable condition."
 
   - name: trigger-accuracy
     weight: 0.20
     criterion: >
       Does the skill fire on the right inputs and not on adjacent ones? The
-      description must precisely scope when the skill activates. Penalize
-      triggers that are too broad (fires on unrelated requests) or too narrow
-      (misses the intended case).
+      description must precisely scope when the skill activates. Score by
+      DISTINCT trigger branches, not raw phrase count — a description with 8
+      near-synonymous phrasings of the same branch ("review this code" /
+      "review the code" / "review code") is still one branch, not eight.
+      Reward description phrasing that covers 3-10 genuinely distinct
+      branches (one phrase per branch); penalize triggers that are too broad
+      (fires on unrelated requests), too narrow (misses the intended case),
+      or padded with synonym clusters that inflate the apparent count without
+      adding coverage.
     anchors:
-      excellent: "Trigger description scopes activation precisely; no overlap with adjacent skills."
-      poor: "Trigger is broad enough to fire on unrelated requests or narrow enough to miss the intended case."
+      excellent: "Trigger description scopes activation precisely across 3-10 genuinely distinct branches; no synonym-cluster padding; no overlap with adjacent skills."
+      poor: "Trigger is broad enough to fire on unrelated requests, narrow enough to miss the intended case, or pads the same branch with several near-identical phrasings."
 
   - name: anti-hallucination
     weight: 0.15
@@ -47,7 +61,17 @@ dimensions:
     criterion: >
       Is the skill as short as possible while remaining complete? Penalize
       redundant restating, boilerplate that adds no information, and steps
-      that could be merged without loss.
+      that could be merged without loss. Specifically check: (1) description
+      char budget — a model-invoked description sits in context every turn it
+      is a candidate, so it should be no longer than the identity phrase plus
+      its distinct trigger branches require; (2) no-op density — instructions
+      that restate default model behavior ("be helpful", "think carefully")
+      change nothing and should be deleted, not trimmed; (3) duplication —
+      the body should not restate the description near-verbatim, and should
+      not repeat the same phrasing in multiple places within itself. Leading-
+      word quality (is this the RIGHT tight/imperative word for the described
+      action, for this specific model) is genuinely subjective — judge it
+      here, in the two-call seam, not via a deterministic proxy.
     anchors:
-      excellent: "Minimal length with no redundancy; every line carries unique information."
-      poor: "Redundant restating and boilerplate; steps could be merged without loss."
+      excellent: "Minimal length with no redundancy; description stays within its context-load budget; no no-op instructions; no restated or duplicated phrasing; leading words are precise and model-appropriate."
+      poor: "Redundant restating and boilerplate; steps could be merged without loss; description is bloated; body pads out no-op instructions or duplicates the description verbatim."

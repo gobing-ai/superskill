@@ -1,4 +1,4 @@
-version: 1
+version: 2
 type: agent
 dimensions:
   - name: completeness
@@ -6,10 +6,21 @@ dimensions:
     criterion: >
       Does the agent cover its stated scope end-to-end? Penalize missing workflow
       phases, undocumented edge cases, and gaps between the stated trigger and
-      the actual execution path.
+      the actual execution path. Measurable proxies (folded in, not a new
+      dimension): the frontmatter description — the dispatch-time signal a
+      Task-tool orchestrator reads to pick this agent — sits within a 20-2000
+      char context-load budget (wider than skill’s 20-500: Claude Code's own
+      convention embeds few-shot <example> blocks directly in an agent's
+      description, unlike a skill's single-sentence trigger), is free of curated
+      no-op phrases, and does not restate the body near-verbatim. Progressive
+      disclosure (references/*.md) does NOT apply here — agents in this repo
+      are flat single-file documents with no companion references/ directory
+      convention, unlike skills. Whether the description's wording will actually
+      read well to a dispatching orchestrator is genuinely subjective — judge
+      that here, in the two-call seam, not via a deterministic proxy.
     anchors:
-      excellent: "Full workflow from intake to delivery; every phase has explicit steps and exit conditions."
-      poor: "Scope claims coverage but execution path skips phases or leaves edge cases unhandled."
+      excellent: "Full workflow from intake to delivery; every phase has explicit steps and exit conditions; description is tight, within budget, and not duplicated from the body."
+      poor: "Scope claims coverage but execution path skips phases, leaves edge cases unhandled, or the description is vague, no-op-heavy, or duplicated from the body."
 
   - name: role-clarity
     weight: 0.25

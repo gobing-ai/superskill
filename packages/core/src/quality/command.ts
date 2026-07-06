@@ -1,4 +1,13 @@
-import { clamp, extractBody, parseFrontmatterSafe, scoreClarityFromDensities, scorePresence } from './heuristics';
+import {
+    clamp,
+    duplicationRatio,
+    extractBody,
+    noOpDensity,
+    parseFrontmatterSafe,
+    scoreClarityFromDensities,
+    scoreDescriptionBudget,
+    scorePresence,
+} from './heuristics';
 import { computeAggregate, type DimensionScore, type QualityReport, REQUIRED_FIELDS } from './types';
 
 // ── Dimension Scorers ──────────────────────────────────────────────────────────
@@ -27,8 +36,33 @@ function scoreCompleteness(data: Record<string, unknown>): DimensionScore {
     return { score, note, findings, recommendations: recs };
 }
 
-function scoreClarity(body: string): DimensionScore {
-    return scoreClarityFromDensities(body);
+function scoreClarity(body: string, description: string): DimensionScore {
+    const base = scoreClarityFromDensities(body);
+    // Description quality (R2): a slash command's description is its trigger surface —
+    // same context-load and no-op/duplication concerns as a skill description. Folded
+    // into clarity (not a new dimension) since command's fixed registry has no separate
+    // conciseness dimension and clarity's existing criterion already covers description quality.
+    const budgetScore = description ? scoreDescriptionBudget(description) : 1;
+    const noOp = noOpDensity(description);
+    const descDup = description ? duplicationRatio(description, body, 12) : 0;
+    const score = clamp(base.score * budgetScore * (1 - noOp) * (1 - descDup));
+
+    const findings = [...(base.findings ?? [])];
+    const recommendations = [...(base.recommendations ?? [])];
+    if (budgetScore < 1) {
+        findings.push(`Description is ${description.length} chars, outside the 20\u2013500 char budget.`);
+        recommendations.push('Tighten the description to what the command does and when to use it.');
+    }
+    if (noOp > 0.2) {
+        findings.push('Description contains default-behavior phrases that add no signal (no-op candidates).');
+        recommendations.push('Delete no-op phrasing from the description rather than trimming it.');
+    }
+    if (descDup > 0.3) {
+        findings.push('Description restates body text near-verbatim (duplication).');
+        recommendations.push('State the command purpose once in the description; do not repeat it in the body.');
+    }
+
+    return { score, note: base.note, findings, recommendations };
 }
 
 function scoreArgumentHints(data: Record<string, unknown>): DimensionScore {
@@ -164,7 +198,7 @@ export function evaluateCommand(content: string, target: string): QualityReport 
 
     const dimensions: Record<string, DimensionScore> = {
         completeness: scoreCompleteness(data),
-        clarity: scoreClarity(body),
+        clarity: scoreClarity(body, typeof data.description === 'string' ? data.description : ''),
         'argument-hints': scoreArgumentHints(data),
         'tool-references': scoreToolReferences(body, data),
         'slash-syntax': scoreSlashSyntax(body, target),

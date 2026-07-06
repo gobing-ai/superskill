@@ -19,6 +19,12 @@ export interface ScaffoldOptions {
     template?: string;
     /** Comma-separated or array tool names to pre-populate frontmatter `tools:`. */
     tools?: string[] | string;
+    /**
+     * Invocation mode (skill type only): `'user'` emits `disable-model-invocation: true`
+     * plus a one-line human-facing description guidance block; `'model'` (default) emits
+     * trigger-rich description guidance. No-op for non-skill types.
+     */
+    invocationMode?: 'user' | 'model';
 }
 
 const PLACEHOLDER_NAME = '<!-- NAME -->';
@@ -97,6 +103,30 @@ function mergeFrontmatterList(content: string, key: string, items: string[]): st
         newFmBody = fmBody.replace(pattern, `${key}: ${yamlValue}`);
     } else {
         newFmBody = `${fmBody}${key}: ${yamlValue}\n`;
+    }
+    return content.slice(0, fmStart) + newFmBody + content.slice(closePos);
+}
+
+/**
+ * Override or insert a frontmatter scalar key with an explicit raw value (e.g.
+ * `disable-model-invocation: true`). Same fence-scanning approach as
+ * {@link mergeFrontmatterList} (line-anchored `---` fences so a body HR is never
+ * mistaken for the closing fence), but for a single scalar rather than an array.
+ */
+function mergeFrontmatterScalar(content: string, key: string, value: string): string {
+    const fenceRe = /^---$/gm;
+    const matches = [...content.matchAll(fenceRe)];
+    if (matches.length < 2) return content;
+    const openPos = matches[0]?.index ?? 0;
+    const closePos = matches[1]?.index ?? 0;
+    const fmStart = openPos + 3;
+    const fmBody = content.slice(fmStart, closePos);
+    const pattern = new RegExp(`^${key}:.*$`, 'm');
+    let newFmBody: string;
+    if (pattern.test(fmBody)) {
+        newFmBody = fmBody.replace(pattern, `${key}: ${value}`);
+    } else {
+        newFmBody = `${fmBody}${key}: ${value}\n`;
     }
     return content.slice(0, fmStart) + newFmBody + content.slice(closePos);
 }
@@ -188,6 +218,28 @@ export async function scaffold(type: ContentType, name: string, opts: ScaffoldOp
     // agent → tools: ; skill/command/magent → allowed-tools:
     const toolField = type === 'agent' ? 'tools' : 'allowed-tools';
     content = mergeFrontmatterList(content, toolField, parseList(opts.tools));
+
+    // Invocation axis (R3/task 0070): skill-only. `invocationMode: 'user'` emits
+    // `disable-model-invocation: true` plus a one-line human-facing description
+    // guidance comment; `'model'` (default, and the no-op for every other type)
+    // emits trigger-rich description guidance instead. This is scaffold-time
+    // GUIDANCE only — it never overwrites an explicit --description; it only
+    // injects the frontmatter key and, when no description was supplied, a
+    // placeholder comment describing the shape the author should write.
+    if (type === 'skill' && opts.invocationMode === 'user') {
+        content = mergeFrontmatterScalar(content, 'disable-model-invocation', 'true');
+        if (!opts.description) {
+            content = content.replace(
+                /^description: *$/m,
+                'description: # One-line, human-facing: what this does, no trigger phrasing (user picks this skill directly)',
+            );
+        }
+    } else if (type === 'skill' && !opts.description) {
+        content = content.replace(
+            /^description: *$/m,
+            'description: # Trigger-rich: front-load the identity phrase, one branch per genuine "use when" case',
+        );
+    }
 
     const outDir = opts.output ?? cwd();
     mkdirSync(outDir, { recursive: true });

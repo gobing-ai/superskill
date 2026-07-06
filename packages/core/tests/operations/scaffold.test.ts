@@ -488,3 +488,84 @@ describe('scaffold', () => {
         expect(resolved).toBe(filePath);
     });
 });
+
+// ── invocation axis (task 0070 R3) ────────────────────────────────────────────
+
+describe('scaffold invocation axis', () => {
+    let tmpDir: string;
+
+    beforeEach(() => {
+        tmpDir = mkdtempSync(join(tmpdir(), 'superskill-scaffold-inv-test-'));
+    });
+
+    afterEach(() => {
+        if (tmpDir) rmSync(tmpDir, { recursive: true, force: true });
+    });
+
+    it('user mode emits disable-model-invocation and one-line description guidance', async () => {
+        const filePath = await scaffold('skill', 'user-mode', {
+            invocationMode: 'user',
+            output: tmpDir,
+        });
+
+        const content = readFileSync(filePath, 'utf-8');
+        expect(content).toContain('disable-model-invocation: true');
+        expect(content).toContain('description: # One-line, human-facing');
+    });
+
+    it('user mode preserves an explicit description', async () => {
+        const filePath = await scaffold('skill', 'user-desc', {
+            invocationMode: 'user',
+            description: 'Run the release checklist',
+            output: tmpDir,
+        });
+
+        const content = readFileSync(filePath, 'utf-8');
+        expect(content).toContain('disable-model-invocation: true');
+        expect(content).toContain('description: Run the release checklist');
+    });
+
+    it('model mode (default) emits trigger-rich description guidance and no disable key', async () => {
+        const filePath = await scaffold('skill', 'model-mode', { output: tmpDir });
+
+        const content = readFileSync(filePath, 'utf-8');
+        expect(content).not.toContain('disable-model-invocation');
+        expect(content).toContain('description: # Trigger-rich');
+    });
+
+    it('user mode replaces an existing disable-model-invocation key instead of duplicating it', async () => {
+        const originalHome = process.env.HOME;
+        try {
+            process.env.HOME = tmpDir;
+            const templateDir = join(tmpDir, '.superskill', 'templates', 'skill');
+            mkdirSync(templateDir, { recursive: true });
+            writeFileSync(
+                join(templateDir, 'default.md'),
+                '---\nname: <!-- NAME -->\ndescription: <!-- DESCRIPTION -->\ndisable-model-invocation: false\n---\n\n# <!-- NAME -->\n',
+            );
+
+            const filePath = await scaffold('skill', 'override-mode', {
+                invocationMode: 'user',
+                description: 'Run the checklist',
+                output: tmpDir,
+            });
+
+            const content = readFileSync(filePath, 'utf-8');
+            expect(content).toContain('disable-model-invocation: true');
+            expect(content).not.toContain('disable-model-invocation: false');
+        } finally {
+            process.env.HOME = originalHome;
+        }
+    });
+
+    it('invocation mode is skill-only: non-skill types never emit the disable key', async () => {
+        const filePath = await scaffold('command', 'user-cmd', {
+            invocationMode: 'user',
+            description: 'A command',
+            output: tmpDir,
+        });
+
+        const content = readFileSync(filePath, 'utf-8');
+        expect(content).not.toContain('disable-model-invocation');
+    });
+});

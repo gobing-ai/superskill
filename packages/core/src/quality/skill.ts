@@ -1,11 +1,18 @@
 import {
     clamp,
+    completionCheckability,
+    countTriggerBranches,
+    descriptionTriggerRichness,
+    duplicationRatio,
     extractBody,
     hasPattern,
     keywordDensity,
+    noOpDensity,
     parseErrorNote,
     parseFrontmatterSafe,
+    progressiveDisclosureShape,
     scoreClarityFromDensities,
+    scoreDescriptionBudget,
     scoreLength,
     scorePresence,
 } from './heuristics';
@@ -24,13 +31,14 @@ import { computeAggregate, type DimensionScore, type QualityReport, REQUIRED_FIE
 export function evaluateSkill(content: string, target: string): QualityReport {
     const data = parseFrontmatterSafe(content);
     const body = extractBody(content);
+    const description = typeof data?.description === 'string' ? data.description : '';
 
     const dimensions: Record<string, DimensionScore> = {
         completeness: scoreCompleteness(content, data, body),
         clarity: scoreClarity(body),
-        'trigger-accuracy': scoreTriggerAccuracy(body),
+        'trigger-accuracy': scoreTriggerAccuracy(body, description, data),
         'anti-hallucination': scoreAntiHallucination(body),
-        conciseness: scoreConciseness(body),
+        conciseness: scoreConciseness(body, description),
     };
 
     return {
@@ -55,7 +63,12 @@ function scoreCompleteness(content: string, data: Record<string, unknown> | null
     const required = REQUIRED_FIELDS.skill;
     const presence = scorePresence(presentKeys, required);
     const structure = hasPattern(body, [/^# /m, /^## /m, /^### /m]);
-    const score = clamp(presence * structure);
+    // Progressive-disclosure shape (R2): a body over budget with no references/ (or
+    // See Also / Additional Resources) disclosure is folded in as a completeness gap —
+    // it means the skill claims to cover its purpose but hasn't disclosed the detail
+    // that would make that coverage checkable.
+    const disclosed = progressiveDisclosureShape(body) ? 1 : 0.7;
+    const score = clamp(presence * structure * disclosed);
 
     const keySet = new Set(presentKeys);
     const missing = required.filter((f) => !keySet.has(f));
@@ -71,18 +84,47 @@ function scoreCompleteness(content: string, data: Record<string, unknown> | null
         findings.push('Body lacks section headings (# / ## / ###). Structure aids navigation.');
         recommendations.push('Organize content with markdown headings for progressive disclosure');
     }
+    if (disclosed < 1) {
+        findings.push('Body is over the disclosure budget with no references/ (or See Also) link.');
+        recommendations.push('Move supporting detail into references/*.md and link it, rather than growing the body.');
+    }
 
     return { score, note, findings, recommendations };
 }
 
 function scoreClarity(body: string): DimensionScore {
-    return scoreClarityFromDensities(body);
+    const base = scoreClarityFromDensities(body);
+    // Completion-criteria checkability (R2): for step/workflow-shaped bodies, penalize
+    // vague done-bounds ("as needed", "understanding reached") that make a step
+    // undecidable. Bodies with no step structure are unaffected (checkability returns 1).
+    const checkability = completionCheckability(body);
+    const score = clamp(base.score * checkability);
+
+    const findings = [...(base.findings ?? [])];
+    const recommendations = [...(base.recommendations ?? [])];
+    if (checkability < 1) {
+        findings.push('Step-shaped content uses vague completion bounds (e.g. "as needed", "when ready").');
+        recommendations.push('Replace vague bounds with a decidable done-condition per step.');
+    }
+
+    return { score, note: base.note, findings, recommendations };
 }
 
-function scoreTriggerAccuracy(body: string): DimensionScore {
-    const count = countTriggerPhrases(body);
+function scoreTriggerAccuracy(body: string, description: string, data: Record<string, unknown> | null): DimensionScore {
+    // Invocation axis (R3/task 0070): a user-invoked skill (disable-model-invocation:
+    // true) is deliberately NOT trigger-rich — the human is the index, not a dispatching
+    // orchestrator, so branch-counting the description-vs-mode is the correct scoring
+    // question here, not "how many When-to-Use branches does this have". Score the
+    // description's shape against its declared mode instead of the branch count.
+    const userInvoked = data?.['disable-model-invocation'] === true;
+    if (userInvoked) {
+        return scoreUserInvokedDescription(description);
+    }
 
-    // Score 1.0 for 3–10 triggers; linear ramp below 3, linear drop above 10
+    const phrases = collectTriggerPhrases(body, description);
+    const count = countTriggerBranches(phrases);
+
+    // Score 1.0 for 3–10 distinct branches; linear ramp below 3, linear drop above 10.
     let score: number;
     if (count >= 3 && count <= 10) {
         score = 1.0;
@@ -95,14 +137,53 @@ function scoreTriggerAccuracy(body: string): DimensionScore {
     const findings: string[] = [];
     const recommendations: string[] = [];
     if (count < 3) {
-        findings.push(`Only ${count} trigger phrase(s) found; aim for 3–10 for reliable skill activation.`);
-        recommendations.push('Add 1–2 more When-to-Use scenarios or trigger phrase patterns to the description.');
+        findings.push(`Only ${count} distinct trigger branch(es) found; aim for 3–10 for reliable skill activation.`);
+        recommendations.push('Add 1–2 more When-to-Use scenarios covering genuinely distinct branches.');
     } else if (count > 10) {
-        findings.push(`${count} trigger phrases may cause overlap with adjacent skills.`);
+        findings.push(`${count} distinct trigger branches may cause overlap with adjacent skills.`);
         recommendations.push('Consolidate overlapping triggers or narrow the activation scope.');
     }
+    if (phrases.length > count) {
+        findings.push(
+            `${phrases.length} trigger phrase(s) collapse to ${count} distinct branch(es) — some are synonym clusters.`,
+        );
+        recommendations.push('Collapse synonym-cluster triggers into one phrase per genuine branch.');
+    }
 
-    return { score, note: `${count} trigger phrases found`, findings, recommendations };
+    return {
+        score,
+        note: `${count} distinct trigger branch(es) (${phrases.length} phrases)`,
+        findings,
+        recommendations,
+    };
+}
+
+/**
+ * Score a user-invoked skill's description against the "one-line, human-facing"
+ * shape it should have (the inverse check of the model-invoked branch-count path
+ * above). High trigger-richness here is a finding, not an asset — a human already
+ * picked this skill directly; a dispatch-branch list is wasted context for them.
+ */
+function scoreUserInvokedDescription(description: string): DimensionScore {
+    const richness = descriptionTriggerRichness(description);
+    const score = clamp(1 - richness);
+
+    const findings: string[] = [];
+    const recommendations: string[] = [];
+    if (richness > 0.4) {
+        findings.push(
+            'This skill is user-invoked (disable-model-invocation: true) but the description reads ' +
+                'trigger-rich. A user-invoked skill cannot be fired by other skills or commands.',
+        );
+        recommendations.push('Rewrite the description as a one-line, human-facing summary — no branch list.');
+    }
+
+    return {
+        score,
+        note: `User-invoked: description trigger-richness ${richness.toFixed(2)} (lower is better)`,
+        findings,
+        recommendations,
+    };
 }
 
 function scoreAntiHallucination(body: string): DimensionScore {
@@ -130,26 +211,72 @@ function scoreAntiHallucination(body: string): DimensionScore {
     return { score: density, note, findings, recommendations };
 }
 
-function scoreConciseness(body: string): DimensionScore {
+function scoreConciseness(body: string, description: string): DimensionScore {
     // 500–15000 chars ≈ 15–500 lines of markdown. A rich skill body (e.g. cc-skills at ~14k)
     // should not auto-zero; 15000 accommodates complete multi-section skills.
-    const score = scoreLength(body, 500, 15000);
-    return { score, note: `Body length: ${body.length} chars` };
+    const lengthScore = scoreLength(body, 500, 15000);
+    // Description char-budget (context load): a model-invoked description sits in
+    // context every turn it's a candidate, so it pays a separate, tighter budget.
+    const budgetScore = description ? scoreDescriptionBudget(description) : 1;
+    // No-op density: curated default-behavior phrases ("be helpful", "think carefully")
+    // that don't change model behavior — candidates for deletion, not trimming.
+    const noOp = noOpDensity(body);
+    // Duplication: description restated in the body, or repeated prose n-grams within the
+    // body. Uses a 12-word shingle (not 8) so short repeated identifiers (filenames, CLI
+    // examples like `AGENTS.md`) that legitimately recur across a reference list don't
+    // register as duplication — only genuinely restated prose passages do.
+    const descDup = description ? duplicationRatio(description, body, 12) : 0;
+    const bodyDup = duplicationRatio(body, undefined, 12);
+
+    const score = clamp(lengthScore * budgetScore * (1 - noOp) * (1 - descDup) * (1 - bodyDup * 0.3));
+
+    const findings: string[] = [];
+    const recommendations: string[] = [];
+    if (budgetScore < 1) {
+        findings.push(`Description is ${description.length} chars, outside the 20–500 char budget.`);
+        recommendations.push('Tighten the description to the identity phrase plus distinct trigger branches.');
+    }
+    if (noOp > 0.2) {
+        findings.push('Body contains default-behavior phrases that do not change model behavior (no-op candidates).');
+        recommendations.push('Delete no-op instructions rather than trimming them — they add no signal.');
+    }
+    if (descDup > 0.3) {
+        findings.push('Body restates the description near-verbatim (duplication).');
+        recommendations.push('State identity once in the description; do not repeat it in the body.');
+    }
+    if (bodyDup > 0.15) {
+        findings.push('Body repeats the same phrasing (n-gram duplication) in multiple places.');
+        recommendations.push('Collapse duplicated phrasing into one authoritative section; cite it elsewhere.');
+    }
+
+    return { score, note: `Body length: ${body.length} chars`, findings, recommendations };
 }
 
-// ── Trigger Phrase Counter ────────────────────────────────────────────────────
+// ── Trigger Phrase Collection ─────────────────────────────────────────────────
 
 /**
- * Count trigger phrases in the body by locating trigger-related sections
- * (headings containing "trigger" or "when to use") and counting list items
- * within them. Falls back to counting all top-level list items if no
- * trigger-specific section is found.
+ * Collect candidate trigger phrases from the body's dedicated trigger section
+ * (a heading containing "trigger" or "when to use"). When no such section
+ * exists, fall back to reading distinct branches from the frontmatter
+ * description instead. Does NOT fall back to counting every list item in the
+ * body — that fallback previously inflated unrelated skills (e.g. hooks,
+ * cc-skills) to 30+ "triggers" by counting ordinary procedure bullets. A
+ * skill with a genuine trigger section is scored on that section ALONE — the
+ * description is not double-counted on top of it, or a 5-branch "When to Use"
+ * list plus a 6-clause description would look like 11+ branches.
  */
-function countTriggerPhrases(body: string): number {
+function collectTriggerPhrases(body: string, description: string): string[] {
+    const fromSection = triggerSectionPhrases(body);
+    if (fromSection.length > 0) return fromSection;
+    return descriptionTriggerPhrases(description);
+}
+
+/** List items found within a heading containing "trigger" or "when to use". */
+function triggerSectionPhrases(body: string): string[] {
     const lines = body.split('\n');
     let inTriggerSection = false;
     let sectionDepth = 0;
-    let count = 0;
+    const phrases: string[] = [];
 
     for (const line of lines) {
         const headingMatch = line.match(/^(#{1,6})\s+(.+)/);
@@ -161,28 +288,36 @@ function countTriggerPhrases(body: string): number {
                 inTriggerSection = true;
                 sectionDepth = depth;
             } else if (inTriggerSection && depth <= sectionDepth) {
-                // Exited the trigger section
                 inTriggerSection = false;
             }
             continue;
         }
         if (inTriggerSection) {
-            // Count list items (unordered: -, *, +  or  ordered: 1., 2), etc.)
-            if (/^\s*[-*+]\s/.test(line) || /^\s*\d+[.)]\s/.test(line)) {
-                count++;
+            const listMatch = line.match(/^\s*(?:[-*+]|\d+[.)])\s+(.+)/);
+            if (listMatch?.[1]) {
+                phrases.push(listMatch[1].replace(/^["']|["']$/g, '').trim());
             }
         }
     }
 
-    // Fallback: if no trigger section found, count top-level list items
-    // in the entire body as approximate trigger count
-    if (count === 0) {
-        for (const line of lines) {
-            if (/^\s*[-*+]\s/.test(line) || /^\s*\d+[.)]\s/.test(line)) {
-                count++;
-            }
-        }
-    }
+    return phrases;
+}
 
-    return count;
+/**
+ * Split a description into candidate trigger phrases on common branch delimiters
+ * (commas, semicolons, " or ", " when "). Used when the body has no dedicated
+ * trigger section — the description is the only remaining signal for what a skill
+ * fires on, so we read distinct branches from it instead of guessing from bullets
+ * that describe procedure, not activation.
+ */
+function descriptionTriggerPhrases(description: string): string[] {
+    if (!description) return [];
+    // Split on quoted-phrase commas/semicolons/"or" only — NOT on "when", which appears
+    // in ordinary lead-in prose ("Use this skill when the user asks to...") far more often
+    // than as a genuine branch delimiter, and would wrongly split the lead-in itself into
+    // a spurious extra branch.
+    return description
+        .split(/[,;]|(?:\bor\b)/i)
+        .map((s) => s.trim())
+        .filter((s) => s.length > 3);
 }

@@ -3,6 +3,7 @@ import { dirname, join } from 'node:path';
 import { parseFrontmatter } from '../content/frontmatter';
 import { resolveContentPath } from '../content/identity';
 import type { ContentType } from '../content/types';
+import { descriptionTriggerRichness } from '../quality/heuristics';
 import { KNOWN_HOOK_EVENTS } from '../quality/hook';
 import { REQUIRED_FIELDS } from '../quality/types';
 import type { Target } from '../targets';
@@ -51,6 +52,7 @@ const FIELD_TYPES: Record<ContentType, Record<string, FieldTypeDef>> = {
         name: { type: 'string' },
         description: { type: 'string' },
         'allowed-tools': { type: 'array' },
+        'disable-model-invocation': { type: 'boolean' },
     },
     command: {
         name: { type: 'string' },
@@ -258,6 +260,13 @@ export function _validateContent(type: ContentType, content: string, opts?: Vali
     // 7. Strict checks
     if (opts?.strict) {
         findings.push(...strictChecks(type, data, body));
+        // 7b. Invocation-axis mode/description mismatch (R3/task 0070, skill only).
+        // Advisory/heuristic like the other description-quality strict checks below —
+        // gated behind --strict so it never surprises a caller checking only hard schema
+        // validity (mirrors how "description too short" already behaves).
+        if (type === 'skill') {
+            findings.push(...checkInvocationModeMismatch(data));
+        }
     }
 
     const valid = !findings.some((f) => f.severity === 'error');
@@ -404,6 +413,54 @@ function checkLinkValidity(
         }
     }
 
+    return findings;
+}
+
+// ── Invocation Axis ──────────────────────────────────────────────────────────
+
+/** Trigger-richness score at or above this reads as "model-invoked shaped". */
+const TRIGGER_RICH_THRESHOLD = 0.4;
+/** Trigger-richness score at or below this reads as "one-line human-facing shaped". */
+const ONE_LINE_THRESHOLD = 0.15;
+
+/**
+ * Flag a mismatch between the declared invocation mode (`disable-model-invocation`)
+ * and the description's actual shape (R3/task 0070):
+ * - `disable-model-invocation: true` (user-invoked) with a trigger-rich description
+ *   wastes a branch-list on a reader who already picked this skill directly, and
+ *   warns that a user-invoked skill cannot be fired by other skills/commands.
+ * - Model-invoked (the default) with a bare one-line, non-trigger description gives
+ *   the dispatching orchestrator no branch signal to select on.
+ * Mid-range scores are ambiguous by design and are not flagged — this is a shape
+ * proxy, not a semantic judge (consistent with D6: no heuristic overreach).
+ */
+function checkInvocationModeMismatch(data: Record<string, unknown>): Finding[] {
+    const findings: Finding[] = [];
+    const description = typeof data.description === 'string' ? data.description : '';
+    if (!description) return findings;
+    const userInvoked = data['disable-model-invocation'] === true;
+    const richness = descriptionTriggerRichness(description);
+
+    if (userInvoked && richness >= TRIGGER_RICH_THRESHOLD) {
+        findings.push({
+            severity: 'warning',
+            field: 'invocation-mode',
+            message:
+                'disable-model-invocation is true (user-invoked) but the description reads ' +
+                'trigger-rich (branch/dispatch phrasing). A user-invoked skill cannot be fired ' +
+                'by other skills or commands — rewrite the description as a one-line, ' +
+                'human-facing summary instead.',
+        });
+    } else if (!userInvoked && richness <= ONE_LINE_THRESHOLD) {
+        findings.push({
+            severity: 'warning',
+            field: 'invocation-mode',
+            message:
+                'This skill is model-invoked (disable-model-invocation is absent/false) but the ' +
+                'description reads like a bare one-liner with no trigger phrasing. The dispatching ' +
+                'orchestrator needs distinct "use when" branches to select this skill reliably.',
+        });
+    }
     return findings;
 }
 

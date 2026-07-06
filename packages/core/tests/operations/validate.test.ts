@@ -523,3 +523,41 @@ describe('validate — body-link integrity', () => {
         }
     });
 });
+
+// ── Invocation axis — mode/description mismatch (task 0070 R3) ───────────────
+
+describe('_validateContent — invocation-mode mismatch (strict)', () => {
+    const richDescription =
+        '"Use when releasing, deploying, or tagging; triggers on release requests, deploy requests, whenever a version bump lands"';
+
+    it('flags a user-invoked skill with a trigger-rich description and warns about the dispatch break', () => {
+        const content = fm('x', { description: richDescription, 'disable-model-invocation': true });
+        const result = _validateContent('skill', content, { strict: true });
+        const finding = result.findings.find((f) => f.field === 'invocation-mode');
+        expect(finding?.severity).toBe('warning');
+        expect(finding?.message).toContain('cannot be fired by other skills');
+    });
+
+    it('flags a model-invoked skill whose description has no trigger phrasing', () => {
+        const content = fm('x', { description: 'Runs checks' });
+        const result = _validateContent('skill', content, { strict: true });
+        const finding = result.findings.find((f) => f.field === 'invocation-mode');
+        expect(finding?.severity).toBe('warning');
+        expect(finding?.message).toContain('model-invoked');
+    });
+
+    it('does not flag a matched pair (user-invoked + one-line description)', () => {
+        const content = fm('x', {
+            description: 'Run the release checklist end to end',
+            'disable-model-invocation': true,
+        });
+        const result = _validateContent('skill', content, { strict: true });
+        expect(result.findings.filter((f) => f.field === 'invocation-mode')).toHaveLength(0);
+    });
+
+    it('never fires outside --strict', () => {
+        const content = fm('x', { description: richDescription, 'disable-model-invocation': true });
+        const result = _validateContent('skill', content);
+        expect(result.findings.filter((f) => f.field === 'invocation-mode')).toHaveLength(0);
+    });
+});

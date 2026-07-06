@@ -1,4 +1,13 @@
-import { clamp, extractBody, keywordDensity, parseErrorNote, parseFrontmatterSafe, scoreLength } from './heuristics';
+import {
+    clamp,
+    duplicationRatio,
+    extractBody,
+    keywordDensity,
+    noOpDensity,
+    parseErrorNote,
+    parseFrontmatterSafe,
+    scoreLength,
+} from './heuristics';
 import { computeAggregate, DIMENSION_REGISTRY, type DimensionScore, type QualityReport } from './types';
 
 // Governance section patterns for main-agent configs (frontmatter-optional)
@@ -78,11 +87,34 @@ function scorePlatformCoverage(data: Record<string, unknown>, body: string): Dim
     return { score, note: `${platforms.length} platforms covered`, findings, recommendations: recs };
 }
 
-/** Score body length within 1000–8000 sweet spot. */
+/**
+ * Score body length within 1000–8000 sweet spot, penalized by no-op density and
+ * within-body n-gram duplication (R2). A magent config (AGENTS.md/CLAUDE.md) has no
+ * separate description field — it's read wholesale rather than dispatch-selected — so
+ * only the body-quality proxies apply here, not the description-budget check.
+ */
 function scoreConciseness(body: string): DimensionScore {
+    const lengthScore = scoreLength(body, 1000, 8000);
+    const noOp = noOpDensity(body);
+    const bodyDup = duplicationRatio(body, undefined, 12);
+    const score = clamp(lengthScore * (1 - noOp) * (1 - bodyDup * 0.3));
+
+    const findings: string[] = [];
+    const recs: string[] = [];
+    if (noOp > 0.2) {
+        findings.push('Body contains default-behavior phrases that do not change model behavior (no-op candidates).');
+        recs.push('Delete no-op instructions rather than trimming them — they add no signal.');
+    }
+    if (bodyDup > 0.15) {
+        findings.push('Body repeats the same phrasing (n-gram duplication) in multiple places.');
+        recs.push('Collapse duplicated phrasing into one authoritative section; cite it elsewhere.');
+    }
+
     return {
-        score: scoreLength(body, 1000, 8000),
+        score,
         note: `Body length: ${body.length} chars`,
+        findings: findings.length > 0 ? findings : undefined,
+        recommendations: recs.length > 0 ? recs : undefined,
     };
 }
 

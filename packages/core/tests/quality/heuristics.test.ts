@@ -2,12 +2,18 @@ import { describe, expect, it } from 'bun:test';
 
 import {
     clamp,
+    completionCheckability,
+    countTriggerBranches,
+    duplicationRatio,
     extractBody,
     hasPattern,
     keywordDensity,
+    noOpDensity,
     parseErrorNote,
     parseFrontmatterSafe,
+    progressiveDisclosureShape,
     scoreClarityFromDensities,
+    scoreDescriptionBudget,
     scoreLength,
     scorePresence,
 } from '../../src/quality/heuristics';
@@ -293,5 +299,172 @@ describe('parseErrorNote', () => {
             expect(result.score).toBe(0.5); // (0-0)/2 + 0.5
             expect(result.note).toBe('Good imperative style');
         });
+    });
+});
+
+// ── scoreDescriptionBudget (R2, task 0070) ──────────────────────────────────────
+
+describe('scoreDescriptionBudget', () => {
+    it('returns 1.0 for a description within the default 20-500 char budget', () => {
+        const desc = 'Use this skill when the user asks to review code for security issues.';
+        expect(scoreDescriptionBudget(desc)).toBe(1);
+    });
+
+    it('ramps down for a description shorter than the min', () => {
+        expect(scoreDescriptionBudget('short', 20, 500)).toBeLessThan(1);
+    });
+
+    it('ramps down for a description longer than the max', () => {
+        const desc = 'x'.repeat(600);
+        expect(scoreDescriptionBudget(desc, 20, 500)).toBeLessThan(1);
+    });
+});
+
+// ── noOpDensity (R2, task 0070) ──────────────────────────────────────────────────
+
+describe('noOpDensity', () => {
+    it('returns 0 when no imperative or no-op phrases are present', () => {
+        expect(noOpDensity('a plain sentence with nothing directive')).toBe(0);
+    });
+
+    it('returns 0 when imperative keywords dominate with no no-op phrases', () => {
+        const body = 'You must validate input. Always ensure correctness. Never skip verification.';
+        expect(noOpDensity(body)).toBe(0);
+    });
+
+    it('returns high density when no-op phrases dominate over genuine imperatives', () => {
+        const body = 'Be helpful. Think carefully. Do your best. Be thorough. Stay focused.';
+        expect(noOpDensity(body)).toBeGreaterThan(0.5);
+    });
+
+    it('returns a mixed ratio when both are present', () => {
+        const body = 'You must validate input. Be helpful and think carefully.';
+        const density = noOpDensity(body);
+        expect(density).toBeGreaterThan(0);
+        expect(density).toBeLessThan(1);
+    });
+});
+
+// ── duplicationRatio (R2, task 0070) ────────────────────────────────────────────
+
+describe('duplicationRatio', () => {
+    it('returns 0 for text shorter than the shingle size', () => {
+        expect(duplicationRatio('too short', undefined, 8)).toBe(0);
+    });
+
+    it('returns 0 for a body with no repeated n-grams', () => {
+        const body =
+            'This section describes the first distinct procedure in full detail. ' +
+            'This next section describes an entirely different second procedure with unique words.';
+        expect(duplicationRatio(body, undefined, 8)).toBe(0);
+    });
+
+    it('returns > 0 when a phrase repeats verbatim within the body', () => {
+        const phrase = 'always validate the input before processing the request further';
+        const body = `${phrase}. Some other content here. ${phrase}.`;
+        expect(duplicationRatio(body, undefined, 8)).toBeGreaterThan(0);
+    });
+
+    it('detects duplication between two different texts (description vs body)', () => {
+        const shared = 'creates validates evaluates refines and evolves subagent definitions across platforms';
+        const description = shared;
+        const body = `## Overview
+${shared}
+More unrelated detail follows in the body.`;
+        expect(duplicationRatio(description, body, 8)).toBeGreaterThan(0);
+    });
+
+    it('returns 0 when other text has no overlapping shingles', () => {
+        const description = 'alpha bravo charlie delta echo foxtrot golf hotel india juliet';
+        const body = 'unrelated words that share nothing at all with the description text here';
+        expect(duplicationRatio(description, body, 8)).toBe(0);
+    });
+});
+
+// ── countTriggerBranches (R2, task 0070) ─────────────────────────────────────────
+
+describe('countTriggerBranches', () => {
+    it('counts each distinct phrase as its own branch when phrases share no words', () => {
+        const phrases = ['review code for bugs', 'deploy to production', 'write unit tests'];
+        expect(countTriggerBranches(phrases)).toBe(3);
+    });
+
+    it('collapses synonym-cluster phrases into one branch', () => {
+        const phrases = ['review this code', 'review the code', 'review code'];
+        expect(countTriggerBranches(phrases)).toBe(1);
+    });
+
+    it('returns 0 for an empty phrase list', () => {
+        expect(countTriggerBranches([])).toBe(0);
+    });
+
+    it('returns 1 for a single phrase', () => {
+        expect(countTriggerBranches(['audit this PR'])).toBe(1);
+    });
+
+    it('distinguishes clusters correctly in a mixed list', () => {
+        const phrases = [
+            'review this code',
+            'review the code',
+            'deploy to staging',
+            'deploy to production',
+            'write a test',
+        ];
+        // "review this code" / "review the code" cluster (share this/the + review/code);
+        // "deploy to staging" / "deploy to production" share deploy/to but differ enough
+        // in remaining word (staging vs production) — verify branch count is between 3 and 5.
+        const count = countTriggerBranches(phrases);
+        expect(count).toBeGreaterThanOrEqual(3);
+        expect(count).toBeLessThanOrEqual(5);
+    });
+});
+
+// ── completionCheckability (R2, task 0070) ──────────────────────────────────────
+
+describe('completionCheckability', () => {
+    it('returns 1.0 for bodies with no step/numbered structure (not applicable)', () => {
+        expect(completionCheckability('Just prose with no steps or checklists at all.')).toBe(1);
+    });
+
+    it('returns 1.0 for numbered steps with no vague completion bounds', () => {
+        const body = '1. Read the file\n2. Validate the schema\n3. Write the output';
+        expect(completionCheckability(body)).toBe(1);
+    });
+
+    it('penalizes numbered steps that use vague completion bounds', () => {
+        const body =
+            '1. Investigate the issue\n2. Continue as needed\n3. Stop when understanding reached\n4. as appropriate';
+        expect(completionCheckability(body)).toBeLessThan(1);
+    });
+
+    it('applies to checklist-style steps ("- [ ]") as well as numbered lists', () => {
+        const body = '- [ ] Investigate\n- [ ] Continue as needed\n- [ ] Verify as necessary';
+        expect(completionCheckability(body)).toBeLessThan(1);
+    });
+});
+
+// ── progressiveDisclosureShape (R2, task 0070) ──────────────────────────────────
+
+describe('progressiveDisclosureShape', () => {
+    it('returns true for a body under the default 8000-char budget', () => {
+        expect(progressiveDisclosureShape('short body', 8000)).toBe(true);
+    });
+
+    it('returns true for an over-budget body that discloses via references/', () => {
+        const body = `${'x'.repeat(9000)}
+See references/workflows.md for detail.`;
+        expect(progressiveDisclosureShape(body, 8000)).toBe(true);
+    });
+
+    it('returns true for an over-budget body with a "See Also" section', () => {
+        const body = `${'x'.repeat(9000)}
+## See Also
+More links here.`;
+        expect(progressiveDisclosureShape(body, 8000)).toBe(true);
+    });
+
+    it('returns false for an over-budget body with no disclosure path', () => {
+        const body = 'x'.repeat(9000);
+        expect(progressiveDisclosureShape(body, 8000)).toBe(false);
     });
 });

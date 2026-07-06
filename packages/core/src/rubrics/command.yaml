@@ -1,4 +1,4 @@
-version: 1
+version: 2
 type: command
 dimensions:
   - name: completeness
@@ -16,10 +16,17 @@ dimensions:
     criterion: >
       Is the command's purpose and usage unambiguous? The description should
       tell the user what it does and when to use it. Penalize descriptions
-      that restate the command name without adding information.
+      that restate the command name without adding information. Measurable
+      proxies (folded in, not a new dimension): description sits within a
+      20-500 char context-load budget; description is free of curated no-op
+      phrases ("be helpful", "think carefully") that add no signal; description
+      does not restate the command body near-verbatim (n-gram duplication).
+      Whether the description's actual WORDING is well-chosen for the intended
+      audience is genuinely subjective — judge that here, in the two-call seam,
+      not via a deterministic proxy.
     anchors:
-      excellent: "Description states what the command does, when to use it, and what the output means."
-      poor: "Description restates the command name; user cannot tell when to use it."
+      excellent: "Description states what the command does, when to use it, and what the output means, within budget, with no no-op or duplicated phrasing."
+      poor: "Description restates the command name, exceeds the context-load budget, or duplicates the body verbatim; user cannot tell when to use it."
 
   - name: argument-hints
     weight: 0.20
