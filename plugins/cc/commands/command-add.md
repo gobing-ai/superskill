@@ -50,6 +50,12 @@ A freshly scaffolded command PASSes the project's own evaluator (`superskill com
 /cc:command-add install-plugin --template plugin
 ```
 
+## Discovery Discipline
+
+Before scaffolding, run the grill-style discovery interview — explore sibling artifacts, the
+target repo, and prior evaluations first; then one question at a time, each with a recommended
+answer. Single copy: **cc:cc-skills** workflows reference § "Grill-style discovery".
+
 ## Implementation
 
 Pass `$ARGUMENTS` to the underlying skill for processing.

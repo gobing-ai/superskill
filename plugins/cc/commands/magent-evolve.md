@@ -50,6 +50,13 @@ Analyze main agent config quality over time, persist refine-backed proposals, ap
 /cc:magent-evolve AGENTS.md --rollback magent-evolve-2026-06-22-001 --confirm
 ```
 
+## Failure-Mode Tags
+
+Every proposed change authored for `--ingest` carries a `failure_mode` field naming the failure
+mode it cures: `sprawl`, `sediment`, `duplication`, `no-op`, or `premature-completion`. The CLI
+rejects unknown tags on ingest and persists valid ones in proposal history, so `--history` reads
+as a failure-mode ledger. Definitions: **cc:cc-skills** skill-engineering theory reference.
+
 ## Implementation
 
 Pass `$ARGUMENTS` to the underlying skill for processing.

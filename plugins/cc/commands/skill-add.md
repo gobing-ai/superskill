@@ -27,7 +27,14 @@ Scaffold a new skill directory with `SKILL.md` from a tiered template. Delegates
 | `--template` | Template tier: `technique`, `pattern`, or `reference` | default |
 | `--skills` | Comma-separated skill names to pre-populate frontmatter | (none) |
 | `--tools` | Comma-separated tool names to pre-populate frontmatter | (tier default) |
+| `--invocation-mode` | `user` (emits `disable-model-invocation: true` + one-line human-facing description) or `model` (trigger-rich description) | model |
 | `--force` | Overwrite existing file | false |
+
+## Discovery Discipline
+
+Before scaffolding, run the grill-style discovery interview — explore sibling skills, the target
+repo, and prior evaluations first; then one question at a time, each with a recommended answer.
+Single copy: **cc:cc-skills** workflows reference § "Grill-style discovery".
 
 ## Template Tiers
 
@@ -48,6 +55,8 @@ A freshly scaffolded skill PASSes the project's own evaluator (`superskill skill
 /cc:skill-add deploy-skill --template technique --tools Read,Write,Bash
 # Scaffold a reference-tier skill
 /cc:skill-add api-ref --template reference
+# Scaffold a user-invoked skill (human picks it directly; other skills cannot fire it)
+/cc:skill-add release-runner --invocation-mode user --description "Run the release checklist"
 ```
 
 ## Implementation

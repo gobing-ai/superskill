@@ -48,6 +48,12 @@ Skill(skill="cc:cc-magents", args="scaffold $ARGUMENTS")
 superskill magent scaffold $ARGUMENTS
 ```
 
+## Discovery Discipline
+
+Before scaffolding, run the grill-style discovery interview — explore sibling artifacts, the
+target repo, and prior evaluations first; then one question at a time, each with a recommended
+answer. Single copy: **cc:cc-skills** workflows reference § "Grill-style discovery".
+
 ## Platform Notes
 
 - Claude Code: Invoke via `Skill()` delegation

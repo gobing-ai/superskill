@@ -50,6 +50,12 @@ A freshly scaffolded agent PASSes the project's own evaluator (`superskill agent
 /cc:agent-add router --template minimal --skills cc-router
 ```
 
+## Discovery Discipline
+
+Before scaffolding, run the grill-style discovery interview — explore sibling artifacts, the
+target repo, and prior evaluations first; then one question at a time, each with a recommended
+answer. Single copy: **cc:cc-skills** workflows reference § "Grill-style discovery".
+
 ## Implementation
 
 Pass `$ARGUMENTS` to the underlying skill for processing.

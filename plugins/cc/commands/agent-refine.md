@@ -36,6 +36,14 @@ Run evaluation, apply deterministic structural fixes (missing fields, type coerc
 /cc:agent-refine ./agents/my-agent.md --dry-run
 ```
 
+## Content Fix Types
+
+Beyond deterministic structural fixes, refine applies two named content fix types: **description
+prune** (three description rules: front-loaded identity, one trigger per branch, no body
+restatement) and the **pruning pass** (no-op hunt — delete don't trim; duplication collapse;
+sediment removal; disclosure moves). Single copy: **cc:cc-skills** workflows reference § "Content
+fix types".
+
 ## Implementation
 
 Pass `$ARGUMENTS` to the underlying skill for processing.
