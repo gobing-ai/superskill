@@ -6,7 +6,7 @@
     },
     "plugins": [
         {
-            "version": "0.2.9",
+            "version": "0.2.10",
             "name": "cc",
             "source": "./plugins/cc",
             "description": "superskill - a manager for multi-agent skill, slash command, subagent, hook, MCP and etc"
