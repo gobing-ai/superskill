@@ -1,5 +1,5 @@
 {
-    "rubric_version": 1,
+    "rubric_version": 2,
     "dimensions": {
         "completeness": { "score": 0.8, "note": "All sections present" },
         "clarity": { "score": 0.85, "note": "Clear instructions" },

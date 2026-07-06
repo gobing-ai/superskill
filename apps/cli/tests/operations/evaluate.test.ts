@@ -316,7 +316,7 @@ dimensions:
         writeFileSync(
             scoresFile,
             JSON.stringify({
-                rubric_version: 1,
+                rubric_version: 2,
                 dimensions: {
                     completeness: { score: 0.9, note: 'ok' },
                     clarity: { score: 0.8, note: 'clear' },
@@ -338,7 +338,7 @@ dimensions:
         writeFileSync(
             scoresFile,
             JSON.stringify({
-                rubric_version: 1,
+                rubric_version: 2,
                 dimensions: { completeness: { score: 0.5, note: 'ok' } },
             }),
         );
@@ -351,7 +351,7 @@ dimensions:
         writeFileSync(
             scoresFile,
             JSON.stringify({
-                rubric_version: 1,
+                rubric_version: 2,
                 dimensions: {
                     completeness: { score: 0.5, note: 'ok' },
                     clarity: { score: 0.5, note: 'ok' },
@@ -371,7 +371,7 @@ dimensions:
         writeFileSync(
             scoresFile,
             JSON.stringify({
-                rubric_version: 1,
+                rubric_version: 2,
                 dimensions: {
                     completeness: { score: 1.5, note: 'too high' },
                     clarity: { score: 0.5, note: 'ok' },

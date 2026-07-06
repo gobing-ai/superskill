@@ -100,12 +100,25 @@ export interface TrendEntry {
 }
 
 /** A concrete change proposed by the evolve operation. */
+/**
+ * Failure-mode taxonomy (task 0070 R5): every evolve proposal names the failure mode it
+ * cures, so proposal history doubles as a failure-mode ledger. Definitions live in
+ * cc-skills' skill-engineering-theory reference.
+ */
+export const FAILURE_MODES = ['sprawl', 'sediment', 'duplication', 'no-op', 'premature-completion'] as const;
+
+/** One of the five failure modes an evolve proposal may declare it cures. */
+export type FailureMode = (typeof FAILURE_MODES)[number];
+
+/** A single agent-authored change within an evolve proposal (the `changes[]` element shape). */
 export interface ProposedChange {
     dimension: string;
     location: string;
     current: string;
     proposed: string;
     reason: string;
+    /** Which failure mode this change cures (optional for hand-written proposals; validated when present). */
+    failure_mode?: FailureMode;
 }
 
 /** Result of an evolve() call: baseline/post scores, delta, changes applied, and proposal path. */
@@ -695,6 +708,16 @@ async function ingestProposal(
         if (!change.dimension || !change.location || !change.proposed || !change.reason) {
             throw Object.assign(
                 new Error(`Invalid ProposedChange: missing required field (dimension, location, proposed, reason)`),
+                { code: 1 },
+            );
+        }
+        // Failure-mode tag (task 0070 R5): optional, but must name a known mode when present
+        // so proposal history stays a clean failure-mode ledger.
+        if (change.failure_mode !== undefined && !FAILURE_MODES.includes(change.failure_mode)) {
+            throw Object.assign(
+                new Error(
+                    `Invalid failure_mode "${change.failure_mode}". Expected one of: ${FAILURE_MODES.join(', ')}`,
+                ),
                 { code: 1 },
             );
         }

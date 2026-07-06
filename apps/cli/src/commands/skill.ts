@@ -22,6 +22,13 @@ import {
     runOperation,
 } from './helpers';
 
+/** Validate a raw --invocation-mode CLI value; throws on anything but 'user' / 'model'. */
+function parseInvocationMode(value?: string): 'user' | 'model' | undefined {
+    if (value === undefined) return undefined;
+    if (value === 'user' || value === 'model') return value;
+    throw new Error(`Invalid --invocation-mode "${value}". Expected 'user' or 'model'.`);
+}
+
 /** Scaffold a skill definition and print the created path. */
 export async function skillScaffold(opts: {
     name: string;
@@ -31,6 +38,7 @@ export async function skillScaffold(opts: {
     force?: boolean;
     template?: string;
     tools?: string;
+    invocationMode?: string;
 }): Promise<number | undefined> {
     const target = resolveTarget(opts);
     const createdPath = await scaffold('skill', opts.name, {
@@ -40,6 +48,7 @@ export async function skillScaffold(opts: {
         force: opts.force,
         template: opts.template,
         tools: opts.tools,
+        invocationMode: parseInvocationMode(opts.invocationMode),
     });
     echo(`Created: ${createdPath}`);
     return undefined;
@@ -144,6 +153,7 @@ export async function handleSkillScaffold(
         force?: boolean;
         template?: string;
         tools?: string;
+        invocationMode?: string;
     },
 ): Promise<void> {
     await runOperation(() => skillScaffold({ name, ...opts }));

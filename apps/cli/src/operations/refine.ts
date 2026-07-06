@@ -81,7 +81,9 @@ type FixStrategy = 'auto-apply' | 'suggest' | 'flag';
  * Classify a validation finding into a fix strategy.
  *
  * - `error` severity → `'auto-apply'` (structural)
- * - Content quality fields (description, clarity, conciseness, trigger-accuracy) → `'suggest'`
+ * - Content quality fields (description, trigger-accuracy, clarity, conciseness,
+ *   invocation-mode) → `'suggest'` (invocation-mode: R3/task 0070 — a mode/description
+ *   mismatch is a rewrite judgment call, not a mechanical fix; never auto-apply it)
  * - Architecture fields (skill-linkage, tool-selection, model-fit, platform-coverage) → `'flag'`
  * - Everything else → `'auto-apply'`
  */
@@ -90,7 +92,7 @@ export function classifyFix(finding: Finding): FixStrategy {
         return 'auto-apply';
     }
 
-    if (['description', 'trigger-accuracy', 'clarity', 'conciseness'].includes(finding.field)) {
+    if (['description', 'trigger-accuracy', 'clarity', 'conciseness', 'invocation-mode'].includes(finding.field)) {
         return 'suggest';
     }
 

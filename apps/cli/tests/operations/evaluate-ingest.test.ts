@@ -33,9 +33,9 @@ Never skip verification steps. Always cite specific line numbers.
 Trigger when the user asks to review code, PRs, or security audits.
 `;
 
-/** Valid scores JSON matching the agent rubric (5 dims, version 1). */
+/** Valid scores JSON matching the agent rubric (5 dims, version 2). */
 const VALID_AGENT_SCORES = {
-    rubric_version: 1,
+    rubric_version: 2,
     dimensions: {
         completeness: { score: 0.85, note: 'All required sections present' },
         'role-clarity': { score: 0.9, note: 'Specific, non-generic persona' },
@@ -100,7 +100,7 @@ describe('scorer seam — envelope-out', () => {
         expect(envelope.content_name).toBe('code-reviewer');
         expect(envelope.target).toBe('claude');
         expect(envelope.content).toContain('## IDENTITY');
-        expect(envelope.rubric.version).toBe(1);
+        expect(envelope.rubric.version).toBe(2);
         expect(envelope.rubric.type).toBe('agent');
         expect(envelope.rubric.dimensions).toHaveLength(5);
         expect(envelope.baseline).toBeDefined();
@@ -172,7 +172,7 @@ describe('scorer seam — ingest-in', () => {
         const rows = await dao.getEvaluations('agent', 'code-reviewer');
         expect(rows).toHaveLength(1);
         expect(rows[0]?.scorer).toBe('rubric');
-        expect(rows[0]?.rubric_version).toBe(1);
+        expect(rows[0]?.rubric_version).toBe(2);
         expect(rows[0]?.aggregate).toBeCloseTo(expectedAggregate(VALID_AGENT_SCORES), 5);
     });
 
@@ -180,7 +180,7 @@ describe('scorer seam — ingest-in', () => {
         const file = join(tmpDir, 'code-reviewer.md');
         writeFileSync(file, GOOD_AGENT);
         const badScores = {
-            rubric_version: 1,
+            rubric_version: 2,
             dimensions: {
                 completeness: { score: 0.85, note: 'present' },
                 'role-clarity': { score: 0.9, note: 'present' },
@@ -206,7 +206,7 @@ describe('scorer seam — ingest-in', () => {
         const file = join(tmpDir, 'code-reviewer.md');
         writeFileSync(file, GOOD_AGENT);
         const badScores = {
-            rubric_version: 1,
+            rubric_version: 2,
             dimensions: {
                 completeness: { score: 1.5, note: 'out of range' },
                 'role-clarity': { score: 0.9, note: 'ok' },
@@ -256,7 +256,7 @@ describe('scorer seam — ingest-in', () => {
         const file = join(tmpDir, 'code-reviewer.md');
         writeFileSync(file, GOOD_AGENT);
         const badScores = {
-            rubric_version: 1,
+            rubric_version: 2,
             dimensions: {
                 ...VALID_AGENT_SCORES.dimensions,
                 'nonexistent-dim': { score: 0.5, note: 'extra' },

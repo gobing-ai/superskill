@@ -15,6 +15,11 @@ export function addScaffoldOptions(cmd: Command): Command {
         .option('-o, --output <dir>', 'Output directory (default: cwd)')
         .option('--template <tier>', 'Template tier (e.g. minimal / standard / specialist)')
         .option('--tools <list>', 'Comma-separated tool names to pre-populate frontmatter')
+        .option(
+            '--invocation-mode <mode>',
+            "Skill invocation axis: 'user' (disable-model-invocation + one-line description) " +
+                "or 'model' (trigger-rich description, default)",
+        )
         .option('--force', 'Overwrite existing file if present');
 }
 

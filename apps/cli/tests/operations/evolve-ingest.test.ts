@@ -107,7 +107,7 @@ describe('generation seam — envelope-out (F023)', () => {
         expect(Array.isArray(envelope.trends)).toBe(true);
         expect(envelope.baseline).toBeDefined();
         expect(envelope.rubric).toBeDefined();
-        expect(envelope.rubric.version).toBe(1);
+        expect(envelope.rubric.version).toBe(2);
         expect(envelope.rubric.type).toBe('skill');
         expect(Array.isArray(envelope.briefs)).toBe(true);
         expect(envelope.briefs.length).toBeGreaterThan(0);
@@ -274,6 +274,59 @@ describe('generation seam — ingest-in (F023)', () => {
 
         await expect(evolve('skill', 'widget', { adapter, ingest: proposalPath })).rejects.toThrow(
             /missing required field/,
+        );
+    });
+
+    it('persists a failure_mode tag through ingest into proposal history (task 0070 R5)', async () => {
+        await seedHistory(adapter);
+
+        const tagged = {
+            proposal_id: 'skill-evolve-tagged-001',
+            changes: [
+                {
+                    dimension: 'conciseness',
+                    location: 'description',
+                    current: 'old text',
+                    proposed: 'tight one-line description',
+                    reason: 'Collapse duplicated description restatement',
+                    failure_mode: 'duplication',
+                },
+            ],
+        };
+        const proposalPath = join(dir, 'tagged-proposal.json');
+        writeFileSync(proposalPath, JSON.stringify(tagged));
+
+        await evolve('skill', 'widget', { adapter, ingest: proposalPath });
+
+        const stored = await new ProposalDao(adapter).getProposals('skill', 'widget');
+        const json =
+            typeof stored[0]?.proposal_json === 'string'
+                ? JSON.parse(stored[0].proposal_json)
+                : stored[0]?.proposal_json;
+        expect(json.changes[0].failure_mode).toBe('duplication');
+    });
+
+    it('rejects an unknown failure_mode tag (task 0070 R5)', async () => {
+        await seedHistory(adapter);
+
+        const badTag = {
+            proposal_id: 'skill-evolve-badtag-001',
+            changes: [
+                {
+                    dimension: 'conciseness',
+                    location: 'description',
+                    current: 'old',
+                    proposed: 'new',
+                    reason: 'why',
+                    failure_mode: 'bloat',
+                },
+            ],
+        };
+        const proposalPath = join(dir, 'badtag-proposal.json');
+        writeFileSync(proposalPath, JSON.stringify(badTag));
+
+        await expect(evolve('skill', 'widget', { adapter, ingest: proposalPath })).rejects.toThrow(
+            /Invalid failure_mode "bloat"/,
         );
     });
 

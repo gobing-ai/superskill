@@ -1,5 +1,7 @@
 ---
 name: <!-- NAME -->
+# Description rules: front-load the leading identity phrase; one trigger per genuine
+# branch (collapse synonym triggers into one); never restate the body's identity line.
 description: <!-- DESCRIPTION -->
 ---
 
