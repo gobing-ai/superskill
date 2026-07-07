@@ -18,23 +18,24 @@ export type Target = (typeof TARGETS)[number];
 
 /** Map superskill targets to rulesync `ToolTarget` strings. Claude Code, omp, and hermes are not in rulesync. */
 export const TARGET_TO_RULESYNC: Partial<Record<Target, ToolTarget>> = {
-    // Agents supporting ~/.agents/skills/ all share 'codexcli' to avoid
-    // duplicate skill copies when an agent reads from multiple directories.
+    // Codex, pi, and omp all share '~/.agents/skills/' natively (ADR-010 amendment 2026-06-23)
+    // — collapsing them onto rulesync's 'codexcli' target writes one shared copy rather than
+    // duplicating skills per agent. Antigravity targets do NOT share that directory: the
+    // Antigravity CLI (agy) reads `~/.gemini/antigravity-cli/skills/` and the Antigravity IDE
+    // reads `~/.gemini/config/skills/`, so each must reach its native rulesync generator
+    // (verified against rulesync 8.28.1 — see vendors/rulesync/src/features/skills/).
     codex: 'codexcli',
     pi: 'codexcli',
     opencode: 'opencode',
-    'antigravity-cli': 'codexcli',
-    'antigravity-ide': 'codexcli',
+    'antigravity-cli': 'antigravity-cli',
+    'antigravity-ide': 'antigravity-ide',
 };
 
 /**
- * Hook-specific target map. The skills map ({@link TARGET_TO_RULESYNC}) deliberately collapses the
- * Antigravity targets onto `codexcli` so they share `~/.agents/skills/`. Hooks must NOT share that
- * routing: rulesync ships native Antigravity hook generators (`.agents/hooks.json` project,
- * `.gemini/config/hooks.json` global), and routing Antigravity hooks through `codexcli` would emit
- * codex-style hook files at the wrong path. Route the `hooks` feature pass through this map so each
- * Antigravity target reaches its own rulesync generator. Targets absent here (claude/pi/omp/hermes)
- * are handled outside rulesync (native install / surrogate shims).
+ * Hook-specific target map. Hooks always reach each target's native rulesync generator
+ * (`.agents/hooks.json` project, `.gemini/config/hooks.json` global for Antigravity). Targets
+ * absent here (claude/pi/omp/hermes) are handled outside rulesync (native install / surrogate
+ * shims).
  */
 export const TARGET_TO_RULESYNC_HOOKS: Partial<Record<Target, ToolTarget>> = {
     codex: 'codexcli',
@@ -46,11 +47,10 @@ export const TARGET_TO_RULESYNC_HOOKS: Partial<Record<Target, ToolTarget>> = {
 /**
  * Per-target relative skills output directory in PROJECT mode (global=false).
  * Used by `executeInstall` to pre-create parent dirs before rulesync writes,
- * preventing ENOENT on `install --no-global` from a clean cwd (task 0045 R2).
- *
- * Verified empirically against rulesync 8.29.0 (2026-06-21) by running
+ * Verified empirically against rulesync 8.28.1 (2026-07-07) by running
  * `generate({ features:['skills'], global:false })` per target. Global-mode
- * paths differ (e.g. codex/pi/antigravity→`.agents/skills`, opencode→`.config/opencode/skills`)
+ * paths differ (e.g. codex/pi→`.agents/skills`, antigravity-cli→`.gemini/antigravity-cli/skills`,
+ * antigravity-ide→`.gemini/config/skills`, opencode→`.config/opencode/skills`)
  */
 export const TARGET_SKILLS_RELDIR: Partial<Record<Target, string>> = {
     codex: '.agents/skills',

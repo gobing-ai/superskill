@@ -294,8 +294,8 @@ superskill maps each `Target` to a rulesync `ToolTarget` (`TARGET_TO_RULESYNC`) 
 | `pi` | `codexcli` | `pi` | `~/.agents/skills/` | Unified — subagents → Pi native agent format |
 | `omp` | — | `pi` | `~/.agents/skills/` | Native — reads shared ~/.agents/skills/ |
 | `opencode` | `opencode` | `opencode` | `~/.config/opencode/skills/` | |
-| `antigravity-cli` | `codexcli` | default (`/plugin-command`) | `~/.agents/skills/` | Unified |
-| `antigravity-ide` | `codexcli` | default (`/plugin-command`) | `~/.agents/skills/` | Unified |
+| `antigravity-cli` | `antigravity-cli` | `antigravity-cli` | `~/.gemini/antigravity-cli/skills/` | Native — agy reads this dir |
+| `antigravity-ide` | `antigravity-ide` | default (`/plugin-command`) | `~/.gemini/config/skills/` | Native — IDE reads this dir |
 | `hermes` | — | default (`/plugin-command`) | `~/.hermes/skills/` | Copied by superskill |
 
 **Output root (ADR-010).** rulesync writes to `<outputRoot>/<relativeDirPath>` and never resolves `~`. `runRulesync` sets `outputRoots: [os.homedir()]` for `--global`, `[process.cwd()]` otherwise; rulesync's `global` flag only swaps the relative subdir. Only `hermes` is absent from rulesync's `ToolTarget` set — superskill copies opencode-generated skills to `~/.hermes/skills/`. OMP reads from the shared `~/.agents/skills/` directory natively (ADR-010 amendment 2026-06-23).

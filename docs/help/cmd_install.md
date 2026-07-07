@@ -46,8 +46,8 @@ superskill install rd3 --targets codex --no-global
 | `pi` | rulesync + superskill hook shim | `~/.agents/skills/` (+ `~/.pi/agent/agents/` for agents) |
 | `omp` | native (reads `~/.agents/skills/`) + hook shim | `~/.agents/skills/` |
 | `opencode` | rulesync | `~/.config/opencode/skills/` |
-| `antigravity-cli` | rulesync | `~/.agents/skills/` |
-| `antigravity-ide` | rulesync | `~/.agents/skills/` |
+| `antigravity-cli` | rulesync | `~/.gemini/antigravity-cli/skills/` |
+| `antigravity-ide` | rulesync | `~/.gemini/config/skills/` |
 | `hermes` | superskill copy (via `opencode` surrogate) | `~/.hermes/skills/` |
 | `openclaw` | implicit (reads `~/.agents/skills/`) | Shared skills root — no dedicated dispatch |
 
@@ -140,7 +140,8 @@ flowchart LR
         CX[codex] --> RCX[codexcli]
         PI[pi] --> RPI[codexcli]
         OC[opencode] --> ROC[opencode]
-        AG[antigravity-cli/ide] --> RAG[codexcli]
+        AGCLI[antigravity-cli] --> RAGCLI[antigravity-cli]
+        AGIDE[antigravity-ide] --> RAGIDE[antigravity-ide]
         OMP[omp] -.->|"surrogate"| RPI
         HE[hermes] -.->|"surrogate"| ROC
     end
@@ -148,7 +149,8 @@ flowchart LR
         RCX
         RPI
         ROC
-        RAG
+        RAGCLI
+        RAGIDE
     end
 ```
 

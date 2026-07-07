@@ -16,11 +16,14 @@ describe('targets', () => {
 
     it('TARGET_TO_RULESYNC maps rulesync-supported targets to ToolTarget strings', () => {
         expect(TARGET_TO_RULESYNC.codex).toBe('codexcli');
-        // Pi, codex, and antigravity all share 'codexcli' to write to ~/.agents/skills/
+        // codex, pi, omp all read '~/.agents/skills/' natively → share rulesync's codexcli
+        // target (ADR-010 amendment 2026-06-23). Antigravity does NOT — its CLI reads
+        // '~/.gemini/antigravity-cli/skills/' and its IDE reads '~/.gemini/config/skills/',
+        // so each routes to its own rulesync generator (task 0072).
         expect(TARGET_TO_RULESYNC.pi).toBe('codexcli');
         expect(TARGET_TO_RULESYNC.opencode).toBe('opencode');
-        expect(TARGET_TO_RULESYNC['antigravity-cli']).toBe('codexcli');
-        expect(TARGET_TO_RULESYNC['antigravity-ide']).toBe('codexcli');
+        expect(TARGET_TO_RULESYNC['antigravity-cli']).toBe('antigravity-cli');
+        expect(TARGET_TO_RULESYNC['antigravity-ide']).toBe('antigravity-ide');
     });
 
     it('TARGET_TO_RULESYNC excludes targets handled outside rulesync', () => {

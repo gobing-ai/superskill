@@ -296,7 +296,7 @@ describe('executeInstall', () => {
         });
 
         expect(existsSync(join(outRoot, '.hermes', 'skills', 'demo-a', 'SKILL.md'))).toBe(true);
-        // OMP reads from .agents/skills/ natively (unified with codex/pi/antigravity)
+        // OMP reads from .agents/skills/ natively (unified with codex/pi)
         expect(existsSync(join(outRoot, '.agents', 'skills', 'demo-b', 'SKILL.md'))).toBe(true);
     });
 
@@ -393,5 +393,97 @@ describe('executeInstall', () => {
 
         // Skill exists — the install actually completed, not just survived
         expect(existsSync(join(outRoot, '.agents', 'skills', 'demo-a', 'SKILL.md'))).toBe(true);
+    });
+    it('R3 (task 0072): antigravity-cli global install lands at ~/.gemini/antigravity-cli/skills/', async () => {
+        const { marketplacePath } = setupPluginDir();
+        // Isolate rulesync's getHomeDirectory() from the real $HOME so global writes land in
+        // a sandbox; rulesync reads process.env.HOME_DIR first, falling back to os.homedir().
+        const fakeHome = join(tmpDir, 'fake-home-agy');
+        mkdirSync(fakeHome, { recursive: true });
+        const origHomeDir = process.env.HOME_DIR;
+        process.env.HOME_DIR = fakeHome;
+        try {
+            await executeInstall('demo', ['antigravity-cli'], {
+                marketplacePath,
+                global: true,
+                dryRun: false,
+                verbose: false,
+            });
+        } finally {
+            if (origHomeDir === undefined) delete process.env.HOME_DIR;
+            else process.env.HOME_DIR = origHomeDir;
+        }
+
+        // antigravity-cli global reldir: .gemini/antigravity-cli/skills (verified against
+        // rulesync 8.28.1 vendors/rulesync/src/features/skills/antigravity-cli-skill.ts).
+        expect(existsSync(join(fakeHome, '.gemini', 'antigravity-cli', 'skills', 'demo-a', 'SKILL.md'))).toBe(true);
+        expect(existsSync(join(fakeHome, '.gemini', 'antigravity-cli', 'skills', 'demo-b', 'SKILL.md'))).toBe(true);
+        // Nothing under ~/.agents/skills/ for the antigravity target (that path is codex/pi/omp).
+        expect(existsSync(join(fakeHome, '.agents', 'skills', 'demo-a'))).toBe(false);
+    });
+
+    it('R3 (task 0072): antigravity-ide global install lands at ~/.gemini/config/skills/', async () => {
+        const { marketplacePath } = setupPluginDir();
+        const fakeHome = join(tmpDir, 'fake-home-ide');
+        mkdirSync(fakeHome, { recursive: true });
+        const origHomeDir = process.env.HOME_DIR;
+        process.env.HOME_DIR = fakeHome;
+        try {
+            await executeInstall('demo', ['antigravity-ide'], {
+                marketplacePath,
+                global: true,
+                dryRun: false,
+                verbose: false,
+            });
+        } finally {
+            if (origHomeDir === undefined) delete process.env.HOME_DIR;
+            else process.env.HOME_DIR = origHomeDir;
+        }
+
+        // antigravity-ide global reldir: .gemini/config/skills (verified against
+        // vendors/rulesync/src/features/skills/antigravity-ide-skill.ts).
+        expect(existsSync(join(fakeHome, '.gemini', 'config', 'skills', 'demo-a', 'SKILL.md'))).toBe(true);
+        expect(existsSync(join(fakeHome, '.gemini', 'config', 'skills', 'demo-b', 'SKILL.md'))).toBe(true);
+        expect(existsSync(join(fakeHome, '.agents', 'skills', 'demo-a'))).toBe(false);
+    });
+
+    it('R3 (task 0072): antigravity-cli project install lands at <cwd>/.agents/skills/', async () => {
+        const { marketplacePath } = setupPluginDir();
+        const outRoot = join(tmpDir, 'r3-antigravity-proj');
+
+        // Project mode: antigravity shares codexcli's .agents/skills reldir
+        // (ANTIGRAVITY_SKILLS_DIR_PATH in antigravity-shared-skill.ts).
+        await executeInstall('demo', ['antigravity-cli'], {
+            marketplacePath,
+            global: false,
+            dryRun: false,
+            verbose: false,
+            outputRoot: outRoot,
+        });
+        expect(existsSync(join(outRoot, '.agents', 'skills', 'demo-a', 'SKILL.md'))).toBe(true);
+    });
+
+    it('R3 (task 0072): codex/pi still land at ~/.agents/skills/ (regression guard)', async () => {
+        const { marketplacePath } = setupPluginDir();
+        const fakeHome = join(tmpDir, 'fake-home-codex');
+        mkdirSync(fakeHome, { recursive: true });
+        const origHomeDir = process.env.HOME_DIR;
+        process.env.HOME_DIR = fakeHome;
+        try {
+            await executeInstall('demo', ['codex', 'pi'], {
+                marketplacePath,
+                global: true,
+                dryRun: false,
+                verbose: false,
+            });
+        } finally {
+            if (origHomeDir === undefined) delete process.env.HOME_DIR;
+            else process.env.HOME_DIR = origHomeDir;
+        }
+
+        // codex/pi share codexcli → global reldir .agents/skills. (omp is a surrogate of pi
+        // and reads from the same shared dir, not tested here.)
+        expect(existsSync(join(fakeHome, '.agents', 'skills', 'demo-a', 'SKILL.md'))).toBe(true);
+        expect(existsSync(join(fakeHome, '.agents', 'skills', 'demo-b', 'SKILL.md'))).toBe(true);
     });
 });

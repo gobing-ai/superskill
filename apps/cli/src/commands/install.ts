@@ -247,7 +247,8 @@ export async function executeInstall(
         }
 
         if (target === 'omp') {
-            // Skills: omp reads from ~/.agents/skills/ natively (shared with codex/pi/antigravity).
+            // Skills: omp reads from ~/.agents/skills/ natively (shared with codex/pi). Antigravity
+            // targets are NOT in this group — they read ~/.gemini/{antigravity-cli,config}/skills/.
             // Hooks only — emitted via @vahor/pi-hooks format (design §1.2).
             const hookResult = emitPiStyleHooks(
                 rulesyncSourceRoot(targetInputRoots.get('pi'), outputDir),
