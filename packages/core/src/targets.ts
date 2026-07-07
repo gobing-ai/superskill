@@ -61,6 +61,26 @@ export const TARGET_SKILLS_RELDIR: Partial<Record<Target, string>> = {
 };
 
 /**
+ * Per-target global skills output directory relative to `$HOME` (used when
+ * `options.global === true`). The full landed path is
+ * `homedir() + '/' + TARGET_GLOBAL_SKILLS_RELDIR[target]`.
+ *
+ * Verified against rulesync 8.29.0 by reading the per-target `getGlobalSubdir()` /
+ * `getSettablePaths({ global: true })` source and confirming with a real install
+ * against an isolated `$HOME` (task 0072 R3 live smoke, 2026-07-07). The
+ * Codex/pi/omp/omitted reldirs are intentionally absent — those targets route
+ * through the codexcli target's reldir (`.agents/skills`) which is a project-mode
+ * invariant; their global landing is owned by rulesync and follows the codex
+ * row.
+ */
+export const TARGET_GLOBAL_SKILLS_RELDIR: Partial<Record<Target, string>> = {
+    codex: '.agents/skills',
+    opencode: '.config/opencode/skills',
+    'antigravity-cli': '.gemini/antigravity-cli/skills',
+    'antigravity-ide': '.gemini/config/skills',
+};
+
+/**
  * Bridge every superskill `Target` to a `@gobing-ai/ts-ai-runner` `AgentName`
  * for slash-command dialect translation via `translateSlashCommand`.
  *

@@ -17,6 +17,7 @@ import {
     resolvePlugin,
     rewriteSkillReferences,
     runRulesync,
+    TARGET_GLOBAL_SKILLS_RELDIR,
     TARGET_SKILLS_RELDIR,
     TARGET_TO_RULESYNC_HOOKS,
     TARGETS,
@@ -184,6 +185,27 @@ export async function executeInstall(
             resultCounts.commandsCount += result.commandsCount;
             resultCounts.subagentsCount += result.subagentsCount;
             resultCounts.hooksCount += result.hooksCount;
+            // Per-target summary in verbose mode. Surfaces the 5 rulesync-supported
+            // targets (codex / pi / opencode / antigravity-cli / antigravity-ide) that
+            // were previously silent on success — only the surrogate hooks for pi/omp/
+            // hermes appeared. Helps the user verify with `ls` that each target's
+            // skills landed in the directory its consumer reads.
+            //
+            // We count the actual entries on disk (directories containing SKILL.md)
+            // rather than reporting the rulesync diff count, which is 0 on a no-op
+            // re-install. The user wants to see "how many skills are at this path NOW",
+            // not "how many files did this run touch". In dry-run mode the dir doesn't
+            // exist yet, so we fall back to the diff count.
+            if (options.verbose) {
+                const reldir = options.global
+                    ? (TARGET_GLOBAL_SKILLS_RELDIR[target] ?? TARGET_SKILLS_RELDIR[target])
+                    : TARGET_SKILLS_RELDIR[target];
+                if (reldir) {
+                    const skillsDir = options.global ? join(homedir(), reldir) : join(process.cwd(), reldir);
+                    const total = options.dryRun ? result.skillsCount : countSkillsInDir(skillsDir);
+                    echo(`  ${target}: ${total} skill(s) at ${skillsDir}`);
+                }
+            }
         }
         // Hooks-only pass: route through TARGET_TO_RULESYNC_HOOKS so Antigravity gets native hook
         // output. Only runs when the plugin actually produced a canonical hooks.json (mapResult.hooks).
@@ -294,8 +316,14 @@ export async function executeInstall(
     }
 
     // No silent drop (design §6 exit #2): surface hook emission results for uncovered targets
-    for (const result of hookEmitResults) {
-        echo(result.message);
+    // in non-verbose mode. Verbose mode already echoes each result at the dispatch site
+    // (the `if (options.verbose) echo(...)` blocks above for hermes/omp/pi), so we skip the
+    // unconditional re-echo here when --verbose is on — otherwise pi/omp/hermes each appear
+    // twice in the output.
+    if (!options.verbose) {
+        for (const result of hookEmitResults) {
+            echo(result.message);
+        }
     }
 
     if (options.dryRun) {
@@ -478,4 +506,22 @@ function copyDirectory(source: string, destination: string, options: { skipDirec
             copyFileSync(sourcePath, destinationPath);
         }
     }
+}
+
+/**
+ * Count the actual skill directories under a given path. A "skill" is a
+ * directory containing a `SKILL.md` file (the format rulesync emits and
+ * Antigravity / Codex / Pi / OMP / opencode all consume). This reflects the
+ * user-visible inventory at the path, not a diff count.
+ *
+ * Returns 0 if the path does not exist (caller decides whether to fall back).
+ */
+function countSkillsInDir(skillsDir: string): number {
+    if (!existsSync(skillsDir)) return 0;
+    let count = 0;
+    for (const entry of readdirSync(skillsDir)) {
+        if (!statSync(join(skillsDir, entry)).isDirectory()) continue;
+        if (existsSync(join(skillsDir, entry, 'SKILL.md'))) count++;
+    }
+    return count;
 }
