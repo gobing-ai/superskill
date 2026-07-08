@@ -4,7 +4,13 @@ All notable changes to `@gobing-ai/superskill` are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Conventional Commits](https://www.conventionalcommits.org/).
 
-## [0.2.11] - 2026-07-07
+## [0.2.12] - 2026-07-07
+
+### Bug Fixes
+
+- **`superskill install --verbose` reports actual on-disk skill count for each target** (regression test coverage added in `apps/cli/tests/commands/install.integration.test.ts:593-645`). The per-target verbose line previously printed `result.skillsCount` from rulesync — a diff count that decays to 0 on no-op re-installs. A user re-running `superskill install cc --verbose` against an already-populated `~/.gemini/antigravity-cli/skills/` saw `antigravity-cli: 0 skill(s) at /Users/robin/.gemini/antigravity-cli/skills` even though 65 skills were sitting there. The fix walks the target's skills dir after the rulesync run and reports the count of directories containing `SKILL.md` (the format every consumer reads); in dry-run mode the dir doesn't exist yet, so the code falls back to the diff count. The `packages/core/src/targets.ts` map gains a new `TARGET_GLOBAL_SKILLS_RELDIR` export (verified against rulesync 8.29.0 source and the task 0072 live smoke) so the install loop resolves each target's landing path consistently across global and project modes. The new helper `countSkillsInDir(skillsDir)` is added at the end of `apps/cli/src/commands/install.ts`. The same commit also fixes a separate double-echo bug: in `--verbose` mode the hook-emit line for each surrogate target (`pi` / `omp` / `hermes`) was printed twice — once at the dispatch site (`install.ts:290, 278, 246`) and once in the post-loop echo block. The post-loop echo at `install.ts:311-323` is now gated on `!options.verbose`; verbose mode already echoes each result at the dispatch site, non-verbose mode still surfaces the hook results for the user via the post-loop fallback (preserving the design §6 "no silent drop" invariant). The `apps/cli/tests/commands/install.integration.test.ts:490-547` regression tests were updated to distinguish the two semantically distinct `pi:` / `omp:` / `hermes:` lines (rulesync per-target vs hook-emit) so future regressions in either surface are caught independently. After fix, `superskill install cc --verbose` output shows e.g. `codex: 241 skill(s) at /Users/robin/.agents/skills`, `antigravity-cli: 65 skill(s) at /Users/robin/.gemini/antigravity-cli/skills`, `antigravity-ide: 219 skill(s) at /Users/robin/.config/skills` — each line now reflects the actual inventory the user can `ls` to verify, not a transient diff. (`c572efb`; `apps/cli/src/commands/install.ts`, `packages/core/src/targets.ts`, `apps/cli/tests/commands/install.integration.test.ts`)
+
+ ## [0.2.11] - 2026-07-07
 
 ### Bug Fixes
 
