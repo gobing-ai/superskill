@@ -201,7 +201,7 @@ export async function executeInstall(
                     ? (TARGET_GLOBAL_SKILLS_RELDIR[target] ?? TARGET_SKILLS_RELDIR[target])
                     : TARGET_SKILLS_RELDIR[target];
                 if (reldir) {
-                    const skillsDir = options.global ? join(homedir(), reldir) : join(process.cwd(), reldir);
+                    const skillsDir = options.global ? join(resolveHomeDir(), reldir) : join(process.cwd(), reldir);
                     const total = options.dryRun ? result.skillsCount : countSkillsInDir(skillsDir);
                     echo(`  ${target}: ${total} skill(s) at ${skillsDir}`);
                 }
@@ -233,9 +233,8 @@ export async function executeInstall(
             );
         }
     }
-
     // Step 4: Dispatch non-rulesync targets + emit hooks for uncovered targets
-    const outputRoot = options.outputRoot ?? (options.global ? homedir() : process.cwd());
+    const outputRoot = options.outputRoot ?? (options.global ? resolveHomeDir() : process.cwd());
     const hookEmitResults: EmitHooksResult[] = [];
     for (const target of targets) {
         if (target === 'claude') {
@@ -246,7 +245,7 @@ export async function executeInstall(
                 // Clear the plugin cache keyed on the resolved marketplace name (Refinement #5).
                 // marketplace add is idempotent, so this is defensive — but bound it to the
                 // correct name so we never rm -rf the wrong directory.
-                const cacheDir = join(homedir(), '.claude', 'plugins', 'cache', marketplaceName);
+                const cacheDir = join(resolveHomeDir(), '.claude', 'plugins', 'cache', marketplaceName);
                 if (existsSync(cacheDir)) rmSync(cacheDir, { recursive: true, force: true });
                 await runClaudeInstallImpl(marketplaceRoot, marketplaceName, plugin);
             }
@@ -516,6 +515,19 @@ function copyDirectory(source: string, destination: string, options: { skipDirec
  *
  * Returns 0 if the path does not exist (caller decides whether to fall back).
  */
+/**
+ * Mirror rulesync's `getHomeDirectory()` resolution: prefer the `HOME_DIR`
+ * environment variable, fall back to `os.homedir()`. Both `countSkillsInDir`
+ * and rulesync use this so the per-target count reflects what rulesync
+ * actually wrote, even when the test process sets `HOME_DIR` to a sandbox.
+ * (Node's `os.homedir()` honors `HOME`, not `HOME_DIR` — using it directly
+ * would cause the verbose echo to inspect a different directory than
+ * rulesync wrote to.)
+ */
+function resolveHomeDir(): string {
+    return process.env.HOME_DIR ?? homedir();
+}
+
 function countSkillsInDir(skillsDir: string): number {
     if (!existsSync(skillsDir)) return 0;
     let count = 0;
