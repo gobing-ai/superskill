@@ -3,10 +3,17 @@
     "type": "module",
     "private": true,
     "packageManager": "bun@1.3.14",
-    "workspaces": [
-        "apps/*",
-        "packages/*"
-    ],
+    "workspaces": {
+        "packages": [
+            "apps/*",
+            "packages/*"
+        ],
+        "catalog": {
+            "@gobing-ai/ts-ai-runner": "^0.4.6",
+            "@gobing-ai/ts-db": "^0.4.6",
+            "@gobing-ai/ts-utils": "^0.4.6"
+        }
+    },
     "scripts": {
         "prepare": "[ -z \"$CI\" ] && lefthook install || true",
         "bump-ver": "bun scripts/builder.ts bump-ver",
