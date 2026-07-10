@@ -1,4 +1,6 @@
 import { spawnSync } from 'node:child_process';
+import { appendFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { echo, echoError } from '@gobing-ai/ts-utils';
 import type { Command } from 'commander';
 import {
@@ -17,14 +19,21 @@ import {
  * non-zero with a clear error (this never fails open — an unknown hook id is a config bug, not a
  * runtime payload).
  *
- * Runners emit Claude canonical hook JSON (PreToolUse permission decision / Stop `allowStop`). Agents
- * that cannot parse that shape fail open (treat as allow), which is the intended cross-agent default.
+ * Runners signal via exit codes (cross-agent): PreToolUse allow → empty stdout + exit 0; deny →
+ * exit 2 + reason on stderr; Stop → canonical JSON with 0/non-zero. Agents that cannot parse a
+ * runner's JSON shape fail open (treat as allow), which is the intended cross-agent default.
  */
 
 interface HookRunResult {
-    /** JSON string written verbatim to stdout. */
+    /** JSON string written verbatim to stdout (empty string writes nothing). */
     output: string;
-    /** Process exit code: 0 for PreToolUse always; for Stop, 0 = allow, non-zero = block. */
+    /** Optional reason written to stderr (used by deny via exit 2; ignored on allow). */
+    stderr?: string;
+    /**
+     * Process exit code. Cross-agent convention: PreToolUse allow → 0 with empty stdout (both Claude
+     * Code and Codex treat empty-output exit-0 as "continue normally"); deny → 2 with the reason on
+     * stderr (exit 2 is the universal block signal). Stop hooks keep 0 = allow / non-zero = block.
+     */
     exitCode: number;
 }
 
@@ -41,14 +50,15 @@ interface ToolPayload {
 
 type TaskOwnership = 'owned' | 'unowned' | 'unknown';
 type ResolveTaskOwnership = (filePath: string, cwd: string) => TaskOwnership;
-
-/** Build a PreToolUse decision payload (always exit 0 — the decision rides in the JSON). */
+/**
+ * Build a PreToolUse decision. Cross-agent signal: allow → empty stdout + exit 0 (both Claude Code
+ * and Codex treat empty-output exit-0 as "continue normally"); deny → exit 2 + reason on stderr
+ * (exit 2 is the universal block signal, avoiding the JSON field divergence where Codex rejects
+ * `permissionDecision: "allow"` and uses `permissionDecisionReason` instead of `systemMessage`).
+ */
 function preToolUseDecision(decision: 'allow' | 'deny', reason?: string): HookRunResult {
-    const out: Record<string, unknown> = {
-        hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: decision },
-    };
-    if (reason !== undefined) out.systemMessage = reason;
-    return { output: JSON.stringify(out), exitCode: 0 };
+    if (decision === 'allow') return { output: '', exitCode: 0 };
+    return { output: '', exitCode: 2, stderr: reason ?? 'blocked by PreToolUse hook' };
 }
 
 /**
@@ -152,10 +162,192 @@ const ccAntiHallucination: HookRunner = {
     },
 };
 
+// ── sp/context-* hooks (indexed-context token ledger, all fail-open) ─────────
+
+const OK: HookRunResult = { output: '', exitCode: 0 };
+
+/** Resolve `.spur/context/` under the project dir the agent anchors to. */
+function spurContextDir(env: NodeJS.ProcessEnv): string {
+    return join(env.CLAUDE_PROJECT_DIR ?? process.cwd(), '.spur', 'context');
+}
+
+/** Read `.session.json` → session id, or '' when absent/unparseable. */
+function readSpurSession(dir: string): string {
+    const sessionFile = join(dir, '.session.json');
+    if (!existsSync(sessionFile)) return '';
+    try {
+        const data = JSON.parse(readFileSync(sessionFile, 'utf-8'));
+        if (typeof data === 'object' && data !== null && 'session' in data && typeof data.session === 'string') {
+            return data.session;
+        }
+        return '';
+    } catch {
+        return '';
+    }
+}
+
+/** PostToolUse (matcher Read|Write|Edit): append one token-estimate event to the ledger. */
+const spContextPostTool: HookRunner = {
+    run(env, stdinText) {
+        const dir = spurContextDir(env);
+        let payload: unknown;
+        try {
+            payload = JSON.parse(stdinText);
+        } catch {
+            return OK;
+        }
+        if (typeof payload !== 'object' || payload === null) return OK;
+        const p = payload as Record<string, unknown>;
+
+        const toolName = typeof p.tool_name === 'string' ? p.tool_name : '';
+        if (toolName !== 'Read' && toolName !== 'Write' && toolName !== 'Edit') return OK;
+
+        const toolInput = p.tool_input;
+        const filePath =
+            typeof toolInput === 'object' &&
+            toolInput !== null &&
+            'file_path' in toolInput &&
+            typeof (toolInput as Record<string, unknown>).file_path === 'string'
+                ? ((toolInput as Record<string, unknown>).file_path as string)
+                : '';
+        if (!filePath) return OK;
+
+        const session = readSpurSession(dir);
+        if (!session) return OK;
+
+        const toolResponse = p.tool_response;
+        const content =
+            typeof toolResponse === 'object' &&
+            toolResponse !== null &&
+            'content' in toolResponse &&
+            typeof (toolResponse as Record<string, unknown>).content === 'string'
+                ? ((toolResponse as Record<string, unknown>).content as string)
+                : '';
+        const tokens = content ? Math.ceil(new TextEncoder().encode(content).length / 4) : 0;
+        const ts = new Date().toISOString();
+        const type = toolName === 'Read' ? 'read' : 'write';
+        const action = toolName === 'Read' ? undefined : toolName === 'Write' ? 'create' : 'edit';
+
+        const event: Record<string, unknown> = { ts, session, type, file: filePath, tokens };
+        if (action) event.action = action;
+
+        try {
+            appendFileSync(join(dir, 'token-ledger.jsonl'), `${JSON.stringify(event)}\n`);
+        } catch {
+            // fail-open: a broken ledger must never wedge the agent
+        }
+        return OK;
+    },
+};
+
+/** SessionStart: create `.spur/context/`, write `.session.json`, append `session_start`. */
+const spContextSessionStart: HookRunner = {
+    run(env) {
+        const dir = spurContextDir(env);
+        try {
+            mkdirSync(dir, { recursive: true });
+        } catch {
+            return OK;
+        }
+
+        const now = new Date();
+        const pad = (n: number) => String(n).padStart(2, '0');
+        const sessionId = `session-${now.toISOString().slice(0, 10)}-${pad(now.getHours())}${pad(now.getMinutes())}`;
+        const ts = now.toISOString();
+
+        try {
+            writeFileSync(
+                join(dir, '.session.json'),
+                JSON.stringify({ session: sessionId, started: ts, reads: 0, writes: 0, tokens: 0 }),
+            );
+        } catch {
+            return OK;
+        }
+
+        try {
+            appendFileSync(
+                join(dir, 'token-ledger.jsonl'),
+                `${JSON.stringify({ ts, session: sessionId, type: 'session_start' })}\n`,
+            );
+        } catch {
+            // fail-open
+        }
+        return OK;
+    },
+};
+
+/** Stop: compute session rollup from the ledger, append `session_end`, clean up `.session.json`. */
+const spContextSessionStop: HookRunner = {
+    run(env) {
+        const dir = spurContextDir(env);
+        const sessionFile = join(dir, '.session.json');
+        if (!existsSync(sessionFile)) return OK;
+
+        let sessionId = '';
+        try {
+            const data = JSON.parse(readFileSync(sessionFile, 'utf-8'));
+            if (typeof data === 'object' && data !== null && 'session' in data && typeof data.session === 'string') {
+                sessionId = data.session;
+            }
+        } catch {
+            return OK;
+        }
+        if (!sessionId) return OK;
+
+        const ledgerPath = join(dir, 'token-ledger.jsonl');
+        let reads = 0;
+        let writes = 0;
+        let tokens = 0;
+        if (existsSync(ledgerPath)) {
+            for (const line of readFileSync(ledgerPath, 'utf-8').split('\n')) {
+                if (!line.trim()) continue;
+                try {
+                    const evt = JSON.parse(line);
+                    if (
+                        typeof evt !== 'object' ||
+                        evt === null ||
+                        (evt as Record<string, unknown>).session !== sessionId
+                    )
+                        continue;
+                    const type = (evt as Record<string, unknown>).type;
+                    if (type === 'read') reads++;
+                    else if (type === 'write') writes++;
+                    if (typeof (evt as Record<string, unknown>).tokens === 'number') {
+                        tokens += (evt as Record<string, unknown>).tokens as number;
+                    }
+                } catch {
+                    // skip unparseable lines
+                }
+            }
+        }
+
+        const event = {
+            ts: new Date().toISOString(),
+            session: sessionId,
+            type: 'session_end',
+            totals: { reads, writes, tokens },
+        };
+        try {
+            appendFileSync(ledgerPath, `${JSON.stringify(event)}\n`);
+        } catch {
+            // fail-open
+        }
+        try {
+            rmSync(sessionFile, { force: true });
+        } catch {
+            // cleanup is best-effort
+        }
+        return OK;
+    },
+};
+
 // ── Registry + dispatcher ────────────────────────────────────────────────────
 
 const HOOK_RUNNERS: Record<string, HookRunner> = {
     'sp/task-write-guard': spTaskWriteGuard,
+    'sp/context-post-tool': spContextPostTool,
+    'sp/context-session-start': spContextSessionStart,
+    'sp/context-session-stop': spContextSessionStop,
     'cc/anti-hallucination': ccAntiHallucination,
 };
 
@@ -167,7 +359,10 @@ export function hookRun(plugin: string, hookId: string, env: NodeJS.ProcessEnv, 
         return 2;
     }
     const result = runner.run(env, stdinText);
-    echo(result.output);
+    // WHY conditional: echo('') writes '\n' (writeLine always appends a newline). A bare newline
+    // on stdout makes Codex try to parse it as JSON and fail open noisily. Only emit when non-empty.
+    if (result.output) echo(result.output);
+    if (result.stderr) echoError(result.stderr);
     return result.exitCode;
 }
 

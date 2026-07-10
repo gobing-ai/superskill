@@ -1,12 +1,16 @@
-import { afterEach, describe, expect, it, mock, spyOn } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, it, mock, spyOn } from 'bun:test';
+import { existsSync, mkdtempSync, readFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { Command } from 'commander';
 import { hookRun, registerHookRun, runSpTaskWriteGuard } from '../../src/commands/hook-run';
 
 /**
  * `superskill hook run <plugin> <hook-id>` — the cross-agent hook runtime trigger (task 0151).
- * Tests assert the dispatcher contract (resolve runner, emit Claude canonical JSON, exit code) and
- * each runner's decision + fail-open behavior. `hookRun` returns the exit code and writes JSON to
- * stdout; tests capture stdout to inspect the decision payload.
+ * Tests assert the dispatcher contract (resolve runner, emit the right exit code + output) and
+ * each runner's decision + fail-open behavior. PreToolUse: allow → empty stdout + exit 0; deny →
+ * exit 2 + reason on stderr. Stop hooks emit canonical JSON with 0/non-zero. `hookRun` returns the
+ * exit code and writes to stdout/stderr; tests capture stdout to inspect the payload.
  */
 
 function capture(plugin: string, hookId: string, env: NodeJS.ProcessEnv, stdinText: string) {
@@ -67,6 +71,9 @@ describe('hook run — dispatcher', () => {
             expect(code).toBe(2);
             expect(errs.join('')).toContain("unknown hook 'sp does-not-exist'");
             expect(errs.join('')).toContain('sp/task-write-guard');
+            expect(errs.join('')).toContain('sp/context-post-tool');
+            expect(errs.join('')).toContain('sp/context-session-start');
+            expect(errs.join('')).toContain('sp/context-session-stop');
             expect(errs.join('')).toContain('cc/anti-hallucination');
         } finally {
             process.stderr.write = originalErr;
@@ -77,25 +84,23 @@ describe('hook run — dispatcher', () => {
 describe('hook run — sp/task-write-guard', () => {
     const payload = (tool: string, path: string) =>
         JSON.stringify({ tool_name: tool, tool_input: { file_path: path } });
-
     it('fails open (allow) for a non-Write/Edit tool', () => {
         const { code, out } = capture('sp', 'task-write-guard', {}, payload('Read', '/tmp/x.md'));
+        // WHY: allow = empty stdout + exit 0 — the cross-agent "continue normally" signal.
+        // Codex rejects `permissionDecision:"allow"` in JSON, so the guard emits nothing.
         expect(code).toBe(0);
-        expect(JSON.parse(out).hookSpecificOutput.permissionDecision).toBe('allow');
+        expect(out).toBe('');
     });
-
     it('fails open (allow) on a malformed payload', () => {
         const { code, out } = capture('sp', 'task-write-guard', {}, 'not json');
         expect(code).toBe(0);
-        expect(JSON.parse(out).hookSpecificOutput.permissionDecision).toBe('allow');
+        expect(out).toBe('');
     });
-
     it('fails open (allow) when the path is empty', () => {
         const { code, out } = capture('sp', 'task-write-guard', {}, payload('Edit', ''));
         expect(code).toBe(0);
-        expect(JSON.parse(out).hookSpecificOutput.permissionDecision).toBe('allow');
+        expect(out).toBe('');
     });
-
     it('short-circuits to allow when SPUR_WRITE_GUARD=off (no subprocess)', () => {
         const { code, out } = capture(
             'sp',
@@ -104,9 +109,8 @@ describe('hook run — sp/task-write-guard', () => {
             payload('Edit', '/any/task.md'),
         );
         expect(code).toBe(0);
-        expect(JSON.parse(out).hookSpecificOutput.permissionDecision).toBe('allow');
+        expect(out).toBe('');
     });
-
     it('fails open (allow) when `spur` cannot resolve ownership (not on PATH / unknown cwd)', () => {
         // PATH stripped → spawnSync errors → fail open. A non-corpus path under any resolvable cwd
         // also yields allow; both converge on the safe default.
@@ -117,9 +121,8 @@ describe('hook run — sp/task-write-guard', () => {
             payload('Edit', '/nonexistent-project-dir/scratch.md'),
         );
         expect(code).toBe(0);
-        expect(JSON.parse(out).hookSpecificOutput.permissionDecision).toBe('allow');
+        expect(out).toBe('');
     });
-
     it('fails open (allow) when the resolver reports an unowned path', () => {
         const result = runSpTaskWriteGuard(
             { CLAUDE_PROJECT_DIR: process.cwd() },
@@ -127,7 +130,7 @@ describe('hook run — sp/task-write-guard', () => {
             () => 'unowned',
         );
         expect(result.exitCode).toBe(0);
-        expect(JSON.parse(result.output).hookSpecificOutput.permissionDecision).toBe('allow');
+        expect(result.output).toBe('');
     });
 
     it('denies Write/Edit when the resolver reports an owned task file', () => {
@@ -136,10 +139,12 @@ describe('hook run — sp/task-write-guard', () => {
             payload('Write', '/repo/docs/tasks/0001_example.md'),
             () => 'owned',
         );
-        const parsed = JSON.parse(result.output);
-        expect(result.exitCode).toBe(0);
-        expect(parsed.hookSpecificOutput.permissionDecision).toBe('deny');
-        expect(parsed.systemMessage).toContain('owned by the spur corpus');
+        // WHY: deny = exit 2 + reason on stderr (universal block signal). Empty stdout avoids
+        // the Codex-incompatible `permissionDecision` JSON. Both Claude Code and Codex honor
+        // exit 2 as a block.
+        expect(result.exitCode).toBe(2);
+        expect(result.output).toBe('');
+        expect(result.stderr).toContain('owned by the spur corpus');
     });
 });
 
@@ -194,5 +199,138 @@ describe('hook run — cc/anti-hallucination (Stop, canonical output contract)',
         expect(invalidParsed.hookSpecificOutput.hookEventName).toBe('Stop');
         expect(invalidParsed.decision).toBeUndefined();
         expect(invalid.code).toBe(0);
+    });
+});
+
+describe('hook run — sp/context-* (indexed-context token ledger, all fail-open)', () => {
+    // WHY: the 3 context hooks are side-effect-only (token ledger). They must ALWAYS return
+    // exit 0 with empty stdout — a broken context hook must never wedge the agent. These tests
+    // verify the fail-open contract against the edge cases that triggered it (missing dir,
+    // missing session, bad JSON, wrong tool), plus a golden-path ledger write.
+    let tmpRoot: string;
+
+    beforeEach(() => {
+        tmpRoot = mkdtempSync(join(tmpdir(), 'hook-run-ctx-'));
+    });
+    afterEach(() => {
+        mock.restore();
+    });
+
+    it('context-session-start: creates .session.json + session_start event and exits 0', () => {
+        const { code, out } = capture('sp', 'context-session-start', { CLAUDE_PROJECT_DIR: tmpRoot }, '');
+        expect(code).toBe(0);
+        expect(out).toBe('');
+        const ctxDir = join(tmpRoot, '.spur', 'context');
+        const session = JSON.parse(readFileSync(join(ctxDir, '.session.json'), 'utf-8'));
+        expect(session.session).toMatch(/^session-\d{4}-\d{2}-\d{2}-\d{4}$/);
+        expect(session.reads).toBe(0);
+        expect(session.writes).toBe(0);
+        expect(session.tokens).toBe(0);
+        const ledger = readFileSync(join(ctxDir, 'token-ledger.jsonl'), 'utf-8').trim().split('\n');
+        expect(ledger.length).toBe(1);
+        const first = JSON.parse(ledger[0] ?? '');
+        expect(first.type).toBe('session_start');
+    });
+
+    it('context-post-tool: appends a read event and exits 0', () => {
+        capture('sp', 'context-session-start', { CLAUDE_PROJECT_DIR: tmpRoot }, '');
+        const payload = JSON.stringify({
+            tool_name: 'Read',
+            tool_input: { file_path: '/tmp/x.md' },
+            tool_response: { content: 'hello world' },
+        });
+        const { code, out } = capture('sp', 'context-post-tool', { CLAUDE_PROJECT_DIR: tmpRoot }, payload);
+        expect(code).toBe(0);
+        expect(out).toBe('');
+        const ledger = readFileSync(join(tmpRoot, '.spur', 'context', 'token-ledger.jsonl'), 'utf-8')
+            .trim()
+            .split('\n');
+        const events = ledger.map((l) => JSON.parse(l));
+        const readEvt = events.find((e) => e.type === 'read');
+        expect(readEvt).toBeDefined();
+        expect(readEvt.file).toBe('/tmp/x.md');
+        expect(readEvt.tokens).toBeGreaterThan(0);
+    });
+
+    it('context-post-tool: fails open (exit 0, no ledger write) without a session', () => {
+        // No session-start called → no .session.json → hook must fail open silently.
+        const payload = JSON.stringify({
+            tool_name: 'Read',
+            tool_input: { file_path: '/tmp/x.md' },
+            tool_response: { content: 'hello' },
+        });
+        const { code, out } = capture('sp', 'context-post-tool', { CLAUDE_PROJECT_DIR: tmpRoot }, payload);
+        expect(code).toBe(0);
+        expect(out).toBe('');
+    });
+
+    it('context-post-tool: fails open on malformed JSON', () => {
+        capture('sp', 'context-session-start', { CLAUDE_PROJECT_DIR: tmpRoot }, '');
+        const { code, out } = capture('sp', 'context-post-tool', { CLAUDE_PROJECT_DIR: tmpRoot }, 'not json');
+        expect(code).toBe(0);
+        expect(out).toBe('');
+    });
+
+    it('context-post-tool: ignores non-Read/Write/Edit tools (matcher contract)', () => {
+        capture('sp', 'context-session-start', { CLAUDE_PROJECT_DIR: tmpRoot }, '');
+        const { code, out } = capture(
+            'sp',
+            'context-post-tool',
+            { CLAUDE_PROJECT_DIR: tmpRoot },
+            JSON.stringify({ tool_name: 'Bash', tool_input: { file_path: '/tmp/x' } }),
+        );
+        expect(code).toBe(0);
+        expect(out).toBe('');
+        const ledger = readFileSync(join(tmpRoot, '.spur', 'context', 'token-ledger.jsonl'), 'utf-8')
+            .trim()
+            .split('\n');
+        const events = ledger.map((l) => JSON.parse(l));
+        expect(events.some((e) => e.type === 'read' || e.type === 'write')).toBe(false);
+    });
+
+    it('context-session-stop: appends session_end with totals and removes .session.json', () => {
+        capture('sp', 'context-session-start', { CLAUDE_PROJECT_DIR: tmpRoot }, '');
+        capture(
+            'sp',
+            'context-post-tool',
+            { CLAUDE_PROJECT_DIR: tmpRoot },
+            JSON.stringify({
+                tool_name: 'Read',
+                tool_input: { file_path: '/a.md' },
+                tool_response: { content: 'aaaa' },
+            }),
+        );
+        capture(
+            'sp',
+            'context-post-tool',
+            { CLAUDE_PROJECT_DIR: tmpRoot },
+            JSON.stringify({
+                tool_name: 'Write',
+                tool_input: { file_path: '/b.md' },
+                tool_response: { content: 'bbbb' },
+            }),
+        );
+
+        const { code, out } = capture('sp', 'context-session-stop', { CLAUDE_PROJECT_DIR: tmpRoot }, '');
+        expect(code).toBe(0);
+        expect(out).toBe('');
+
+        const ctxDir = join(tmpRoot, '.spur', 'context');
+        expect(existsSync(join(ctxDir, '.session.json'))).toBe(false);
+        const events = readFileSync(join(ctxDir, 'token-ledger.jsonl'), 'utf-8')
+            .trim()
+            .split('\n')
+            .map((l) => JSON.parse(l));
+        const endEvt = events.find((e) => e.type === 'session_end');
+        expect(endEvt).toBeDefined();
+        expect(endEvt.totals.reads).toBe(1);
+        expect(endEvt.totals.writes).toBe(1);
+        expect(endEvt.totals.tokens).toBeGreaterThan(0);
+    });
+
+    it('context-session-stop: fails open when no session exists', () => {
+        const { code, out } = capture('sp', 'context-session-stop', { CLAUDE_PROJECT_DIR: tmpRoot }, '');
+        expect(code).toBe(0);
+        expect(out).toBe('');
     });
 });
