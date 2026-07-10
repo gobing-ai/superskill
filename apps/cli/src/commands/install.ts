@@ -382,7 +382,7 @@ interface OmpPluginsRegistry {
  * marketplace, then installs the plugin. Exposed as a dependency so tests can mock the spawn
  * calls. Mirrors {@link defaultRunClaudeInstall} but adds the `global` flag for scope selection.
  */
-async function defaultRunOmpInstall(
+export async function defaultRunOmpInstall(
     marketplaceRoot: string,
     marketplaceName: string,
     plugin: string,
@@ -412,7 +412,7 @@ async function defaultRunOmpInstall(
  * `.omp/plugins/installed_plugins.json` (project), keyed by `plugin@marketplace`.
  * Returns the first entry's `installPath`, or `undefined` when absent.
  */
-function resolveOmpInstallPath(marketplace: string, plugin: string, global: boolean): string | undefined {
+export function resolveOmpInstallPath(marketplace: string, plugin: string, global: boolean): string | undefined {
     const registryDir = global ? join(resolveHomeDir(), '.omp', 'plugins') : join(process.cwd(), '.omp', 'plugins');
     const registryPath = join(registryDir, 'installed_plugins.json');
     if (!existsSync(registryPath)) return undefined;
@@ -437,7 +437,7 @@ function resolveOmpInstallPath(marketplace: string, plugin: string, global: bool
  * (R3) generate JS hook modules under `hooks/pre/` + `hooks/post/` from the canonical
  * hooks.json; (R4) translate slash command markdown to OMP dialect.
  */
-function postInstallOmp(
+export function postInstallOmp(
     pluginRoot: string,
     installPath: string,
     hooksSourceDir: string,

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'bun:test';
 import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { generateOmpHookModules } from '../../src/omp-hooks';
+import { generateOmpHookModules } from '../src/omp-hooks';
 
 function makeTempDir(): string {
     return mkdtempSync(join(tmpdir(), 'superskill-omp-hooks-test-'));
