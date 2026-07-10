@@ -4,6 +4,30 @@ All notable changes to `@gobing-ai/superskill` are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Conventional Commits](https://www.conventionalcommits.org/).
 
+## [0.2.15] - 2026-07-10
+
+### New Features
+
+- **`superskill install` supports OMP targets as native Claude Code plugins** (task 0073). OMP (`oh-my-pi`) was previously installed via a surrogate `pi-push` shim that copied skills into a static directory. OMP is now a first-class native target: a new `omp-hooks.ts` module (`generateOmpHookModules`) converts the canonical rulesync `hooks.json` into CommonJS `.js` hook modules under `hooks/pre` and `hooks/post`, mapping `preToolUse`→`tool_call`, `postToolUse`→`tool_result`, `stop`→`agent_end`, `sessionStart`→`session_start`, `sessionEnd`→`session_shutdown`, `preCompact`→`session_before_compact`. `install.ts` gains `runOmpInstall` dependency, `resolveOmpInstallPath`, and `postInstallOmp` helpers, wired into the omp dispatch branch so OMP installs as a real plugin while still skipping dry-run and echoing in verbose mode. (`47bff81`; `apps/cli/src/omp-hooks.ts`, `apps/cli/src/commands/install.ts`)
+
+### Bug Fixes
+
+- **Plugin/CLI hook version skew degrades gracefully instead of blocking** (ADR-020, task 0074). Unknown hook ids in `superskill hook run` previously returned the universal block signal (exit 2), causing blocked Stops and agent loops when a plugin shipped hooks the installed CLI didn't recognize. Unknown hooks now fail open: exit 0 + a stderr skew warning naming the installed CLI version. The 2026-07-10 incident — Claude Code sessions flooded `unknown hook` errors after a plugin added hooks ahead of the installed CLI — is resolved by this change. (`4e56334`; `apps/cli/src/commands/hook-run.ts`)
+- **`minCliVersion` install gate prevents hook/skill mismatch** (ADR-021, task 0074). `superskill install` now honors an optional `minCliVersion` floor in the plugin's canonical `hooks.json`: below the floor it warns and skips all hook emission while skills, commands, and subagents still install normally. This prevents a plugin from emitting hooks that call command shapes the installed CLI doesn't understand. The CLI version itself is now compiled in via `src/version.ts` (JSON import, embedded by Bun into the compiled binary's virtual FS), replacing a runtime `readFileSync` probe that was broken in the compiled binary — `import.meta.dir` resolves to `/$bunfs/` which has no `package.json` on disk, making the version gate silently inert. The new approach works correctly across dev source, JS bundle, and compiled binary. (`4e56334`; `apps/cli/src/version.ts`, `apps/cli/src/commands/install.ts`, `apps/cli/src/commands/hook-run.ts`)
+- **`hook-run` uses exit-code-based decisions for cross-agent compatibility**. Codex rejects Claude-canonical JSON with `unsupported permissionDecision: allow`. The hook runner now uses exit codes instead of JSON output: exit 0 + empty stdout = allow, exit 2 + stderr = deny (both Claude Code and Codex document exit 2 as block). Also registers the 3 sp context hooks (`session-start`, `post-tool`, `session-stop`) as inline runners so they resolve instead of producing `unknown hook`. (`418894e`; `apps/cli/src/commands/hook-run.ts`)
+- **`install` honors `HOME_DIR` in per-target skill count and path resolution**. The per-target verbose echo computed the skills dir with `os.homedir()` (honors `HOME`), but rulesync resolves home with `process.env.HOME_DIR ?? os.homedir()`. In CI the runner's `~/.agents/skills/` was empty, so `countSkillsInDir` returned 0 and the regression test failed; locally it passed accidentally because the developer's real skills dir was populated. Added `resolveHomeDir()` helper mirroring rulesync's resolution; replaced three call sites. No behavior change for users who don't set `HOME_DIR`. (`c51c487`; `apps/cli/src/commands/install.ts`)
+
+### Improvements
+
+- **Workspace catalog centralizes `@gobing-ai/ts-*` versions** (following the spur-new pattern). Root `package.json` gains a Bun `catalog` block pinning `ts-ai-runner`, `ts-db`, and `ts-utils` at `^0.4.6`; `apps/cli` and `packages/core` dependencies reference `catalog:` instead of hardcoding versions. Adding/upgrading a shared package now means editing one line at the root instead of hunting across workspaces. (`acac4ee`; `package.json`, `apps/cli/package.json`, `packages/core/package.json`)
+- **CLI `build` emits a compiled binary; npm bundle moves to `build:bundle`** (following the spur-new pattern). `bun run build` now produces `dist/superskill` — a standalone Mach-O 64-bit binary (64 MB, 804 modules, ~101 ms compile) via `bun build --compile`. The npm JS bundle (`dist/index.js` with embedded templates/rubrics) moves to `bun run build:bundle`, still run by `prepublishOnly` before npm publish. The compiled binary correctly reports its version in all three execution contexts (source, bundle, binary) thanks to the `version.ts` JSON-import fix. (`acac4ee`; `apps/cli/package.json`)
+- **OMP install helpers covered to clear the 90/90 coverage gate**. Stubs `Bun.spawn` directly (env-PATH manipulation has no effect — Bun snapshots PATH at process start) and exercises `defaultRunOmpInstall`, `resolveOmpInstallPath`, and `postInstallOmp`. Each helper carries TSDoc to satisfy the `every-export-has-tsdoc` rule. `install.ts` coverage rose from 87.50% fn / 84.60% line to 96% fn / 98.93% line; full repo at 99.75% fn / 98.73% line. (`59195a8`; `apps/cli/tests/commands/install-omp-helpers.test.ts`)
+
+### Documentation
+
+- **ADR-020 (fail-open policy)** and **ADR-021 (`minCliVersion` compat contract)** recorded in `docs/00_ADR.md`; the canonical `hooks.json` `minCliVersion` config shape documented in `docs/04_DESIGN.md`. (`4e56334`; `docs/00_ADR.md`, `docs/04_DESIGN.md`)
+- **Task 0073 refined** with R-numbered requirements, `file:line` Solution citations, and coverage claim to pass `spur task check`. (`758c708`; `docs/tasks/0073_*.md`)
+
 ## [0.2.12] - 2026-07-07
 
 ### Bug Fixes
