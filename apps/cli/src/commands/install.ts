@@ -26,8 +26,9 @@ import {
 } from '@gobing-ai/superskill-core';
 import { echo } from '@gobing-ai/ts-utils';
 import type { Command } from 'commander';
-import { type EmitHooksResult, emitHermesHooks, emitPiStyleHooks } from '../hooks';
+import { type EmitHooksResult, emitHermesHooks, emitPiStyleHooks, readCanonicalHooks } from '../hooks';
 import { generateOmpHookModules, type OmpHookResult } from '../omp-hooks';
+import { cliVersion } from '../version';
 
 /**
  * Register the `superskill install` subcommand on the given Commander program.
@@ -127,6 +128,26 @@ export async function executeInstall(
             `  Skills: ${mapResult.skills}, Commands: ${mapResult.commands}, Subagents: ${mapResult.subagents}, Hooks: ${mapResult.hooks}, MCP: ${mapResult.mcp}`,
         );
     }
+    // Compat gate: if the canonical hooks.json declares minCliVersion and the installed CLI is
+    // older, skip ALL hook emission (pi shim, hermes copy, omp modules, rulesync hooks pass) but
+    // still install skills/commands/subagents. Hooks reference `superskill hook run <id>`; an old
+    // CLI that doesn't know <id> would warn + fail open at runtime, so emitting them adds noise
+    // without enforcement. Skills/commands carry their own logic and need no CLI version.
+    let hooksBlockedByCliVersion = false;
+    if (mapResult.hooks) {
+        const canonicalHooks = readCanonicalHooks(join(outputDir));
+        const floor = canonicalHooks?.minCliVersion;
+        if (floor) {
+            if (compareSemver(cliVersion, floor) < 0) {
+                hooksBlockedByCliVersion = true;
+                echo(
+                    `Warning: plugin requires superskill ≥ ${floor}; installed CLI is ${cliVersion}. ` +
+                        `Hooks will be skipped (skills/commands/subagents install normally). ` +
+                        `Upgrade: npm i -g @gobing-ai/superskill@latest`,
+                );
+            }
+        }
+    }
 
     // Step 3: Build target-specific rulesync inputs through the conversion pipeline.
     const targetInputRoots = new Map<Target, string>();
@@ -208,7 +229,7 @@ export async function executeInstall(
         }
         // Hooks-only pass: route through TARGET_TO_RULESYNC_HOOKS so Antigravity gets native hook
         // output. Only runs when the plugin actually produced a canonical hooks.json (mapResult.hooks).
-        if (mapResult.hooks) {
+        if (mapResult.hooks && !hooksBlockedByCliVersion) {
             for (const target of rulesyncTargets) {
                 if (!TARGET_TO_RULESYNC_HOOKS[target]) continue; // pi handled via surrogate shim below
                 const hookResult = await runRulesyncImpl(
@@ -256,14 +277,19 @@ export async function executeInstall(
             if (options.verbose) echo(`Copying to Hermes (via opencode rulesync): ${dest}...`);
             if (!options.dryRun)
                 copyDirectory(join(rulesyncSourceRoot(targetInputRoots.get(srcTarget), outputDir), 'skills'), dest);
-            // Rung (c): copy-step — hermes hooks via canonical hooks.json copy (design §1.2, §2.1)
-            const hookResult = emitHermesHooks(
-                rulesyncSourceRoot(targetInputRoots.get(srcTarget), outputDir),
-                outputRoot,
-                { dryRun: options.dryRun, global: options.global },
-            );
-            hookEmitResults.push(hookResult);
-            if (options.verbose) echo(`  ${hookResult.message}`);
+            // Rung (c): copy-step — hermes hooks via canonical hooks.json copy (design §1.2, §2.1).
+            // Skipped when the CLI is below the plugin's minCliVersion (hooks would fail-open at runtime).
+            if (!hooksBlockedByCliVersion) {
+                const hookResult = emitHermesHooks(
+                    rulesyncSourceRoot(targetInputRoots.get(srcTarget), outputDir),
+                    outputRoot,
+                    { dryRun: options.dryRun, global: options.global },
+                );
+                hookEmitResults.push(hookResult);
+                if (options.verbose) echo(`  ${hookResult.message}`);
+            } else if (options.verbose) {
+                echo('  Hermes hooks: skipped (CLI below plugin minCliVersion)');
+            }
         }
 
         if (target === 'omp') {
@@ -279,7 +305,10 @@ export async function executeInstall(
                 await runOmpInstallImpl(marketplaceRoot, marketplaceName, plugin, options.global);
                 const installPath = resolveOmpInstallPath(marketplaceName, plugin, options.global);
                 if (installPath) {
-                    const hookResult = postInstallOmp(pluginRoot, installPath, outputDir, plugin, options);
+                    const hookResult = postInstallOmp(pluginRoot, installPath, outputDir, plugin, {
+                        ...options,
+                        skipHooks: hooksBlockedByCliVersion,
+                    });
                     if (options.verbose) echo(`  ${hookResult.message}`);
                 } else if (options.verbose) {
                     echo('  OMP install path not found in registry — skipping post-processing');
@@ -290,15 +319,19 @@ export async function executeInstall(
         // Pi reaches generate() but rulesync emits no hooks for it (hooks column blank, §1 table).
         // Rung (b): superskill-installed shim — pi hooks via @vahor/pi-hooks format (design §1.2)
         if (target === 'pi') {
-            const hookResult = emitPiStyleHooks(
-                rulesyncSourceRoot(targetInputRoots.get('pi'), outputDir),
-                outputRoot,
-                '.pi',
-                'pi',
-                { dryRun: options.dryRun, global: options.global },
-            );
-            hookEmitResults.push(hookResult);
-            if (options.verbose) echo(`  ${hookResult.message}`);
+            if (!hooksBlockedByCliVersion) {
+                const hookResult = emitPiStyleHooks(
+                    rulesyncSourceRoot(targetInputRoots.get('pi'), outputDir),
+                    outputRoot,
+                    '.pi',
+                    'pi',
+                    { dryRun: options.dryRun, global: options.global },
+                );
+                hookEmitResults.push(hookResult);
+                if (options.verbose) echo(`  ${hookResult.message}`);
+            } else if (options.verbose) {
+                echo('  Pi hooks: skipped (CLI below plugin minCliVersion)');
+            }
 
             // Pi native agent dispatch: adapt each subagent to Pi format → ~/.pi/agent/agents/
             const agentsDir = join(pluginRoot, 'agents');
@@ -442,7 +475,7 @@ export function postInstallOmp(
     installPath: string,
     hooksSourceDir: string,
     plugin: string,
-    options: { dryRun: boolean; verbose: boolean },
+    options: { dryRun: boolean; verbose: boolean; skipHooks?: boolean },
 ): OmpHookResult {
     // R2: manifest copy — .claude-plugin/plugin.json
     const manifestDir = join(installPath, '.claude-plugin');
@@ -453,12 +486,19 @@ export function postInstallOmp(
         if (options.verbose) echo(`  OMP manifest: copied plugin.json → ${join(manifestDir, 'plugin.json')}`);
     }
 
-    // R3: generate hook modules from canonical hooks.json
-    const hookResult = generateOmpHookModules(hooksSourceDir, installPath);
+    // R3: generate hook modules from canonical hooks.json. Skipped when the CLI is below the
+    // plugin's minCliVersion — the modules would call `superskill hook run <id>` the old CLI
+    // doesn't know. R2 (manifest) and R4 (command translation) still run unconditionally.
+    let hookResult: OmpHookResult;
+    if (options.skipHooks) {
+        if (options.verbose) echo('  OMP hooks: skipped (CLI below plugin minCliVersion)');
+        hookResult = { count: 0, files: [], message: 'OMP hooks skipped (CLI below plugin minCliVersion)' };
+    } else {
+        hookResult = generateOmpHookModules(hooksSourceDir, installPath);
+    }
 
     // R4: slash command dialect translation on installed commands/
     transformMarkdownDirectory(join(installPath, 'commands'), 'omp', plugin);
-
     return hookResult;
 }
 
@@ -641,4 +681,44 @@ function countSkillsInDir(skillsDir: string): number {
         if (existsSync(join(skillsDir, entry, 'SKILL.md'))) count++;
     }
     return count;
+}
+
+/**
+ * Compare two version strings of the form `MAJOR.MINOR.PATCH[-prerelease]`.
+ * Returns negative if `a < b`, zero if equal, positive if `a > b`. Non-numeric core segments
+ * coerce to 0 (so a malformed floor like `garbage` reads as `0.0.0` — it won't block a real
+ * CLI version, the safe default for a field the plugin author controls). This is a minimal
+ * semver-ish compare — not a full semver implementation (no build metadata, no precedence rules
+ * for mixed prerelease types), sufficient for the `minCliVersion` floor check where the plugin
+ * author sets the floor.
+ */
+export function compareSemver(a: string, b: string): number {
+    const parse = (v: string): { core: number[]; pre: string[] } => {
+        const [head, ...rest] = v.split('-');
+        const core = (head ?? '').split('.').map((n) => Number.parseInt(n, 10));
+        const pre = rest
+            .join('-')
+            .split('.')
+            .filter((s) => s.length > 0);
+        return { core: core.map((n) => (Number.isFinite(n) ? n : 0)), pre };
+    };
+    const pa = parse(a);
+    const pb = parse(b);
+    for (let i = 0; i < 3; i++) {
+        const diff = (pa.core[i] ?? 0) - (pb.core[i] ?? 0);
+        if (diff !== 0) return diff;
+    }
+    // A version with no prerelease is greater than one with a prerelease (1.0.0 > 1.0.0-beta).
+    if (pa.pre.length === 0 && pb.pre.length > 0) return 1;
+    if (pa.pre.length > 0 && pb.pre.length === 0) return -1;
+    for (let i = 0; i < Math.max(pa.pre.length, pb.pre.length); i++) {
+        const sa = pa.pre[i] ?? '';
+        const sb = pb.pre[i] ?? '';
+        if (sa === sb) continue;
+        const na = Number.parseInt(sa, 10);
+        const nb = Number.parseInt(sb, 10);
+        if (Number.isFinite(na) && Number.isFinite(nb)) return na - nb;
+        return sa < sb ? -1 : 1;
+    }
+    return 0;
 }

@@ -156,3 +156,5 @@ dist
 /apps/cli/README.md
 /apps/cli/templates/
 /apps/cli/rubrics/
+/.spur/run/
+/.spur/context/

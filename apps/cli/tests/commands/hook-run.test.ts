@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Command } from 'commander';
 import { hookRun, registerHookRun, runSpTaskWriteGuard } from '../../src/commands/hook-run';
+import { cliVersion } from '../../src/version';
 
 /**
  * `superskill hook run <plugin> <hook-id>` — the cross-agent hook runtime trigger (task 0151).
@@ -52,24 +53,30 @@ describe('hook run — registration', () => {
 
         await cmd.parseAsync(['node', 'hook', 'run', 'sp', 'does-not-exist']);
 
-        expect(exit).toHaveBeenCalledWith(2);
+        // Unknown hooks fail open (exit 0) — see dispatcher test for the policy rationale.
+        expect(exit).toHaveBeenCalledWith(0);
     });
 });
 
 describe('hook run — dispatcher', () => {
-    it('exits 2 with a clear error and the known-hook list for an unknown hook id', () => {
-        // stderr capture
+    it('fails open (exit 0) with a skew warning and the known-hook list for an unknown hook id', () => {
+        // Unknown hooks fail open: an unrecognized id means the installed plugin emits a hook
+        // the running CLI doesn't know — version skew, not a policy violation. Blocking would
+        // turn skew into stuck agent loops. Assert we still surface a loud warning + the list.
         const errs: string[] = [];
         const originalErr = process.stderr.write.bind(process.stderr);
-        // biome-ignore lint/suspicious/noExplicitAny: stderr.write overload shim
-        (process.stderr.write as any) = (chunk: unknown) => {
+        (process.stderr.write as (chunk: unknown) => boolean) = (chunk: unknown) => {
             errs.push(String(chunk));
             return true;
         };
         try {
             const code = hookRun('sp', 'does-not-exist', {}, '{}');
-            expect(code).toBe(2);
+            expect(code).toBe(0);
             expect(errs.join('')).toContain("unknown hook 'sp does-not-exist'");
+            expect(errs.join('')).toContain('Failing open');
+            // The warning must name the real installed version — 'unknown' means the version
+            // lookup silently broke (task 0074: skew is only diagnosable if the version is real).
+            expect(errs.join('')).toContain(`(superskill ${cliVersion})`);
             expect(errs.join('')).toContain('sp/task-write-guard');
             expect(errs.join('')).toContain('sp/context-post-tool');
             expect(errs.join('')).toContain('sp/context-session-start');

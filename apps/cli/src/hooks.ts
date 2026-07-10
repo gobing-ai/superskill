@@ -37,6 +37,13 @@ interface CanonicalHookDefinition {
 
 interface CanonicalHooksConfig {
     version?: number;
+    /**
+     * Floor CLI version for these hooks. `superskill install` compares this against the installed
+     * CLI version and, if the CLI is older, warns and skips hook emission entirely (skills/commands
+     * still install) rather than emitting hooks that call a `superskill hook run <id>` the old CLI
+     * treats as unknown. Semver-ish: missing/invalid = no floor; prerelease tags compared as-is.
+     */
+    minCliVersion?: string;
     hooks?: Record<string, CanonicalHookDefinition[]>;
 }
 

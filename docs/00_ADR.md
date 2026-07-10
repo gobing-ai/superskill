@@ -2,9 +2,9 @@
 doc: 00_ADR
 owns: WHY — which cross-cutting decision was made, and the one-line reason
 authority: authoritative
-version: 1.6.0
+version: 1.7.0
 owner: Robin Min
-updated_at: 2026-06-22
+updated_at: 2026-07-10
 read_before: any structural change; add a dated entry before diverging from a decision
 edit_rules: 99 §6.1
 sync: [T1, T2]
@@ -253,3 +253,27 @@ Reversals = new entries naming what they supersede. Burned numbers get a `Skippe
 **Why.** Phase 1's exact-match + rule judge cannot handle open-ended skills where no exact string or rule defines "the agent behaved well." Pairwise comparison is materially more stable than differencing two absolute scores (SkillOpt's contrastive-reflect insight). The noise floor is the credibility core: without it, a noisy judge accepts random variation as improvement — strictly worse than no gate.
 
 **Detail.** See task 0069. Components: `packages/core/src/quality/eval-cases.ts` (rubric reference_kind + RubricRef), `apps/cli/src/operations/pairwise-judge.ts` (pairwise judge + `TsAiRunnerJudgeBackend` + `ScriptedJudgeBackend`), `apps/cli/src/operations/noise-floor.ts` (signed-margin noise-floor estimation + reject-within-noise), `apps/cli/src/operations/evolve.ts` (rubric integration into empirical gate, budget fail-loud, empirical persistence of noise_floor/rubric_delta). Seed/temperature are passed through the local judge seam for runners that support them; noise-floor rejection remains the required protection when the underlying runner ignores those fields.
+
+---
+
+## ADR-020: Unknown hook ids fail open (warn + exit 0), not closed (exit 2)
+
+**Status:** Accepted · **Date:** 2026-07-10
+
+**Decision.** `superskill hook run <plugin> <hookId>` returns exit 0 with a one-line stderr warning when the hook id is not in the `HOOK_RUNNERS` registry — it no longer returns exit 2 (the universal block signal). Only *recognized* hooks keep their own exit-code contracts (e.g. `task-write-guard` still blocks on violation). A future fail-closed-when-unknown class, if needed, must be encoded by registry metadata or id convention (e.g. ids ending `-guard` refuse to no-op), never by reinstating a blanket exit 2.
+
+**Why.** "This CLI is too old to know the hook" is a deployment/version-skew condition, not a policy violation — returning the block signal on an unrecognized id amplified a plugin/CLI version gap into blocked Stop events and an agent loop (incident 2026-07-10).
+
+**Detail.** See task 0074; implementation at `apps/cli/src/commands/hook-run.ts` (unknown-id branch). The fail-open is the load-bearing fix; ADR-021 is the early-warning layer that cannot be enforced on Claude Code's own marketplace sync path.
+
+---
+
+## ADR-021: Plugin↔CLI compatibility contract — `minCliVersion` + CLI-before-plugin release ordering
+
+**Status:** Accepted · **Date:** 2026-07-10
+
+**Decision.** A plugin's canonical `hooks.json` may declare `"minCliVersion": "X.Y.Z"`; `superskill install` reads it and, when the installed CLI is below the floor, warns and skips emitting that plugin's hooks (skills still install). This is warn-and-skip, never refuse — and it is early-warning only, because Claude Code's marketplace sync does not pass through `superskill install`. The cross-repo release-ordering rule is binding: **the CLI capability publishes before or with the plugin that calls it** — any commit touching the `HOOK_RUNNERS` registry ships with a version bump before the plugin relying on it ships.
+
+**Why.** The sp plugin (spur-new) and the CLI (this repo) evolve independently with no compat contract; `minCliVersion` makes the floor declarable and the install path self-describing, while the release-ordering rule prevents the recurrence root cause (a plugin shipping `hooks.json` entries calling CLI runners that exist in no published CLI).
+
+**Detail.** See task 0074; `minCliVersion` field shape at `apps/cli/src/hooks.ts` (`CanonicalHooksConfig`), gate logic at `apps/cli/src/commands/install.ts` (`compareSemver` + `hooksBlockedByCliVersion`), mapper preservation at `packages/core/src/mapper.ts`. Rejected: hard version pinning (install refuses) — too brittle for single-operator multi-machine; auto-publish on registry change — heavier release automation, out of scope.

@@ -76,7 +76,9 @@ function convertClaudeHooksToCanonical(claudeJson: JsonObject): JsonObject {
             canonical[canonicalEvent] = defs;
         }
     }
-    return { hooks: canonical };
+    // Preserve top-level metadata (e.g. minCliVersion) alongside the converted hooks block.
+    const { hooks: _dropped, ...rest } = claudeJson;
+    return { ...rest, hooks: canonical };
 }
 
 /** Update the `name:` frontmatter field to the prefixed canonical name.

@@ -8,6 +8,7 @@ import {
     extractLastAssistantMessage,
     verifyAntiHallucinationProtocol,
 } from '../../../../plugins/cc/scripts/anti-hallucination/ah_guard';
+import { cliVersion } from '../version';
 
 /**
  * `superskill hook run <plugin> <hook-id>` — the cross-agent hook runtime trigger.
@@ -15,9 +16,11 @@ import {
  * Installed hook configs call a stable PATH command (`superskill hook run …`) instead of a
  * plugin-checkout script path or a Claude-only `${CLAUDE_PLUGIN_ROOT}` reference. The dispatcher
  * resolves a known {@link HookRunner} from the registry, hands it stdin + the process env, writes
- * the runner's JSON to stdout, and exits with the runner's code. Unknown `<plugin>/<hook-id>` exits
- * non-zero with a clear error (this never fails open — an unknown hook id is a config bug, not a
- * runtime payload).
+ * the runner's JSON to stdout, and exits with the runner's code. Unknown `<plugin>/<hook-id>`
+ * fails **open** (exit 0 + stderr warning naming the hook and the installed CLI version): an
+ * unknown id is a deployment skew (CLI too old for the plugin), not a policy violation — blocking
+ * here turns version skew into blocked Stops and agent loops. Known guards keep their own exit
+ * codes regardless.
  *
  * Runners signal via exit codes (cross-agent): PreToolUse allow → empty stdout + exit 0; deny →
  * exit 2 + reason on stderr; Stop → canonical JSON with 0/non-zero. Agents that cannot parse a
@@ -355,8 +358,15 @@ const HOOK_RUNNERS: Record<string, HookRunner> = {
 export function hookRun(plugin: string, hookId: string, env: NodeJS.ProcessEnv, stdinText: string): number {
     const runner = HOOK_RUNNERS[`${plugin}/${hookId}`];
     if (!runner) {
-        echoError(`Error: unknown hook '${plugin} ${hookId}'. Known hooks: ${Object.keys(HOOK_RUNNERS).join(', ')}`);
-        return 2;
+        // Fail open: an unknown hook id signals plugin/CLI version skew (the installed plugin
+        // emits a hook the running CLI doesn't recognize), not a policy violation. Blocking here
+        // would turn version skew into blocked Stops and stuck agent loops. Warn loudly and allow.
+        echoError(
+            `Warning: unknown hook '${plugin} ${hookId}' (superskill ${cliVersion}). ` +
+                `This usually means the installed plugin expects a newer CLI than the one on PATH. ` +
+                `Known hooks: ${Object.keys(HOOK_RUNNERS).join(', ')}. Failing open (exit 0).`,
+        );
+        return 0;
     }
     const result = runner.run(env, stdinText);
     // WHY conditional: echo('') writes '\n' (writeLine always appends a newline). A bare newline
