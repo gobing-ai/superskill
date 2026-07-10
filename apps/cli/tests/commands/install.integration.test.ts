@@ -227,7 +227,7 @@ describe('executeInstall', () => {
             { marketplacePath, global: false, dryRun: true, verbose: false },
             { runRulesync: mockRunRulesync },
         );
-        expect(capturedTargets).toEqual(['codex', 'pi', 'opencode']);
+        expect(capturedTargets).toEqual(['codex', 'opencode']);
     });
 
     it('runs pipeline transforms before rulesync (commands adapted as skills)', async () => {
@@ -287,17 +287,26 @@ describe('executeInstall', () => {
         const { marketplacePath } = setupPluginDir();
         const outRoot = join(tmpDir, 'out');
 
-        await executeInstall('demo', ['hermes', 'omp'], {
-            marketplacePath,
-            global: false,
-            dryRun: false,
-            verbose: false,
-            outputRoot: outRoot,
-        });
+        await executeInstall(
+            'demo',
+            ['hermes', 'omp'],
+            {
+                marketplacePath,
+                global: false,
+                dryRun: false,
+                verbose: false,
+                outputRoot: outRoot,
+            },
+            {
+                // OMP native install spawns the `omp` binary — mock it so the test stays hermetic.
+                // resolveOmpInstallPath returns undefined (no registry written) so post-install is skipped.
+                runOmpInstall: async () => {},
+            },
+        );
 
         expect(existsSync(join(outRoot, '.hermes', 'skills', 'demo-a', 'SKILL.md'))).toBe(true);
-        // OMP reads from .agents/skills/ natively (unified with codex/pi)
-        expect(existsSync(join(outRoot, '.agents', 'skills', 'demo-b', 'SKILL.md'))).toBe(true);
+        // OMP skills are now installed natively via the omp CLI, not copied to .agents/skills/
+        expect(existsSync(join(outRoot, '.agents', 'skills', 'demo-b', 'SKILL.md'))).toBe(false);
     });
 
     it('throws when plugin not found', () => {
@@ -481,17 +490,18 @@ describe('executeInstall', () => {
             else process.env.HOME_DIR = origHomeDir;
         }
 
-        // codex/pi share codexcli → global reldir .agents/skills. (omp is a surrogate of pi
-        // and reads from the same shared dir, not tested here.)
+        // codex/pi share codexcli → global reldir .agents/skills. (omp no longer uses this
+        // path — it's installed natively via the omp CLI as of task 0073.)
         expect(existsSync(join(fakeHome, '.agents', 'skills', 'demo-a', 'SKILL.md'))).toBe(true);
         expect(existsSync(join(fakeHome, '.agents', 'skills', 'demo-b', 'SKILL.md'))).toBe(true);
     });
 
-    it('verbose install does not double-echo hook-emit results (pi/omp/hermes each printed once)', async () => {
+    it('verbose install does not double-echo hook-emit results (pi/hermes each printed once)', async () => {
         // Regression test for the bug where the per-target verbose echo at the dispatch site
         // AND the post-loop unconditional echo at install.ts:296-299 both fired in --verbose
-        // mode, producing duplicated pi/omp/hermes lines. The fix gates the post-loop echo on
+        // mode, producing duplicated pi/hermes lines. The fix gates the post-loop echo on
         // `!options.verbose`; verbose mode already echoes each result at the dispatch site.
+        // (OMP no longer goes through hook-emit — it's installed natively as of task 0073.)
         const { marketplacePath } = setupPluginDir();
         const fakeHome = join(tmpDir, 'fake-home-verbose');
         mkdirSync(fakeHome, { recursive: true });
@@ -507,12 +517,20 @@ describe('executeInstall', () => {
         };
 
         try {
-            await executeInstall('demo', ['pi', 'omp', 'hermes'], {
-                marketplacePath,
-                global: true,
-                dryRun: false,
-                verbose: true,
-            });
+            await executeInstall(
+                'demo',
+                ['pi', 'omp', 'hermes'],
+                {
+                    marketplacePath,
+                    global: true,
+                    dryRun: false,
+                    verbose: true,
+                },
+                {
+                    // OMP native install spawns the `omp` binary — mock for hermetic testing.
+                    runOmpInstall: async () => {},
+                },
+            );
         } finally {
             process.stdout.write = origWrite;
             if (origHomeDir === undefined) delete process.env.HOME_DIR;
@@ -529,28 +547,27 @@ describe('executeInstall', () => {
         const piRulesyncLines = output.match(/^\s*pi: \d+ skill\(s\) at .+$/gm) ?? [];
         const piHookLines =
             output.match(/^\s*pi: (?:no hooks in plugin|no mappable hooks|.+? hook\(s\) emitted)/gm) ?? [];
-        const ompRulesyncLines = output.match(/^\s*omp: \d+ skill\(s\) at .+$/gm) ?? [];
-        const ompHookLines =
-            output.match(/^\s*omp: (?:no hooks in plugin|no mappable hooks|.+? hook\(s\) emitted)/gm) ?? [];
         const hermesRulesyncLines = output.match(/^\s*hermes: \d+ skill\(s\) at .+$/gm) ?? [];
         const hermesHookLines =
             output.match(/^\s*hermes: (?:no hooks in plugin|no hooks to install|.+? hook\(s\) copied)/gm) ?? [];
         expect(piRulesyncLines).toHaveLength(1);
         expect(piHookLines).toHaveLength(1);
-        expect(ompRulesyncLines).toHaveLength(0);
-        expect(ompHookLines).toHaveLength(1);
         expect(hermesRulesyncLines).toHaveLength(0);
         expect(hermesHookLines).toHaveLength(1);
+        // OMP is now installed natively — verbose output shows the native install message,
+        // not a hook-emit line.
+        expect(output).toContain('OMP: registering marketplace and installing plugin');
         // Sanity: the per-target verbose copy-marker is present (verbose is on, so the
         // dispatch-site "Copying to Hermes" line is emitted — was not over-suppressed).
         expect(output).toContain('Copying to Hermes');
     });
 
-    it('non-verbose install still surfaces hook-emit results for pi/omp/hermes', async () => {
-        // Companion test: when --verbose is off, the post-loop echo at install.ts:296-299 is
-        // the ONLY place hook results surface. With the fix, this echo is gated on
-        // `!options.verbose`, so non-verbose output is unchanged (pi/omp/hermes each appear
-        // exactly once via the post-loop echo).
+    it('non-verbose install still surfaces hook-emit results for pi/hermes (omp is silent)', async () => {
+        // Companion test: when --verbose is off, the post-loop echo at install.ts is
+        // the ONLY place hook results surface (gated on `!options.verbose`). Pi and hermes
+        // each push to hookEmitResults and appear once via the post-loop echo.
+        // OMP is installed natively as of task 0073 — its messages are verbose-only, so
+        // in non-verbose mode it produces no output at all.
         const { marketplacePath } = setupPluginDir();
         const fakeHome = join(tmpDir, 'fake-home-quiet');
         mkdirSync(fakeHome, { recursive: true });
@@ -565,12 +582,20 @@ describe('executeInstall', () => {
         };
 
         try {
-            await executeInstall('demo', ['pi', 'omp', 'hermes'], {
-                marketplacePath,
-                global: true,
-                dryRun: false,
-                verbose: false,
-            });
+            await executeInstall(
+                'demo',
+                ['pi', 'omp', 'hermes'],
+                {
+                    marketplacePath,
+                    global: true,
+                    dryRun: false,
+                    verbose: false,
+                },
+                {
+                    // OMP native install spawns the `omp` binary — mock for hermetic testing.
+                    runOmpInstall: async () => {},
+                },
+            );
         } finally {
             process.stdout.write = origWrite;
             if (origHomeDir === undefined) delete process.env.HOME_DIR;
@@ -578,14 +603,14 @@ describe('executeInstall', () => {
         }
 
         const output = chunks.join('');
-        // Same line-prefix match as the verbose test — the post-loop echo (gated on
-        // !options.verbose) emits each target's line once.
+        // Pi and hermes each appear once via the post-loop echo (non-verbose path).
         const piLines = output.match(/^\s*pi: .*$/gm) ?? [];
-        const ompLines = output.match(/^\s*omp: .*$/gm) ?? [];
         const hermesLines = output.match(/^\s*hermes: .*$/gm) ?? [];
         expect(piLines).toHaveLength(1);
-        expect(ompLines).toHaveLength(1);
         expect(hermesLines).toHaveLength(1);
+        // OMP produces no output in non-verbose mode (all its messages are verbose-only).
+        const ompLines = output.match(/^\s*[Oo][Mm][Pp]: .*$/gm) ?? [];
+        expect(ompLines).toHaveLength(0);
         // And the per-target verbose copy-marker is NOT present (verbose is off).
         expect(output).not.toContain('Copying to Hermes');
     });

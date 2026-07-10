@@ -27,6 +27,7 @@ import {
 import { echo } from '@gobing-ai/ts-utils';
 import type { Command } from 'commander';
 import { type EmitHooksResult, emitHermesHooks, emitPiStyleHooks } from '../hooks';
+import { generateOmpHookModules, type OmpHookResult } from '../omp-hooks';
 
 /**
  * Register the `superskill install` subcommand on the given Commander program.
@@ -75,6 +76,13 @@ interface InstallDependencies {
     runRulesync?: typeof runRulesync;
     /** Spawn `claude plugin marketplace add` + `claude plugin install`. Mockable for tests. */
     runClaudeInstall?: (marketplaceRoot: string, marketplaceName: string, plugin: string) => Promise<void>;
+    /** Spawn `omp plugin marketplace add` + `omp plugin install`. Mockable for tests. */
+    runOmpInstall?: (
+        marketplaceRoot: string,
+        marketplaceName: string,
+        plugin: string,
+        global: boolean,
+    ) => Promise<void>;
 }
 
 interface InstallResultCounts {
@@ -100,6 +108,7 @@ export async function executeInstall(
 ): Promise<void> {
     const runRulesyncImpl = dependencies.runRulesync ?? runRulesync;
     const runClaudeInstallImpl = dependencies.runClaudeInstall ?? defaultRunClaudeInstall;
+    const runOmpInstallImpl = dependencies.runOmpInstall ?? defaultRunOmpInstall;
 
     if (options.verbose) echo(`Resolving plugin '${plugin}'...`);
 
@@ -126,22 +135,12 @@ export async function executeInstall(
         targetInputRoots.set(target, targetInputRoot);
     }
 
-    // Step 4: Run rulesync for supported targets. Include surrogate targets:
-    // omp reuses pi's rulesync output, hermes reuses opencode's (see ADR-010).
+    // Step 4: Run rulesync for supported targets. omp is now installed natively
+    // (marketplace add + plugin install — see dispatch loop); hermes reuses
+    // opencode's rulesync output (see ADR-010).
     // Only request features the mapper actually produced — requesting 'mcp' when
-    // the plugin has no mcp.json makes rulesync log a per-target ENOENT for the
-    // missing .rulesync/mcp.json on every install.
-    // Hooks are routed in a SEPARATE pass through TARGET_TO_RULESYNC_HOOKS so Antigravity reaches
-    // its native hook generator (.agents/hooks.json) instead of sharing 'codexcli' with skills. The
-    // main pass carries everything except hooks; the hooks-only pass carries just 'hooks'.
     const rulesyncFeatures = ['skills', ...(mapResult.mcp ? (['mcp'] as const) : [])] as const;
     const rulesyncTargets = targets.filter((t) => t !== 'claude' && t !== 'hermes' && t !== 'omp');
-    if (targets.includes('omp') && !targets.includes('pi')) {
-        if (!targetInputRoots.has('pi')) {
-            targetInputRoots.set('pi', prepareTargetRulesyncInput(outputDir, 'pi', plugin));
-        }
-        rulesyncTargets.push('pi');
-    }
     if (targets.includes('hermes') && !targets.includes('opencode')) {
         if (!targetInputRoots.has('opencode')) {
             targetInputRoots.set('opencode', prepareTargetRulesyncInput(outputDir, 'opencode', plugin));
@@ -268,18 +267,24 @@ export async function executeInstall(
         }
 
         if (target === 'omp') {
-            // Skills: omp reads from ~/.agents/skills/ natively (shared with codex/pi). Antigravity
-            // targets are NOT in this group — they read ~/.gemini/{antigravity-cli,config}/skills/.
-            // Hooks only — emitted via @vahor/pi-hooks format (design §1.2).
-            const hookResult = emitPiStyleHooks(
-                rulesyncSourceRoot(targetInputRoots.get('pi'), outputDir),
-                outputRoot,
-                '.omp',
-                'omp',
-                { dryRun: options.dryRun, global: options.global },
-            );
-            hookEmitResults.push(hookResult);
-            if (options.verbose) echo(`  ${hookResult.message}`);
+            // OMP native install: omp supports Claude Code marketplace plugins directly
+            // via its claude-plugins provider. We register the local marketplace, install
+            // the plugin, then post-process the cached install path: copy the manifest,
+            // generate JS hook modules (hooks/pre/ + hooks/post/), and translate slash
+            // commands to OMP dialect. See task 0073.
+            if (options.verbose) echo('OMP: registering marketplace and installing plugin...');
+            if (!options.dryRun) {
+                const marketplaceName = resolution.marketplaceName ?? 'superskill';
+                const marketplaceRoot = resolution.marketplaceRoot ?? process.cwd();
+                await runOmpInstallImpl(marketplaceRoot, marketplaceName, plugin, options.global);
+                const installPath = resolveOmpInstallPath(marketplaceName, plugin, options.global);
+                if (installPath) {
+                    const hookResult = postInstallOmp(pluginRoot, installPath, outputDir, plugin, options);
+                    if (options.verbose) echo(`  ${hookResult.message}`);
+                } else if (options.verbose) {
+                    echo('  OMP install path not found in registry — skipping post-processing');
+                }
+            }
         }
 
         // Pi reaches generate() but rulesync emits no hooks for it (hooks column blank, §1 table).
@@ -355,6 +360,106 @@ async function defaultRunClaudeInstall(
         stderr: 'inherit',
     });
     await installProc.exited;
+}
+
+// ── OMP native install helpers (task 0073) ──────────────────────────────────
+
+/** Minimal OMP installed_plugins.json entry shape (see vendors/.../marketplace/types.ts). */
+interface OmpPluginEntry {
+    scope: 'user' | 'project';
+    /** Absolute path to cached plugin directory. */
+    installPath: string;
+}
+
+/** Minimal OMP registry shape — MUST match ClaudePluginsRegistry for parsing compatibility. */
+interface OmpPluginsRegistry {
+    version: number;
+    plugins: Record<string, OmpPluginEntry[]>;
+}
+
+/**
+ * Default OMP installer — clears the marketplace cache (idempotency), registers the local
+ * marketplace, then installs the plugin. Exposed as a dependency so tests can mock the spawn
+ * calls. Mirrors {@link defaultRunClaudeInstall} but adds the `global` flag for scope selection.
+ */
+async function defaultRunOmpInstall(
+    marketplaceRoot: string,
+    marketplaceName: string,
+    plugin: string,
+    global: boolean,
+): Promise<void> {
+    // Clear the OMP plugin cache keyed on the marketplace name so re-installs pick up source
+    // changes (omp caches by marketplace___plugin___version). Bound to the resolved name so
+    // we never rm -rf the wrong directory.
+    const cacheDir = join(resolveHomeDir(), '.omp', 'plugins', 'cache', marketplaceName);
+    if (existsSync(cacheDir)) rmSync(cacheDir, { recursive: true, force: true });
+
+    const addProc = Bun.spawn(['omp', 'plugin', 'marketplace', 'add', marketplaceRoot], {
+        stdout: 'inherit',
+        stderr: 'inherit',
+    });
+    await addProc.exited;
+
+    const installArgs = ['omp', 'plugin', 'install', `${plugin}@${marketplaceName}`];
+    if (!global) installArgs.push('--scope', 'project');
+    const installProc = Bun.spawn(installArgs, { stdout: 'inherit', stderr: 'inherit' });
+    await installProc.exited;
+}
+
+/**
+ * Resolve the install path for a plugin from the OMP registry. Reads
+ * `~/.omp/plugins/installed_plugins.json` (global) or
+ * `.omp/plugins/installed_plugins.json` (project), keyed by `plugin@marketplace`.
+ * Returns the first entry's `installPath`, or `undefined` when absent.
+ */
+function resolveOmpInstallPath(marketplace: string, plugin: string, global: boolean): string | undefined {
+    const registryDir = global ? join(resolveHomeDir(), '.omp', 'plugins') : join(process.cwd(), '.omp', 'plugins');
+    const registryPath = join(registryDir, 'installed_plugins.json');
+    if (!existsSync(registryPath)) return undefined;
+
+    let registry: OmpPluginsRegistry;
+    try {
+        registry = JSON.parse(readFileSync(registryPath, 'utf-8')) as OmpPluginsRegistry;
+    } catch {
+        return undefined;
+    }
+
+    if (typeof registry.version !== 'number' || !registry.plugins) return undefined;
+    const key = `${plugin}@${marketplace}`;
+    const entries = registry.plugins[key];
+    if (!Array.isArray(entries) || entries.length === 0) return undefined;
+    return entries[0]?.installPath;
+}
+
+/**
+ * Post-process an OMP-cached plugin install path: (R2) copy `plugin.json` into
+ * `.claude-plugin/plugin.json` so the claude-plugins provider validates the manifest;
+ * (R3) generate JS hook modules under `hooks/pre/` + `hooks/post/` from the canonical
+ * hooks.json; (R4) translate slash command markdown to OMP dialect.
+ */
+function postInstallOmp(
+    pluginRoot: string,
+    installPath: string,
+    hooksSourceDir: string,
+    plugin: string,
+    options: { dryRun: boolean; verbose: boolean },
+): OmpHookResult {
+    // R2: manifest copy — .claude-plugin/plugin.json
+    const manifestDir = join(installPath, '.claude-plugin');
+    const sourceManifest = join(pluginRoot, 'plugin.json');
+    if (existsSync(sourceManifest)) {
+        mkdirSync(manifestDir, { recursive: true });
+        copyFileSync(sourceManifest, join(manifestDir, 'plugin.json'));
+        if (options.verbose) echo(`  OMP manifest: copied plugin.json → ${join(manifestDir, 'plugin.json')}`);
+    }
+
+    // R3: generate hook modules from canonical hooks.json
+    const hookResult = generateOmpHookModules(hooksSourceDir, installPath);
+
+    // R4: slash command dialect translation on installed commands/
+    transformMarkdownDirectory(join(installPath, 'commands'), 'omp', plugin);
+
+    return hookResult;
 }
 
 /** Parse a comma-separated targets string. Returns all targets when undefined or "all". Throws on unknown targets. */

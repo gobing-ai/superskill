@@ -233,31 +233,35 @@ describe('executeInstall — Pi/omp/hermes hook enablement (F028)', () => {
         stdout.mockRestore();
     });
 
-    it('emits omp hooks in @vahor/pi-hooks format at .omp/hooks.json', async () => {
+    it('omp native install: invokes runOmpInstall and skips old .omp/hooks.json format', async () => {
+        // Task 0073: OMP is installed natively via the omp CLI as a Claude Code marketplace
+        // plugin. The old pi-hooks-style .omp/hooks.json is no longer emitted by install.ts.
         const workspace = createTempWorkspace();
         createPluginWithHooks(workspace, 'omphooks');
         const stdout = spyOn(process.stdout, 'write').mockImplementation(() => true);
+        let ompInstallArgs: unknown[] | null = null;
 
         await executeInstall(
             'omphooks',
             ['omp'],
-            { global: false, dryRun: false, verbose: false },
-            { runRulesync: async () => makeResult({ skillsCount: 1 }) },
+            { global: false, dryRun: false, verbose: true },
+            {
+                runRulesync: async () => makeResult({ skillsCount: 1 }),
+                runOmpInstall: async (...args: unknown[]) => {
+                    ompInstallArgs = args;
+                },
+            },
         );
 
         const output = stdout.mock.calls.map((call) => String(call[0])).join('');
-        // No silent drop — even non-verbose states the hook result
-        expect(output).toContain('omp:');
-        expect(output).toContain('hook(s) emitted');
-
-        // File written at .omp/hooks.json (project scope)
+        // Verbose mode shows the native install message
+        expect(output).toContain('OMP: registering marketplace and installing plugin');
+        // runOmpInstall was invoked (plugin name captured in args)
+        expect(ompInstallArgs).not.toBeNull();
+        expect(String(ompInstallArgs?.[2])).toBe('omphooks');
+        // Old pi-hooks-style .omp/hooks.json is NOT emitted
         const ompHooksPath = join(workspace, '.omp', 'hooks.json');
-        expect(existsSync(ompHooksPath)).toBe(true);
-
-        const ompHooks = JSON.parse(readFileSync(ompHooksPath, 'utf-8'));
-        expect(ompHooks.hooks.session_start).toBeDefined();
-        expect(ompHooks.hooks.tool_call).toBeDefined();
-        expect(ompHooks.hooks.agent_end).toBeDefined();
+        expect(existsSync(ompHooksPath)).toBe(false);
 
         stdout.mockRestore();
     });
@@ -293,11 +297,10 @@ describe('executeInstall — Pi/omp/hermes hook enablement (F028)', () => {
         stdout.mockRestore();
     });
 
-    it('no silent drop: states "no hooks" when plugin has no hooks.json', async () => {
+    it('no silent drop: states "no hooks" for pi/hermes when plugin has no hooks.json', async () => {
         const workspace = createTempWorkspace();
         createPlugin(workspace, 'nohooks'); // no hooks.json
         const stdout = spyOn(process.stdout, 'write').mockImplementation(() => true);
-
         await executeInstall(
             'nohooks',
             ['pi', 'omp', 'hermes'],
@@ -306,10 +309,12 @@ describe('executeInstall — Pi/omp/hermes hook enablement (F028)', () => {
         );
 
         const output = stdout.mock.calls.map((call) => String(call[0])).join('');
-        // Each target explicitly states no hooks — no silent drop (design §6 exit #2)
+        // Pi and hermes explicitly state no hooks — no silent drop (design §6 exit #2)
         expect(output).toContain('pi: no hooks in plugin');
-        expect(output).toContain('omp: no hooks in plugin');
         expect(output).toContain('hermes: no hooks in plugin');
+        // OMP is installed natively (task 0073) — in non-verbose dry-run it is silent.
+        // The "no hooks" message only applies to pi/hermes hook-emit targets.
+        expect(output).not.toContain('omp: no hooks in plugin');
 
         stdout.mockRestore();
     });

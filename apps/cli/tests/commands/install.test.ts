@@ -144,6 +144,9 @@ describe('executeInstall', () => {
         expect(output).toContain('Copying to Hermes');
         // OMP no longer copies skills — reads from ~/.agents/skills/ natively
         expect(output).not.toContain('Copying to omp');
+        // Dry-run: verbose message shows but actual install skipped — matches claude pattern
+        expect(output).toContain('OMP: registering marketplace and installing plugin');
+        expect(output).not.toContain('OMP manifest: copied plugin.json');
         stdout.mockRestore();
     });
 
@@ -200,18 +203,19 @@ describe('executeInstall', () => {
         stdout.mockRestore();
     });
 
-    it('runs rulesync for pi when omp is requested without pi (M2 regression)', async () => {
+    it('installs omp natively via marketplace add + plugin install (task 0073)', async () => {
         const workspace = createTempWorkspace();
         createPlugin(workspace, 'm2');
         const stdout = spyOn(process.stdout, 'write').mockImplementation(() => true);
 
         let rulesyncTargets: string[] = [];
+        let ompInstallArgs: string[] = [];
         await executeInstall(
             'm2',
             ['omp'],
             {
                 global: false,
-                dryRun: true,
+                dryRun: false,
                 verbose: true,
             },
             {
@@ -238,13 +242,22 @@ describe('executeInstall', () => {
                         hasDiff: false,
                     };
                 },
+                runOmpInstall: async (marketplaceRoot, marketplaceName, plugin, _global) => {
+                    ompInstallArgs = [marketplaceRoot, marketplaceName, plugin, String(_global)];
+                },
             },
         );
 
-        // pi should be included in rulesync targets because omp was requested
-        expect(rulesyncTargets).toContain('pi');
-        // omp itself should NOT be passed to rulesync
+        // omp is NOT passed to rulesync — it's installed natively now
         expect(rulesyncTargets).not.toContain('omp');
+        // pi is NOT auto-added as a surrogate anymore
+        expect(rulesyncTargets).not.toContain('pi');
+        // runOmpInstall was called with the right marketplace + plugin args
+        expect(ompInstallArgs[1]).toBe('superskill');
+        expect(ompInstallArgs[2]).toBe('m2');
+        // verbose output shows native install message
+        const output = stdout.mock.calls.map((call) => String(call[0])).join('');
+        expect(output).toContain('OMP: registering marketplace and installing plugin');
         stdout.mockRestore();
     });
 

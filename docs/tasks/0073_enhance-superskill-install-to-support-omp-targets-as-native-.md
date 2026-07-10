@@ -3,7 +3,7 @@ template: feature-impl
 schema_version: 1
 name: "Enhance superskill install to support omp targets as native Claude Code plugins"
 description: "Enable OMP to run superskill plugins natively by registering local marketplaces, generating compatibility manifests, translating slash command dialects, and wrapping hooks as JS/TS modules."
-status: backlog
+status: todo
 type: task
 profile: standard
 feature_id: O
@@ -12,7 +12,7 @@ priority: P2
 tags: []
 dependencies: []
 created_at: "2026-07-09T06:01:02.846Z"
-updated_at: "2026-07-10T17:28:00.370Z"
+updated_at: "2026-07-10T17:30:42.525Z"
 ---
 
 ## 0073. Enhance superskill install to support omp targets as native Claude Code plugins
@@ -160,4 +160,4 @@ Unit tests in `apps/cli/tests/commands/install.test.ts` mock `defaultRunOmpInsta
 ### History
 
 - **2026-07-09**: Initial task specification created.
-
+- 2026-07-10T17:30:42.525Z backlog → todo (system)
