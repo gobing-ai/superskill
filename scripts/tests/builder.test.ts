@@ -13,6 +13,7 @@ import {
     diskRubricCount,
     dropTags,
     type FileResolver,
+    findUnpublishableSpecifiers,
     fsLineCount,
     handleMainError,
     main,
@@ -604,5 +605,66 @@ describe('handleMainError', () => {
         });
 
         expect(() => handleMainError('raw string')).toThrow('exit 1');
+    });
+});
+
+describe('findUnpublishableSpecifiers — publish-manifest guard (task 0074)', () => {
+    // WHY: npm publishes package.json verbatim; a `catalog:`/`workspace:` specifier resolves only
+    // inside this monorepo, so a published manifest carrying one is uninstallable for consumers
+    // (shipped live in 0.2.14–0.2.16: `error: @gobing-ai/ts-utils@catalog: failed to resolve`).
+    it('flags catalog: specifiers in dependencies', () => {
+        const offenders = findUnpublishableSpecifiers(
+            JSON.stringify({ dependencies: { '@gobing-ai/ts-utils': 'catalog:', commander: '^14.0.0' } }),
+        );
+        expect(offenders).toEqual(['dependencies.@gobing-ai/ts-utils: "catalog:"']);
+    });
+
+    it('flags workspace: specifiers in peerDependencies and optionalDependencies', () => {
+        const offenders = findUnpublishableSpecifiers(
+            JSON.stringify({
+                peerDependencies: { '@gobing-ai/superskill-core': 'workspace:*' },
+                optionalDependencies: { '@gobing-ai/ts-db': 'catalog:' },
+            }),
+        );
+        expect(offenders).toContain('peerDependencies.@gobing-ai/superskill-core: "workspace:*"');
+        expect(offenders).toContain('optionalDependencies.@gobing-ai/ts-db: "catalog:"');
+    });
+
+    it('exempts devDependencies — consumers never install them', () => {
+        const offenders = findUnpublishableSpecifiers(
+            JSON.stringify({ devDependencies: { '@gobing-ai/superskill-core': 'workspace:*' } }),
+        );
+        expect(offenders).toEqual([]);
+    });
+
+    it('passes a clean manifest with concrete versions', () => {
+        const offenders = findUnpublishableSpecifiers(
+            JSON.stringify({ dependencies: { '@gobing-ai/ts-utils': '^0.4.6' } }),
+        );
+        expect(offenders).toEqual([]);
+    });
+});
+
+describe('runBuilderCommand — check-publish-manifest', () => {
+    it('passes on the real apps/cli manifest (the published workspace must stay publishable)', async () => {
+        const info = spyOn(console, 'log').mockImplementation(() => {});
+        await runBuilderCommand(['check-publish-manifest', 'apps/cli/package.json']);
+        expect(info.mock.calls.flat().join('\n')).toContain('publishable');
+    });
+
+    it('fails loudly when the manifest carries a workspace-only specifier', async () => {
+        spyOn(console, 'error').mockImplementation(() => {});
+        spyOn(process, 'exit').mockImplementation((code?: string | number | null) => {
+            throw new Error(`exit ${code}`);
+        });
+        const tmp = resolve(ROOT, 'scripts/tests/.tmp-bad-manifest.json');
+        writeFileSync(tmp, JSON.stringify({ dependencies: { x: 'catalog:' } }));
+        try {
+            await expect(
+                runBuilderCommand(['check-publish-manifest', 'scripts/tests/.tmp-bad-manifest.json']),
+            ).rejects.toThrow('exit 1');
+        } finally {
+            rmSync(tmp, { force: true });
+        }
     });
 });

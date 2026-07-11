@@ -10,6 +10,7 @@
  *   bun scripts/builder.ts drop-tags <version> --remote  delete local + remote tag
  *   bun scripts/builder.ts postbuild <outfile>           prepend bun shebang to a bundle
  *   bun scripts/builder.ts check-skill-citations [glob]  resolve skill citations + drift
+ *   bun scripts/builder.ts check-publish-manifest [pkg]  fail on catalog:/workspace: deps
  */
 
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
@@ -314,6 +315,28 @@ export async function postbuild(outfile: string) {
     await Bun.write(outfile, `#!/usr/bin/env bun\n${content}`);
 }
 
+/**
+ * Find workspace-only dependency specifiers (`catalog:`, `workspace:`) in a manifest's runtime
+ * dependency fields. npm publishes package.json verbatim — it knows nothing about Bun workspace
+ * catalogs — so any such specifier makes the published package uninstallable for consumers
+ * (`error: @gobing-ai/ts-utils@catalog: failed to resolve`; shipped live in 0.2.14–0.2.16, task
+ * 0074). devDependencies are exempt: they never install for consumers of a published package.
+ */
+export function findUnpublishableSpecifiers(manifestText: string): string[] {
+    const manifest = JSON.parse(manifestText) as Record<string, unknown>;
+    const offenders: string[] = [];
+    for (const field of ['dependencies', 'peerDependencies', 'optionalDependencies']) {
+        const deps = manifest[field];
+        if (!deps || typeof deps !== 'object') continue;
+        for (const [name, spec] of Object.entries(deps as Record<string, unknown>)) {
+            if (typeof spec === 'string' && (spec.startsWith('catalog:') || spec.startsWith('workspace:'))) {
+                offenders.push(`${field}.${name}: "${spec}"`);
+            }
+        }
+    }
+    return offenders;
+}
+
 function isNonFlag(arg: string): boolean {
     return !arg.startsWith('--');
 }
@@ -345,10 +368,22 @@ export async function runBuilderCommand(argv: string[], shell: ShellRunner = $) 
             checkSkillCitations(version ?? 'plugins/*/skills/*/SKILL.md');
             break;
         }
+        case 'check-publish-manifest': {
+            const manifestPath = version ?? 'apps/cli/package.json';
+            const offenders = findUnpublishableSpecifiers(readFileSync(resolve(ROOT, manifestPath), 'utf-8'));
+            if (offenders.length > 0) {
+                fail(
+                    `${manifestPath} contains workspace-only specifiers npm cannot publish:\n  ${offenders.join('\n  ')}\n` +
+                        'Pin concrete versions in the published workspace (catalog:/workspace: resolve only inside this monorepo).',
+                );
+            }
+            logger.info(`${manifestPath}: publishable — no workspace-only specifiers.`);
+            break;
+        }
         default:
             fail(
                 `Unknown command: ${command}\n` +
-                    'Usage: bun scripts/builder.ts <bump-ver|drop-tags|postbuild|check-skill-citations> [args]',
+                    'Usage: bun scripts/builder.ts <bump-ver|drop-tags|postbuild|check-skill-citations|check-publish-manifest> [args]',
             );
     }
 }

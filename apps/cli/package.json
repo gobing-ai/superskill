@@ -33,14 +33,14 @@
         "start": "bun run src/index.ts",
         "build": "bun build src/index.ts --compile --outfile ../../dist/superskill",
         "build:bundle": "bun build src/index.ts --outfile dist/index.js --target bun && bun run ../../scripts/builder.ts postbuild dist/index.js && rm -rf templates rubrics && cp -r src/templates templates && cp -r ../../packages/core/src/rubrics rubrics",
-        "prepublishOnly": "bun run build:bundle && cp ../../README.md README.md",
+        "prepublishOnly": "bun ../../scripts/builder.ts check-publish-manifest apps/cli/package.json && bun run build:bundle && cp ../../README.md README.md",
         "test": "NODE_ENV=test bun test --reporter=dots",
         "typecheck": "tsc --noEmit"
     },
     "dependencies": {
-        "@gobing-ai/ts-ai-runner": "catalog:",
-        "@gobing-ai/ts-db": "catalog:",
-        "@gobing-ai/ts-utils": "catalog:",
+        "@gobing-ai/ts-ai-runner": "^0.4.6",
+        "@gobing-ai/ts-db": "^0.4.6",
+        "@gobing-ai/ts-utils": "^0.4.6",
         "commander": "^14.0.0",
         "drizzle-orm": "^0.44.0",
         "drizzle-zod": "^0.7.0",

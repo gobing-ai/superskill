@@ -12,14 +12,14 @@
     },
     "apps/cli": {
       "name": "@gobing-ai/superskill",
-      "version": "0.2.14",
+      "version": "0.2.16",
       "bin": {
         "superskill": "dist/index.js",
       },
       "dependencies": {
-        "@gobing-ai/ts-ai-runner": "catalog:",
-        "@gobing-ai/ts-db": "catalog:",
-        "@gobing-ai/ts-utils": "catalog:",
+        "@gobing-ai/ts-ai-runner": "^0.4.6",
+        "@gobing-ai/ts-db": "^0.4.6",
+        "@gobing-ai/ts-utils": "^0.4.6",
         "commander": "^14.0.0",
         "drizzle-orm": "^0.44.0",
         "drizzle-zod": "^0.7.0",
