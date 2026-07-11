@@ -233,6 +233,14 @@ describe('parseErrorNote', () => {
             const body = extractBody(content);
             expect(body.trim()).toBe('');
         });
+
+        // R8 regression: frontmatter bounds primitive handles CRLF line endings
+        it('extracts body with CRLF (\\r\\n) line endings', () => {
+            const content = '---\r\nname: x\r\ndescription: d\r\n---\r\n\r\nBody text.\r\n';
+            const body = extractBody(content);
+            expect(body).toContain('Body text.');
+            expect(body).not.toContain('name:');
+        });
     });
 
     // ── clamp ───────────────────────────────────────────────────────────────────────

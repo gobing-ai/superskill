@@ -1,4 +1,4 @@
-import { FrontmatterError, parseFrontmatter } from '../content/frontmatter';
+import { FrontmatterError, findFrontmatterBounds, parseFrontmatter } from '../content/frontmatter';
 import { type DimensionScore, IMPERATIVE_KEYWORDS, VAGUE_KEYWORDS } from './types';
 
 // ── Shared Dimension Scorers ───────────────────────────────────────────────────
@@ -289,10 +289,15 @@ export function progressiveDisclosureShape(body: string, budget = 8000): boolean
  * so `---` inside body text is not mistaken for the delimiter.
  */
 export function extractBody(content: string): string {
-    if (!content.startsWith('---\n')) return content;
-    const closerMatch = content.slice(4).match(/\n---(?=\n|$)/);
-    if (closerMatch?.index === undefined) return content.slice(4); // opener but no closer
-    return content.slice(closerMatch.index + 4 + 4);
+    const bounds = findFrontmatterBounds(content);
+    if (!bounds) {
+        // No opener (no frontmatter at all) → whole string is the body.
+        // Opener without a closer is also `null` → return the post-opener text
+        // so callers see everything after the opening `---` line.
+        const opener = content.match(/^---\r?\n/);
+        return opener ? content.slice(opener[0].length) : content;
+    }
+    return content.slice(bounds.bodyStart);
 }
 
 /**

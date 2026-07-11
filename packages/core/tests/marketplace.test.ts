@@ -147,8 +147,18 @@ describe('resolvePlugin', () => {
     it('throws when marketplace manifest is missing', () => {
         expect(() => resolvePlugin('/nonexistent/marketplace.json', 'demo')).toThrow('not found');
     });
+    // R3 regression: absolute pluginRoot in metadata is rejected
+    it('rejects absolute pluginRoot in metadata', () => {
+        tmpDir = mkdtempSync('superskill-mp-');
+        const claudePluginDir = join(tmpDir, '.claude-plugin');
+        mkdirSync(claudePluginDir, { recursive: true });
+        writeFileSync(
+            join(claudePluginDir, 'marketplace.json'),
+            JSON.stringify({ metadata: { pluginRoot: '/etc' }, plugins: [{ name: 'demo', source: './demo' }] }),
+        );
+        expect(() => resolvePlugin(join(claudePluginDir, 'marketplace.json'), 'demo')).toThrow('escapes');
+    });
 });
-
 describe('listResolvablePlugins', () => {
     let tmpDir: string;
 

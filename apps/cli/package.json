@@ -32,7 +32,7 @@
     "scripts": {
         "start": "bun run src/index.ts",
         "build": "bun build src/index.ts --compile --outfile ../../dist/superskill",
-        "build:bundle": "bun build src/index.ts --outfile dist/index.js --target bun && bun run ../../scripts/builder.ts postbuild dist/index.js && rm -rf templates rubrics && cp -r src/templates templates && cp -r ../../packages/core/src/rubrics rubrics",
+        "build:bundle": "bun build src/index.ts --outfile dist/index.js --target bun && bun run ../../scripts/builder.ts postbuild dist/index.js && rm -rf templates rubrics && cp -r ../../packages/core/src/templates templates && cp -r ../../packages/core/src/rubrics rubrics",
         "prepublishOnly": "bun ../../scripts/builder.ts check-publish-manifest apps/cli/package.json && bun run build:bundle && cp ../../README.md README.md",
         "test": "NODE_ENV=test bun test --reporter=dots",
         "typecheck": "tsc --noEmit"

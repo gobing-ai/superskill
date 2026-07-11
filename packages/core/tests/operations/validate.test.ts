@@ -1,4 +1,7 @@
 import { describe, expect, it } from 'bun:test';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import type { ValidationResult } from '../../src/operations/validate';
 import { _validateContent, formatValidationResult, validate } from '../../src/operations/validate';
 
@@ -201,6 +204,17 @@ describe('_validateContent — Link validity', () => {
     it('accepts valid reference format', () => {
         const result = _validateContent('skill', fm('x', { description: 'd', skill: 'code-review' }));
         expect(result.findings.some((f) => f.field === 'skill')).toBe(false);
+    });
+
+    // R2 regression: skill/agent/command reference fields recognized for all content types (no "unknown field" warning)
+    it('recognizes skill/agent/command reference fields without unknown-field warnings', () => {
+        for (const field of ['skill', 'agent', 'command'] as const) {
+            const result = _validateContent('command', fm('x', { description: 'd', [field]: 'code-review' }));
+            const unknownWarning = result.findings.some(
+                (f) => f.severity === 'warning' && f.message.toLowerCase().includes('unknown'),
+            );
+            expect(unknownWarning).toBe(false);
+        }
     });
 });
 
@@ -508,13 +522,26 @@ describe('validate — body-link integrity', () => {
     });
 
     it('skips mailto: and other scheme-qualified links', async () => {
-        const { mkdtempSync, rmSync, writeFileSync } = await import('node:fs');
-        const { tmpdir } = await import('node:os');
-        const dir = mkdtempSync(`${tmpdir()}/superskill-link-`);
+        const dir = mkdtempSync(join(tmpdir(), 'superskill-link-'));
         try {
             writeFileSync(
                 `${dir}/SKILL.md`,
                 '---\nname: link-test\ndescription: Tests body links\n---\n\nContact [us](mailto:dev@example.com).',
+            );
+            const result = await validate('skill', dir);
+            expect(result.findings.filter((f) => f.field === '_links')).toHaveLength(0);
+        } finally {
+            rmSync(dir, { recursive: true, force: true });
+        }
+    });
+
+    // R4 regression: links inside fenced code blocks are not checked
+    it('ignores markdown links inside fenced code blocks', async () => {
+        const dir = mkdtempSync(join(tmpdir(), 'validate-fenced-'));
+        try {
+            writeFileSync(
+                `${dir}/SKILL.md`,
+                '---\nname: link-test\ndescription: Tests fenced links\n---\n\nText.\n\n```ts\nconst x = "[Broken](does-not-exist.md)";\n```\n',
             );
             const result = await validate('skill', dir);
             expect(result.findings.filter((f) => f.field === '_links')).toHaveLength(0);

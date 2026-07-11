@@ -129,6 +129,20 @@ describe('resolveContentPath', () => {
         }
     });
 
+    // R1 regression: bare skill name resolves to skills/<name>/SKILL.md under baseDir
+    it('resolves bare skill name to skills/<name>/SKILL.md under baseDir', () => {
+        setup();
+        try {
+            const skillDir = join(tmpDir, 'skills', 'my-bare-skill');
+            mkdirSync(skillDir, { recursive: true });
+            writeFileSync(join(skillDir, 'SKILL.md'), '# Bare Skill');
+            const result = resolveContentPath('skill', 'my-bare-skill', { baseDir: tmpDir });
+            expect(result).toBe(join(skillDir, 'SKILL.md'));
+        } finally {
+            teardown();
+        }
+    });
+
     it('resolves a plain file path unchanged (non-skill type)', () => {
         setup();
         try {

@@ -638,6 +638,14 @@ describe('evaluateCommand', () => {
         expect(slashScore?.score).toBe(0.1);
         expect(slashScore?.note).toContain('Missing slash syntax');
     });
+
+    // R5 regression: path segments like src/foo must NOT count as slash syntax
+    it('slash-syntax ignores path segments (src/foo) in body', () => {
+        const pathy = evaluateCommand(makeSample('description: d', 'Edit src/foo/bar.ts'), 'commands/pathy.md');
+        const slashScore = pathy.dimensions['slash-syntax'];
+        expect(slashScore?.score).toBe(0.5);
+        expect(slashScore?.note).toContain('Missing slash syntax for target');
+    });
 });
 
 describe('evaluateCommand R2 proxies', () => {

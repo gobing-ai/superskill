@@ -1,20 +1,11 @@
+import { CLAUDE_HOOK_EVENTS as KNOWN_HOOK_EVENTS } from '../content/hook-events';
 import { clamp } from './heuristics';
 import { computeAggregate, type DimensionScore, type QualityReport } from './types';
 
-// ── Constants ─────────────────────────────────────────────────────────────────
+/** Re-exported for consumers that import it from here. */
+export { KNOWN_HOOK_EVENTS };
 
-/** The canonical set of hook event names. */
-export const KNOWN_HOOK_EVENTS = [
-    'PreToolUse',
-    'PostToolUse',
-    'Stop',
-    'SubagentStop',
-    'SessionStart',
-    'SessionEnd',
-    'UserPromptSubmit',
-    'PreCompact',
-    'Notification',
-] as const;
+// ── Constants ─────────────────────────────────────────────────────────────────
 
 /** Internal model: one hook entry parsed from hooks.json. */
 interface HookEntry {

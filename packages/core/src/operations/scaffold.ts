@@ -15,7 +15,10 @@ export interface ScaffoldOptions {
     output?: string;
     /** Overwrite existing files. */
     force?: boolean;
-    /** Template tier name (e.g. `minimal` / `standard` / `specialist`). Resolves `<type>/<tier>.md`. */
+    /**
+     * Template tier name (e.g. `minimal` / `standard` / `specialist`). Resolves `<type>/<tier>.md`
+     * from the built-in `packages/core/src/templates` directory.
+     */
     template?: string;
     /** Comma-separated or array tool names to pre-populate frontmatter `tools:`. */
     tools?: string[] | string;
@@ -131,11 +134,8 @@ function mergeFrontmatterScalar(content: string, key: string, value: string): st
     return content.slice(0, fmStart) + newFmBody + content.slice(closePos);
 }
 
-/** Built-in template base directories: dev (apps/cli/src/templates) then prod (apps/cli/templates). */
-const TEMPLATE_BASE_DIRS = [
-    join(import.meta.dir, '..', '..', '..', '..', 'apps', 'cli', 'src', 'templates'),
-    join(import.meta.dir, '..', 'templates'),
-];
+/** Built-in template base directory. Templates ship inside this package. */
+const TEMPLATE_BASE_DIR = join(import.meta.dir, '..', 'templates');
 
 /**
  * Resolve the template content for a given type and optional tier.
@@ -160,11 +160,9 @@ function resolveTemplate(type: ContentType, tier?: string): string {
         if (existsSync(userTierPath)) {
             return readFileSync(userTierPath, 'utf-8');
         }
-        for (const base of TEMPLATE_BASE_DIRS) {
-            const path = join(base, type, `${tierName}.md`);
-            if (existsSync(path)) {
-                return readFileSync(path, 'utf-8');
-            }
+        const path = join(TEMPLATE_BASE_DIR, type, `${tierName}.md`);
+        if (existsSync(path)) {
+            return readFileSync(path, 'utf-8');
         }
         throw new Error(
             `Unknown template tier "${tierName}" for type "${type}". ` +
@@ -178,11 +176,9 @@ function resolveTemplate(type: ContentType, tier?: string): string {
     if (existsSync(userPath)) {
         return readFileSync(userPath, 'utf-8');
     }
-    for (const base of TEMPLATE_BASE_DIRS) {
-        const path = join(base, type, 'default.md');
-        if (existsSync(path)) {
-            return readFileSync(path, 'utf-8');
-        }
+    const defaultPath = join(TEMPLATE_BASE_DIR, type, 'default.md');
+    if (existsSync(defaultPath)) {
+        return readFileSync(defaultPath, 'utf-8');
     }
     // Unreachable in practice: default.md always ships alongside the package.
     throw new Error(`No built-in default template found for type "${type}".`);

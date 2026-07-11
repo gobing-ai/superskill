@@ -46,16 +46,6 @@ export function expandPiToolName(raw: string): string {
     return PI_TOOL_MAP[trimmed] ?? '';
 }
 
-/** Extract colon-separated skill references from prose text (`plugin:name` → `plugin-name`), deduplicated. */
-export function extractSkillsFromBody(body: string): string[] {
-    const matches = body.matchAll(/\b([a-z][a-z0-9-]*):([a-z][a-z0-9-]*)\b/gi);
-    const skills = new Set<string>();
-    for (const m of matches) {
-        skills.add(`${m[1]}-${m[2]}`);
-    }
-    return [...skills];
-}
-
 /** Parse a YAML list value (e.g. `[Read, Write]`) into an array of trimmed strings. */
 export function parseToolsList(raw: string): string[] {
     const trimmed = raw.trim();

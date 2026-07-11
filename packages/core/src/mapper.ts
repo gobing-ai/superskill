@@ -1,6 +1,7 @@
 import { existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
+import { CLAUDE_TO_CANONICAL_EVENT } from './content/hook-events';
 import { assertSafePathSegment } from './content/identity';
 import { adaptCommandToSkill } from './pipeline/adapt-command';
 import { adaptSubagentToSkill } from './pipeline/adapt-subagent';
@@ -16,27 +17,6 @@ export interface MapResult {
     hooks: boolean;
     mcp: boolean;
 }
-
-/** Claude Code PascalCase → rulesync canonical camelCase event names. */
-const CLAUDE_TO_CANONICAL_EVENT: Record<string, string> = {
-    SessionStart: 'sessionStart',
-    SessionEnd: 'sessionEnd',
-    PreToolUse: 'preToolUse',
-    PostToolUse: 'postToolUse',
-    PreModelInvocation: 'preModelInvocation',
-    PostModelInvocation: 'postModelInvocation',
-    BeforeSubmitPrompt: 'beforeSubmitPrompt',
-    // Claude Code's native event name for the prompt-submit hook is UserPromptSubmit;
-    // rulesync's canonical name for the same event is beforeSubmitPrompt.
-    UserPromptSubmit: 'beforeSubmitPrompt',
-    Stop: 'stop',
-    SubagentStop: 'subagentStop',
-    PreCompact: 'preCompact',
-    Notification: 'notification',
-    WorktreeCreate: 'worktreeCreate',
-    WorktreeRemove: 'worktreeRemove',
-    MessageDisplay: 'messageDisplay',
-};
 
 /**
  * Convert a Claude Code-format hooks object to the rulesync canonical format.

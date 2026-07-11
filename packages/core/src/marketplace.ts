@@ -112,10 +112,16 @@ export function resolvePlugin(marketplacePath: string | undefined, pluginName: s
     if (/(?:^|[\\/])\.\.(?:[\\/]|$)/.test(source)) {
         throw new Error(`Plugin source for '${pluginName}' escapes the marketplace root: '${source}'.`);
     }
-    // Also validate pluginRoot from the manifest — it can contain `..` to escape the marketplace root.
+    // Also validate pluginRoot from the manifest — it can contain `..` to escape the marketplace root,
+    // or be absolute (e.g. /etc) to bypass it entirely. Reject both.
     const pluginRootBase = manifest.metadata?.pluginRoot ?? '';
-    if (pluginRootBase && /(?:^|[\\/])\.\.(?:[\\/]|$)/.test(pluginRootBase)) {
-        throw new Error(`Plugin root for '${pluginName}' escapes the marketplace root: '${pluginRootBase}'.`);
+    if (pluginRootBase) {
+        if (/(?:^|[\\/])\.\.(?:[\\/]|$)/.test(pluginRootBase)) {
+            throw new Error(`Plugin root for '${pluginName}' escapes the marketplace root: '${pluginRootBase}'.`);
+        }
+        if (/^(?:[a-zA-Z]:[\\/]|[\\/])/.test(pluginRootBase)) {
+            throw new Error(`Plugin root for '${pluginName}' escapes the marketplace root: '${pluginRootBase}'.`);
+        }
     }
 
     // Marketplace root = directory containing .claude-plugin/ (NOT .claude-plugin/ itself)

@@ -104,9 +104,14 @@ const KNOWN_OPTIONAL: Record<ContentType, string[]> = {
  * suffixes before resolving so `foo.md#section` checks `foo.md`.
  */
 function checkBodyLinks(body: string, baseDir: string): Finding[] {
-    const findings: Finding[] = [];
+    const findings: string[] = [];
     const linkRe = /\[([^\]]*)\]\(([^)]+)\)/g;
+    // Determine which line ranges are inside fenced code blocks so links
+    // inside them are not flagged as broken (they are illustrative).
+    const fencedLines = computeFencedLineSet(body);
     for (const match of body.matchAll(linkRe)) {
+        const matchLine = (body.slice(0, match.index ?? 0).match(/\n/g)?.length ?? 0) + 1;
+        if (fencedLines.has(matchLine)) continue;
         const linkText = match[1];
         const target = match[2];
         if (!target) continue;
@@ -118,14 +123,39 @@ function checkBodyLinks(body: string, baseDir: string): Finding[] {
         if (!filePart) continue;
         const resolved = join(baseDir, filePart);
         if (!existsSync(resolved)) {
-            findings.push({
-                severity: 'warning',
-                field: '_links',
-                message: `Broken body link: [${linkText}](${target}) → target not found: ${resolved}`,
-            });
+            findings.push(`Broken body link: [${linkText}](${target}) → target not found: ${resolved}`);
         }
     }
-    return findings;
+    return findings.map((message) => ({ severity: 'warning' as const, field: '_links', message }));
+}
+
+/**
+ * Return the 1-indexed line numbers that fall inside fenced code blocks.
+ * A fence opens at a line whose first non-space chars are 3+ backticks and
+ * closes at the next such line. Tildes (~~~) are not treated as fences —
+ * shipped content uses backticks exclusively.
+ */
+function computeFencedLineSet(body: string): Set<number> {
+    const fenced = new Set<number>();
+    const lines = body.split('\n');
+    let inFence = false;
+    for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
+        if (!line) continue;
+        const fenceMatch = line.match(/^\s*(`{3,})/);
+        if (fenceMatch) {
+            if (inFence) {
+                fenced.add(i + 1); // closing fence line itself
+                inFence = false;
+            } else {
+                fenced.add(i + 1); // opening fence line itself
+                inFence = true;
+            }
+        } else if (inFence) {
+            fenced.add(i + 1);
+        }
+    }
+    return fenced;
 }
 
 /**
@@ -489,11 +519,16 @@ function strictChecks(type: ContentType, data: Record<string, unknown>, body: st
         });
     }
 
-    // Single pass: deprecated fields, trailing whitespace, unknown keys
+    // Single pass: deprecated fields, trailing whitespace, unknown keys.
+    // Reference fields (skill:, agent:, command:) are validated as references
+    // by checkLinkValidity, so they must be recognized here too — otherwise
+    // --strict flags the very fields the validator checks.
+    const REFERENCE_FIELDS = ['skill', 'agent', 'command'];
     const recognized = new Set([
         ...Object.keys(FIELD_TYPES[type] ?? {}),
         ...REQUIRED_FIELDS[type],
         ...(KNOWN_OPTIONAL[type] ?? []),
+        ...REFERENCE_FIELDS,
     ]);
     for (const [key, value] of Object.entries(data)) {
         const replacement = DEPRECATED_FIELDS[key];

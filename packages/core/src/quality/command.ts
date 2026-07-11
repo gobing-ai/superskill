@@ -161,9 +161,10 @@ function scoreToolReferences(body: string, data: Record<string, unknown>): Dimen
 }
 
 function scoreSlashSyntax(body: string, target: string): DimensionScore {
-    const slashPattern = /\/[a-z][a-z-]*/g;
-    const matches = body.match(slashPattern);
-    const count = matches ? matches.length : 0;
+    // Anchor to line-start or whitespace so path segments (src/foo) don't match.
+    const slashPattern = /(?:^|\s)(\/[a-z][a-z-]*)/g;
+    const matches = [...body.matchAll(slashPattern)];
+    const count = matches.length;
 
     let score: number;
     let note: string;

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test';
-import { expandPiToolName, extractSkillsFromBody, parseToolsList } from '../../src/pipeline/pi-tools';
+import { expandPiToolName, parseToolsList } from '../../src/pipeline/pi-tools';
 
 describe('expandPiToolName', () => {
     it('maps Read → read', () => {
@@ -46,23 +46,5 @@ describe('parseToolsList', () => {
 
     it('handles surrounding whitespace', () => {
         expect(parseToolsList(' [Read] ')).toEqual(['Read']);
-    });
-});
-
-describe('extractSkillsFromBody', () => {
-    it('extracts colon-separated skill refs from prose', () => {
-        const body = 'Use rd3:dev-run or wt:publish-to-x to complete the task.';
-        const skills = extractSkillsFromBody(body);
-        expect(skills).toContain('rd3-dev-run');
-        expect(skills).toContain('wt-publish-to-x');
-    });
-
-    it('returns empty array when no skill refs found', () => {
-        expect(extractSkillsFromBody('No skill references here.')).toEqual([]);
-    });
-
-    it('deduplicates references', () => {
-        const skills = extractSkillsFromBody('rd3:dev-run and rd3:dev-run again');
-        expect(skills).toEqual(['rd3-dev-run']);
     });
 });
