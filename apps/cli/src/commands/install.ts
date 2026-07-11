@@ -12,6 +12,7 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 import {
     adaptSubagentToPi,
+    assertSafePathSegment,
     listResolvablePlugins,
     mapPluginToRulesync,
     resolvePlugin,
@@ -371,6 +372,18 @@ export async function executeInstall(
 }
 
 /**
+ * Spawn a CLI step and fail loudly on a non-zero exit. A swallowed failure here
+ * would let `executeInstall` report "Installed" for a target that never installed.
+ */
+export async function runCheckedCommand(argv: [string, ...string[]], label: string): Promise<void> {
+    const proc = Bun.spawn(argv, { stdout: 'inherit', stderr: 'inherit' });
+    const exitCode = await proc.exited;
+    if (exitCode !== 0) {
+        throw new Error(`${label} failed with exit code ${exitCode}: ${argv.join(' ')}`);
+    }
+}
+
+/**
  * Default Claude Code installer — registers the local marketplace then installs
  * the plugin. Exposed as a dependency so tests can mock the spawn calls.
  */
@@ -381,18 +394,13 @@ async function defaultRunClaudeInstall(
 ): Promise<void> {
     // Register the local marketplace (idempotent — if already registered,
     // claude CLI exits 0 with a notice).
-    const addProc = Bun.spawn(['claude', 'plugin', 'marketplace', 'add', marketplaceRoot], {
-        stdout: 'inherit',
-        stderr: 'inherit',
-    });
-    await addProc.exited;
+    await runCheckedCommand(
+        ['claude', 'plugin', 'marketplace', 'add', marketplaceRoot],
+        'claude plugin marketplace add',
+    );
 
     // Install the plugin from the registered marketplace.
-    const installProc = Bun.spawn(['claude', 'plugin', 'install', `${plugin}@${marketplaceName}`], {
-        stdout: 'inherit',
-        stderr: 'inherit',
-    });
-    await installProc.exited;
+    await runCheckedCommand(['claude', 'plugin', 'install', `${plugin}@${marketplaceName}`], 'claude plugin install');
 }
 
 // ── OMP native install helpers (task 0073) ──────────────────────────────────
@@ -423,20 +431,17 @@ export async function defaultRunOmpInstall(
 ): Promise<void> {
     // Clear the OMP plugin cache keyed on the marketplace name so re-installs pick up source
     // changes (omp caches by marketplace___plugin___version). Bound to the resolved name so
-    // we never rm -rf the wrong directory.
+    // we never rm -rf the wrong directory. The name must be a single path segment — a
+    // manifest name like `..` would walk the recursive delete out of the cache dir.
+    assertSafePathSegment(marketplaceName, 'marketplace name');
     const cacheDir = join(resolveHomeDir(), '.omp', 'plugins', 'cache', marketplaceName);
     if (existsSync(cacheDir)) rmSync(cacheDir, { recursive: true, force: true });
 
-    const addProc = Bun.spawn(['omp', 'plugin', 'marketplace', 'add', marketplaceRoot], {
-        stdout: 'inherit',
-        stderr: 'inherit',
-    });
-    await addProc.exited;
+    await runCheckedCommand(['omp', 'plugin', 'marketplace', 'add', marketplaceRoot], 'omp plugin marketplace add');
 
-    const installArgs = ['omp', 'plugin', 'install', `${plugin}@${marketplaceName}`];
+    const installArgs: [string, ...string[]] = ['omp', 'plugin', 'install', `${plugin}@${marketplaceName}`];
     if (!global) installArgs.push('--scope', 'project');
-    const installProc = Bun.spawn(installArgs, { stdout: 'inherit', stderr: 'inherit' });
-    await installProc.exited;
+    await runCheckedCommand(installArgs, 'omp plugin install');
 }
 
 /**
@@ -538,6 +543,13 @@ export function resolvePluginRoot(plugin: string, marketplacePath?: string): Plu
                 marketplaceName = parsed.name;
             } catch {
                 // Non-fatal — fallback to 'superskill' in executeInstall
+            }
+            // The name keys recursive cache deletes under $HOME (.claude/.omp plugin caches).
+            // A hostile manifest name like `../../..` would resolve those deletes to $HOME
+            // itself — reject anything that is not a single path segment, loudly (outside
+            // the parse catch so it is never swallowed as "no name").
+            if (marketplaceName !== undefined) {
+                assertSafePathSegment(marketplaceName, 'marketplace name');
             }
         }
         return { pluginRoot: resolved.pluginRoot, marketplaceRoot: manifestRoot, marketplaceName };

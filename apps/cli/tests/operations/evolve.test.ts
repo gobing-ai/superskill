@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, spyOn } from 'bun:test';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { chdir, cwd } from 'node:process';
@@ -9,6 +9,7 @@ import type { ProposedChange, TrendEntry } from '../../src/operations/evolve';
 import {
     computeTrends,
     evolve,
+    finalizeApply,
     generateChanges,
     generateProposalId,
     interactiveReview,
@@ -1732,5 +1733,67 @@ describe('evolve — empirical gate default-path invariance', () => {
         const r = await evolve('skill', 'skills/basic/SKILL.md', { adapter, proposeOnly: true });
         expect(r.proposalPath).toBeTruthy();
         expect(r.baselineScore).toBeGreaterThan(0);
+    });
+});
+
+describe('finalizeApply', () => {
+    let dir: string;
+
+    beforeEach(() => {
+        dir = mkdtempSync(join(tmpdir(), 'superskill-finalize-'));
+    });
+
+    afterEach(() => {
+        rmSync(dir, { recursive: true, force: true });
+    });
+
+    it('persists the version snapshot and reports applied changes on a clean pass', async () => {
+        const resolvedPath = join(dir, 'skill.md');
+        const backupPath = join(dir, 'skill.md.bak');
+        writeFileSync(resolvedPath, 'post-apply content');
+        writeFileSync(backupPath, 'baseline content');
+
+        const result = await finalizeApply(
+            { postScore: 0.8, delta: 0.1 },
+            backupPath,
+            resolvedPath,
+            'prop-001',
+            0.7,
+            2,
+            '/tmp/prop.json',
+        );
+
+        expect(result).toEqual({
+            baselineScore: 0.7,
+            postScore: 0.8,
+            delta: 0.1,
+            changesApplied: 2,
+            proposalPath: '/tmp/prop.json',
+        });
+        expect(readFileSync(`${resolvedPath}.version-prop-001`, 'utf-8')).toBe('baseline content');
+    });
+
+    it('does not touch the consumed backup on a gate rejection (no ENOENT crash)', async () => {
+        // A gate rejection restores from the backup and DELETES it; the interactive
+        // evolve path previously persisted the snapshot unconditionally and crashed
+        // reading the deleted backup.
+        const resolvedPath = join(dir, 'skill.md');
+        const backupPath = join(dir, 'skill.md.bak'); // deliberately never created
+        writeFileSync(resolvedPath, 'restored baseline');
+
+        const result = await finalizeApply(
+            { postScore: 0.7, delta: 0, rejected: true, reason: 'Δ-margin gate failed' },
+            backupPath,
+            resolvedPath,
+            'prop-002',
+            0.7,
+            2,
+            '',
+        );
+
+        expect(result.rejected).toBe(true);
+        expect(result.rejectionReason).toBe('Δ-margin gate failed');
+        expect(result.changesApplied).toBe(0);
+        expect(existsSync(`${resolvedPath}.version-prop-002`)).toBe(false);
     });
 });

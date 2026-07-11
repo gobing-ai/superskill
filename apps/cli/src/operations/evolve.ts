@@ -773,17 +773,7 @@ async function ingestProposal(
             skeptic: parsed.skeptic,
             evalGate,
         });
-        if (!verdict.rejected && verdict.backupPath) {
-            await persistVersionSnapshot(verdict.backupPath, resolvedPath, proposalId);
-        }
-        return {
-            baselineScore,
-            postScore: verdict.postScore,
-            delta: verdict.delta,
-            changesApplied: verdict.rejected ? 0 : appliedCount,
-            proposalPath,
-            ...(verdict.rejected ? { rejected: true, rejectionReason: verdict.reason } : {}),
-        };
+        return finalizeApply(verdict, backupPath, resolvedPath, proposalId, baselineScore, appliedCount, proposalPath);
     }
 
     echo(`Use --accept ${proposalId} to apply this proposal.`);
@@ -1257,6 +1247,37 @@ async function persistVersionSnapshot(backupPath: string, resolvedPath: string, 
     return versionPath;
 }
 
+/**
+ * Finalize an apply+verify sequence into an EvolveResult — the shared tail of the
+ * ingest-accept, `--accept`, and interactive paths.
+ *
+ * On a gate rejection the backup was already consumed by `restoreFromBackup`
+ * (restore deletes it), so persisting the snapshot would throw ENOENT — the
+ * rejected branch must skip the snapshot and report `changesApplied: 0`.
+ * Exported for direct tests of the rejection guard.
+ */
+export async function finalizeApply(
+    verdict: { postScore: number; delta: number; rejected?: boolean; reason?: string; backupPath?: string },
+    fallbackBackupPath: string,
+    resolvedPath: string,
+    versionId: string,
+    baselineScore: number,
+    appliedCount: number,
+    proposalPath: string,
+): Promise<EvolveResult> {
+    if (!verdict.rejected) {
+        await persistVersionSnapshot(verdict.backupPath ?? fallbackBackupPath, resolvedPath, versionId);
+    }
+    return {
+        baselineScore,
+        postScore: verdict.postScore,
+        delta: verdict.delta,
+        changesApplied: verdict.rejected ? 0 : appliedCount,
+        proposalPath,
+        ...(verdict.rejected ? { rejected: true, rejectionReason: verdict.reason } : {}),
+    };
+}
+
 // ── Core ─────────────────────────────────────────────────────────────────────
 
 /**
@@ -1444,17 +1465,7 @@ export async function evolve(type: ContentType, name: string, opts?: EvolveOptio
             skeptic: storedSkeptic,
             evalGate: evalGateCtx,
         });
-        if (!verdict.rejected && verdict.backupPath) {
-            await persistVersionSnapshot(verdict.backupPath, resolvedPath, opts.acceptId);
-        }
-        return {
-            baselineScore,
-            postScore: verdict.postScore,
-            delta: verdict.delta,
-            changesApplied: verdict.rejected ? 0 : appliedCount,
-            proposalPath: '',
-            ...(verdict.rejected ? { rejected: true, rejectionReason: verdict.reason } : {}),
-        };
+        return finalizeApply(verdict, backupPath, resolvedPath, opts.acceptId, baselineScore, appliedCount, '');
     }
 
     // Step 2: PROPOSE (interactive and --propose-only paths create a fresh draft).
@@ -1499,7 +1510,7 @@ export async function evolve(type: ContentType, name: string, opts?: EvolveOptio
         : undefined;
 
     // Step 5: VERIFY
-    const { postScore, delta } = await stepVerify(
+    const verdict = await stepVerify(
         type,
         contentName,
         resolvedPath,
@@ -1510,8 +1521,7 @@ export async function evolve(type: ContentType, name: string, opts?: EvolveOptio
         evalGateCtx ? { backupPath, evalGate: evalGateCtx } : undefined,
     );
 
-    // Persist version snapshot for --rollback
-    await persistVersionSnapshot(backupPath, resolvedPath, proposalId);
-
-    return { baselineScore, postScore, delta, changesApplied, proposalPath };
+    // Persist the version snapshot for --rollback — except on a gate rejection,
+    // where the restore already consumed the backup (finalizeApply guards this).
+    return finalizeApply(verdict, backupPath, resolvedPath, proposalId, baselineScore, changesApplied, proposalPath);
 }

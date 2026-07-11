@@ -351,4 +351,50 @@ describe('generateOmpHookModules', () => {
             rmSync(installPath, { recursive: true, force: true });
         }
     });
+
+    it('generates a syntactically valid module for commands containing quotes', () => {
+        const sourceDir = makeTempDir();
+        const installPath = makeTempDir();
+        try {
+            writeHooksJson(sourceDir, {
+                hooks: {
+                    preToolUse: [
+                        { matcher: 'Write', hooks: [{ type: 'command', command: "bash -c 'echo hi'", timeout: 5 }] },
+                    ],
+                },
+            });
+            const result = generateOmpHookModules(sourceDir, installPath);
+            expect(result.count).toBe(1);
+            const content = readFileSync(requireString(result.files[0], 'module path'), 'utf-8');
+            // A naive '${p}' wrap produced a syntax-error module here — the file
+            // must parse, or OMP silently fails to load the hook.
+            expect(() => new Function(content)).not.toThrow();
+            expect(content).toContain('"\'echo"');
+        } finally {
+            rmSync(sourceDir, { recursive: true, force: true });
+            rmSync(installPath, { recursive: true, force: true });
+        }
+    });
+
+    it('keeps newlines in command/matcher out of the generated comments (no code escape)', () => {
+        const sourceDir = makeTempDir();
+        const installPath = makeTempDir();
+        try {
+            writeHooksJson(sourceDir, {
+                hooks: {
+                    stop: [{ hooks: [{ type: 'command', command: 'echo done\nconsole.log("escaped")' }] }],
+                },
+            });
+            const result = generateOmpHookModules(sourceDir, installPath);
+            expect(result.count).toBe(1);
+            const content = readFileSync(requireString(result.files[0], 'module path'), 'utf-8');
+            expect(() => new Function(content)).not.toThrow();
+            // The raw newline must not escape the `//` comment into a live statement.
+            expect(content).toContain('// Command: echo done console.log("escaped")');
+            expect(content).not.toContain('\nconsole.log("escaped")');
+        } finally {
+            rmSync(sourceDir, { recursive: true, force: true });
+            rmSync(installPath, { recursive: true, force: true });
+        }
+    });
 });

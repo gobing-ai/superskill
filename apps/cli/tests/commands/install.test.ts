@@ -3,7 +3,13 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Command } from 'commander';
-import { executeInstall, parseTargets, registerInstall } from '../../src/commands/install';
+import {
+    executeInstall,
+    parseTargets,
+    registerInstall,
+    resolvePluginRoot,
+    runCheckedCommand,
+} from '../../src/commands/install';
 
 const originalCwd = process.cwd();
 let tempDir: string | undefined;
@@ -462,5 +468,48 @@ describe('parseTargets', () => {
     it('works with hermes and omp', () => {
         const result = parseTargets('hermes,omp');
         expect(result).toEqual(['hermes', 'omp']);
+    });
+});
+
+describe('resolvePluginRoot — marketplace name safety', () => {
+    it('rejects a marketplace name that is not a single path segment', () => {
+        // The name keys recursive cache deletes under $HOME; a hostile
+        // `name: "../../.."` would resolve the delete target to $HOME itself.
+        const root = createTempWorkspace();
+        createPlugin(root, 'demo');
+        mkdirSync(join(root, '.claude-plugin'), { recursive: true });
+        writeFileSync(
+            join(root, '.claude-plugin', 'marketplace.json'),
+            JSON.stringify({ name: '../../..', plugins: [{ name: 'demo', source: './plugins/demo' }] }),
+        );
+
+        expect(() => resolvePluginRoot('demo')).toThrow('single path segment');
+    });
+
+    it('accepts a normal marketplace name', () => {
+        const root = createTempWorkspace();
+        createPlugin(root, 'demo');
+        mkdirSync(join(root, '.claude-plugin'), { recursive: true });
+        writeFileSync(
+            join(root, '.claude-plugin', 'marketplace.json'),
+            JSON.stringify({ name: 'my-marketplace', plugins: [{ name: 'demo', source: './plugins/demo' }] }),
+        );
+
+        const resolution = resolvePluginRoot('demo');
+        expect(resolution.marketplaceName).toBe('my-marketplace');
+    });
+});
+
+describe('runCheckedCommand', () => {
+    it('resolves when the command exits 0', async () => {
+        await runCheckedCommand(['true'], 'noop step');
+    });
+
+    it('throws with the label and exit code when the command fails', async () => {
+        // A swallowed non-zero exit here is how a failed `claude plugin install`
+        // still reported "Installed 'plugin' to N target(s)."
+        await expect(runCheckedCommand(['false'], 'failing step')).rejects.toThrow(
+            'failing step failed with exit code 1',
+        );
     });
 });

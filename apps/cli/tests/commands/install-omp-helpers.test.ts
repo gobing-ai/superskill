@@ -251,6 +251,34 @@ describe('defaultRunOmpInstall', () => {
         expect(spawnCalls).toHaveLength(2);
         expect(spawnCalls[0]?.[0]).toBe('omp');
     });
+
+    it('rejects a marketplace name that escapes the cache dir, before any delete or spawn', async () => {
+        if (!tempHome) throw new Error('tempHome not set');
+        // With name '..', the cache-clear target resolves to ~/.omp/plugins — the
+        // whole registry tree. The guard must throw before rmSync runs.
+        const pluginsDir = join(tempHome, '.omp', 'plugins');
+        mkdirSync(pluginsDir, { recursive: true });
+        writeFileSync(join(pluginsDir, 'installed_plugins.json'), '{}');
+
+        const marketRoot = makeTempDir('superskill-omp-market-');
+        await expect(defaultRunOmpInstall(marketRoot, '..', 'demo', true)).rejects.toThrow('single path segment');
+
+        expect(existsSync(join(pluginsDir, 'installed_plugins.json'))).toBe(true);
+        expect(spawnCalls).toHaveLength(0);
+    });
+
+    it('throws when an omp CLI step exits non-zero instead of reporting success', async () => {
+        const failingStub = ((args: string[]): StubChild => {
+            spawnCalls = [...spawnCalls, args];
+            return { exited: Promise.resolve(1), stdout: null, stderr: null, kill() {} };
+        }) as unknown as typeof Bun.spawn;
+        Bun.spawn = failingStub;
+
+        const marketRoot = makeTempDir('superskill-omp-market-');
+        await expect(defaultRunOmpInstall(marketRoot, 'superskill', 'demo', true)).rejects.toThrow(
+            'omp plugin marketplace add failed with exit code 1',
+        );
+    });
 });
 
 // ── emitHooksForSurrogateTarget (omp branch survives via `hook emit`) ────────
