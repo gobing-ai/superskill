@@ -28,19 +28,23 @@ export interface ParsedFrontmatter {
  * @throws {FrontmatterError} if the content lacks a `---` opener, closer, or the YAML is unparseable.
  */
 export function parseFrontmatter(content: string): ParsedFrontmatter {
-    if (!/^---\r?\n/.test(content)) {
+    const opener = content.match(/^---\r?\n/);
+    if (!opener) {
         throw new FrontmatterError('Missing frontmatter: content must start with ---');
     }
+    // Use the matched delimiter lengths (LF vs CRLF) — hardcoding 4 corrupts CRLF
+    // content by offsetting the body one character into the closing `---`.
+    const openerLen = opener[0].length;
 
     // Closer must be a bare `---` line: `\n---` followed by end-of-string or newline,
     // so body lines like `---draft` are not mistaken for the delimiter.
-    const closerMatch = content.slice(4).match(/\r?\n---(?=\r?\n|$)/);
+    const closerMatch = content.slice(openerLen).match(/\r?\n---(?=\r?\n|$)/);
     if (closerMatch?.index === undefined) {
         throw new FrontmatterError('Missing frontmatter closing delimiter (---)');
     }
-    const closerIdx = closerMatch.index + 4;
+    const closerIdx = closerMatch.index + openerLen;
 
-    const raw = content.slice(4, closerIdx);
+    const raw = content.slice(openerLen, closerIdx);
     if (raw.trim() === '') {
         throw new FrontmatterError('Frontmatter is empty');
     }
@@ -56,7 +60,7 @@ export function parseFrontmatter(content: string): ParsedFrontmatter {
         throw new FrontmatterError('Frontmatter must be a YAML mapping (object)');
     }
 
-    const body = content.slice(closerIdx + 4);
+    const body = content.slice(closerIdx + closerMatch[0].length);
     return { data: data as Record<string, unknown>, body, raw };
 }
 

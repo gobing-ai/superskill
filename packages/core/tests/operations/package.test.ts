@@ -134,6 +134,33 @@ describe('packageSkill', () => {
         expect(files1).toEqual(files2);
     });
 
+    it('refuses an output whose bundle dir resolves onto the source skill dir (would delete the source)', async () => {
+        // output = parent of the skill dir → outputDir === skillDir → the clean
+        // step would rm -rf the source before copying from it.
+        await expect(packageSkill(skillDir, { output: join(tmpDir, 'skills') })).rejects.toThrow('overlaps the source');
+        // Source must survive the refused call.
+        expect(existsSync(join(skillDir, 'SKILL.md'))).toBe(true);
+        expect(existsSync(join(skillDir, 'references', 'guide.md'))).toBe(true);
+    });
+
+    it('refuses an output directory inside the source skill dir', async () => {
+        await expect(packageSkill(skillDir, { output: skillDir })).rejects.toThrow('overlaps the source');
+        expect(existsSync(join(skillDir, 'SKILL.md'))).toBe(true);
+    });
+
+    it('refuses an output that is an ancestor of the source (flat .md parent-dir case)', async () => {
+        // Flat-layout skill: skills/flat.md → resolveSkillDir yields dir=skills/,
+        // name='skills', so outputDir = <tmpDir>/skills — the source's own parent
+        // tree, containing every other skill.
+        writeFileSync(join(tmpDir, 'skills', 'flat.md'), SKILL_MD);
+
+        await expect(packageSkill(join(tmpDir, 'skills', 'flat.md'), { output: tmpDir })).rejects.toThrow(
+            'overlaps the source',
+        );
+        expect(existsSync(join(tmpDir, 'skills', 'flat.md'))).toBe(true);
+        expect(existsSync(join(skillDir, 'SKILL.md'))).toBe(true);
+    });
+
     it('handles skill without companions gracefully', async () => {
         // Create a minimal skill without companions
         const minDir = join(tmpDir, 'skills', 'min-skill');

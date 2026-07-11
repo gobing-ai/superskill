@@ -26,6 +26,9 @@ const CLAUDE_TO_CANONICAL_EVENT: Record<string, string> = {
     PreModelInvocation: 'preModelInvocation',
     PostModelInvocation: 'postModelInvocation',
     BeforeSubmitPrompt: 'beforeSubmitPrompt',
+    // Claude Code's native event name for the prompt-submit hook is UserPromptSubmit;
+    // rulesync's canonical name for the same event is beforeSubmitPrompt.
+    UserPromptSubmit: 'beforeSubmitPrompt',
     Stop: 'stop',
     SubagentStop: 'subagentStop',
     PreCompact: 'preCompact',
@@ -82,13 +85,20 @@ function convertClaudeHooksToCanonical(claudeJson: JsonObject): JsonObject {
 }
 
 /** Update the `name:` frontmatter field to the prefixed canonical name.
- *  If no `name:` field exists, insert one after the opening `---`. */
+ *  If no `name:` field exists, insert one after the opening `---`. Edits are
+ *  scoped to the frontmatter block so a line-start `name:` in the body (e.g.
+ *  inside a fenced example) is never clobbered. */
 function setSkillName(content: string, newName: string): string {
-    if (/^name:\s*.+$/m.test(content)) {
-        return content.replace(/^name:\s*.+$/m, `name: ${newName}`);
+    const fmMatch = content.match(/^---\r?\n[\s\S]*?\r?\n---(?=\r?\n|$)/);
+    if (!fmMatch) {
+        // No frontmatter block — prepend one (mirrors the command/subagent stub path).
+        return `---\nname: ${newName}\n---\n\n${content}`;
     }
-    // No existing name field — insert after the opening `---` delimiter.
-    return content.replace(/^---\s*$/m, `---\nname: ${newName}`);
+    const block = fmMatch[0];
+    const updated = /^name:\s*.+$/m.test(block)
+        ? block.replace(/^name:\s*.+$/m, `name: ${newName}`)
+        : block.replace(/^---\s*$/m, `---\nname: ${newName}`);
+    return updated + content.slice(block.length);
 }
 
 /**

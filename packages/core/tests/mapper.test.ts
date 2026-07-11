@@ -181,6 +181,60 @@ describe('mapPluginToRulesync', () => {
         expect(existsSync(join(outDir, 'skills', 'rd3-coder', 'SKILL.md'))).toBe(true);
     });
 
+    it('injects the canonical name without clobbering a body `name:` line (fenced example)', () => {
+        tmpDir = mkdtempSync('superskill-mapper-');
+        const pluginDir = join(tmpDir, 'plugin');
+        const skillDir = join(pluginDir, 'skills', 'authoring');
+        mkdirSync(skillDir, { recursive: true });
+        // Frontmatter WITHOUT a name field; body contains a line-start `name:` inside
+        // a fenced example — the canonical name must land in frontmatter, not there.
+        writeFileSync(
+            join(skillDir, 'SKILL.md'),
+            [
+                '---',
+                'description: teaches skill authoring',
+                '---',
+                '',
+                'Example frontmatter:',
+                '',
+                '```yaml',
+                'name: my-example-skill',
+                'description: example',
+                '```',
+            ].join('\n'),
+        );
+
+        const outDir = join(tmpDir, '.rulesync');
+        mapPluginToRulesync(pluginDir, 'cc', outDir);
+
+        const written = readFileSync(join(outDir, 'skills', 'cc-authoring', 'SKILL.md'), 'utf-8');
+        expect(written).toContain('name: cc-authoring');
+        expect(written).toContain('name: my-example-skill');
+        expect(written.indexOf('name: cc-authoring')).toBeLessThan(written.indexOf('description: teaches'));
+    });
+
+    it('converts UserPromptSubmit (Claude Code native) to canonical beforeSubmitPrompt', () => {
+        tmpDir = mkdtempSync('superskill-mapper-');
+        const pluginDir = join(tmpDir, 'plugin-with-hooks');
+        mkdirSync(pluginDir, { recursive: true });
+        writeFileSync(
+            join(pluginDir, 'hooks.json'),
+            JSON.stringify({
+                hooks: {
+                    UserPromptSubmit: [{ hooks: [{ type: 'command', command: 'prompt-guard' }] }],
+                },
+            }),
+        );
+
+        const outDir = join(tmpDir, '.rulesync');
+        mapPluginToRulesync(pluginDir, 'has-hooks', outDir);
+
+        const written = JSON.parse(readFileSync(join(outDir, 'hooks.json'), 'utf-8'));
+        // Un-normalized PascalCase would be silently dropped by rulesync generate.
+        expect(written.hooks.beforeSubmitPrompt[0].command).toBe('prompt-guard');
+        expect(written.hooks.UserPromptSubmit).toBeUndefined();
+    });
+
     it('rejects plugin names that are not a single path segment', () => {
         tmpDir = mkdtempSync('superskill-mapper-');
         const outDir = join(tmpDir, '.rulesync');

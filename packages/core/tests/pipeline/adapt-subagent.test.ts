@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from 'bun:test';
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { parseFrontmatter } from '../../src/content/frontmatter';
 import { adaptSubagentToPi, adaptSubagentToSkill } from '../../src/pipeline/adapt-subagent';
 
 describe('adaptSubagentToSkill', () => {
@@ -239,5 +240,31 @@ describe('adaptSubagentToPi', () => {
         ].join('\n');
         const result = adaptSubagentToPi(source, 'cc-expert-agent', 'cc', () => false);
         expect(result).not.toContain('skill:');
+    });
+
+    it('emits parseable YAML for multi-line descriptions (Claude Code <example> convention)', () => {
+        // Claude Code agents conventionally embed multi-line <example> blocks in the
+        // description. The emitted Pi frontmatter must stay parseable — a literal line
+        // break inside the quoted scalar makes the whole agent file unloadable.
+        const source = [
+            '---',
+            'name: reviewer',
+            'description: |',
+            '  Use PROACTIVELY for code review.',
+            '',
+            '  <example>',
+            '  user: "Review this"',
+            '  </example>',
+            'model: sonnet',
+            'tools: [Read, Grep]',
+            '---',
+            '',
+            'You are a reviewer.',
+        ].join('\n');
+        const result = adaptSubagentToPi(source, 'cc-reviewer', 'cc', () => true);
+        const parsed = parseFrontmatter(result);
+        expect(parsed.data.name).toBe('cc-reviewer');
+        expect(String(parsed.data.description)).toContain('Use PROACTIVELY for code review.');
+        expect(String(parsed.data.description)).toContain('<example>');
     });
 });

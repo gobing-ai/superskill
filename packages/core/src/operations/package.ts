@@ -1,5 +1,5 @@
 import { cpSync, existsSync, mkdirSync, rmSync, statSync } from 'node:fs';
-import { basename, dirname, join } from 'node:path';
+import { basename, dirname, join, relative, resolve } from 'node:path';
 import { cwd } from 'node:process';
 import { resolveContentPath } from '../content/identity';
 
@@ -71,6 +71,21 @@ const COMPANION_ENTRIES = ['metadata.openclaw', 'agents'] as const;
 export async function packageSkill(name: string, opts: PackageOptions = {}): Promise<string> {
     const { dir: skillDir, name: skillName } = resolveSkillDir(name);
     const outputDir = join(opts.output ?? cwd(), skillName);
+
+    // The clean step below recursively deletes outputDir. If outputDir overlaps
+    // the source skill directory (equal, ancestor, or descendant), that delete
+    // destroys the source before anything is copied — refuse instead.
+    const resolvedOut = resolve(outputDir);
+    const resolvedSrc = resolve(skillDir);
+    const outToSrc = relative(resolvedOut, resolvedSrc);
+    const srcToOut = relative(resolvedSrc, resolvedOut);
+    if (!outToSrc.startsWith('..') || !srcToOut.startsWith('..')) {
+        throw new Error(
+            `Refusing to package '${skillName}': output directory '${resolvedOut}' overlaps the source ` +
+                `skill directory '${resolvedSrc}' — cleaning it would delete the source. ` +
+                `Pass an --output outside the skill directory.`,
+        );
+    }
 
     // Clean existing output to prevent stale companion files from prior packaging.
     if (existsSync(outputDir)) {

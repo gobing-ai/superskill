@@ -46,6 +46,15 @@ describe('parseFrontmatter', () => {
         const result = parseFrontmatter(content);
         expect(result.data).toEqual({ name: 'test', version: 2, enabled: true });
     });
+
+    it('parses CRLF content without corrupting the body (no stray dash)', () => {
+        // CRLF openers/closers are 5 chars, not 4 — hardcoded offsets shifted the
+        // body one char into the closing `---`, prefixing it with a stray `-`.
+        const content = '---\r\nname: x\r\ndescription: hello world here\r\n---\r\nBody text starts.\r\n';
+        const result = parseFrontmatter(content);
+        expect(result.data).toEqual({ name: 'x', description: 'hello world here' });
+        expect(result.body).toBe('\r\nBody text starts.\r\n');
+    });
 });
 
 describe('applyFrontmatterChange', () => {

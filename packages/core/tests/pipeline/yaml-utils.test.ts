@@ -25,4 +25,13 @@ describe('quoteYaml', () => {
     it('returns empty quoted string for empty input', () => {
         expect(quoteYaml('')).toBe('""');
     });
+
+    it('escapes newlines so the result stays a single-line YAML scalar', () => {
+        // A literal line break inside the quotes breaks the `key: value` frontmatter
+        // line the adapters emit — multi-line agent descriptions must survive.
+        expect(quoteYaml('line one\nline two')).toBe('"line one\\nline two"');
+        expect(quoteYaml('crlf\r\nnext')).toBe('"crlf\\r\\nnext"');
+        expect(quoteYaml('tab\there')).toBe('"tab\\there"');
+        expect(quoteYaml('multi\nline')).not.toContain('\n');
+    });
 });
