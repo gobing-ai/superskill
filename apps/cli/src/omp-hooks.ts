@@ -113,9 +113,13 @@ function buildModuleContent(hook: ParsedHook): string {
     const timeoutMs = hook.timeout ? hook.timeout * 1000 : undefined;
     const timeoutArg = timeoutMs ? `, timeout: ${timeoutMs}` : '';
 
+    // OMP tool names are lowercase ("write", "edit", "read", "bash") while
+    // canonical matchers are PascalCase regex ("Write|Edit"). Use a
+    // case-insensitive regex test so both semantics work: alternation (`|`),
+    // anchors, and the case gap all resolve correctly.
     const matcherGuard =
         hook.matcher !== '*' && BLOCKABLE_OMP_EVENTS[hook.ompEvent] === true
-            ? `  if (event.toolName !== '${hook.matcher}') return;\n`
+            ? `  if (!new RegExp(${JSON.stringify(hook.matcher)}, 'i').test(event.toolName)) return;\n`
             : '';
 
     const blockLogic =

@@ -78,7 +78,7 @@ describe('hookEmit — single-target hook emission (F029)', () => {
         expect(ompHooks.hooks.agent_end).toBeDefined();
     });
 
-    it('emits hermes hooks via the canonical copy-step', async () => {
+    it('emits hermes hooks via the canonical merge-step', async () => {
         const workspace = createTempWorkspace();
         createPlugin(workspace, 'hermeshooks');
 

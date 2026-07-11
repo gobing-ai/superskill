@@ -354,6 +354,94 @@ describe('emitPiStyleHooks', () => {
 
         rmSync(workspace, { recursive: true, force: true });
     });
+
+    it('merges hooks into existing hooks.json instead of overwriting', () => {
+        const workspace = makeWorkspace();
+        // Simulate a prior plugin install that wrote cc's Stop hook
+        const piDir = join(workspace, '.pi');
+        mkdirSync(piDir, { recursive: true });
+        writeFileSync(
+            join(piDir, 'hooks.json'),
+            JSON.stringify({ hooks: { agent_end: ['superskill hook run cc anti-hallucination'] } }),
+        );
+
+        // Install a second plugin with a sessionStart hook
+        const rulesyncDir = makeRulesyncDir(workspace, {
+            sessionStart: [{ type: 'command', command: 'echo sp-start' }],
+        });
+
+        const result = emitPiStyleHooks(rulesyncDir, workspace, '.pi', 'pi', { dryRun: false, global: false });
+        expect(result.emitted).toBe(true);
+
+        const written = JSON.parse(readFileSync(join(piDir, 'hooks.json'), 'utf-8'));
+        // cc's Stop hook (agent_end) preserved
+        expect(written.hooks.agent_end).toContain('superskill hook run cc anti-hallucination');
+        // sp's sessionStart hook added
+        expect(written.hooks.session_start).toContain('echo sp-start');
+
+        rmSync(workspace, { recursive: true, force: true });
+    });
+
+    it('does not duplicate hooks on re-install (idempotent)', () => {
+        const workspace = makeWorkspace();
+        const rulesyncDir = makeRulesyncDir(workspace, {
+            stop: [{ type: 'command', command: 'superskill hook run cc anti-hallucination' }],
+        });
+
+        // Install twice
+        emitPiStyleHooks(rulesyncDir, workspace, '.pi', 'pi', { dryRun: false, global: false });
+        emitPiStyleHooks(rulesyncDir, workspace, '.pi', 'pi', { dryRun: false, global: false });
+
+        const written = JSON.parse(readFileSync(join(workspace, '.pi', 'hooks.json'), 'utf-8'));
+        expect(written.hooks.agent_end).toHaveLength(1);
+        expect(written.hooks.agent_end[0]).toBe('superskill hook run cc anti-hallucination');
+
+        rmSync(workspace, { recursive: true, force: true });
+    });
+
+    it('merges hooks on the same event from different plugins', () => {
+        const workspace = makeWorkspace();
+        // First plugin: Stop hook for cc
+        const piDir = join(workspace, '.pi');
+        mkdirSync(piDir, { recursive: true });
+        writeFileSync(
+            join(piDir, 'hooks.json'),
+            JSON.stringify({ hooks: { agent_end: ['superskill hook run cc anti-hallucination'] } }),
+        );
+
+        // Second plugin: also a Stop hook, different command
+        const rulesyncDir = makeRulesyncDir(workspace, {
+            stop: [{ type: 'command', command: 'superskill hook run sp context-session-stop' }],
+        });
+
+        emitPiStyleHooks(rulesyncDir, workspace, '.pi', 'pi', { dryRun: false, global: false });
+
+        const written = JSON.parse(readFileSync(join(piDir, 'hooks.json'), 'utf-8'));
+        expect(written.hooks.agent_end).toHaveLength(2);
+        expect(written.hooks.agent_end).toContain('superskill hook run cc anti-hallucination');
+        expect(written.hooks.agent_end).toContain('superskill hook run sp context-session-stop');
+
+        rmSync(workspace, { recursive: true, force: true });
+    });
+
+    it('recovers from corrupt existing hooks.json by starting fresh', () => {
+        const workspace = makeWorkspace();
+        const piDir = join(workspace, '.pi');
+        mkdirSync(piDir, { recursive: true });
+        writeFileSync(join(piDir, 'hooks.json'), 'not valid json {{{');
+
+        const rulesyncDir = makeRulesyncDir(workspace, {
+            stop: [{ type: 'command', command: 'echo recovered' }],
+        });
+
+        const result = emitPiStyleHooks(rulesyncDir, workspace, '.pi', 'pi', { dryRun: false, global: false });
+        expect(result.emitted).toBe(true);
+
+        const written = JSON.parse(readFileSync(join(piDir, 'hooks.json'), 'utf-8'));
+        expect(written.hooks.agent_end).toContain('echo recovered');
+
+        rmSync(workspace, { recursive: true, force: true });
+    });
 });
 
 describe('emitHermesHooks', () => {
@@ -427,6 +515,60 @@ describe('emitHermesHooks', () => {
         const result = emitHermesHooks(rulesyncDir, workspace, { dryRun: false, global: false });
         expect(result.emitted).toBe(false);
         expect(result.message).toContain('no hooks in plugin');
+
+        rmSync(workspace, { recursive: true, force: true });
+    });
+    it('merges hooks into existing .hermes/hooks.json instead of overwriting', () => {
+        const workspace = makeWorkspace();
+        // Pre-existing cc Stop hook in canonical format
+        const hermesDir = join(workspace, '.hermes');
+        mkdirSync(hermesDir, { recursive: true });
+        writeFileSync(
+            join(hermesDir, 'hooks.json'),
+            JSON.stringify({
+                hooks: {
+                    Stop: [
+                        {
+                            matcher: '*',
+                            hooks: [
+                                { type: 'command', command: 'superskill hook run cc anti-hallucination', timeout: 10 },
+                            ],
+                        },
+                    ],
+                },
+            }),
+        );
+
+        // Second plugin with a different hook
+        const rulesyncDir = makeRulesyncDir(workspace, {
+            sessionStart: [{ type: 'command', command: 'echo sp-start', matcher: 'bash' }],
+        });
+
+        const result = emitHermesHooks(rulesyncDir, workspace, { dryRun: false, global: false });
+        expect(result.emitted).toBe(true);
+
+        const written = JSON.parse(readFileSync(join(hermesDir, 'hooks.json'), 'utf-8'));
+        // cc's Stop preserved
+        expect(written.hooks.Stop).toBeDefined();
+        expect(written.hooks.Stop[0].hooks[0].command).toBe('superskill hook run cc anti-hallucination');
+        // sp's sessionStart added
+        expect(written.hooks.sessionStart).toBeDefined();
+        expect(written.hooks.sessionStart[0].matcher).toBe('bash');
+
+        rmSync(workspace, { recursive: true, force: true });
+    });
+
+    it('does not duplicate hermes hooks on re-install (idempotent)', () => {
+        const workspace = makeWorkspace();
+        const rulesyncDir = makeRulesyncDir(workspace, {
+            stop: [{ type: 'command', command: 'echo stop-hook', matcher: '*' }],
+        });
+
+        emitHermesHooks(rulesyncDir, workspace, { dryRun: false, global: false });
+        emitHermesHooks(rulesyncDir, workspace, { dryRun: false, global: false });
+
+        const written = JSON.parse(readFileSync(join(workspace, '.hermes', 'hooks.json'), 'utf-8'));
+        expect(written.hooks.stop).toHaveLength(1);
 
         rmSync(workspace, { recursive: true, force: true });
     });

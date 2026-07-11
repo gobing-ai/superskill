@@ -1,4 +1,4 @@
-import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 /**
@@ -127,6 +127,50 @@ export interface EmitHooksResult {
 }
 
 /**
+ * Merge new Pi-style hooks into an existing hooks.json.
+ *
+ * Installing multiple plugins must accumulate hooks per event, not overwrite.
+ * Entries are deduplicated by command string so re-installing the same plugin
+ * is idempotent (no duplicate entries). Existing entries are preserved; new
+ * entries with a novel command are appended to each event array.
+ *
+ * Returns the merged `{ event: PiHookEntry[] }` map ready to write back.
+ */
+function mergePiHooks(hooksPath: string, newHooks: Record<string, PiHookEntry[]>): Record<string, PiHookEntry[]> {
+    let existing: Record<string, PiHookEntry[]> = {};
+    if (existsSync(hooksPath)) {
+        try {
+            const raw = JSON.parse(readFileSync(hooksPath, 'utf-8'));
+            if (raw && typeof raw.hooks === 'object' && raw.hooks !== null) {
+                existing = raw.hooks as Record<string, PiHookEntry[]>;
+            }
+        } catch {
+            // Corrupt or unparseable hooks.json — start fresh rather than crash.
+            existing = {};
+        }
+    }
+
+    const commandOf = (entry: PiHookEntry): string => (typeof entry === 'string' ? entry : entry.command);
+
+    const merged: Record<string, PiHookEntry[]> = {};
+    const allEvents = new Set([...Object.keys(existing), ...Object.keys(newHooks)]);
+    for (const event of allEvents) {
+        const ex = existing[event] ?? [];
+        const nx = newHooks[event] ?? [];
+        const seen = new Set<string>();
+        const acc: PiHookEntry[] = [];
+        for (const entry of [...ex, ...nx]) {
+            const cmd = commandOf(entry);
+            if (seen.has(cmd)) continue;
+            seen.add(cmd);
+            acc.push(entry);
+        }
+        if (acc.length > 0) merged[event] = acc;
+    }
+    return merged;
+}
+
+/**
  * Emit hooks for Pi or omp (both use the `@vahor/pi-hooks` format).
  *
  * Rung (b): superskill emits the config; `@vahor/pi-hooks` (installed by the user)
@@ -173,7 +217,8 @@ export function emitPiStyleHooks(
 
     if (!options.dryRun) {
         mkdirSync(hooksDir, { recursive: true });
-        writeFileSync(hooksPath, `${JSON.stringify({ hooks: piHooks }, null, 2)}\n`);
+        const merged = mergePiHooks(hooksPath, piHooks);
+        writeFileSync(hooksPath, `${JSON.stringify({ hooks: merged }, null, 2)}\n`);
     }
 
     return {
@@ -186,10 +231,66 @@ export function emitPiStyleHooks(
 }
 
 /**
- * Emit hooks for hermes by copying the canonical hooks.json.
+ * Merge new canonical hooks into an existing `.hermes/hooks.json`.
  *
- * Rung (c): copy-step. Hermes uses opencode as a surrogate; the canonical
- * hooks.json is copied to `.hermes/hooks.json` (project) or `~/.hermes/hooks.json` (global).
+ * Same problem as {@link mergePiHooks}: installing sp after cc must not drop
+ * cc's hooks. Canonical entries are deduplicated by the (matcher, command)
+ * pair so re-installing the same plugin is idempotent.
+ */
+function mergeCanonicalHooks(hooksPath: string, newConfig: CanonicalHooksConfig): CanonicalHooksConfig {
+    let existingHooks: Record<string, CanonicalHookDefinition[]> = {};
+    if (existsSync(hooksPath)) {
+        try {
+            const raw = JSON.parse(readFileSync(hooksPath, 'utf-8'));
+            if (raw && typeof raw.hooks === 'object' && raw.hooks !== null) {
+                existingHooks = raw.hooks as Record<string, CanonicalHookDefinition[]>;
+            }
+        } catch {
+            existingHooks = {};
+        }
+    }
+
+    const signatureOf = (def: CanonicalHookDefinition): string => {
+        const matcher = def.matcher ?? '*';
+        // Canonical format is flat: { type, command, matcher, timeout } on the entry itself.
+        // Some sources still use the Claude Code nested format: { matcher, hooks: [...] }.
+        // Handle both: if def.hooks exists (nested), signature from the inner hooks; otherwise
+        // signature from the flat entry fields.
+        const hooks = def.hooks;
+        const commands =
+            Array.isArray(hooks) && hooks.length > 0
+                ? hooks
+                      .filter((h) => h.type !== 'command' || h.command !== undefined)
+                      .map((h) => `${h.type}:${h.command ?? ''}:${h.timeout ?? ''}`)
+                : [`${def.type ?? ''}:${def.command ?? ''}:${def.timeout ?? ''}`];
+        return `${matcher}|${commands.sort().join('||')}`;
+    };
+
+    const merged: CanonicalHooksConfig['hooks'] = {};
+    const allEvents = new Set([...Object.keys(existingHooks), ...Object.keys(newConfig.hooks ?? {})]);
+    for (const event of allEvents) {
+        const ex = existingHooks[event] ?? [];
+        const nx = newConfig.hooks?.[event] ?? [];
+        const seen = new Set<string>();
+        const acc: CanonicalHookDefinition[] = [];
+        for (const def of [...ex, ...nx]) {
+            const sig = signatureOf(def);
+            if (seen.has(sig)) continue;
+            seen.add(sig);
+            acc.push(def);
+        }
+        if (acc.length > 0) merged[event] = acc;
+    }
+    return { hooks: merged };
+}
+
+/**
+ * Emit hooks for hermes by merging into the canonical hooks.json.
+ *
+ * Rung (c): copy-step (now merge-step). Hermes uses opencode as a surrogate;
+ * the canonical hooks.json is merged into `.hermes/hooks.json` (project) or
+ * `~/.hermes/hooks.json` (global) so multiple plugins accumulate rather than
+ * overwrite.
  */
 export function emitHermesHooks(rulesyncDir: string, outputRoot: string, options: EmitHooksOptions): EmitHooksResult {
     const config = readCanonicalHooks(rulesyncDir);
@@ -217,7 +318,8 @@ export function emitHermesHooks(rulesyncDir: string, outputRoot: string, options
 
     if (!options.dryRun) {
         mkdirSync(hooksDir, { recursive: true });
-        copyFileSync(join(rulesyncDir, 'hooks.json'), hooksPath);
+        const merged = mergeCanonicalHooks(hooksPath, config);
+        writeFileSync(hooksPath, `${JSON.stringify(merged, null, 2)}\n`);
     }
 
     return {
@@ -225,7 +327,7 @@ export function emitHermesHooks(rulesyncDir: string, outputRoot: string, options
         emitted: true,
         count: hookCount,
         path: hooksPath,
-        message: `hermes: ${hookCount} hook(s) copied (rung c — copy-step)`,
+        message: `hermes: ${hookCount} hook(s) merged (rung c — copy-step)`,
     };
 }
 

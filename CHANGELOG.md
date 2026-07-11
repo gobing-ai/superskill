@@ -4,6 +4,18 @@ All notable changes to `@gobing-ai/superskill` are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Conventional Commits](https://www.conventionalcommits.org/).
 
+## [0.2.19] - 2026-07-10
+
+### Bug Fixes
+
+- **Installing a second plugin no longer overwrites the first plugin's hooks** (pi + hermes targets). `emitPiStyleHooks` and `emitHermesHooks` previously wrote hooks.json with only the current plugin's entries, silently destroying hooks from any previously-installed plugin. Installing `sp` after `cc` wiped cc's `stop`/`agent_end` anti-hallucination hook from both `~/.pi/agent/hooks.json` and `~/.hermes/hooks.json`. Two new merge helpers — `mergePiHooks` (deduplicates by command string) and `mergeCanonicalHooks` (deduplicates by `(matcher, command)` signature) — read the existing file, concatenate per-event arrays, and skip duplicates so re-installing the same plugin is idempotent. Corrupt or unparseable hooks.json falls back to a fresh start instead of crashing. (`apps/cli/src/hooks.ts`)
+- **OMP generated hook matcher guard now matches case-insensitively and supports regex semantics**. The generated `.js` hook modules used `event.toolName !== 'Write|Edit'` — a strict string comparison that never matched because OMP passes lowercase tool names (`"write"`, `"edit"`) while canonical matchers are PascalCase regex (`"Write|Edit"`). The alternation `|` was also treated as a literal character, not regex OR. Replaced with `!new RegExp("Write|Edit", 'i').test(event.toolName)` — case-insensitive regex test that correctly handles alternation, anchors, and the case gap. (`apps/cli/src/omp-hooks.ts`)
+- **Hermes merge no longer drops existing entries for the same event key** (root cause of the hermes merge bug). `mergeCanonicalHooks`'s `signatureOf` function assumed the Claude Code nested format (`{ matcher, hooks: [...] }`) but the canonical format produced by the rulesync transform is flat (`{ type, command, matcher, timeout }` per entry). The signature function read `def.hooks` (undefined in flat format) → produced `*|` (empty) for every entry → all entries for the same event key deduped to the first one, dropping subsequent plugins' hooks. Fixed `signatureOf` to handle both formats: if `def.hooks` exists (nested), signature from inner hooks; otherwise signature from the flat entry's own `type`/`command`/`timeout` fields. (`apps/cli/src/hooks.ts`)
+
+### Improvements
+
+- **Merge test coverage added**: 8 new tests across `hooks.test.ts` covering pi-merge (overwrite→merge, idempotent re-install, same-event merge from different plugins, corrupt file recovery) and hermes-merge (flat canonical format dedup, nested format dedup, cross-plugin same-event merge, idempotency). OMP matcher guard tests updated for the new regex-based assertion format. Install-hooks and hook-emit test names updated from "copies" to "merges" to reflect the new behavior. 1321 tests pass, 0 fail. (`apps/cli/tests/hooks.test.ts`, `apps/cli/tests/omp-hooks.test.ts`, `apps/cli/tests/commands/install-hooks.test.ts`, `apps/cli/tests/commands/hook-emit.test.ts`)
+
 ## [0.2.15] - 2026-07-10
 
 ### New Features

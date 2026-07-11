@@ -97,7 +97,7 @@ describe('generateOmpHookModules', () => {
             // Module content: event + matcher guard + block logic
             const content = readFileSync(file, 'utf-8');
             expect(content).toContain("pi.on('tool_call'");
-            expect(content).toContain("event.toolName !== 'Bash'");
+            expect(content).toContain('new RegExp("Bash", \'i\').test(event.toolName)');
             expect(content).toContain('{ block: true');
             expect(content).toContain('module.exports = (pi) =>');
         } finally {
@@ -252,7 +252,7 @@ describe('generateOmpHookModules', () => {
             const result = generateOmpHookModules(sourceDir, installPath);
             expect(result.count).toBe(1);
             const content = readFileSync(requireString(result.files[0], 'result.files[0]'), 'utf-8');
-            expect(content).toContain("event.toolName !== 'Write'");
+            expect(content).toContain('new RegExp("Write", \'i\').test(event.toolName)');
         } finally {
             rmSync(sourceDir, { recursive: true, force: true });
             rmSync(installPath, { recursive: true, force: true });
@@ -306,6 +306,46 @@ describe('generateOmpHookModules', () => {
             const suffixedName = names.find((n) => n !== 'guard.js' && n?.startsWith('guard-'));
             expect(baseName).toBeDefined();
             expect(suffixedName).toBeDefined();
+        } finally {
+            rmSync(sourceDir, { recursive: true, force: true });
+            rmSync(installPath, { recursive: true, force: true });
+        }
+    });
+
+    it('emits regex-based case-insensitive matcher guard for alternation matchers', () => {
+        // Reproduces BUG 2: sp's task-write-guard uses matcher "Write|Edit".
+        // OMP tool names are lowercase ("write", "edit"), so the guard must use
+        // a case-insensitive regex test, not literal string comparison.
+        const sourceDir = makeTempDir();
+        const installPath = makeTempDir();
+        try {
+            writeHooksJson(sourceDir, {
+                hooks: {
+                    preToolUse: [
+                        {
+                            matcher: 'Write|Edit',
+                            hooks: [{ type: 'command', command: 'superskill hook run sp task-write-guard' }],
+                        },
+                    ],
+                },
+            });
+            const result = generateOmpHookModules(sourceDir, installPath);
+            expect(result.count).toBe(1);
+            const content = readFileSync(requireString(result.files[0], 'result.files[0]'), 'utf-8');
+
+            // Must be a regex test, not literal !==
+            expect(content).toContain('new RegExp("Write|Edit", \'i\').test(event.toolName)');
+            expect(content).not.toContain("event.toolName !== 'Write|Edit'");
+
+            // Verify the generated guard actually works: lowercase "write" matches
+            const guardMatch = content.match(/if \(!new RegExp\((.*?), 'i'\)\.test\(event\.toolName\)\) return;/);
+            expect(guardMatch).not.toBeNull();
+            const pattern = JSON.parse(guardMatch?.[1] as string);
+            const regex = new RegExp(pattern, 'i');
+            expect(regex.test('write')).toBe(true); // lowercase OMP name
+            expect(regex.test('edit')).toBe(true); // lowercase OMP name
+            expect(regex.test('Write')).toBe(true); // PascalCase still works
+            expect(regex.test('bash')).toBe(false); // non-match excluded
         } finally {
             rmSync(sourceDir, { recursive: true, force: true });
             rmSync(installPath, { recursive: true, force: true });

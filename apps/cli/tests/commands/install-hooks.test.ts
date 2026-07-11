@@ -266,7 +266,7 @@ describe('executeInstall — Pi/omp/hermes hook enablement (F028)', () => {
         stdout.mockRestore();
     });
 
-    it('copies hermes hooks (canonical) to .hermes/hooks.json via copy-step', async () => {
+    it('merges hermes hooks (canonical) into .hermes/hooks.json via copy-step', async () => {
         const workspace = createTempWorkspace();
         createPluginWithHooks(workspace, 'hermeshooks');
         const stdout = spyOn(process.stdout, 'write').mockImplementation(() => true);
@@ -280,10 +280,10 @@ describe('executeInstall — Pi/omp/hermes hook enablement (F028)', () => {
 
         const output = stdout.mock.calls.map((call) => String(call[0])).join('');
         expect(output).toContain('hermes:');
-        expect(output).toContain('hook(s) copied');
+        expect(output).toContain('hook(s) merged');
         expect(output).toContain('rung c');
 
-        // Canonical hooks.json copied to .hermes/hooks.json
+        // Canonical hooks.json merged into .hermes/hooks.json
         const hermesHooksPath = join(workspace, '.hermes', 'hooks.json');
         expect(existsSync(hermesHooksPath)).toBe(true);
 
