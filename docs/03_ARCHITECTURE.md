@@ -2,10 +2,10 @@
 doc: 03_ARCHITECTURE
 owns: HOW — module boundaries, data flow, runtime model, invariants
 authority: derived
-version: 2.5.0
+version: 2.6.0
 derived_from: [00_ADR, 01_PRD]
 owner: Robin Min
-updated_at: 2026-06-20
+updated_at: 2026-07-11
 read_before: cross-module, seam, or schema work
 edit_rules: 99 §6.4
 sync: [T1]
@@ -71,6 +71,7 @@ packages/core/src/                # ── Reusable domain logic (@gobing-ai/sup
 │   ├── edit.ts                   # Apply structured text & frontmatter modifications
 │   ├── frontmatter.ts            # Comment-preserving YAML frontmatter parser (ADR-012)
 │   ├── hash.ts                   # Content hashing helper
+│   ├── hook-events.ts            # Claude hook-event taxonomy + canonical mapping
 │   ├── identity.ts               # Content name/path identity resolver (ADR-013)
 │   ├── paths.ts                  # Data-root / DB / proposals path resolution
 │   └── types.ts                  # ContentType canonical definition
@@ -90,6 +91,8 @@ packages/core/src/                # ── Reusable domain logic (@gobing-ai/sup
 │   ├── hook.yaml
 │   ├── magent.yaml
 │   └── skill.yaml
+│
+├── templates/                    # ── Built-in scaffold templates, bundled as text imports ──
 │
 ├── pipeline/                     # ── Conversion transformations (pure stage functions) ──
 │   ├── adapt-command.ts          # Adapt Claude command .md → Skills 2.0 skill entry
@@ -136,7 +139,6 @@ apps/cli/src/                     # ── CLI app (@gobing-ai/superskill) ─�
 │   ├── proposals.ts              # Evolution proposal lifecycle DAO
 │   └── schema.ts                 # Database table schema definition
 │
-├── templates/                    # Scaffold templates (app-owned; consumed by scaffold operation)
 ├── config.ts                     # Configuration schema definition
 ├── hooks.ts                      # Hook emission (hermes/pi-style)
 ├── cli.ts                        # Program registration entrypoint
@@ -364,7 +366,7 @@ sequenceDiagram
 ### 2. `superskill <type> scaffold <name>`
 
 #### Briefing
-Loads built-in or user-configured template markdown files (e.g., `~/.superskill/templates/<type>/default.md`), substitutes template variables (`<!-- NAME -->`, `<!-- DESCRIPTION -->`, `<!-- TARGET -->`, `<!-- BODY -->`), and writes the initial structured draft to disk. Overwriting existing files is disabled unless `--force` is provided.
+Loads built-in templates embedded from `packages/core/src/templates/` or user overrides from `~/.superskill/templates/<type>/`, substitutes template variables (`<!-- NAME -->`, `<!-- DESCRIPTION -->`, `<!-- TARGET -->`, `<!-- BODY -->`), and writes the initial structured draft to disk. Overwriting existing files is disabled unless `--force` is provided.
 
 #### Sequence Diagram
 
@@ -379,7 +381,7 @@ sequenceDiagram
     User->>CLI: superskill <type> scaffold <name> --description "..." --target "..."
     CLI->>Scaffold: scaffold(type, name, options)
     Scaffold->>Scaffold: resolveTemplate(type)
-    Note over Scaffold: Checks user override ~/.superskill/templates/<type>/default.md<br/>falls back to package-root default template
+    Note over Scaffold: Checks user override ~/.superskill/templates/<type>/default.md<br/>falls back to core-owned template text embedded by Bun
     Scaffold->>Scaffold: substituteVars(template, vars)
     Note over Scaffold: Substitutes <!-- NAME -->, <!-- DESCRIPTION -->, <!-- TARGET -->, <!-- BODY -->
     Scaffold->>FS: writeFileSync([outDir]/[name].md)

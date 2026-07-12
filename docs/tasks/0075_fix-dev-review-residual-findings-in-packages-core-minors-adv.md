@@ -4,7 +4,7 @@ name: "Fix dev-review residual findings in packages/core (minors, advisories, ar
 status: done
 template: standard
 created_at: 2026-07-11T22:37:58.941Z
-updated_at: "2026-07-11T23:56:35.967Z"
+updated_at: "2026-07-12T00:07:35.431Z"
 ---
 
 ## 0075. Fix dev-review residual findings in packages/core (minors, advisories, architecture deepening C1-C4)
@@ -59,6 +59,40 @@ R9. [minor, dead surface — C4] **Collapse the duplicated Pi skills body-scan i
 - R7 boundary: the `package-boundary.test.ts` regex checks `import` statements only; the template move eliminates the `import.meta.dir` reach-through entirely, so no boundary-test extension is needed.
 - R8 scope kept surgical: scaffold fence scanners + `rewriteAllowedToolsForPi` NOT migrated (separate delimiter semantics, would balloon the diff).
 - L4 advisories (`feature_id-missing`, `deps-mirror-2026`) accepted for `--auto` mode.
+
+### Testing
+
+**Pipeline verify results**
+
+- Verdict: PASS (from verdict artifact)
+
+| Requirement | Status | Evidence |
+|-------------|--------|----------|
+| R1 | MET | packages/core/src/content/identity.ts:71; packages/core/tests/content/identity.test.ts:132; bun run test: 1348 pass, 0 fail |
+| R2 | MET | packages/core/src/operations/validate.ts:526; packages/core/tests/operations/validate.test.ts:209; bun run test: 1348 pass, 0 fail |
+| R3 | MET | packages/core/src/marketplace.ts:122; packages/core/tests/marketplace.test.ts:151; bun run test: 1348 pass, 0 fail |
+| R4 | MET | packages/core/src/operations/validate.ts:106; packages/core/tests/operations/validate.test.ts:537; bun run test: 1348 pass, 0 fail |
+| R5 | MET | packages/core/src/quality/command.ts:163; packages/core/tests/quality/evaluators.test.ts:642; bun run test: 1348 pass, 0 fail |
+| R6 | MET | packages/core/src/content/hook-events.ts:16; packages/core/tests/content/hook-events.test.ts:26; bun run test: 1348 pass, 0 fail |
+| R7 | MET | packages/core/src/operations/scaffold.ts:7; packages/core/tests/operations/scaffold.test.ts:412; standalone and JS bundle scaffold --template technique commands created SKILL.md |
+| R8 | MET | packages/core/src/content/frontmatter.ts:50; packages/core/src/quality/heuristics.ts:291; packages/core/tests/quality/heuristics.test.ts:237; bun run test: 1348 pass, 0 fail |
+| R9 | MET | packages/core/src/pipeline/pi-tools.ts (dead export removed); packages/core/src/pipeline/adapt-subagent.ts:150; rg finds no extractSkillsFromBody symbol; bun run test: 1348 pass, 0 fail |
+- Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
+
+### Review
+
+**SECU findings** (pipeline verify step — verdict: PASS)
+
+| Priority | Dimension | Location | Finding |
+|----------|-----------|----------|----------|
+| P4 | tests-pass | — | bun run test: 1348 pass, 0 fail, 3379 expect() calls across 73 files |
+| P4 | lint-clean | — | bun run lint: Biome checked 164 files; core and CLI typechecks exited 0 |
+| P4 | build-pass | — | bun run build: standalone bundle/compile exited 0 |
+| P4 | bundle-smoke | — | standalone executable and publishable JS bundle each scaffolded the technique template successfully |
+| P4 | spur-check | — | 28 enabled pre-check rules and 3 post-check rules passed; 1348 tests passed |
+| P4 | design-conformance | — | No Design section; R7 goal-equivalent CHANGED implementation is documented in Solution and core ownership matches ADR-002 |
+| P4 | scope-creep | — | Repair is limited to R7 bundle portability, its type declarations/config, and authoritative architecture sync |
+| P4 | secua | — | No unresolved blocker or major findings across security, efficiency, correctness, usability, or architecture |
 
 ### References
 

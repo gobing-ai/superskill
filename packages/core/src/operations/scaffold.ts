@@ -4,6 +4,19 @@ import { join } from 'node:path';
 import { cwd } from 'node:process';
 import { assertSafePathSegment } from '../content/identity';
 import type { ContentType } from '../content/types';
+import agentDefaultTemplate from '../templates/agent/default.md' with { type: 'text' };
+import agentMinimalTemplate from '../templates/agent/minimal.md' with { type: 'text' };
+import agentSpecialistTemplate from '../templates/agent/specialist.md' with { type: 'text' };
+import agentStandardTemplate from '../templates/agent/standard.md' with { type: 'text' };
+import commandDefaultTemplate from '../templates/command/default.md' with { type: 'text' };
+import commandPluginTemplate from '../templates/command/plugin.md' with { type: 'text' };
+import commandSimpleTemplate from '../templates/command/simple.md' with { type: 'text' };
+import commandWorkflowTemplate from '../templates/command/workflow.md' with { type: 'text' };
+import magentDefaultTemplate from '../templates/magent/default.md' with { type: 'text' };
+import skillDefaultTemplate from '../templates/skill/default.md' with { type: 'text' };
+import skillPatternTemplate from '../templates/skill/pattern.md' with { type: 'text' };
+import skillReferenceTemplate from '../templates/skill/reference.md' with { type: 'text' };
+import skillTechniqueTemplate from '../templates/skill/technique.md' with { type: 'text' };
 
 /** Options for the scaffold operation. */
 export interface ScaffoldOptions {
@@ -134,17 +147,37 @@ function mergeFrontmatterScalar(content: string, key: string, value: string): st
     return content.slice(0, fmStart) + newFmBody + content.slice(closePos);
 }
 
-/** Built-in template base directory. Templates ship inside this package. */
-const TEMPLATE_BASE_DIR = join(import.meta.dir, '..', 'templates');
+/** Built-in templates are text imports so Bun embeds them in bundles and standalone executables. */
+const BUILTIN_TEMPLATES: Partial<Record<ContentType, Record<string, string>>> = {
+    agent: {
+        default: agentDefaultTemplate,
+        minimal: agentMinimalTemplate,
+        specialist: agentSpecialistTemplate,
+        standard: agentStandardTemplate,
+    },
+    command: {
+        default: commandDefaultTemplate,
+        plugin: commandPluginTemplate,
+        simple: commandSimpleTemplate,
+        workflow: commandWorkflowTemplate,
+    },
+    magent: { default: magentDefaultTemplate },
+    skill: {
+        default: skillDefaultTemplate,
+        pattern: skillPatternTemplate,
+        reference: skillReferenceTemplate,
+        technique: skillTechniqueTemplate,
+    },
+};
 
 /**
  * Resolve the template content for a given type and optional tier.
  *
  * Resolution order:
  * 1. `~/.superskill/templates/<type>/<tier>.md` (user override) — when `tier` is given
- * 2. `<pkg>/templates/<type>/<tier>.md` (built-in) — when `tier` is given
+ * 2. Bundled `<type>/<tier>.md` text (built-in) — when `tier` is given
  * 3. `~/.superskill/templates/<type>/default.md` (user override) — fallback
- * 4. `<pkg>/templates/<type>/default.md` (built-in) — always exists
+ * 4. Bundled `<type>/default.md` text (built-in) — always exists
  *
  * Built-in `default.md` always exists; resolution never falls through.
  * An explicit tier that resolves to no file (user or built-in) throws a clear error.
@@ -160,10 +193,8 @@ function resolveTemplate(type: ContentType, tier?: string): string {
         if (existsSync(userTierPath)) {
             return readFileSync(userTierPath, 'utf-8');
         }
-        const path = join(TEMPLATE_BASE_DIR, type, `${tierName}.md`);
-        if (existsSync(path)) {
-            return readFileSync(path, 'utf-8');
-        }
+        const builtInTemplate = BUILTIN_TEMPLATES[type]?.[tierName];
+        if (builtInTemplate) return builtInTemplate;
         throw new Error(
             `Unknown template tier "${tierName}" for type "${type}". ` +
                 `No user override (~/.superskill/templates/${type}/${tierName}.md) ` +
@@ -176,10 +207,8 @@ function resolveTemplate(type: ContentType, tier?: string): string {
     if (existsSync(userPath)) {
         return readFileSync(userPath, 'utf-8');
     }
-    const defaultPath = join(TEMPLATE_BASE_DIR, type, 'default.md');
-    if (existsSync(defaultPath)) {
-        return readFileSync(defaultPath, 'utf-8');
-    }
+    const defaultTemplate = BUILTIN_TEMPLATES[type]?.default;
+    if (defaultTemplate) return defaultTemplate;
     // Unreachable in practice: default.md always ships alongside the package.
     throw new Error(`No built-in default template found for type "${type}".`);
 }
