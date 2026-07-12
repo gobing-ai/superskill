@@ -7,7 +7,7 @@
  * install path and emits one `.js` CommonJS module per hook entry, each calling
  * into `superskill hook run <plugin> <hook-id>` via `spawnSync`.
  *
- * Event mapping (CANONICAL_TO_PI_EVENT):
+ * Event mapping (CANONICAL_HOOK_EVENTS):
  *   preToolUse → tool_call      (hooks/pre/)
  *   postToolUse → tool_result   (hooks/post/)
  *   stop → agent_end            (hooks/post/)
@@ -18,19 +18,12 @@
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { CANONICAL_TO_PI_EVENT, type CanonicalHooksConfig } from './hooks';
-
-/** Canonical events that map to the `hooks/pre/` directory. */
-const PRE_TOOL_EVENTS: Record<string, true> = {
-    preToolUse: true,
-    sessionStart: true,
-    preCompact: true,
-};
-
-/** OMP events whose handler can return `{ block: true, reason }` to prevent execution. */
-const BLOCKABLE_OMP_EVENTS: Record<string, true> = {
-    tool_call: true,
-};
+import {
+    BLOCKABLE_OMP_EVENTS,
+    CANONICAL_PRE_TOOL_EVENTS,
+    type CanonicalHooksConfig,
+    flattenCanonicalHookEntries,
+} from './hooks';
 
 /** Result of hook module generation. */
 export interface OmpHookResult {
@@ -56,38 +49,21 @@ interface ParsedHook {
 
 /**
  * Parse canonical hooks.json into individual hook entries, mapping events to OMP
- * lifecycle event names. Entries with unmappable events are silently dropped.
+ * lifecycle event names via the shared {@link flattenCanonicalHookEntries} walk.
+ * Entries with unmappable events are silently dropped by the iterator.
  */
 function parseCanonicalHooks(config: CanonicalHooksConfig): ParsedHook[] {
     const parsed: ParsedHook[] = [];
-    const hooks = config.hooks ?? {};
-
-    for (const [canonicalEvent, definitions] of Object.entries(hooks)) {
-        const normalized = canonicalEvent.charAt(0).toLowerCase() + canonicalEvent.slice(1);
-        const ompEvent = CANONICAL_TO_PI_EVENT[normalized];
-        if (!ompEvent) continue;
-
-        const level: 'pre' | 'post' = PRE_TOOL_EVENTS[normalized] ? 'pre' : 'post';
-
-        for (const def of definitions) {
-            // Claude Code format: matcher wraps a nested hooks array
-            const matcher = def.matcher ?? '*';
-            const entries = def.hooks ?? [def];
-            for (const entry of entries) {
-                if (entry.type && entry.type !== 'command') continue;
-                if (!entry.command) continue;
-                parsed.push({
-                    ompEvent,
-                    matcher,
-                    command: entry.command,
-                    timeout: entry.timeout,
-                    name: deriveHookName(entry.command),
-                    level,
-                });
-            }
-        }
+    for (const entry of flattenCanonicalHookEntries(config)) {
+        parsed.push({
+            ompEvent: entry.targetEvent,
+            matcher: entry.matcher,
+            command: entry.command,
+            timeout: entry.timeout,
+            name: deriveHookName(entry.command),
+            level: CANONICAL_PRE_TOOL_EVENTS[entry.canonicalEvent] ? 'pre' : 'post',
+        });
     }
-
     return parsed;
 }
 

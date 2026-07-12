@@ -754,19 +754,7 @@ async function ingestProposal(
         // R6: back up before applying so a gate failure can restore the file byte-identical.
         const backupPath = await backupFile(resolvedPath);
         const appliedCount = await stepApply(parsed.changes, resolvedPath, proposalRecord.id, db);
-        const evalGate = opts?.evalGate
-            ? {
-                  name,
-                  candidateSkillText: await Bun.file(resolvedPath).text(),
-                  baselineSkillText: readFileSync(backupPath, 'utf-8'),
-                  margin: opts?.margin ?? 0.05,
-                  target: opts?.target ?? 'claude',
-                  replayBackend: opts?.replayBackend,
-                  judgeBackend: opts?.judgeBackend,
-                  judgeReplays: opts?.judgeReplays,
-                  judgeBudget: opts?.judgeBudget,
-              }
-            : undefined;
+        const evalGate = await buildEvalGateContext(name, resolvedPath, backupPath, opts);
         const verdict = await stepVerify(type, name, resolvedPath, baselineScore, proposalRecord.id, opts, db, {
             backupPath,
             ingestedAnchorHash: parsed.anchor_hash,
@@ -1026,10 +1014,19 @@ async function stepApply(
             let value: unknown = change.proposed;
             if (key === 'description') {
                 // Prepend the evolve suggestion to the existing description instead of replacing it.
-                const parsed = parseFrontmatter(content);
-                const existing = parsed.data?.description;
-                if (existing && typeof existing === 'string' && existing.trim()) {
-                    value = `${change.proposed}\n\n${existing}`;
+                // Guard against frontmatter-less magents: parseFrontmatter throws on missing/empty
+                // frontmatter, so degrade gracefully like the text branch's not-found path.
+                let existingDescription: unknown;
+                try {
+                    existingDescription = parseFrontmatter(content).data?.description;
+                } catch {
+                    echoError(
+                        `Warning: cannot parse frontmatter for "${change.location}" — skipping change for ${change.dimension}`,
+                    );
+                    continue;
+                }
+                if (existingDescription && typeof existingDescription === 'string' && existingDescription.trim()) {
+                    value = `${change.proposed}\n\n${existingDescription}`;
                 }
             }
             c = { kind: 'frontmatter', key, value };
@@ -1054,6 +1051,19 @@ async function stepApply(
     return applied;
 }
 
+/** Empirical behavior gate context (F024). Absent ⇒ gate skipped. */
+export interface EvalGateContext {
+    name: string;
+    candidateSkillText: string;
+    baselineSkillText: string;
+    margin: number;
+    target: Target;
+    replayBackend?: ReplayBackend;
+    judgeBackend?: JudgeBackend;
+    judgeReplays?: number;
+    judgeBudget?: { maxModelCalls?: number };
+}
+
 /** Gate inputs threaded into stepVerify when an apply must pass the double-loop gate (F024). */
 interface GateContext {
     /** Pre-apply backup path; the file is restored from this when a gate fails. */
@@ -1063,16 +1073,31 @@ interface GateContext {
     /** Skeptic persona verdict (optional). */
     skeptic?: SkepticVerdict;
     /** Empirical behavior gate context (optional — absent ⇒ empirical gate skipped). */
-    evalGate?: {
-        name: string;
-        candidateSkillText: string;
-        baselineSkillText: string;
-        margin: number;
-        target: Target;
-        replayBackend?: ReplayBackend;
-        judgeBackend?: JudgeBackend;
-        judgeReplays?: number;
-        judgeBudget?: { maxModelCalls?: number };
+    evalGate?: EvalGateContext;
+}
+
+/**
+ * Build the empirical eval-gate context shared by the three apply paths.
+ * Returns undefined when the gate is disabled (`opts.evalGate` falsy).
+ * Reads candidate (post-apply) and baseline (backup) file contents.
+ */
+async function buildEvalGateContext(
+    name: string,
+    candidatePath: string,
+    backupPath: string,
+    opts: EvolveOptions | undefined,
+): Promise<EvalGateContext | undefined> {
+    if (!opts?.evalGate) return undefined;
+    return {
+        name,
+        candidateSkillText: await Bun.file(candidatePath).text(),
+        baselineSkillText: readFileSync(backupPath, 'utf-8'),
+        margin: opts.margin ?? 0.05,
+        target: opts.target ?? 'claude',
+        replayBackend: opts.replayBackend,
+        judgeBackend: opts.judgeBackend,
+        judgeReplays: opts.judgeReplays,
+        judgeBudget: opts.judgeBudget,
     };
 }
 
@@ -1446,19 +1471,7 @@ export async function evolve(type: ContentType, name: string, opts?: EvolveOptio
         }
         const backupPath = await backupFile(resolvedPath);
         const appliedCount = await stepApply(acceptedFromStore, resolvedPath, target.id, db);
-        const evalGateCtx = opts?.evalGate
-            ? {
-                  name: contentName,
-                  candidateSkillText: await Bun.file(resolvedPath).text(),
-                  baselineSkillText: readFileSync(backupPath, 'utf-8'),
-                  margin: opts?.margin ?? 0.05,
-                  target: opts?.target ?? 'claude',
-                  replayBackend: opts?.replayBackend,
-                  judgeBackend: opts?.judgeBackend,
-                  judgeReplays: opts?.judgeReplays,
-                  judgeBudget: opts?.judgeBudget,
-              }
-            : undefined;
+        const evalGateCtx = await buildEvalGateContext(contentName, resolvedPath, backupPath, opts);
         const verdict = await stepVerify(type, contentName, resolvedPath, baselineScore, target.id, opts, db, {
             backupPath,
             ingestedAnchorHash: storedAnchorHash,
@@ -1495,19 +1508,7 @@ export async function evolve(type: ContentType, name: string, opts?: EvolveOptio
     const backupPath = await backupFile(resolvedPath);
     const changesApplied = await stepApply(acceptedChanges, resolvedPath, proposalDbId, db);
 
-    const evalGateCtx = opts?.evalGate
-        ? {
-              name: contentName,
-              candidateSkillText: await Bun.file(resolvedPath).text(),
-              baselineSkillText: readFileSync(backupPath, 'utf-8'),
-              margin: opts?.margin ?? 0.05,
-              target: opts?.target ?? 'claude',
-              replayBackend: opts?.replayBackend,
-              judgeBackend: opts?.judgeBackend,
-              judgeReplays: opts?.judgeReplays,
-              judgeBudget: opts?.judgeBudget,
-          }
-        : undefined;
+    const evalGateCtx = await buildEvalGateContext(contentName, resolvedPath, backupPath, opts);
 
     // Step 5: VERIFY
     const verdict = await stepVerify(

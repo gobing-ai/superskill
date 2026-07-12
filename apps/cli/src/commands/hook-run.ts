@@ -386,7 +386,7 @@ export function registerHookRun(cmd: Command, readInput?: () => string): void {
                 stdinText = readInput();
             } else {
                 try {
-                    stdinText = require('node:fs').readFileSync(0, 'utf-8') as string;
+                    stdinText = readFileSync(0, 'utf-8') as string;
                 } catch {
                     stdinText = '';
                 }

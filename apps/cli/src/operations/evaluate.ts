@@ -44,7 +44,10 @@ async function showHistory(type: ContentType, contentName: string, opts: Evaluat
     const dao = new EvaluationDao(adapter);
     const rows = await dao.getEvaluations(type, contentName);
 
-    if (rows.length === 0) return;
+    if (rows.length === 0) {
+        echo(`No evaluation history for ${contentName}.`);
+        return;
+    }
 
     const cols = { date: 19, agg: 9, verdict: 7 };
     const lines: string[] = [];

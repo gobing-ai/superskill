@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
-    CANONICAL_TO_PI_EVENT,
+    CANONICAL_HOOK_EVENTS,
     convertCanonicalToPiHooks,
     emitHermesHooks,
     emitPiStyleHooks,
@@ -27,19 +27,19 @@ function makeWorkspace(): string {
     return mkdtempSync(join(tmpdir(), 'superskill-hooks-unit-'));
 }
 
-describe('CANONICAL_TO_PI_EVENT', () => {
+describe('CANONICAL_HOOK_EVENTS', () => {
     it('maps all 6 canonical camelCase events to Pi snake_case', () => {
-        expect(CANONICAL_TO_PI_EVENT.sessionStart).toBe('session_start');
-        expect(CANONICAL_TO_PI_EVENT.sessionEnd).toBe('session_shutdown');
-        expect(CANONICAL_TO_PI_EVENT.preToolUse).toBe('tool_call');
-        expect(CANONICAL_TO_PI_EVENT.postToolUse).toBe('tool_result');
-        expect(CANONICAL_TO_PI_EVENT.stop).toBe('agent_end');
-        expect(CANONICAL_TO_PI_EVENT.preCompact).toBe('session_before_compact');
+        expect(CANONICAL_HOOK_EVENTS.sessionStart).toBe('session_start');
+        expect(CANONICAL_HOOK_EVENTS.sessionEnd).toBe('session_shutdown');
+        expect(CANONICAL_HOOK_EVENTS.preToolUse).toBe('tool_call');
+        expect(CANONICAL_HOOK_EVENTS.postToolUse).toBe('tool_result');
+        expect(CANONICAL_HOOK_EVENTS.stop).toBe('agent_end');
+        expect(CANONICAL_HOOK_EVENTS.preCompact).toBe('session_before_compact');
     });
 
     it('does not map unsupported events', () => {
-        expect(CANONICAL_TO_PI_EVENT.subagentStop).toBeUndefined();
-        expect(CANONICAL_TO_PI_EVENT.contextOffload).toBeUndefined();
+        expect(CANONICAL_HOOK_EVENTS.subagentStop).toBeUndefined();
+        expect(CANONICAL_HOOK_EVENTS.contextOffload).toBeUndefined();
     });
 });
 

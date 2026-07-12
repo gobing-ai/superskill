@@ -1,6 +1,7 @@
 import {
     copyFileSync,
     existsSync,
+    lstatSync,
     mkdirSync,
     readdirSync,
     readFileSync,
@@ -466,7 +467,9 @@ export function resolveOmpInstallPath(marketplace: string, plugin: string, globa
     const key = `${plugin}@${marketplace}`;
     const entries = registry.plugins[key];
     if (!Array.isArray(entries) || entries.length === 0) return undefined;
-    return entries[0]?.installPath;
+    const preferredScope = global ? 'user' : 'project';
+    const scoped = entries.find((e) => e.scope === preferredScope);
+    return (scoped ?? entries[0])?.installPath;
 }
 
 /**
@@ -511,7 +514,10 @@ export function postInstallOmp(
 export function parseTargets(raw: string | undefined): Target[] {
     if (!raw) return [...TARGETS];
     if (raw === 'all') return [...TARGETS];
-    const requested = raw.split(',').map((t) => t.trim());
+    const requested = raw
+        .split(',')
+        .map((t) => t.trim())
+        .filter((t) => t.length > 0);
     for (const t of requested) {
         if (!(TARGETS as readonly string[]).includes(t)) {
             throw new Error(`Unknown target '${t}'. Valid targets: ${TARGETS.join(', ')}`);
@@ -656,7 +662,8 @@ function copyDirectory(source: string, destination: string, options: { skipDirec
 
         const sourcePath = join(source, entry);
         const destinationPath = join(destination, entry);
-        if (statSync(sourcePath).isDirectory()) {
+        const stat = lstatSync(sourcePath);
+        if (stat.isDirectory()) {
             copyDirectory(sourcePath, destinationPath, options);
         } else {
             copyFileSync(sourcePath, destinationPath);

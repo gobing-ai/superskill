@@ -57,7 +57,7 @@ describe('generateOmpHookModules', () => {
         try {
             writeHooksJson(sourceDir, {
                 hooks: {
-                    // 'unknownEvent' has no CANONICAL_TO_PI_EVENT mapping → dropped
+                    // 'unknownEvent' has no CANONICAL_HOOK_EVENTS mapping → dropped
                     unknownEvent: [{ type: 'command', command: 'echo hi' }],
                 },
             });

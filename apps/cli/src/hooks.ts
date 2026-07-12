@@ -11,7 +11,7 @@ import { join } from 'node:path';
  * Source: https://pi.dev/packages/@vahor/pi-hooks (v0.0.11, 2026-05-23)
  *         https://pt-act-pi-mono.mintlify.app/api/coding-agent/hooks
  */
-const CANONICAL_TO_PI_EVENT: Partial<Record<string, string>> = {
+export const CANONICAL_HOOK_EVENTS: Partial<Record<string, string>> = {
     sessionStart: 'session_start',
     sessionEnd: 'session_shutdown',
     preToolUse: 'tool_call',
@@ -19,6 +19,54 @@ const CANONICAL_TO_PI_EVENT: Partial<Record<string, string>> = {
     stop: 'agent_end',
     preCompact: 'session_before_compact',
 };
+
+/** Canonical event names that map to the `hooks/pre/` directory (vs `hooks/post/`). */
+export const CANONICAL_PRE_TOOL_EVENTS: Record<string, true> = {
+    preToolUse: true,
+    sessionStart: true,
+    preCompact: true,
+};
+
+/** OMP events whose handler can return `{ block: true, reason }` to prevent execution. */
+export const BLOCKABLE_OMP_EVENTS: Record<string, true> = {
+    tool_call: true,
+};
+
+/** One flattened command-bearing hook entry emitted by {@link flattenCanonicalHookEntries}. */
+export interface CanonicalHookCommand {
+    /** Target lifecycle event name (snake_case), e.g. `tool_call`, `agent_end`. */
+    targetEvent: string;
+    /** Original camelCase canonical event (normalized: lowercased first char). */
+    canonicalEvent: string;
+    /** Matcher string (`*` when absent). Preserved for downstream regex synthesis. */
+    matcher: string;
+    command: string;
+    timeout?: number;
+}
+
+/**
+ * Walk every command-bearing entry in a canonical hooks config and yield a flat stream,
+ * resolving the two on-disk shapes (matcher-wrapped `hooks[]` vs flat `type/command`).
+ * Skips entries whose event is not in {@link CANONICAL_HOOK_EVENTS} and entries without
+ * a `command` string or with a non-`command` type. The single source of truth for the
+ * walk — consumers no longer re-implement event normalization or nested-vs-flat handling.
+ */
+export function* flattenCanonicalHookEntries(config: CanonicalHooksConfig): Generator<CanonicalHookCommand> {
+    for (const [rawEvent, definitions] of Object.entries(config.hooks ?? {})) {
+        const canonicalEvent = rawEvent.charAt(0).toLowerCase() + rawEvent.slice(1);
+        const targetEvent = CANONICAL_HOOK_EVENTS[canonicalEvent];
+        if (!targetEvent) continue;
+        for (const def of definitions) {
+            const matcher = def.matcher ?? '*';
+            const entries = def.hooks ?? [def];
+            for (const entry of entries) {
+                if (entry.type && entry.type !== 'command') continue;
+                if (!entry.command) continue;
+                yield { targetEvent, canonicalEvent, matcher, command: entry.command, timeout: entry.timeout };
+            }
+        }
+    }
+}
 
 interface CanonicalHookEntry {
     type?: string;
@@ -62,35 +110,11 @@ type PiHookEntry = string | { command: string; timeout?: number };
  */
 export function convertCanonicalToPiHooks(config: CanonicalHooksConfig): Record<string, PiHookEntry[]> {
     const piHooks: Record<string, PiHookEntry[]> = {};
-    const canonicalHooks = config.hooks ?? {};
-
-    for (const [canonicalEvent, definitions] of Object.entries(canonicalHooks)) {
-        const normalized = canonicalEvent.charAt(0).toLowerCase() + canonicalEvent.slice(1);
-        const piEvent = CANONICAL_TO_PI_EVENT[normalized];
-        if (!piEvent) continue;
-
-        const commands: PiHookEntry[] = [];
-        for (const def of definitions) {
-            // Claude Code format: matcher wraps a nested hooks array
-            if (def.hooks) {
-                for (const entry of def.hooks) {
-                    if (entry.type && entry.type !== 'command') continue;
-                    if (!entry.command) continue;
-                    commands.push(entry.timeout ? { command: entry.command, timeout: entry.timeout } : entry.command);
-                }
-            } else {
-                // Flat canonical format: type/command/timeout directly on the definition
-                if (def.type && def.type !== 'command') continue;
-                if (!def.command) continue;
-                commands.push(def.timeout ? { command: def.command, timeout: def.timeout } : def.command);
-            }
-        }
-
-        if (commands.length > 0) {
-            piHooks[piEvent] = commands;
-        }
+    for (const { targetEvent, command, timeout } of flattenCanonicalHookEntries(config)) {
+        const entry: PiHookEntry = timeout ? { command, timeout } : command;
+        if (!piHooks[targetEvent]) piHooks[targetEvent] = [];
+        piHooks[targetEvent].push(entry);
     }
-
     return piHooks;
 }
 
@@ -332,4 +356,3 @@ export function emitHermesHooks(rulesyncDir: string, outputRoot: string, options
 }
 
 export type { CanonicalHookDefinition, CanonicalHooksConfig, PiHookEntry };
-export { CANONICAL_TO_PI_EVENT };
