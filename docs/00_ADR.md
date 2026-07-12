@@ -277,3 +277,15 @@ Reversals = new entries naming what they supersede. Burned numbers get a `Skippe
 **Why.** The sp plugin (spur-new) and the CLI (this repo) evolve independently with no compat contract; `minCliVersion` makes the floor declarable and the install path self-describing, while the release-ordering rule prevents the recurrence root cause (a plugin shipping `hooks.json` entries calling CLI runners that exist in no published CLI).
 
 **Detail.** See task 0074; `minCliVersion` field shape at `apps/cli/src/hooks.ts` (`CanonicalHooksConfig`), gate logic at `apps/cli/src/commands/install.ts` (`compareSemver` + `hooksBlockedByCliVersion`), mapper preservation at `packages/core/src/mapper.ts`. Rejected: hard version pinning (install refuses) — too brittle for single-operator multi-machine; auto-publish on registry change — heavier release automation, out of scope.
+
+---
+
+## ADR-022: `apps/cli` may deep-import bundled-plugin guard engines (blessed exception)
+
+**Status:** Accepted · **Date:** 2026-07-11
+
+**Decision.** `apps/cli/src/commands/hook-run.ts` importing the cc plugin's guard engine via the relative path `../../../../plugins/cc/scripts/anti-hallucination/ah_guard` is the **blessed exception** to the workspace-alias import rule — scoped to `plugins/cc/scripts/**` consumed by the hook dispatcher only. Promoting the guard engine to a workspace package is rejected.
+
+**Why.** Ownership runs plugin→CLI, not CLI→plugin: the guard engine is plugin content that ships verbatim into every target's plugin cache (Claude, omp, hermes), and the plugin must stay self-contained for distribution. A workspace package would invert that ownership and require package-time machinery to copy the library back INTO the plugin — more moving parts to solve a compile-time-only coupling (Bun bundles the import into the binary; there is no runtime path dependency). Single source of truth stays in the plugin; the CLI's dispatcher is just its second compile-time consumer.
+
+**Detail.** See task 0077 R2. Constraint: the exception covers `apps/cli/src/commands/hook-run.ts` → `plugins/cc/scripts/**` only; any third consumer or any `packages/*` → `plugins/*` import re-opens the packaging decision. `AGENTS.md` § Conventions notes the exception inline.

@@ -6,7 +6,7 @@ import { join } from 'node:path';
  * Structural invariants for the cc plugin (task 0070 R10):
  * - the README flow map lists every commands/*.md exactly once (AC7);
  * - the skill-engineering theory reference and glossary exist as single copies (AC1/AC8);
- * - the theory reference carries all five failure modes plus the two invocation loads (AC1);
+ * - the theory reference carries all six failure modes plus the two invocation loads (AC1);
  * - lifecycle skills reference cc:cc-skills by name, never by deep relative link (AC1).
  */
 
@@ -56,7 +56,7 @@ describe('cc plugin structure', () => {
         expect(copies[0]).toContain(join('cc-skills', 'references'));
     });
 
-    it('theory reference names all five failure modes and both invocation loads', () => {
+    it('theory reference names all six failure modes and both invocation loads', () => {
         const theory = readFileSync(
             join(SKILLS_ROOT, 'cc-skills', 'references', 'skill-engineering-theory.md'),
             'utf-8',
@@ -67,6 +67,7 @@ describe('cc plugin structure', () => {
             'duplication',
             'no-op',
             'premature completion',
+            'negation',
             'context load',
             'cognitive load',
         ]) {
@@ -78,6 +79,18 @@ describe('cc plugin structure', () => {
         const skill = readFileSync(join(SKILLS_ROOT, 'cc-skills', 'SKILL.md'), 'utf-8');
         expect(skill).toContain('references/skill-engineering-theory.md');
         expect(skill).toContain('references/glossary.md');
+    });
+
+    it('hooks.json declares the stdin/exit-2 guard contract floor (minCliVersion >= 0.2.19)', () => {
+        // WHY (0077 R4): the Stop-hook runtime contract (stdin payload resolution + exit-2
+        // block signal) shipped in CLI 0.2.19. Without a floor, an older CLI on PATH would
+        // install hooks whose runtime contract it does not implement. The install-time gate
+        // (hooksBlockedByCliVersion) only acts when this floor is declared.
+        const hooks = JSON.parse(readFileSync(join(PLUGIN_ROOT, 'hooks', 'hooks.json'), 'utf-8'));
+        const floor = String(hooks.minCliVersion ?? '');
+        expect(floor).toMatch(/^\d+\.\d+\.\d+/);
+        const [maj = 0, min = 0, pat = 0] = floor.split('.').map((n) => Number.parseInt(n, 10));
+        expect(maj * 1_000_000 + min * 1_000 + pat).toBeGreaterThanOrEqual(2_019);
     });
 
     it('no lifecycle skill deep-links into cc-skills references (they name cc:cc-skills instead)', () => {

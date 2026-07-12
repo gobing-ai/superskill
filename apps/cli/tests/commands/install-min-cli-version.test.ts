@@ -1,4 +1,6 @@
 import { describe, expect, it } from 'bun:test';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { compareSemver } from '../../src/commands/install';
 
 describe('compareSemver', () => {
@@ -52,5 +54,32 @@ describe('compareSemver', () => {
         expect(compareSemver('1.0.0', 'garbage')).toBeGreaterThan(0);
         // Two equally-malformed floors are "equal"
         expect(compareSemver('garbage', 'garbage')).toBe(0);
+    });
+});
+
+// ── 0077 R4: the real cc plugin floor drives the compat gate ─────────────────────
+
+describe('cc plugin minCliVersion floor gate', () => {
+    // The install gate skips hook emission when `compareSemver(cliVersion, floor) < 0`.
+    // The real CLI sits AT the floor (equal), so a below-floor CLI cannot be produced by
+    // the real binary — this ties the REAL plugin floor to the gate's decision function
+    // directly (the generic skip mechanism is proven in install-min-cli-version-behavior).
+    const floor = JSON.parse(readFileSync(join(import.meta.dir, '../../../../plugins/cc/hooks/hooks.json'), 'utf-8'))
+        .minCliVersion as string;
+
+    it('the real floor is a valid semver the gate can compare', () => {
+        expect(floor).toMatch(/^\d+\.\d+\.\d+/);
+    });
+
+    it('a CLI one patch below the real floor is gated as below (hooks would skip)', () => {
+        const [maj = 0, min = 0, pat = 0] = floor.split('.').map((n) => Number.parseInt(n, 10));
+        const oneBelow = pat > 0 ? `${maj}.${min}.${pat - 1}` : `${maj}.${Math.max(0, min - 1)}.0`;
+        expect(compareSemver(oneBelow, floor)).toBeLessThan(0);
+    });
+
+    it('a CLI at or above the real floor is not gated (hooks install)', () => {
+        expect(compareSemver(floor, floor)).toBe(0);
+        const [maj = 0, min = 0, pat = 0] = floor.split('.').map((n) => Number.parseInt(n, 10));
+        expect(compareSemver(`${maj}.${min}.${pat + 1}`, floor)).toBeGreaterThan(0);
     });
 });
