@@ -194,6 +194,28 @@ describe('postInstallOmp', () => {
         expect(result.count).toBe(0);
         expect(existsSync(join(installPath, '.claude-plugin', 'plugin.json'))).toBe(true);
     });
+
+    it('translates installed slash commands to the omp dialect (R4)', () => {
+        // omp does not understand Claude's `/plugin:command` colon form; the installed
+        // commands/ markdown must carry the omp (pi-style) `/skill:plugin-command` form.
+        const pluginRoot = makeTempDir('superskill-omp-proot-');
+        scaffoldPlugin(pluginRoot, 'demo', false);
+        const installPath = makeTempDir('superskill-omp-install-');
+        const commandsDir = join(installPath, 'commands');
+        mkdirSync(commandsDir, { recursive: true });
+        writeFileSync(join(commandsDir, 'usage.md'), 'Run:\n/demo:skill-add my-skill --force\n');
+        const hooksSourceDir = makeTempDir('superskill-omp-hooksrc-');
+        writeFileSync(join(hooksSourceDir, 'hooks.json'), JSON.stringify({ hooks: {} }));
+
+        postInstallOmp(pluginRoot, installPath, hooksSourceDir, 'demo', {
+            dryRun: false,
+            verbose: false,
+        });
+
+        const translated = readFileSync(join(commandsDir, 'usage.md'), 'utf-8');
+        expect(translated).toContain('/skill:demo-skill-add my-skill --force');
+        expect(translated).not.toContain('/demo:skill-add');
+    });
 });
 
 // ── defaultRunOmpInstall ──────────────────────────────────────────────────────
@@ -226,49 +248,49 @@ describe('defaultRunOmpInstall', () => {
         Bun.spawn = originalSpawn;
     });
 
-    it('clears the marketplace cache and invokes omp marketplace add + install (project scope)', async () => {
-        if (!tempHome) throw new Error('tempHome not set');
-        const cacheDir = join(tempHome, '.omp', 'plugins', 'cache', 'superskill');
-        mkdirSync(cacheDir, { recursive: true });
-        writeFileSync(join(cacheDir, 'stale.txt'), 'old');
-        expect(existsSync(cacheDir)).toBe(true);
-
+    it('re-registers the marketplace and force-installs so re-installs are idempotent (project scope)', async () => {
+        // omp 16.x: `marketplace add` exits 1 on an existing marketplace and a plain
+        // `install` exits 1 on an installed plugin — remove-first + --force is what
+        // makes a second `superskill install --targets omp` succeed.
         const marketRoot = makeTempDir('superskill-omp-market-');
         await defaultRunOmpInstall(marketRoot, 'superskill', 'demo', false);
 
-        expect(existsSync(cacheDir)).toBe(false);
-        expect(spawnCalls).toHaveLength(2);
-        expect(spawnCalls[0]).toEqual(['omp', 'plugin', 'marketplace', 'add', marketRoot]);
-        expect(spawnCalls[1]).toEqual(['omp', 'plugin', 'install', 'demo@superskill', '--scope', 'project']);
+        expect(spawnCalls).toHaveLength(3);
+        expect(spawnCalls[0]).toEqual(['omp', 'plugin', 'marketplace', 'remove', 'superskill']);
+        expect(spawnCalls[1]).toEqual(['omp', 'plugin', 'marketplace', 'add', marketRoot]);
+        expect(spawnCalls[2]).toEqual(['omp', 'plugin', 'install', 'demo@superskill', '--force', '--scope', 'project']);
     });
 
     it('omits --scope for global installs', async () => {
         const marketRoot = makeTempDir('superskill-omp-market-');
         await defaultRunOmpInstall(marketRoot, 'superskill', 'demo', true);
 
-        expect(spawnCalls).toHaveLength(2);
-        expect(spawnCalls[1]).toEqual(['omp', 'plugin', 'install', 'demo@superskill']);
+        expect(spawnCalls).toHaveLength(3);
+        expect(spawnCalls[2]).toEqual(['omp', 'plugin', 'install', 'demo@superskill', '--force']);
     });
 
-    it('tolerates a missing cache dir (first install)', async () => {
+    it('tolerates a failing marketplace remove (first install: nothing to remove yet)', async () => {
+        // The remove step exits 1 when the marketplace was never registered — the
+        // normal first-install case. It must not abort the add + install that follow.
+        const stub = ((args: string[]): StubChild => {
+            spawnCalls = [...spawnCalls, args];
+            const isRemove = args[2] === 'marketplace' && args[3] === 'remove';
+            return { exited: Promise.resolve(isRemove ? 1 : 0), stdout: null, stderr: null, kill() {} };
+        }) as unknown as typeof Bun.spawn;
+        Bun.spawn = stub;
+
         const marketRoot = makeTempDir('superskill-omp-market-');
         await defaultRunOmpInstall(marketRoot, 'superskill', 'demo', true);
-        expect(spawnCalls).toHaveLength(2);
-        expect(spawnCalls[0]?.[0]).toBe('omp');
+        expect(spawnCalls).toHaveLength(3);
+        expect(spawnCalls[1]).toEqual(['omp', 'plugin', 'marketplace', 'add', marketRoot]);
     });
 
-    it('rejects a marketplace name that escapes the cache dir, before any delete or spawn', async () => {
-        if (!tempHome) throw new Error('tempHome not set');
-        // With name '..', the cache-clear target resolves to ~/.omp/plugins — the
-        // whole registry tree. The guard must throw before rmSync runs.
-        const pluginsDir = join(tempHome, '.omp', 'plugins');
-        mkdirSync(pluginsDir, { recursive: true });
-        writeFileSync(join(pluginsDir, 'installed_plugins.json'), '{}');
-
+    it('rejects a marketplace name that is not a single path segment, before any spawn', async () => {
+        // The name flows into `<plugin>@<marketplace>` CLI addressing and the registry
+        // key; `..` would corrupt both. The guard must throw before any omp call runs.
         const marketRoot = makeTempDir('superskill-omp-market-');
         await expect(defaultRunOmpInstall(marketRoot, '..', 'demo', true)).rejects.toThrow('single path segment');
 
-        expect(existsSync(join(pluginsDir, 'installed_plugins.json'))).toBe(true);
         expect(spawnCalls).toHaveLength(0);
     });
 

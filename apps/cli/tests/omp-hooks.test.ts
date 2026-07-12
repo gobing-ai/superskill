@@ -21,6 +21,43 @@ function writeHooksJson(dir: string, config: object): string {
     return path;
 }
 
+/** Outcome of executing a generated hook module in a subprocess. */
+interface GeneratedModuleRun {
+    exitCode: number;
+    stderr: string;
+    /** `typeof` the module's default export, as seen by a fresh runtime. */
+    factoryType: string;
+    /** Handler return value per invoked event (`null` for undefined). */
+    outcomes: unknown[];
+}
+
+/**
+ * Load a generated hook module and invoke its handler in a fresh subprocess —
+ * the same way omp consumes it. Deliberately NOT an in-process `import()`:
+ * that would pull the tmp fixture into this process's module graph, where
+ * coverage instruments it and holds it to the per-file threshold.
+ */
+function runGeneratedModule(modulePath: string, events: object[]): GeneratedModuleRun {
+    const driver = `
+const mod = await import(${JSON.stringify(modulePath)});
+let handler;
+mod.default({ on: (_event, fn) => { handler = fn; } });
+const outcomes = [];
+for (const event of ${JSON.stringify(events)}) {
+    outcomes.push((await handler(event)) ?? null);
+}
+console.log(JSON.stringify({ factoryType: typeof mod.default, outcomes }));
+`;
+    const proc = Bun.spawnSync([process.execPath, '-e', driver], { stdout: 'pipe', stderr: 'pipe' });
+    let factoryType = 'unknown';
+    let outcomes: unknown[] = [];
+    if (proc.exitCode === 0) {
+        const lastLine = proc.stdout.toString().trim().split('\n').pop() ?? '{}';
+        ({ factoryType, outcomes } = JSON.parse(lastLine));
+    }
+    return { exitCode: proc.exitCode, stderr: proc.stderr.toString(), factoryType, outcomes };
+}
+
 describe('generateOmpHookModules', () => {
     it('returns a no-op result when hooks.json is absent', () => {
         const sourceDir = makeTempDir();
@@ -99,7 +136,7 @@ describe('generateOmpHookModules', () => {
             expect(content).toContain("pi.on('tool_call'");
             expect(content).toContain('new RegExp("Bash", \'i\').test(event.toolName)');
             expect(content).toContain('{ block: true');
-            expect(content).toContain('module.exports = (pi) =>');
+            expect(content).toContain('export default (pi) =>');
         } finally {
             rmSync(sourceDir, { recursive: true, force: true });
             rmSync(installPath, { recursive: true, force: true });
@@ -214,7 +251,7 @@ describe('generateOmpHookModules', () => {
         }
     });
 
-    it('emits valid CommonJS: module.exports = (pi) => { pi.on(...) }', () => {
+    it('emits an ESM module with a default factory export (omp loader contract)', () => {
         const sourceDir = makeTempDir();
         const installPath = makeTempDir();
         try {
@@ -226,11 +263,66 @@ describe('generateOmpHookModules', () => {
             const result = generateOmpHookModules(sourceDir, installPath);
             const content = readFileSync(requireString(result.files[0], 'result.files[0]'), 'utf-8');
 
-            // Smoke-test: the generated code is syntactically valid CommonJS
-            // that exports a factory function.
-            expect(content).toContain('const { spawnSync } = require');
-            expect(content).toContain('module.exports = (pi) => {');
+            // omp's extension loader accepts only a function module or a `default`
+            // factory export — CommonJS `module.exports` is rejected at load time
+            // ("does not export a valid factory function", omp 16.4.2).
+            expect(content).toContain("import { spawnSync } from 'node:child_process'");
+            expect(content).toContain('export default (pi) => {');
+            expect(content).not.toContain('module.exports');
             expect(content).toContain('pi.on(');
+        } finally {
+            rmSync(sourceDir, { recursive: true, force: true });
+            rmSync(installPath, { recursive: true, force: true });
+        }
+    });
+
+    it('generates a handler that executes without throwing (spawnSync gets an args array)', () => {
+        // Syntactic validity is not enough: spawnSync(cmd, "a", "b", opts) parses fine
+        // but throws ERR_INVALID_ARG_TYPE at invocation — the hook would never run in omp.
+        const sourceDir = makeTempDir();
+        const installPath = makeTempDir();
+        try {
+            writeHooksJson(sourceDir, {
+                hooks: {
+                    stop: [{ hooks: [{ type: 'command', command: 'echo hook-ran' }] }],
+                },
+            });
+            const result = generateOmpHookModules(sourceDir, installPath);
+            const modulePath = requireString(result.files[0], 'module path');
+
+            const run = runGeneratedModule(modulePath, [{ hook_event_name: 'Stop' }]);
+            expect(run.stderr).toBe('');
+            expect(run.exitCode).toBe(0);
+            expect(run.factoryType).toBe('function');
+        } finally {
+            rmSync(sourceDir, { recursive: true, force: true });
+            rmSync(installPath, { recursive: true, force: true });
+        }
+    });
+
+    it('blockable handler returns { block: true, reason } when the command exits 2', () => {
+        // The exit-code-2 → deny translation is the enforcement contract (R3): a
+        // preToolUse hook that cannot veto is decorative.
+        const sourceDir = makeTempDir();
+        const installPath = makeTempDir();
+        try {
+            const { writeFileSync, chmodSync } = require('node:fs');
+            const script = join(sourceDir, 'exit2.sh');
+            writeFileSync(script, '#!/bin/sh\necho denied-by-policy >&2\nexit 2\n');
+            chmodSync(script, 0o755);
+            writeHooksJson(sourceDir, {
+                hooks: {
+                    preToolUse: [{ matcher: '*', hooks: [{ type: 'command', command: script }] }],
+                },
+            });
+            const result = generateOmpHookModules(sourceDir, installPath);
+            const modulePath = requireString(result.files[0], 'module path');
+
+            const run = runGeneratedModule(modulePath, [{ toolName: 'write' }]);
+            expect(run.exitCode).toBe(0);
+            const outcome = run.outcomes[0] as { block?: boolean; reason?: string } | null;
+            expect(outcome?.block).toBe(true);
+            expect(outcome?.reason).toContain('denied-by-policy');
         } finally {
             rmSync(sourceDir, { recursive: true, force: true });
             rmSync(installPath, { recursive: true, force: true });
@@ -352,24 +444,35 @@ describe('generateOmpHookModules', () => {
         }
     });
 
-    it('generates a syntactically valid module for commands containing quotes', () => {
+    it('generates a valid, executable module for commands containing quotes', () => {
         const sourceDir = makeTempDir();
         const installPath = makeTempDir();
         try {
+            const { writeFileSync, chmodSync } = require('node:fs');
+            const script = join(sourceDir, 'exit2.sh');
+            writeFileSync(script, '#!/bin/sh\necho quote-cmd-ran >&2\nexit 2\n');
+            chmodSync(script, 0o755);
             writeHooksJson(sourceDir, {
                 hooks: {
                     preToolUse: [
-                        { matcher: 'Write', hooks: [{ type: 'command', command: "bash -c 'echo hi'", timeout: 5 }] },
+                        { matcher: 'Write', hooks: [{ type: 'command', command: `${script} 'echo hi'`, timeout: 5 }] },
                     ],
                 },
             });
             const result = generateOmpHookModules(sourceDir, installPath);
             expect(result.count).toBe(1);
-            const content = readFileSync(requireString(result.files[0], 'module path'), 'utf-8');
+            const modulePath = requireString(result.files[0], 'module path');
+            const content = readFileSync(modulePath, 'utf-8');
             // A naive '${p}' wrap produced a syntax-error module here — the file
-            // must parse, or OMP silently fails to load the hook.
-            expect(() => new Function(content)).not.toThrow();
+            // must parse AND execute, or OMP silently fails to load the hook.
             expect(content).toContain('"\'echo"');
+            // Non-matching tool short-circuits on the matcher guard; matching tool
+            // runs the command (exit 2) → deny translation.
+            const run = runGeneratedModule(modulePath, [{ toolName: 'read' }, { toolName: 'write' }]);
+            expect(run.exitCode).toBe(0);
+            expect(run.factoryType).toBe('function');
+            expect(run.outcomes[0]).toBeNull();
+            expect((run.outcomes[1] as { block?: boolean } | null)?.block).toBe(true);
         } finally {
             rmSync(sourceDir, { recursive: true, force: true });
             rmSync(installPath, { recursive: true, force: true });
@@ -387,8 +490,11 @@ describe('generateOmpHookModules', () => {
             });
             const result = generateOmpHookModules(sourceDir, installPath);
             expect(result.count).toBe(1);
-            const content = readFileSync(requireString(result.files[0], 'module path'), 'utf-8');
-            expect(() => new Function(content)).not.toThrow();
+            const modulePath = requireString(result.files[0], 'module path');
+            const content = readFileSync(modulePath, 'utf-8');
+            const run = runGeneratedModule(modulePath, [{ hook_event_name: 'Stop' }]);
+            expect(run.exitCode).toBe(0);
+            expect(run.factoryType).toBe('function');
             // The raw newline must not escape the `//` comment into a live statement.
             expect(content).toContain('// Command: echo done console.log("escaped")');
             expect(content).not.toContain('\nconsole.log("escaped")');

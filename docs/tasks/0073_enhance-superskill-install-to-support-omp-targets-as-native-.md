@@ -12,7 +12,7 @@ priority: P2
 tags: []
 dependencies: []
 created_at: "2026-07-09T06:01:02.846Z"
-updated_at: "2026-07-10T17:30:42.525Z"
+updated_at: "2026-07-12T03:20:21.770Z"
 ---
 
 ## 0073. Enhance superskill install to support omp targets as native Claude Code plugins
@@ -145,8 +145,50 @@ export default function (pi) {
 OMP providers load only `.ts`/`.js` from `hooks/pre/` and `hooks/post/` (confirmed in `vendors/oh-my-pi/.../omp-plugins.ts` and `claude-plugins.ts`).
 
 **Slash command translation** — reuse `translateSlashCommands` (imported `install.ts:25`) on every `.md` under `<installPath>/commands/`, matching the existing `transformMarkdownDirectory` pattern at `install.ts:470-491`.
+
+**Verify-fix deviations (2026-07-11, `/sp:dev-verify 0073 --fix all`)** — three defects found by live golden-path runs against omp 16.4.2 and repaired; each deviates from the written design with goal-equivalent intent:
+
+1. *Idempotent re-install* — the designed cache clear at `~/.omp/plugins/cache/<marketplaceName>` matches no omp 16.4.2 path (real layout: `cache/plugins/<mkt>___<plugin>___<ver>` + `cache/marketplaces/<mkt>`), and re-install failed anyway on registry-level checks (`marketplace add` exits 1 "already exists"; plain `install` exits 1 "already installed"). `defaultRunOmpInstall` now does best-effort `omp plugin marketplace remove` (output suppressed; exit 1 tolerated for first installs) → `marketplace add` → `plugin install --force`. `--force` both reinstalls and refreshes the cached plugin dir (verified live with a stale-marker probe).
+2. *ESM hook modules* — omp's extension loader accepts only a function module or a `default` factory export; the CJS `module.exports` modules were rejected at load time ("Extension does not export a valid factory function", observed in `~/.omp/logs`). `generateOmpHookModules` now emits ESM (`export default (pi) => {}`), matching the Design snippets. Also fixed: `spawnSync` is called as `(cmd, args[], opts)` — the previous token-spread varargs form threw `ERR_INVALID_ARG_TYPE` on every handler invocation.
+3. *Stop hooks cannot block in omp* — the Design's `session_stop` block-on-nonzero snippet is not implementable: omp's `agent_end` handler has no result type (`vendors/oh-my-pi/.../extensibility/hooks/types.ts:503`). Stop/post hooks are fire-and-forget; exit-code-2 → `{ block: true, reason }` translation applies to `tool_call` (preToolUse) only.
 ### Testing
-Unit tests in `apps/cli/tests/commands/install.test.ts` mock `defaultRunOmpInstall` (via `dependencies.runOmpInstall`, same pattern as the existing `runClaudeInstall` mock) and assert: (1) `omp` is excluded from rulesync targets, (2) the mock is called with the correct marketplace root / name / scope, (3) `.claude-plugin/plugin.json` is written into the mock installPath, (4) hook `.ts` files are generated under `hooks/pre/` / `hooks/post/`, (5) slash command markdown is dialect-translated. Target: ≥90% line coverage on the new `omp` dispatch branch in `install.ts` (project gate is ≥90% line + ≥90% function per `bunfig.toml`). Integration: `superskill install cc --targets omp` against a sandbox `HOME_DIR`, then `ls ~/.omp/plugins/cache/superskill___cc___*` and `cat .claude-plugin/plugin.json`.
+**Verify verdict: PASS** (2026-07-11, `/sp:dev-verify 0073 --auto --focus all --fix all --force`; post-fix re-verified)
+
+**Per-Requirement Traceability**
+
+| Req | Status | Evidence |
+|-----|--------|----------|
+| R1 native omp install path | MET | Dispatch `apps/cli/src/commands/install.ts:297-319`; rulesync exclusion `install.ts:166`; DI `install.ts:83,114`; idempotency fixed in `defaultRunOmpInstall` (`install.ts:427-455`) — sandboxed double-install both exit 0 with stale cache refreshed (live run, omp 16.4.2); tests `install.test.ts:213`, `install-omp-helpers.test.ts` `defaultRunOmpInstall` suite |
+| R2 `.claude-plugin/plugin.json` | MET | `resolveOmpInstallPath` (`install.ts:463-482`) + manifest copy in `postInstallOmp` (`install.ts:497-504`); live run produced `<cache>/superskill___cc___0.2.19/.claude-plugin/plugin.json`; tests `install-omp-helpers.test.ts` `resolveOmpInstallPath`/`postInstallOmp` suites |
+| R3 JS hook modules under `hooks/pre|post` | MET | `apps/cli/src/omp-hooks.ts` `generateOmpHookModules`; live run produced `hooks/post/anti-hallucination.js`; module loads in a real `omp -p` session (loader error absent post-fix; present pre-fix) and its handler executes `superskill hook run cc anti-hallucination` without throwing (execution tests in `apps/cli/tests/omp-hooks.test.ts`); exit-2 → `{ block: true, reason }` verified for `tool_call`; stop hooks are fire-and-forget (omp `agent_end` cannot block — see Solution deviations) |
+| R4 slash command dialect translation | MET | `postInstallOmp` → `transformMarkdownDirectory(join(installPath,'commands'),'omp',plugin)` (`install.ts:518`) → `translateSlashCommands` (`install.ts:659`); live cache shows `/skill:cc-skill-add ...` in `commands/skill-add.md`; test `install-omp-helpers.test.ts` "translates installed slash commands to the omp dialect (R4)" |
+
+**Acceptance Criteria Verification**
+
+| AC | Status | Evidence Type | Evidence |
+|----|--------|---------------|----------|
+| `superskill install cc --targets omp` succeeds | MET | command | Sandboxed golden path (HOME=scratch): run 1 exit 0, run 2 (re-install) exit 0, "Installed 'cc' to 1 target(s)." |
+| registry lists `cc@superskill` | MET | command | `.omp/plugins/installed_plugins.json` (project scope) contains key `cc@superskill` with `installPath`; `omp plugin list` shows `cc@superskill (0.2.19) (project)` |
+| `.claude-plugin/plugin.json` in OMP cache | MET | command | Present at `~/.omp/plugins/cache/plugins/superskill___cc___0.2.19/.claude-plugin/plugin.json` (note: omp 16.4.2 layout adds a `plugins/` segment vs the AC's older glob) |
+| hook JS files under `hooks/pre|post` in cache | MET | command | `hooks/post/anti-hallucination.js` generated; ESM shape `export default (pi) =>` with `spawnSync(cmd, args[], opts)` |
+| omp loads plugin, exposes commands, executes stop hook | MET | command | Live `omp -p "Reply with exactly: OK"` from the plugin-installed project completed normally; pre-fix CJS module logged "Failed to load extension … not a valid factory function" at exactly our module path (proving omp attempts the load), post-fix ESM run logs no rejection; 17 translated commands + validated manifest at the claude-plugins provider read paths; generated handler executed against the real `superskill hook run cc anti-hallucination` (exit clean). Residual manual check: observe the hook fire inside an interactive omp session |
+
+**Gate checks**
+
+| Check | Status | Evidence |
+|-------|--------|----------|
+| design-conformance | pass | Claims 1–2 DONE post-fix (ESM template restored to Design's `export default` shape); stop-hook block snippet CHANGED with Solution note (omp `agent_end` has no result type); no scope creep |
+| tests-pass | pass | `bun run test`: 1355 pass / 0 fail, 73 files; coverage gate (≥90/≥90) green, exit 0 |
+| lint-clean | pass | `bun run lint` (biome + typecheck) exit 0 |
+| build | pass | `bun run build` exit 0 |
+| cli-golden-path-present | pass | `bun apps/cli/src/index.ts install cc --marketplace .claude-plugin/marketplace.json --targets omp --no-global` ×2, both exit 0 (sandboxed HOME/HOME_DIR) |
+| evidence-rule-pass | pass | Every AC row carries command/test evidence |
+
+Coverage: aggregate 97.42% functions / 97.07% lines (`bun test --coverage`, bunfig gate ≥90/≥90).
+
+**Fix pass (`--fix all`) repairs applied during verify**: (1) idempotent `defaultRunOmpInstall` (marketplace remove→add→install `--force`); (2) `spawnSync(cmd, args[], opts)` call shape (was varargs → `ERR_INVALID_ARG_TYPE` on every hook invocation); (3) ESM hook modules (CJS rejected by omp's extension loader). Plus tests: execution tests for generated modules (load + invoke + block path), R4 translation test, updated `defaultRunOmpInstall` contract tests.
+
+**Known residual (out of task scope)**: `superskill hook emit --target omp` still emits the legacy pi-style `.omp/hooks.json` shim (`install.ts` `emitHooksForSurrogateTarget`), which omp ≥16 does not load — deliberate retention for the `hook emit` surface, flagged for follow-up. Operator note: already-installed plugins generated by the old CJS emitter (e.g. `spur___sp___0.3.6` per `~/.omp/logs/omp.2026-07-11.log`) need re-install once this fix ships.
 ### Review
 
 *To be filled during review.*

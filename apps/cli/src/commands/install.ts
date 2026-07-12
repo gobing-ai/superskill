@@ -430,17 +430,26 @@ export async function defaultRunOmpInstall(
     plugin: string,
     global: boolean,
 ): Promise<void> {
-    // Clear the OMP plugin cache keyed on the marketplace name so re-installs pick up source
-    // changes (omp caches by marketplace___plugin___version). Bound to the resolved name so
-    // we never rm -rf the wrong directory. The name must be a single path segment — a
-    // manifest name like `..` would walk the recursive delete out of the cache dir.
+    // The name flows into omp CLI args and the registry key; a manifest name like `..`
+    // or `a/b` would corrupt the `<plugin>@<marketplace>` addressing downstream.
     assertSafePathSegment(marketplaceName, 'marketplace name');
-    const cacheDir = join(resolveHomeDir(), '.omp', 'plugins', 'cache', marketplaceName);
-    if (existsSync(cacheDir)) rmSync(cacheDir, { recursive: true, force: true });
+
+    // Idempotent re-registration: `omp plugin marketplace add` exits 1 when the marketplace
+    // is already registered (omp 16.x; `--force` does not bypass the check), so remove it
+    // first. The remove exits 1 when the marketplace is absent — the expected first-install
+    // case — so it is best-effort with output suppressed.
+    const remove = Bun.spawn(['omp', 'plugin', 'marketplace', 'remove', marketplaceName], {
+        stdout: 'ignore',
+        stderr: 'ignore',
+    });
+    await remove.exited;
 
     await runCheckedCommand(['omp', 'plugin', 'marketplace', 'add', marketplaceRoot], 'omp plugin marketplace add');
 
-    const installArgs: [string, ...string[]] = ['omp', 'plugin', 'install', `${plugin}@${marketplaceName}`];
+    // --force: reinstall over an existing registry entry AND refresh the cached plugin dir
+    // (verified against omp 16.4.2: a plain install exits 1 with "already installed" and
+    // never refreshes the cache, so stale source would survive a re-install without it).
+    const installArgs: [string, ...string[]] = ['omp', 'plugin', 'install', `${plugin}@${marketplaceName}`, '--force'];
     if (!global) installArgs.push('--scope', 'project');
     await runCheckedCommand(installArgs, 'omp plugin install');
 }
