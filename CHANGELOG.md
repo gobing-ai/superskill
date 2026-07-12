@@ -4,6 +4,19 @@ All notable changes to `@gobing-ai/superskill` are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Conventional Commits](https://www.conventionalcommits.org/).
 
+## [0.3.0] - 2026-07-12
+
+### New Features
+
+- **`superskill install` supports Grok as a native Claude-format plugin target** (task 0078). Grok Build (xAI TUI ≥ 0.2.93) is a first-class target peer of Claude/OMP: `TARGETS` gains `'grok'` (no rulesync maps); `install.ts` registers the marketplace via `grok plugin marketplace add`, then installs the plugin directory with `grok plugin install <pluginRoot> --trust` (path form — Grok does not accept `plugin@marketplace`). Idempotent re-install best-effort uninstalls first; dual-path verbose warning when grok + rulesync skill targets share one install. No command→skill adapt and no slash-dialect rewrite (native `/plugin:command`). (`packages/core/src/targets.ts`, `apps/cli/src/commands/install.ts`)
+- **Install hardening: marketplace-name path traversal blocked, spawn exit codes checked, OMP hook module generation hardened, evolve gate no longer ENOENTs on rejection** (task 0076). A bug-hunt found four attack/crash vectors in `superskill install`: (1) marketplace names flowed unchecked into a cache `rmSync` — a name like `../../etc` would delete the user's `$HOME` cache. Now `assertSafePathSegment` rejects anything that is not a single path segment before any filesystem operation. (2) `defaultRunClaudeInstall` / `defaultRunOmpInstall` discarded the spawned process exit code — a failed install silently reported success. New `runCheckedCommand()` wraps `Bun.spawn`, awaits `exited`, and throws on non-zero exit. (3) Generated OMP hook modules interpolated command tokens with template strings — a single quote or backtick in a hook command produced a syntax-error module. Now `JSON.stringify(p)` quote-escapes the token, and `oneLine()` scrubs newlines from comment interpolations so no command can break out of a `//` comment. (4) The interactive evolve gate rejected proposals by deleting their backup file, but a parallel rejection branch re-typed the consumed path and crashed with ENOENT. Extracted `finalizeApply()` shared tail so all 3 gate-rejection sites skip the consumed backup cleanly. (`apps/cli/src/commands/install.ts`, `apps/cli/src/omp-hooks.ts`, `apps/cli/src/operations/evolve.ts`)
+
+### Bug Fixes
+
+- **Core content parsing hardening: CRLF frontmatter, scoped name injection, source-delete guard in package, YAML scalar escaping** (tasks 0075 + residual review). Four classes of input-handling bugs in `packages/core`: (1) `parseFrontmatter` hardcoded the delimiter offset to `4`, but CRLF openers/closers are 5 chars — a Windows-edited SKILL.md had its body prefixed with a stray `-`. Now uses the matched delimiter's actual length. (2) `setSkillName` did a global string replace on the entire file — a fenced `name:` line inside a markdown example got rewritten to the canonical name. Now scopes the edit to the frontmatter block. (3) `packageSkill` computed `outputDir` from user input without checking it against the source skill dir — passing the parent of the skill dir (or `tmpDir` directly in the flat-`.md` layout) caused `rmSync` to delete the source before copying from it. Now refuses with an explicit error. (4) `quoteYaml` left `\n`, `\r`, `\t` raw inside quoted scalars — a multi-line agent description in a Claude Code `<example>` block broke the emitted YAML line and made the whole agent file unloadable. Now escapes all three. (`packages/core/src/content/frontmatter.ts`, `packages/core/src/mapper.ts`, `packages/core/src/operations/package.ts`, `packages/core/src/pipeline/yaml-utils.ts`)
+- **Dev-review residuals: 18 findings across `packages/core` and `apps/cli` resolved** (tasks 0075 + 0076, full `/sp:dev-review --fix all`). Beyond the parsing/input bugs above, the full review surfaced and fixed: bare skill names now resolve to `skills/<name>/SKILL.md`; marketplace plugin roots anchored-validated against absolute paths; `checkBodyLinks` excludes fenced code blocks (`computeFencedLineSet`); `slashSyntax` regex anchored to line-start/whitespace (no path false-positives); canonical hook-event taxonomy consolidated into a single `content/hook-events.ts` module; templates moved from `apps/cli/src/templates` into `packages/core/src/templates` so core owns its assets natively (CLI `build:bundle` copies at build time); `findFrontmatterBounds()` extracted as a shared primitive consumed by `parseFrontmatter` + `extractBody` (CRLF-safe); dead `extractSkillsFromBody` deleted (zero prod callers); CLI residuals — `stepApply` frontmatter prepend guarded with try/catch, OMP install entry selection now matches `--global` scope, `--targets` parsing filters empty segments, `copyDirectory` uses `lstatSync` to skip symlinks, `hook-run` replaces inline `require('node:fs')` with the top-level import, empty evaluation history now echoes a message instead of silent output, `evalGate` context literal unified into `buildEvalGateContext()` across 3 duplicate sites, canonical-hooks walking collapsed into a single `flattenCanonicalHookEntries()` generator, `CANONICAL_TO_PI_EVENT` renamed to `CANONICAL_HOOK_EVENTS` and exported from `hooks.ts` as the single home for the event taxonomy. (`packages/core/src/*`, `apps/cli/src/*`)
+- **Scaffold templates embedded directly in Bun bundles** (`scripts/builder.ts`, `apps/cli/build.ts`). Previously the Bun-bundled CLI required a `templates/` runtime asset on disk. Templates are now embedded as inline string imports during the build, so the standalone binary needs no asset sidecar.
+
 ## [0.2.19] - 2026-07-10
 
 ### Bug Fixes
@@ -46,13 +59,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 - **`superskill install --verbose` reports actual on-disk skill count for each target** (regression test coverage added in `apps/cli/tests/commands/install.integration.test.ts:593-645`). The per-target verbose line previously printed `result.skillsCount` from rulesync — a diff count that decays to 0 on no-op re-installs. A user re-running `superskill install cc --verbose` against an already-populated `~/.gemini/antigravity-cli/skills/` saw `antigravity-cli: 0 skill(s) at /Users/robin/.gemini/antigravity-cli/skills` even though 65 skills were sitting there. The fix walks the target's skills dir after the rulesync run and reports the count of directories containing `SKILL.md` (the format every consumer reads); in dry-run mode the dir doesn't exist yet, so the code falls back to the diff count. The `packages/core/src/targets.ts` map gains a new `TARGET_GLOBAL_SKILLS_RELDIR` export (verified against rulesync 8.29.0 source and the task 0072 live smoke) so the install loop resolves each target's landing path consistently across global and project modes. The new helper `countSkillsInDir(skillsDir)` is added at the end of `apps/cli/src/commands/install.ts`. The same commit also fixes a separate double-echo bug: in `--verbose` mode the hook-emit line for each surrogate target (`pi` / `omp` / `hermes`) was printed twice — once at the dispatch site (`install.ts:290, 278, 246`) and once in the post-loop echo block. The post-loop echo at `install.ts:311-323` is now gated on `!options.verbose`; verbose mode already echoes each result at the dispatch site, non-verbose mode still surfaces the hook results for the user via the post-loop fallback (preserving the design §6 "no silent drop" invariant). The `apps/cli/tests/commands/install.integration.test.ts:490-547` regression tests were updated to distinguish the two semantically distinct `pi:` / `omp:` / `hermes:` lines (rulesync per-target vs hook-emit) so future regressions in either surface are caught independently. After fix, `superskill install cc --verbose` output shows e.g. `codex: 241 skill(s) at /Users/robin/.agents/skills`, `antigravity-cli: 65 skill(s) at /Users/robin/.gemini/antigravity-cli/skills`, `antigravity-ide: 219 skill(s) at /Users/robin/.config/skills` — each line now reflects the actual inventory the user can `ls` to verify, not a transient diff. (`c572efb`; `apps/cli/src/commands/install.ts`, `packages/core/src/targets.ts`, `apps/cli/tests/commands/install.integration.test.ts`)
 
- ## [0.2.11] - 2026-07-07
+## [0.2.11] - 2026-07-07
 
 ### Bug Fixes
 
 - **`superskill install` routes Antigravity targets to their native rulesync generators** (task 0072, regression introduced in `eb183b4` 2026-06-23). `TARGET_TO_RULESYNC['antigravity-cli']` and `TARGET_TO_RULESYNC['antigravity-ide']` were mapped to `'codexcli'`, which writes global skills to `~/.agents/skills/` — a directory neither the Antigravity CLI (`agy`) nor the Antigravity IDE ever reads. After the rerouting, every `superskill install` against a plugin with more than a handful of entities silently dropped ~25 of ~60 skills from the agy `/skills` UI (e.g. `/sp-dev-brainstorm`, `/sp-super-coder`) and from the IDE's global skills picker. agy reads from `~/.gemini/antigravity-cli/skills/` and the IDE reads from `~/.gemini/config/skills/` — both confirmed by the rulesync source (`vendors/rulesync/src/features/skills/antigravity-{cli,ide}-skill.ts` + `constants/antigravity-paths.ts`) and the official Google Antigravity docs. The fix reverts the two Antigravity mappings to their native rulesync strings (`'antigravity-cli'` / `'antigravity-ide'`), so skills now land in the directory the consumer reads. The unification for `codex` / `pi` / `omp` (all reading `~/.agents/skills/` natively) is preserved; only the Antigravity rows are corrected. `TARGET_TO_RULESYNC_HOOKS` was already correct (per the 2026-06-23 amendment's own exception) and is unchanged. `TARGET_SKILLS_RELDIR` (project-mode path) was already correct and is unchanged. ADR-010 amendment 2026-07-07 added to `docs/00_ADR.md` superseding the 2026-06-23 amendment for the Antigravity targets only. Downstream docs and tests synced: `docs/03_ARCHITECTURE.md:297-298` (target table), `docs/help/cmd_install.md:48-49, 142-150` (output-location table + mermaid), `packages/core/tests/targets.test.ts:25-26` (assertion + comment), `apps/cli/src/commands/install.ts:248-249` (OMP dispatch comment), `apps/cli/tests/commands/install.integration.test.ts:299` (OMP test comment). Four new integration tests added in `apps/cli/tests/commands/install.integration.test.ts:397-488` (agy global, ide global, agy project, codex/pi regression guard) using `process.env.HOME_DIR` to isolate rulesync's `getHomeDirectory()` from the real `$HOME`. Bug logged as `bug-034` in `.wolf/buglog.json`. Affected users should re-run `superskill install <plugin> --targets antigravity-cli,antigravity-ide` after upgrading to populate the Antigravity dirs (their existing `~/.agents/skills/<plugin>-*` entries remain valid for Codex / Pi / OMP, unchanged behavior). (`superskill` working tree, pending commit; `packages/core/src/targets.ts:30-31` + 6 other files; cross-ref `docs/tasks/0072_*.md`)
 
- ## [0.2.10] - 2026-07-06
+## [0.2.10] - 2026-07-06
 
 ### New Features
 
@@ -181,6 +194,7 @@ Three design decisions codified for the `hook` command, resolving the surface di
 #### CC Plugin Command Wrappers — Realigned
 
 All 17 plugin slash commands (`plugins/cc/commands/*.md`) re-aligned to match the CLI's actual capabilities after v0.2.0 changes:
+
 - `agent-add`: updated to reflect template tiers, `--skills`, `--tools` flags
 - `agent-evolve` / `command-evolve` / `magent-evolve` / `skill-evolve`: updated to reflect `--analyze`/`--history`/`--rollback`/`--confirm` flags
 - `agent-refine` / `command-refine` / `magent-refine` / `skill-refine`: updated to reflect `--dry-run` support
@@ -196,7 +210,6 @@ All six `cc-*` skills (`anti-hallucination`, `cc-agents`, `cc-commands`, `cc-hoo
 - **Six correctness defects across core + CLI (F1-F6)**: Fixed issues including `resolveContentPath` doubling `.md` on bare names, command evaluator scoring wrong schema fields, `dedupeLines` content corruption across heading blocks, backtick token score inflation, slash-command colon swallowed before translation, and parity test normalization. Each fix has a dedicated regression test.
 - **`handleCommandRefine` dryRun type contract**: Command refine's handler was missing the `dryRun` field in its type contract, causing a type error on the `--dry-run` path. Fixed and covered.
 - **Pi subagent parser hardened**: Replaced hand-rolled `parseFrontmatter` with the canonical parser from `content/frontmatter.ts` (ADR-012), fixing block-style YAML array and nested-value matching in the pipeline.
-
 
 ## [0.1.8] - 2026-06-21
 
@@ -223,7 +236,6 @@ All six `cc-*` skills (`anti-hallucination`, `cc-agents`, `cc-commands`, `cc-hoo
 ### Security
 
 - **Hook safety scanning in evaluate**: The new `hook evaluate` command scans every `command` string in `hooks.json` for dangerous shell patterns before hooks are deployed. This is defense-in-depth: `hook validate` already checks schema, but `hook evaluate` catches what the commands actually do.
-
 
 ## [0.1.7] - 2026-06-21
 
@@ -284,7 +296,6 @@ All six `cc-*` skills (`anti-hallucination`, `cc-agents`, `cc-commands`, `cc-hoo
 
 - **fix(skill)**: Use `echo()` over `stdout.write` in skill package handler to satisfy spur violations; renamed test file to `package.test.ts` for clarity.
 
-
 ---
 
 ## [0.1.6] - 2026-06-21
@@ -336,6 +347,7 @@ All six `cc-*` skills (`anti-hallucination`, `cc-agents`, `cc-commands`, `cc-hoo
 - **Backtick token score inflation** (P3): Any inline-code span with ≥2 backtick tokens saturated the tool-reference score to 1.0. Now matches only known tool names.
 - **Slash-command colon swallowed before translation** (P2, bug-081): `rewriteSkillReferences` was stripping the slash-command colon before the per-target slash translator ran, causing codex/pi dialect translation to silently no-op in real installs. Fixed: slash-command lines are now preserved for the translator. Integration assertion tightened to require the `$` prefix.
 - **Parity test normalization bug**: Deleted dead `normalizeFrontmatter` function that was silently swallowing block-style YAML arrays. Reworked parity test to use the canonical frontmatter parser (ADR-012).
+
 ---
 
 ## [0.1.3] - 2026-06-17
