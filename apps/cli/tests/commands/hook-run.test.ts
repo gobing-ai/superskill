@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, mock, spyOn } from 'bun:test';
-import { existsSync, mkdtempSync, readFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Command } from 'commander';
@@ -9,24 +9,33 @@ import { cliVersion } from '../../src/version';
 /**
  * `superskill hook run <plugin> <hook-id>` — the cross-agent hook runtime trigger (task 0151).
  * Tests assert the dispatcher contract (resolve runner, emit the right exit code + output) and
- * each runner's decision + fail-open behavior. PreToolUse: allow → empty stdout + exit 0; deny →
- * exit 2 + reason on stderr. Stop hooks emit canonical JSON with 0/non-zero. `hookRun` returns the
- * exit code and writes to stdout/stderr; tests capture stdout to inspect the payload.
+ * each runner's decision + fail-open behavior. Allow → exit 0 (PreToolUse with empty stdout, Stop
+ * with canonical JSON); deny → exit 2 + reason on stderr (Claude Code treats exit 1 as a
+ * non-blocking error, so 1 never blocks). `hookRun` returns the exit code and writes to
+ * stdout/stderr; tests capture both streams to inspect the payload.
  */
 
 function capture(plugin: string, hookId: string, env: NodeJS.ProcessEnv, stdinText: string) {
     const chunks: string[] = [];
+    const errChunks: string[] = [];
     const original = process.stdout.write.bind(process.stdout);
+    const originalErr = process.stderr.write.bind(process.stderr);
     // biome-ignore lint/suspicious/noExplicitAny: stdout.write overload shim for capture
     (process.stdout.write as any) = (chunk: unknown) => {
         chunks.push(String(chunk));
         return true;
     };
+    // biome-ignore lint/suspicious/noExplicitAny: stderr.write overload shim for capture
+    (process.stderr.write as any) = (chunk: unknown) => {
+        errChunks.push(String(chunk));
+        return true;
+    };
     try {
         const code = hookRun(plugin, hookId, env, stdinText);
-        return { code, out: chunks.join('') };
+        return { code, out: chunks.join(''), err: errChunks.join('') };
     } finally {
         process.stdout.write = original;
+        process.stderr.write = originalErr;
     }
 }
 
@@ -174,7 +183,7 @@ describe('hook run — cc/anti-hallucination (Stop, canonical output contract)',
         expect(code).toBe(0);
     });
 
-    it('blocks the stop via decision:"block" + reason (exit 1) when the protocol fails', () => {
+    it('blocks the stop via decision:"block" + reason (exit 2, reason on stderr) when the protocol fails', () => {
         const args = JSON.stringify({
             messages: [
                 {
@@ -184,14 +193,17 @@ describe('hook run — cc/anti-hallucination (Stop, canonical output contract)',
                 },
             ],
         });
-        const { code, out } = capture('cc', 'anti-hallucination', { ARGUMENTS: args }, '');
+        const { code, out, err } = capture('cc', 'anti-hallucination', { ARGUMENTS: args }, '');
         const parsed = JSON.parse(out);
         // WHY: a Stop hook blocks via the top-level `decision: "block"` + `reason` channel, not via
         // a non-schema `allowStop:false`. `hookEventName` is still required on the block payload.
+        // Exit MUST be 2 with the reason on stderr: Claude Code treats exit 1 as a non-blocking
+        // error (stdout JSON is only honored at exit 0), so a 1 here would never block anything.
         expect(parsed.decision).toBe('block');
         expect(parsed.reason).toContain('Add verification');
         expect(parsed.hookSpecificOutput.hookEventName).toBe('Stop');
-        expect(code).toBe(1);
+        expect(code).toBe(2);
+        expect(err).toContain('Add verification');
     });
 
     it('fails open with a valid allow shape on empty/invalid ARGUMENTS', () => {
@@ -206,6 +218,71 @@ describe('hook run — cc/anti-hallucination (Stop, canonical output contract)',
         expect(invalidParsed.hookSpecificOutput.hookEventName).toBe('Stop');
         expect(invalidParsed.decision).toBeUndefined();
         expect(invalid.code).toBe(0);
+    });
+
+    it('verifies the omp agent_end event delivered on stdin (no ARGUMENTS set)', () => {
+        // WHY: real hosts deliver the payload on stdin — omp's generated hook module forwards
+        // its agent_end event ({type, messages}). Before the stdin channel existed the guard
+        // resolved an empty context and allowed everything: permanently fail-open in production.
+        const event = JSON.stringify({
+            type: 'agent_end',
+            messages: [
+                {
+                    role: 'assistant',
+                    content: 'The framework API function documentation says version 4.2 probably works, I think.',
+                },
+            ],
+        });
+        const { code, err } = capture('cc', 'anti-hallucination', {}, event);
+        expect(code).toBe(2);
+        expect(err).toContain('Add verification');
+    });
+
+    it('verifies the Claude Stop payload by reading the transcript JSONL from stdin transcript_path', () => {
+        const dir = mkdtempSync(join(tmpdir(), 'superskill-ah-transcript-'));
+        const transcriptPath = join(dir, 'session.jsonl');
+        const lines = [
+            JSON.stringify({ type: 'user', message: { role: 'user', content: 'what version?' } }),
+            JSON.stringify({
+                type: 'assistant',
+                message: {
+                    role: 'assistant',
+                    content: [
+                        {
+                            type: 'text',
+                            text: 'The library version 9.9 API method should probably work — I believe the framework function handles it.',
+                        },
+                    ],
+                },
+            }),
+            // Trailing tool_use-only assistant turn: the verifiable claim is the last TEXTUAL turn.
+            JSON.stringify({
+                type: 'assistant',
+                message: { role: 'assistant', content: [{ type: 'tool_use' }] },
+            }),
+        ];
+        writeFileSync(transcriptPath, `${lines.join('\n')}\n`);
+
+        const payload = JSON.stringify({ transcript_path: transcriptPath, stop_hook_active: false });
+        const { code, err } = capture('cc', 'anti-hallucination', {}, payload);
+        expect(code).toBe(2);
+        expect(err).toContain('Add verification');
+    });
+
+    it('allows immediately when stop_hook_active is true (block-loop guard)', () => {
+        // WHY: Claude sets stop_hook_active=true when the agent continues because a Stop hook
+        // already blocked once. Blocking again would loop the agent forever.
+        const payload = JSON.stringify({ transcript_path: '/nonexistent.jsonl', stop_hook_active: true });
+        const { code, out } = capture('cc', 'anti-hallucination', {}, payload);
+        expect(code).toBe(0);
+        expect(JSON.parse(out).decision).toBeUndefined();
+    });
+
+    it('fails open when the transcript path is unreadable', () => {
+        const payload = JSON.stringify({ transcript_path: '/nonexistent/never.jsonl', stop_hook_active: false });
+        const { code, out } = capture('cc', 'anti-hallucination', {}, payload);
+        expect(code).toBe(0);
+        expect(JSON.parse(out).decision).toBeUndefined();
     });
 });
 

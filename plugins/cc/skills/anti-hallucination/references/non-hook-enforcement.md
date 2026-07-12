@@ -21,6 +21,10 @@ It validates a final answer using the same `verifyAntiHallucinationProtocol` log
 | 0 | Validation passed |
 | 1 | Validation failed |
 
+These are **validation-CLI semantics, not the hook block signal** — hook adapters block with
+exit 2 + reason on stderr (see `guard-implementation.md`). Do not wire `validate_response.ts`
+into `hooks.json`; a host would treat its exit 1 as a non-blocking error.
+
 ## Input Modes
 
 The validator accepts response text in either of these forms:

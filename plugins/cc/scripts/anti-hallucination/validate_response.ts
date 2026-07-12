@@ -1,4 +1,16 @@
 #!/usr/bin/env bun
+/**
+ * Standalone response validator — NOT a hook adapter.
+ *
+ * Validates a response text (from `RESPONSE_TEXT` env or stdin) against the
+ * anti-hallucination protocol and prints the `{ok, reason, issues?}` result JSON.
+ *
+ * Exit contract (validation-CLI semantics): 0 = protocol followed, 1 = violation.
+ * This is deliberately NOT the hook block signal (hooks use exit 2 + stderr — see
+ * `ah_guard.ts`). Do not wire this script into `hooks.json`; hosts would treat its
+ * exit 1 as a non-blocking error, not a block. Use `superskill hook run cc
+ * anti-hallucination` for hook enforcement.
+ */
 
 import { readFileSync } from 'node:fs';
 import { verifyAntiHallucinationProtocol } from './ah_guard';

@@ -5,7 +5,7 @@ import { echo, echoError } from '@gobing-ai/ts-utils';
 import type { Command } from 'commander';
 import {
     buildStopOutput,
-    extractLastAssistantMessage,
+    resolveStopContext,
     verifyAntiHallucinationProtocol,
 } from '../../../../plugins/cc/scripts/anti-hallucination/ah_guard';
 import { cliVersion } from '../version';
@@ -22,8 +22,9 @@ import { cliVersion } from '../version';
  * here turns version skew into blocked Stops and agent loops. Known guards keep their own exit
  * codes regardless.
  *
- * Runners signal via exit codes (cross-agent): PreToolUse allow → empty stdout + exit 0; deny →
- * exit 2 + reason on stderr; Stop → canonical JSON with 0/non-zero. Agents that cannot parse a
+ * Runners signal via exit codes (cross-agent): allow → exit 0 (PreToolUse with empty stdout, Stop
+ * with its canonical JSON); deny → exit 2 + reason on stderr (the universal block signal — Claude
+ * Code treats exit 1 as a non-blocking error, so 1 never blocks). Agents that cannot parse a
  * runner's JSON shape fail open (treat as allow), which is the intended cross-agent default.
  */
 
@@ -33,9 +34,10 @@ interface HookRunResult {
     /** Optional reason written to stderr (used by deny via exit 2; ignored on allow). */
     stderr?: string;
     /**
-     * Process exit code. Cross-agent convention: PreToolUse allow → 0 with empty stdout (both Claude
-     * Code and Codex treat empty-output exit-0 as "continue normally"); deny → 2 with the reason on
-     * stderr (exit 2 is the universal block signal). Stop hooks keep 0 = allow / non-zero = block.
+     * Process exit code. Cross-agent convention: allow → 0 (PreToolUse with empty stdout — both
+     * Claude Code and Codex treat empty-output exit-0 as "continue normally"; Stop with canonical
+     * JSON); deny → 2 with the reason on stderr (the universal block signal; Claude Code treats
+     * exit 1 as a non-blocking error, so 1 never blocks).
      */
     exitCode: number;
 }
@@ -129,39 +131,31 @@ const spTaskWriteGuard: HookRunner = {
 
 // ── cc/anti-hallucination ───────────────────────────────────────────────────
 
-interface HookContext {
-    messages?: { role: string; content: string | Array<{ type: string; text?: string }> }[];
-    last_message?: string;
-}
-
 /**
  * Stop hook: block the agent from stopping when its last message claims external facts without the
  * anti-hallucination protocol (source citations / confidence level / verification-tool evidence).
- * Reads the payload from the `ARGUMENTS` env var (Claude Stop-hook convention), emits the canonical
- * Stop JSON via {@link buildStopOutput} (allow → bare `hookSpecificOutput.hookEventName`, no feedback;
- * block → top-level `decision:"block"` + `reason`), and exits 0 (allow) / 1 (block).
- * Fails open (allow stop) on empty/invalid `ARGUMENTS` or missing content.
+ * Payload resolution is {@link resolveStopContext}: stdin carries what real hosts send (Claude Code
+ * Stop payload with `transcript_path` + `stop_hook_active` loop guard; omp's `agent_end` event with
+ * `messages`); the `ARGUMENTS` env var is the legacy/test channel and wins when set. Emits the
+ * canonical Stop JSON via {@link buildStopOutput} (allow → bare `hookSpecificOutput.hookEventName`;
+ * block → top-level `decision:"block"` + `reason`) and exits 0 (allow) / 2 (block, reason on stderr —
+ * Claude Code treats exit 1 as a non-blocking error, so 1 could never block a Stop).
+ * Fails open (allow stop) on empty/invalid payloads or missing content.
  */
 const ccAntiHallucination: HookRunner = {
-    run(env) {
-        const argumentsJson = env.ARGUMENTS ?? '{}';
-        const allowStop = (feedback: string, ok: boolean): HookRunResult => ({
-            output: buildStopOutput({ ok, reason: feedback }),
-            exitCode: ok ? 0 : 1,
+    run(env, stdinText) {
+        const allowStop = (reason: string): HookRunResult => ({
+            output: buildStopOutput({ ok: true, reason }),
+            exitCode: 0,
         });
 
-        let context: HookContext;
-        try {
-            context = JSON.parse(argumentsJson) as HookContext;
-        } catch {
-            return allowStop('Task is complete (invalid context ignored)', true);
-        }
+        const resolved = resolveStopContext(env.ARGUMENTS, stdinText);
+        if (resolved.allowReason) return allowStop(resolved.allowReason);
+        if (resolved.content === undefined) return allowStop('No content to verify');
 
-        const content = extractLastAssistantMessage(context);
-        if (content === undefined) return allowStop('No content to verify', true);
-
-        const result = verifyAntiHallucinationProtocol(content);
-        return allowStop(result.reason, result.ok);
+        const result = verifyAntiHallucinationProtocol(resolved.content);
+        if (result.ok) return allowStop(result.reason);
+        return { output: buildStopOutput(result), exitCode: 2, stderr: result.reason };
     },
 };
 

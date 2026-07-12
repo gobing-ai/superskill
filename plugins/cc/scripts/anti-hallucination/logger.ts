@@ -24,4 +24,8 @@ export const logger = {
         if (globalSilent) return;
         console.log(...args);
     },
+    error: (...args: unknown[]): void => {
+        if (globalSilent) return;
+        console.error(...args);
+    },
 };

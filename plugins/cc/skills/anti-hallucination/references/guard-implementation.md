@@ -16,15 +16,15 @@ The `ah_guard.ts` script enforces the anti-hallucination protocol by analyzing r
 | Code | Meaning |
 |------|---------|
 | 0 | Allow stop (protocol followed) |
-| 1 | Deny stop (protocol not followed) |
+| 2 | Deny stop (universal cross-agent block signal; the reason is also written to stderr). Claude Code treats exit 1 as a *non-blocking* error, so 1 can never block a Stop. |
 
 ## Output Format
 
-The guard outputs JSON to stdout:
+The guard writes the canonical Claude Stop JSON to stdout:
 
 ```json
-{"ok": true, "reason": "Task is complete"}
-{"ok": false, "reason": "Add verification for: source citations for API/library claims, confidence level (HIGH/MEDIUM/LOW)", "issues": [...]}
+{"hookSpecificOutput":{"hookEventName":"Stop"}}
+{"decision":"block","reason":"Add verification for: source citations for API/library claims, confidence level (HIGH/MEDIUM/LOW)","hookSpecificOutput":{"hookEventName":"Stop"}}
 ```
 
 ## Hook Configuration
@@ -52,11 +52,17 @@ Add to your `.claude/hooks/hooks.json`:
 
 For platforms without hooks, use `validate_response.ts` instead. See `non-hook-enforcement.md`.
 
-## Environment Variables
+## Input Channels
 
-| Variable | Description |
-|----------|-------------|
-| `ARGUMENTS` | JSON string containing hook context with `messages` array and optionally `last_message` |
+Resolved by `resolveStopContext` — first non-empty channel wins:
+
+| Channel | Payload | Sent by |
+|---------|---------|---------|
+| `ARGUMENTS` env var | JSON with `messages` array and optionally `last_message` | legacy/test harnesses |
+| stdin | Claude Code Stop payload: `{"transcript_path": "...", "stop_hook_active": false, ...}` — the last textual assistant message is read from the transcript JSONL; `stop_hook_active: true` allows immediately (block-loop guard) | Claude Code |
+| stdin | omp `agent_end` event: `{"type": "agent_end", "messages": [...]}` | omp generated hook modules |
+
+Unreadable input (invalid JSON, missing transcript) always resolves to **allow** — the guard fails open by design.
 
 ## Verification Rules
 
@@ -82,7 +88,7 @@ AND EITHER:
 - Tool usage evidence (showing verification was performed)
 - No red flag phrases
 
-Claude Code provides the hook payload through the `ARGUMENTS` environment variable for command hooks, which is what `ah_guard.ts` reads at runtime.
+Claude Code delivers the hook payload on **stdin** (`$ARGUMENTS` is a slash-command substitution, not a hook channel). The Stop payload carries `transcript_path` rather than inline messages, so the guard reads the transcript JSONL to find the last textual assistant message.
 
 ## Testing
 

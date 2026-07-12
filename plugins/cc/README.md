@@ -131,8 +131,8 @@ The `Stop` hook fires when the agent is about to stop and checks whether the res
 
 | Script | Role |
 |--------|------|
-| `ah_guard.ts` | Core guard engine — reads `Stop` hook context from `ARGUMENTS` env (messages + last_message), verifies citations/confidence/tool-usage patterns, exits 0 (allow) or 1 (deny with JSON reason) |
-| `validate_response.ts` | CLI entry point — reads response text from `RESPONSE_TEXT` env or stdin, runs `validateResponseText()`, exits 0/1 |
+| `ah_guard.ts` | Core guard engine — resolves the `Stop` payload from stdin (Claude Code `transcript_path` + `stop_hook_active` loop guard, or omp `agent_end` `messages`) with `ARGUMENTS` env as the legacy/test channel, verifies citations/confidence/tool-usage patterns, exits 0 (allow) or 2 (deny; reason on stderr + canonical block JSON on stdout) |
+| `validate_response.ts` | Standalone validation CLI (NOT a hook adapter — never wire into hooks.json) — reads response text from `RESPONSE_TEXT` env or stdin, runs `validateResponseText()`, exits 0 (protocol followed) / 1 (violation). Hook enforcement uses `superskill hook run cc anti-hallucination` with exit 2 = block |
 | `logger.ts` | Self-contained minimal logger (migrated verbatim from Spur, task 0041) — avoids depending on host plugin's shared logger |
 | `tests/ah_guard.test.ts` | Unit tests for the guard engine |
 | `tests/validate_response.test.ts` | Unit tests for the CLI entry point |
@@ -245,9 +245,9 @@ Tier 3 — Execution Layer (superskill CLI + Scripts)
 
 1. Claude Code prepares to stop after generating a response
 2. **Stop Hook** (`hooks.json`) fires, invoking `superskill hook run cc anti-hallucination`
-3. **Dispatcher** (`hook-run.ts`) routes `cc/anti-hallucination` to the guard engine; `ah_guard.ts` reads the `Stop` hook context from `ARGUMENTS` env (conversation messages + last assistant message), checks for citations, confidence levels, and tool-usage evidence
+3. **Dispatcher** (`hook-run.ts`) routes `cc/anti-hallucination` to the guard engine; `resolveStopContext` reads the `Stop` payload from stdin (Claude Code sends `transcript_path` — the last textual assistant message is read from the transcript JSONL; omp forwards its `agent_end` event with `messages`; the `ARGUMENTS` env var remains the legacy/test channel), then checks citations, confidence levels, and tool-usage evidence
 4. If protocol satisfied → exit 0 (allow stop)
-5. If protocol violated → exit 1, output JSON with reason (deny stop, request corrections)
+5. If protocol violated → exit 2 with the reason on stderr (the universal block signal — Claude Code treats exit 1 as non-blocking) plus canonical `decision:"block"` JSON on stdout
 6. The **`anti-hallucination` skill** provides the knowledge the agent uses to satisfy the guard on retry
 
 ### Example: Quality Evaluation via Personas
@@ -337,6 +337,6 @@ Registered runners (task 0151):
 | Runner | Event | Behavior |
 |--------|-------|----------|
 | `sp/task-write-guard` | `PreToolUse` | Denies raw `Write`/`Edit` on paths owned by the Spur task corpus; ownership is delegated to `spur task resolve --strict`'s exit code. Fails open on every other condition; `SPUR_WRITE_GUARD=off` short-circuits to allow. |
-| `cc/anti-hallucination` | `Stop` | Blocks stop when the last assistant message claims external facts without source citations / confidence / verification-tool evidence. Reuses `extractLastAssistantMessage` + `verifyAntiHallucinationProtocol` from `ah_guard.ts`. Fails open (allow stop) on empty/invalid `ARGUMENTS`. |
+| `cc/anti-hallucination` | `Stop` | Blocks stop when the last assistant message claims external facts without source citations / confidence / verification-tool evidence. Reuses `resolveStopContext` + `verifyAntiHallucinationProtocol` from `ah_guard.ts`; honors Claude's `stop_hook_active` block-loop guard. Fails open (allow stop) on empty/invalid payloads. |
 
 This is the cross-agent default for non-trivial command hooks: author the hook as a registered runner and invoke the PATH command, never a `${CLAUDE_PLUGIN_ROOT}/<script>` reference (the latter resolves on Claude Code only and silently fails everywhere else). See the `cc-hooks` skill for the full authoring guidance.
