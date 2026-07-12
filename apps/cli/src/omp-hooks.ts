@@ -20,6 +20,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import {
     BLOCKABLE_OMP_EVENTS,
+    CANONICAL_HOOK_EVENTS,
     CANONICAL_PRE_TOOL_EVENTS,
     type CanonicalHooksConfig,
     flattenCanonicalHookEntries,
@@ -54,15 +55,21 @@ interface ParsedHook {
  */
 function parseCanonicalHooks(config: CanonicalHooksConfig): ParsedHook[] {
     const parsed: ParsedHook[] = [];
-    for (const entry of flattenCanonicalHookEntries(config)) {
-        parsed.push({
-            ompEvent: entry.targetEvent,
-            matcher: entry.matcher,
-            command: entry.command,
-            timeout: entry.timeout,
-            name: deriveHookName(entry.command),
-            level: CANONICAL_PRE_TOOL_EVENTS[entry.canonicalEvent] ? 'pre' : 'post',
-        });
+    for (const [rawEvent, definitions] of Object.entries(config.hooks ?? {})) {
+        const canonicalEvent = rawEvent.charAt(0).toLowerCase() + rawEvent.slice(1);
+        const ompEvent = CANONICAL_HOOK_EVENTS[canonicalEvent];
+        if (!ompEvent) continue;
+        for (const entry of flattenCanonicalHookEntries(definitions)) {
+            if ((entry.type && entry.type !== 'command') || !entry.command) continue;
+            parsed.push({
+                ompEvent,
+                matcher: entry.matcher,
+                command: entry.command,
+                timeout: entry.timeout,
+                name: deriveHookName(entry.command),
+                level: CANONICAL_PRE_TOOL_EVENTS[canonicalEvent] ? 'pre' : 'post',
+            });
+        }
     }
     return parsed;
 }

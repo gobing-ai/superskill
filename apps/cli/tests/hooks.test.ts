@@ -572,4 +572,23 @@ describe('emitHermesHooks', () => {
 
         rmSync(workspace, { recursive: true, force: true });
     });
+
+    it('deduplicates equivalent nested canonical hooks through the shared iterator', () => {
+        const workspace = makeWorkspace();
+        const rulesyncDir = makeRulesyncDir(workspace, {
+            stop: [
+                {
+                    matcher: '*',
+                    hooks: [{ type: 'command', command: 'echo nested', timeout: 10 }],
+                },
+            ],
+        });
+
+        emitHermesHooks(rulesyncDir, workspace, { dryRun: false, global: false });
+        emitHermesHooks(rulesyncDir, workspace, { dryRun: false, global: false });
+
+        const written = JSON.parse(readFileSync(join(workspace, '.hermes', 'hooks.json'), 'utf-8'));
+        expect(written.hooks.stop).toHaveLength(1);
+        rmSync(workspace, { recursive: true, force: true });
+    });
 });

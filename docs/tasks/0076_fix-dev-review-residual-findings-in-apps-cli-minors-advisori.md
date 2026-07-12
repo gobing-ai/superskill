@@ -4,7 +4,7 @@ name: "Fix dev-review residual findings in apps/cli (minors, advisories, archite
 status: done
 template: standard
 created_at: 2026-07-11T23:08:28.183Z
-updated_at: "2026-07-12T00:29:31.393Z"
+updated_at: "2026-07-12T00:36:56.395Z"
 ---
 
 ## 0076. Fix dev-review residual findings in apps/cli (minors, advisories, architecture deepening C1-C3)
@@ -60,6 +60,39 @@ R9. [advisory, wrong seam — C2] **Give the canonical event taxonomy one home w
 - No `--no-verify`, no `.skip`'d tests, no new `biome-ignore` suppressions.
 
 **Files changed (9):** `apps/cli/src/commands/{hook-run,install}.ts`, `apps/cli/src/{hooks,omp-hooks}.ts`, `apps/cli/src/operations/{evaluate,evolve}.ts`, `apps/cli/tests/{hooks,omp-hooks}.test.ts`, `docs/tasks/0076_*.md`.
+
+### Testing
+
+**Pipeline verify results**
+
+- Verdict: PASS (from verdict artifact)
+
+| Requirement | Status | Evidence |
+|-------------|--------|----------|
+| R1 | MET | apps/cli/src/operations/evolve.ts:1024; apps/cli/tests/operations/evolve.test.ts:1280; bun run test: 1352 pass, 0 fail |
+| R2 | MET | apps/cli/src/commands/install.ts:470; apps/cli/tests/commands/install-omp-helpers.test.ts:97,111; bun run test: 1352 pass, 0 fail |
+| R3 | MET | apps/cli/src/commands/install.ts:520; apps/cli/tests/commands/install.test.ts:456; bun run test: 1352 pass, 0 fail |
+| R4 | MET | apps/cli/src/commands/install.ts:671; apps/cli/tests/commands/install.test.ts:480; symlinked files and directories are both skipped |
+| R5 | MET | apps/cli/src/commands/hook-run.ts:389 uses the static readFileSync import; no inline node:fs require remains |
+| R6 | MET | apps/cli/src/operations/evaluate.ts:48; apps/cli/tests/operations/evaluate.test.ts:200; explicit empty-history output asserted |
+| R7 | MET | apps/cli/src/operations/evolve.ts:1084 helper feeds all three call sites at lines 757,1474,1511; eval-gate regressions pass |
+| R8 | MET | apps/cli/src/hooks.ts:50 iterator is consumed by Pi at line 108, Hermes signatureOf at line 275, and OMP at apps/cli/src/omp-hooks.ts:62; nested dedup regression at apps/cli/tests/hooks.test.ts:576 |
+| R9 | MET | apps/cli/src/hooks.ts:14,24,31 owns the canonical map and explicit pre-tool/blockable target views; OMP imports those views |
+- Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
+
+### Review
+
+**SECU findings** (pipeline verify step — verdict: PASS)
+
+| Priority | Dimension | Location | Finding |
+|----------|-----------|----------|----------|
+| P4 | tests-pass | — | bun run test: 1352 pass, 0 fail, 3388 expect() calls across 73 files; 99.82% functions and 99.04% lines |
+| P4 | lint-clean | — | bun run lint: Biome checked 164 files; core and CLI typechecks exited 0 |
+| P4 | build-pass | — | bun run build: CLI bundled and compiled successfully |
+| P4 | spur-check | — | 28 enabled pre-check rules and all 3 post-check rules passed; 1352 tests passed |
+| P4 | design-conformance | — | No Design section; implementation follows the nine explicit requirements and preserves existing CLI behavior |
+| P4 | scope-creep | — | Changes are limited to completing R4/R8 and adding direct regression evidence for R1-R4/R6/R8 |
+| P4 | secua | — | Security: symlinks are not followed and no new command/data execution path exists. Efficiency: traversal remains linear. Correctness/usability: all R1-R9 edge cases have direct or existing coverage. Architecture: one nested-vs-flat iterator and one event taxonomy home remain. No unresolved blocker or major findings. |
 
 ### References
 

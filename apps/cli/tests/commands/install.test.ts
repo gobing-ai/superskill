@@ -1,9 +1,10 @@
 import { afterEach, describe, expect, it, spyOn } from 'bun:test';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Command } from 'commander';
 import {
+    copyDirectory,
     executeInstall,
     parseTargets,
     registerInstall,
@@ -452,6 +453,10 @@ describe('parseTargets', () => {
         expect(result).toEqual(['codex', 'pi']);
     });
 
+    it('filters empty comma-separated target segments', () => {
+        expect(parseTargets(',codex,, pi,')).toEqual(['codex', 'pi']);
+    });
+
     it('throws on unknown target', () => {
         expect(() => parseTargets('bogus')).toThrow('Unknown target');
     });
@@ -468,6 +473,24 @@ describe('parseTargets', () => {
     it('works with hermes and omp', () => {
         const result = parseTargets('hermes,omp');
         expect(result).toEqual(['hermes', 'omp']);
+    });
+});
+
+describe('copyDirectory', () => {
+    it('skips symbolic links instead of following or copying them', () => {
+        const workspace = createTempWorkspace();
+        const source = join(workspace, 'source');
+        const destination = join(workspace, 'destination');
+        mkdirSync(join(source, 'real'), { recursive: true });
+        writeFileSync(join(source, 'real', 'file.txt'), 'real');
+        symlinkSync(join(source, 'real'), join(source, 'linked-dir'));
+        symlinkSync(join(source, 'real', 'file.txt'), join(source, 'linked-file'));
+
+        copyDirectory(source, destination);
+
+        expect(existsSync(join(destination, 'real', 'file.txt'))).toBe(true);
+        expect(existsSync(join(destination, 'linked-dir'))).toBe(false);
+        expect(existsSync(join(destination, 'linked-file'))).toBe(false);
     });
 });
 

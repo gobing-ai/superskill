@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, it, spyOn } from 'bun:test';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -185,12 +185,19 @@ describe('evaluate', () => {
         expect(magent.type).toBe('magent');
     });
 
-    it('--history with empty store returns null', async () => {
+    it('--history with empty store prints an explicit empty-state line and returns null', async () => {
         const adapter = await createDbAdapter({ driver: 'bun-sqlite', url: ':memory:' });
         await adapter.exec(evaluations.createTableSql);
         const file = createTempFile(GOOD_SKILL);
+        const writes: string[] = [];
+        const stdout = spyOn(process.stdout, 'write').mockImplementation((data) => {
+            writes.push(typeof data === 'string' ? data : data.toString());
+            return true;
+        });
         const result = await evaluate('skill', file, { history: true, adapter });
+        stdout.mockRestore();
         expect(result).toBeNull();
+        expect(writes.join('')).toContain('No evaluation history for');
     });
 
     it('--history with stored evaluations prints them', async () => {

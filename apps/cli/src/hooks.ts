@@ -32,38 +32,29 @@ export const BLOCKABLE_OMP_EVENTS: Record<string, true> = {
     tool_call: true,
 };
 
-/** One flattened command-bearing hook entry emitted by {@link flattenCanonicalHookEntries}. */
-export interface CanonicalHookCommand {
-    /** Target lifecycle event name (snake_case), e.g. `tool_call`, `agent_end`. */
-    targetEvent: string;
-    /** Original camelCase canonical event (normalized: lowercased first char). */
-    canonicalEvent: string;
+/** One flattened hook entry emitted by {@link flattenCanonicalHookEntries}. */
+export interface FlattenedCanonicalHookEntry {
     /** Matcher string (`*` when absent). Preserved for downstream regex synthesis. */
     matcher: string;
-    command: string;
+    type?: string;
+    command?: string;
     timeout?: number;
 }
 
 /**
- * Walk every command-bearing entry in a canonical hooks config and yield a flat stream,
- * resolving the two on-disk shapes (matcher-wrapped `hooks[]` vs flat `type/command`).
- * Skips entries whose event is not in {@link CANONICAL_HOOK_EVENTS} and entries without
- * a `command` string or with a non-`command` type. The single source of truth for the
- * walk — consumers no longer re-implement event normalization or nested-vs-flat handling.
+ * Walk canonical hook definitions and yield a flat stream, resolving the two on-disk
+ * shapes (matcher-wrapped `hooks[]` vs flat `type/command`). This is the single source
+ * of truth for nested-vs-flat handling used by Pi conversion, OMP conversion, and
+ * Hermes merge deduplication.
  */
-export function* flattenCanonicalHookEntries(config: CanonicalHooksConfig): Generator<CanonicalHookCommand> {
-    for (const [rawEvent, definitions] of Object.entries(config.hooks ?? {})) {
-        const canonicalEvent = rawEvent.charAt(0).toLowerCase() + rawEvent.slice(1);
-        const targetEvent = CANONICAL_HOOK_EVENTS[canonicalEvent];
-        if (!targetEvent) continue;
-        for (const def of definitions) {
-            const matcher = def.matcher ?? '*';
-            const entries = def.hooks ?? [def];
-            for (const entry of entries) {
-                if (entry.type && entry.type !== 'command') continue;
-                if (!entry.command) continue;
-                yield { targetEvent, canonicalEvent, matcher, command: entry.command, timeout: entry.timeout };
-            }
+export function* flattenCanonicalHookEntries(
+    definitions: CanonicalHookDefinition[],
+): Generator<FlattenedCanonicalHookEntry> {
+    for (const def of definitions) {
+        const matcher = def.matcher ?? '*';
+        const entries = Array.isArray(def.hooks) && def.hooks.length > 0 ? def.hooks : [def];
+        for (const entry of entries) {
+            yield { matcher, type: entry.type, command: entry.command, timeout: entry.timeout };
         }
     }
 }
@@ -110,10 +101,16 @@ type PiHookEntry = string | { command: string; timeout?: number };
  */
 export function convertCanonicalToPiHooks(config: CanonicalHooksConfig): Record<string, PiHookEntry[]> {
     const piHooks: Record<string, PiHookEntry[]> = {};
-    for (const { targetEvent, command, timeout } of flattenCanonicalHookEntries(config)) {
-        const entry: PiHookEntry = timeout ? { command, timeout } : command;
-        if (!piHooks[targetEvent]) piHooks[targetEvent] = [];
-        piHooks[targetEvent].push(entry);
+    for (const [rawEvent, definitions] of Object.entries(config.hooks ?? {})) {
+        const canonicalEvent = rawEvent.charAt(0).toLowerCase() + rawEvent.slice(1);
+        const targetEvent = CANONICAL_HOOK_EVENTS[canonicalEvent];
+        if (!targetEvent) continue;
+        for (const { type, command, timeout } of flattenCanonicalHookEntries(definitions)) {
+            if ((type && type !== 'command') || !command) continue;
+            const entry: PiHookEntry = timeout ? { command, timeout } : command;
+            if (!piHooks[targetEvent]) piHooks[targetEvent] = [];
+            piHooks[targetEvent].push(entry);
+        }
     }
     return piHooks;
 }
@@ -275,19 +272,10 @@ function mergeCanonicalHooks(hooksPath: string, newConfig: CanonicalHooksConfig)
     }
 
     const signatureOf = (def: CanonicalHookDefinition): string => {
-        const matcher = def.matcher ?? '*';
-        // Canonical format is flat: { type, command, matcher, timeout } on the entry itself.
-        // Some sources still use the Claude Code nested format: { matcher, hooks: [...] }.
-        // Handle both: if def.hooks exists (nested), signature from the inner hooks; otherwise
-        // signature from the flat entry fields.
-        const hooks = def.hooks;
-        const commands =
-            Array.isArray(hooks) && hooks.length > 0
-                ? hooks
-                      .filter((h) => h.type !== 'command' || h.command !== undefined)
-                      .map((h) => `${h.type}:${h.command ?? ''}:${h.timeout ?? ''}`)
-                : [`${def.type ?? ''}:${def.command ?? ''}:${def.timeout ?? ''}`];
-        return `${matcher}|${commands.sort().join('||')}`;
+        const entries = [...flattenCanonicalHookEntries([def])].map(
+            ({ type, command, timeout }) => `${type ?? ''}:${command ?? ''}:${timeout ?? ''}`,
+        );
+        return `${def.matcher ?? '*'}|${entries.sort().join('||')}`;
     };
 
     const merged: CanonicalHooksConfig['hooks'] = {};

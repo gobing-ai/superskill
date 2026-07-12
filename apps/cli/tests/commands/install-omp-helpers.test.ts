@@ -94,26 +94,31 @@ describe('resolveOmpInstallPath', () => {
         expect(resolveOmpInstallPath('superskill', 'demo', false)).toBeUndefined();
     });
 
-    it('returns the first installPath for a project-scope match', () => {
+    it('selects the requested project scope instead of the first registry entry', () => {
         const expected = join(process.cwd(), 'cached', 'demo');
         writeRegistry(join(process.cwd(), '.omp', 'plugins'), {
             version: 1,
             plugins: {
                 'demo@superskill': [
+                    { scope: 'user', installPath: '/wrong-scope' },
                     { scope: 'project', installPath: expected },
-                    { scope: 'project', installPath: '/second' },
                 ],
             },
         });
         expect(resolveOmpInstallPath('superskill', 'demo', false)).toBe(expected);
     });
 
-    it('reads the global registry under HOME_DIR when global is true', () => {
+    it('reads the global registry and selects user scope when global is true', () => {
         if (!tempHome) throw new Error('tempHome not set');
         const expected = join(tempHome, 'global-cached', 'demo');
         writeRegistry(join(tempHome, '.omp', 'plugins'), {
             version: 1,
-            plugins: { 'demo@superskill': [{ scope: 'user', installPath: expected }] },
+            plugins: {
+                'demo@superskill': [
+                    { scope: 'project', installPath: '/wrong-scope' },
+                    { scope: 'user', installPath: expected },
+                ],
+            },
         });
         expect(resolveOmpInstallPath('superskill', 'demo', true)).toBe(expected);
     });

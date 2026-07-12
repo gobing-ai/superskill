@@ -1245,6 +1245,41 @@ describe('evolve — magent type, frontmatter-less (0054)', () => {
         expect(r.changesApplied).toBe(0);
     });
 
+    it('--accept skips an agent-authored frontmatter change for a frontmatter-less magent', async () => {
+        await seedMagentHistory(adapter, [0.9, 0.5]);
+        const proposalId = 'magent-frontmatter-less-guard-0076';
+        await new ProposalDao(adapter).insertProposal({
+            content_type: 'magent',
+            content_name: 'AGENTS',
+            baseline_id: 1,
+            proposal_json: {
+                proposal_id: proposalId,
+                changes: [
+                    {
+                        dimension: 'description',
+                        location: 'frontmatter.description',
+                        current: '',
+                        proposed: 'Agent-authored description',
+                        reason: 'exercise frontmatter guard',
+                    },
+                ],
+            },
+        });
+        const before = readFileSync(join(dir, 'AGENTS.md'), 'utf-8');
+        const errors: string[] = [];
+        const stderr = spyOn(process.stderr, 'write').mockImplementation((data) => {
+            errors.push(typeof data === 'string' ? data : data.toString());
+            return true;
+        });
+
+        const result = await evolve('magent', 'AGENTS', { adapter, acceptId: proposalId, margin: -1 });
+        stderr.mockRestore();
+
+        expect(result.changesApplied).toBe(0);
+        expect(readFileSync(join(dir, 'AGENTS.md'), 'utf-8')).toBe(before);
+        expect(errors.join('')).toContain('cannot parse frontmatter');
+    });
+
     it('--history lists an applied version after --accept on a frontmatter-less magent (M1/M4)', async () => {
         await seedMagentHistory(adapter, [0.9, 0.5]);
         await evolve('magent', 'AGENTS', { adapter, proposeOnly: true });

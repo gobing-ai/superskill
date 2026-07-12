@@ -653,7 +653,12 @@ function transformMarkdownDirectory(dir: string, target: Target, pluginName: str
     }
 }
 
-function copyDirectory(source: string, destination: string, options: { skipDirectoryNames?: Set<string> } = {}): void {
+/** Recursively copy a directory while ignoring symlinks and configured directory names. */
+export function copyDirectory(
+    source: string,
+    destination: string,
+    options: { skipDirectoryNames?: Set<string> } = {},
+): void {
     if (!existsSync(source)) return;
 
     mkdirSync(destination, { recursive: true });
@@ -663,6 +668,7 @@ function copyDirectory(source: string, destination: string, options: { skipDirec
         const sourcePath = join(source, entry);
         const destinationPath = join(destination, entry);
         const stat = lstatSync(sourcePath);
+        if (stat.isSymbolicLink()) continue;
         if (stat.isDirectory()) {
             copyDirectory(sourcePath, destinationPath, options);
         } else {
