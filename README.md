@@ -49,21 +49,31 @@ Full walkthrough: [Quick start guide](docs/help/quick_start.md).
 | Agent | Skills | Commands | Subagents | Hooks |
 |-------|:------:|:--------:|:---------:|:-----:|
 | Claude Code | ✓ | ✓ | ✓ | ✓ |
-| Grok Build | ✓ | ✓ | ✓ | ✓ |
-| Codex | ✓ | ✓ | ✓ | — |
-| Pi | ✓ | ✓ | ✓ | — |
-| omp | ✓ | ✓ | ✓ | — |
-| OpenCode | ✓ | ✓ | ✓ | — |
-| Antigravity IDE | ✓ | ✓ | — | — |
-| Antigravity CLI | ✓ | — | — | — |
+| Grok | ✓ | ✓ | ✓ | ✓ |
+| Codex | ✓ | ✓ | ✓ | ✓ |
+| Pi | ✓ | ✓ | ✓ | ✓ |
+| omp | ✓ | ✓ | ✓ | ✓ |
+| OpenCode | ✓ | ✓ | ✓ | ✓ |
+| Antigravity IDE | ✓ | ✓ | — | ✓ |
+| Antigravity CLI | ✓ | ✓ | — | ✓ |
 | Hermes | ✓ | ✓ | — | ✓ |
-| OpenClaw | ✓ | — | — | — |
 
-Grok installs the **native Claude-format plugin** (`--targets grok`): slash form is `/plugin:command` (e.g. `/sp:dev-idea`). Adapted skills under `~/.agents` (from Codex/Pi installs) may still appear as `/plugin-command` in Grok — prefer the colon form for plugin commands.
+Both Antigravity targets get skills, commands, and hooks from rulesync
+(`codexcli`/`codexcli`/`antigravity-ide` adapters); subagents are not part of the
+rulesync→antigravity map, so they don't ship there. `omp`, Grok, and Claude Code
+install plugins natively (no rulesync pass); the remaining targets route through
+rulesync's per-target generators. Hermes copies skills/commands from OpenCode's
+rulesync output and adds a canonical `hooks.json` copy at `~/.hermes/hooks.json`.
+
+Grok loads the Claude-format plugin natively — slash form is `/plugin:command`
+(e.g. `/cc:skill-add`). Codex/Pi-installed skills under `~/.agents/` may also
+appear in Grok as `/plugin-command` (hyphen form) when Grok discovers the shared
+skills root; prefer the colon form for plugin commands.
 
 See [entity locations](docs/help/entity_locations.md) for the exact install directories per agent.
 
 > Agents that don't natively support some entity types still get them. `superskill install` adapts commands and subagents as Skills 2.0 skill directories for targets that lack them — so every agent receives the full plugin surface, regardless of native feature set.
+</input>
 
 ## Commands
 

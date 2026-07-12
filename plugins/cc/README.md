@@ -4,8 +4,10 @@
 
 The `cc` plugin is the canonical Claude Code plugin for the superskill ecosystem. It provides a full lifecycle toolkit (scaffold → validate → evaluate → refine → evolve) for every entity type superskill manages — skills, slash commands, subagents, hooks, and main-agent configs — and ships an anti-hallucination guard that enforces verification-before-generation at the `Stop` hook.
 
-- **Marketplace entry:** `name: "cc"`, `version: "0.2.5"`, `source: "./plugins/cc"` (`.claude-plugin/marketplace.json`)
+- **Marketplace entry:** `name: "cc"`, `version: "0.3.0"`, `source: "./plugins/cc"` (`.claude-plugin/marketplace.json`)
+- **CLI floor:** hooks run via `superskill hook run cc anti-hallucination`; the canonical `hooks.json` declares `minCliVersion: "0.2.19"`. Older CLIs fail open (skip hook emission rather than install broken guards).
 - **Owner:** Robin Min
+</input>
 
 ## Directory Layout
 
@@ -83,11 +85,12 @@ Each command file contains:
 
 | Agent | Delegates To | Color | Trigger Examples |
 |-------|-------------|-------|------------------|
-| `expert-agent` | `cc:cc-agents` | — | "create an agent", "evaluate agent", "refine agent" |
-| `expert-command` | `cc:cc-commands` | — | "create a command", "validate command" |
+| `expert-agent` | `cc:cc-agents` | azure | "create an agent", "evaluate agent", "refine agent" |
+| `expert-command` | `cc:cc-commands` | gold | "create a command", "validate command" |
 | `expert-hook` | `cc:cc-hooks` | crimson | "create hooks", "cross-platform hooks" |
-| `expert-magent` | `cc:cc-magents` | — | "create AGENTS.md", "score my main agent" |
+| `expert-magent` | `cc:cc-magents` | teal | "create AGENTS.md", "score my main agent" |
 | `expert-skill` | `cc:cc-skills` | teal | "create a skill", "scaffold a skill" |
+</input>
 
 Each agent has:
 - `tools: [Read, Glob]` — minimal, read-only tool access
@@ -330,13 +333,17 @@ Installed hook configs invoke a stable PATH command instead of a plugin-checkout
 superskill hook run <plugin> <hook-id>
 ```
 
-The dispatcher (`apps/cli/src/commands/hook-run.ts`) resolves a runner from its registry by `<plugin>/<hook-id>`, hands it stdin + the process env, writes the runner's Claude-canonical hook JSON to stdout, and exits with the runner's code. Unknown `<plugin>/<hook-id>` exits 2 with the known-hook list — it never fails open, because an unknown hook id is a config bug, not a runtime payload.
+The dispatcher (`apps/cli/src/commands/hook-run.ts`) resolves a runner from the `HOOK_RUNNERS` registry by `<plugin>/<hook-id>`, hands it stdin + the process env, writes the runner's Claude-canonical hook JSON to stdout, and exits with the runner's code. Unknown `<plugin>/<hook-id>` is treated as **plugin/CLI version skew** (the installed plugin emits a hook this CLI doesn't know yet) — the dispatcher logs a warning naming the installed CLI version and the known-hook list, then exits 0 to fail open. Version skew must not turn into blocked Stops and agent loops.
 
-Registered runners (task 0151):
+Registered runners:
 
 | Runner | Event | Behavior |
 |--------|-------|----------|
 | `sp/task-write-guard` | `PreToolUse` | Denies raw `Write`/`Edit` on paths owned by the Spur task corpus; ownership is delegated to `spur task resolve --strict`'s exit code. Fails open on every other condition; `SPUR_WRITE_GUARD=off` short-circuits to allow. |
+| `sp/context-post-tool` | `PostToolUse` | Appends a token-budget event to the per-session ledger so `sp/context-session-stop` can roll up at session end. Fails open; never blocks. |
+| `sp/context-session-start` | `SessionStart` | Initializes a per-session ledger file at `.spur/context/token-ledger.jsonl` and stamps the session id. Fails open. |
+| `sp/context-session-stop` | `SessionStop` | Reads the ledger written by `sp/context-post-tool`, sums reads/writes/tokens for the session, emits a final `session_end` event, and clears the session file. Fails open. |
 | `cc/anti-hallucination` | `Stop` | Blocks stop when the last assistant message claims external facts without source citations / confidence / verification-tool evidence. Reuses `resolveStopContext` + `verifyAntiHallucinationProtocol` from `ah_guard.ts`; honors Claude's `stop_hook_active` block-loop guard. Fails open (allow stop) on empty/invalid payloads. |
 
 This is the cross-agent default for non-trivial command hooks: author the hook as a registered runner and invoke the PATH command, never a `${CLAUDE_PLUGIN_ROOT}/<script>` reference (the latter resolves on Claude Code only and silently fails everywhere else). See the `cc-hooks` skill for the full authoring guidance.
+</input>
