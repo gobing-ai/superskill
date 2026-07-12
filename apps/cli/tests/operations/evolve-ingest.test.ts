@@ -306,6 +306,35 @@ describe('generation seam — ingest-in (F023)', () => {
         expect(json.changes[0].failure_mode).toBe('duplication');
     });
 
+    it('accepts the negation failure_mode tag (0077 R5 — sixth mode)', async () => {
+        await seedHistory(adapter);
+
+        const tagged = {
+            proposal_id: 'skill-evolve-negation-001',
+            changes: [
+                {
+                    dimension: 'clarity',
+                    location: 'body',
+                    current: "Don't leave the completion criterion vague.",
+                    proposed: 'Make every completion criterion checkable.',
+                    reason: 'Flip prohibition to a positive target (negation cure)',
+                    failure_mode: 'negation',
+                },
+            ],
+        };
+        const proposalPath = join(dir, 'negation-proposal.json');
+        writeFileSync(proposalPath, JSON.stringify(tagged));
+
+        await evolve('skill', 'widget', { adapter, ingest: proposalPath });
+
+        const stored = await new ProposalDao(adapter).getProposals('skill', 'widget');
+        const json =
+            typeof stored[0]?.proposal_json === 'string'
+                ? JSON.parse(stored[0].proposal_json)
+                : stored[0]?.proposal_json;
+        expect(json.changes[0].failure_mode).toBe('negation');
+    });
+
     it('rejects an unknown failure_mode tag (task 0070 R5)', async () => {
         await seedHistory(adapter);
 

@@ -331,7 +331,7 @@ information hierarchy, and the router-skill cure are in
 
 ## Additional Resources
 
-- **Skill-Engineering Theory**: [references/skill-engineering-theory.md](references/skill-engineering-theory.md) - The absorbed theory behind cc's rubrics: two invocation loads, information hierarchy, completion criteria, leading words, five named failure modes
+- **Skill-Engineering Theory**: [references/skill-engineering-theory.md](references/skill-engineering-theory.md) - The absorbed theory behind cc's rubrics: two invocation loads, information hierarchy, completion criteria, leading words, six named failure modes
 - **Glossary**: [references/glossary.md](references/glossary.md) - cc's own vocabulary (entity type, operation, rubric, dimension, two-call seam, proposal, invocation mode, ...)
 - **Workflows**: [references/workflows.md](references/workflows.md) - Detailed operation workflows
 - **Security Guidelines**: [references/security.md](references/security.md) - Security checklist and patterns

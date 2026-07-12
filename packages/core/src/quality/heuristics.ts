@@ -156,6 +156,74 @@ export function noOpDensity(text: string): number {
     return clamp(noOpHits / denominator);
 }
 
+/** Prohibition markers that steer by naming the banned behavior (negation candidates). */
+export const PROHIBITION_MARKERS = [
+    "don't ",
+    'do not ',
+    'never ',
+    'avoid ',
+    'must not ',
+    'should not ',
+    "shouldn't ",
+    'cannot ',
+    "can't ",
+    'no need to ',
+] as const;
+
+/** Positive-direction imperatives — the denominator of "steering that names a target". */
+export const POSITIVE_IMPERATIVES = [
+    'use ',
+    'write ',
+    'state ',
+    'make ',
+    'run ',
+    'add ',
+    'keep ',
+    'prefer ',
+    'cite ',
+    'set ',
+    'name ',
+    'choose ',
+    'ensure ',
+] as const;
+
+/**
+ * Count word-start occurrences of each needle in `text`. A match counts only when the
+ * character before it is a word boundary (start of string or non-alphanumeric) — so
+ * "whenever" does not match the needle "never " and "reset" does not match "set ".
+ * Needles are lowercase; `text` is lowercased by callers.
+ */
+function countOccurrences(text: string, needles: readonly string[]): number {
+    let total = 0;
+    for (const needle of needles) {
+        let from = text.indexOf(needle);
+        while (from !== -1) {
+            const prev = from === 0 ? '' : (text[from - 1] ?? '');
+            if (!/[a-z0-9]/.test(prev)) total += 1;
+            from = text.indexOf(needle, from + needle.length);
+        }
+    }
+    return total;
+}
+
+/**
+ * Negation density: prohibition-steered instructions as a fraction of all directional
+ * steering. High density flags a body that steers by naming banned behavior (the
+ * "don't think of an elephant" failure mode) instead of prompting the positive target.
+ * Returns 0.0–1.0; 0 is best (see skill-engineering-theory.md "negation" failure mode).
+ *
+ * This is a CANDIDATE proxy only — whether a specific prohibition is an unavoidable hard
+ * guardrail (keep) or a rewritable negation (flip to the positive) is LLM-judged in the
+ * two-call seam, never decided here.
+ */
+export function negationDensity(text: string): number {
+    const lower = text.toLowerCase();
+    const prohibitions = countOccurrences(lower, PROHIBITION_MARKERS);
+    if (prohibitions === 0) return 0;
+    const positives = countOccurrences(lower, POSITIVE_IMPERATIVES);
+    return clamp(prohibitions / (prohibitions + positives));
+}
+
 /**
  * Extract word-shingles (n-grams) of `size` words from `text`, lowercased and
  * whitespace-normalized. Used by {@link duplicationRatio} to detect repeated phrasing.

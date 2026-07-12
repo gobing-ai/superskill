@@ -8,6 +8,7 @@ import {
     extractBody,
     hasPattern,
     keywordDensity,
+    negationDensity,
     noOpDensity,
     parseErrorNote,
     parseFrontmatterSafe,
@@ -350,6 +351,32 @@ describe('noOpDensity', () => {
         const density = noOpDensity(body);
         expect(density).toBeGreaterThan(0);
         expect(density).toBeLessThan(1);
+    });
+});
+
+// ── negationDensity (0077 R5 — negation failure mode) ────────────────────────────
+
+describe('negationDensity', () => {
+    it('returns 0 when there are no prohibition markers', () => {
+        expect(negationDensity('Use the helper. Cite the source. Keep it tight.')).toBe(0);
+    });
+
+    it('returns high density when steering is dominated by bare prohibitions', () => {
+        const body = "Don't skip the check. Never inline the value. Do not summarize. Avoid the shortcut.";
+        expect(negationDensity(body)).toBeGreaterThan(0.5);
+    });
+
+    it('returns a low ratio when a lone guardrail sits among positive imperatives', () => {
+        const body = 'Use the rubric. Cite the owning file. Set the floor. Keep it tight. Never force-push.';
+        const density = negationDensity(body);
+        expect(density).toBeGreaterThan(0);
+        expect(density).toBeLessThan(0.5);
+    });
+
+    it('matches on word boundaries — "whenever" is not "never", "reset" is not "set"', () => {
+        // Substring matching would count "never" inside "whenever" and "set" inside "reset",
+        // inflating negation on ordinary prose. Word-boundary matching returns 0 here.
+        expect(negationDensity('Whenever you reset the value, use the helper and keep it tight.')).toBe(0);
     });
 });
 

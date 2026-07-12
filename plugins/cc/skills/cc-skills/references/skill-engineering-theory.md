@@ -98,7 +98,14 @@ This judgment does not belong in a deterministic heuristic scorer — it's evalu
 two-call LLM seam (see `packages/core/src/rubrics/skill.yaml`), never hardcoded as a string match,
 because "is this the RIGHT leading word for THIS model" is not decidable by pattern matching.
 
-## The five named failure modes
+**The refactor hunt:** assume every mature skill is carrying restatements that a single pretrained
+token retires — hunt for them during refine, don't wait for them to be reported. A triad spelled
+out at three sites, a description spending a sentence to gesture at one idea — each is a passage
+begging to collapse into a leading word: "fast, deterministic, low-overhead" → a *tight* loop;
+"a loop you believe in" → the loop goes *red* on the bug, or it doesn't. The collapse wins twice:
+fewer tokens, and a sharper hook for the agent to hang its thinking on.
+
+## The six named failure modes
 
 Each failure mode below has a definition, a detection question, and a fix. These are the taxonomy
 `evolve` proposals tag against (see cc:cc-skills workflow reference for the tagging mechanism).
@@ -142,7 +149,7 @@ elsewhere become silently wrong? If yes, that second copy is duplication.
 **Fix:** collapse to one home, cite from the rest. `packages/core/src/rubrics/skill.yaml` owns
 dimension weights; `cc-skills` SKILL.md cites it (`"See packages/core/src/rubrics/skill.yaml"`)
 rather than restating the numbers. This document (`skill-engineering-theory.md`) owns the failure
-taxonomy; other lifecycle skills name `cc:cc-skills` rather than re-explaining the five modes.
+taxonomy; other lifecycle skills name `cc:cc-skills` rather than re-explaining the six modes.
 
 ### 4. No-op
 
@@ -162,6 +169,11 @@ model-aware judgment confirms it changes nothing.
 **Fix:** delete the sentence (pruning is a deletion operation, not a trim/shorten operation — see
 the cc:cc-skills workflow reference's pruning-mode documentation).
 
+**Sentence-level pruning discipline:** run the no-op test on each *sentence in isolation*, not just
+line by line — a live line can still carry a dead sentence. When a sentence fails the test, delete
+the **whole sentence**, don't trim words from it; a half-deleted no-op is still a no-op with worse
+grammar. Be aggressive: most prose that fails the test should go, not be rewritten.
+
 ### 5. Premature completion
 
 **Definition:** the agent reports "done" before every item in scope has genuinely been addressed,
@@ -176,6 +188,29 @@ the criterion has a premature-completion risk, even if it's technically checkabl
 **Fix:** tighten the criterion to be exhaustive — replace "the main cases are handled" with "every
 case in the enumerated list is handled," replace "tests pass" with "the full suite passes with zero
 skipped."
+
+**Fix ordering (cheapest first):** sharpen the completion criterion before you restructure. Only if
+the criterion is *irreducibly* fuzzy **and** you observe the rush do you hide the post-completion
+steps by splitting the sequence — pushing the steps still ahead out of view so the agent does the
+legwork on the step in front of it instead of racing toward "done." Splitting is the expensive
+remedy (it spends a granularity cut); a checkable criterion is the local, free one.
+
+### 6. Negation
+
+**Definition:** steering the agent by prohibition, which backfires — *"don't think of an elephant"*
+names the elephant and makes it *more* available, not less. A skill that says "don't write vague
+descriptions" has just put "vague descriptions" in the model's active context as the salient
+concept, priming the very behavior it meant to suppress.
+
+**Detection question:** does this instruction tell the agent what NOT to do without naming the
+positive target it should do instead? A bare prohibition ("never skip the citation") with no
+paired positive ("cite the owning file for every claim") is a negation smell.
+
+**Fix:** prompt the **positive** — state the target behavior so the banned one is never spoken.
+"Don't leave the completion criterion vague" becomes "make every completion criterion checkable."
+Keep a prohibition **only** as a hard guardrail you genuinely cannot phrase positively (a safety
+"never force-push"), and even then pair it with what to do instead. This is the one failure mode
+whose fix is a rewrite, not a deletion — the sentence stays, its polarity flips.
 
 ## Description rules
 

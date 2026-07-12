@@ -498,8 +498,8 @@ Fix issues and improve quality. Supports multiple refinement modes.
 
 Two named fix types complement the deterministic structural fixes. Both are `suggest`-strategy
 fixes (a rewrite judgment call, never auto-applied); this section is the single copy the
-`*-refine` commands point to. Failure-mode definitions (no-op, duplication, sediment, sprawl)
-live in the skill-engineering theory reference.
+`*-refine` commands point to. Failure-mode definitions (all six: no-op, duplication, sediment,
+sprawl, premature-completion, negation) live in the skill-engineering theory reference.
 
 **Description prune** — rewrite an over-long or synonym-heavy description to budget by applying
 the three description rules: front-load the leading identity phrase; keep one trigger per genuine
@@ -508,15 +508,35 @@ every entity type with a description.
 
 **Pruning pass** (body-level; skills and agents):
 
-1. **No-op hunt** — sentence-level: delete every line the model already obeys by default (the
-   test: does this line change behavior vs. no line?). Delete, don't trim — a shortened no-op is
-   still a no-op.
+1. **No-op hunt** — run the test per *sentence in isolation* (does this sentence change behavior vs.
+   no sentence?), not just per line. Delete the whole failing sentence — a shortened no-op is still a
+   no-op. Be aggressive: most prose that fails the test should go, not be rewritten.
 2. **Duplication collapse** — one meaning, one home: when a rule is stated in two places, keep the
    authoritative home and replace the other with a bare term or pointer.
 3. **Sediment removal** — delete stale layers left by past edits (superseded advice, orphaned
    footers, references to removed sections).
-4. **Disclosure move** — content only some branches need moves into `references/` behind a
+4. **Negation flip** — rewrite prohibition-steered lines ("don't X") to name the positive target;
+   keep a bare prohibition only as an unphraseable hard guardrail. Polarity flips; the line stays.
+5. **Disclosure move** — content only some branches need moves into `references/` behind a
    pointer; content moves, it is never silently deleted.
+
+### The fine-tune loop contract (evaluate → refine convergence)
+
+The evaluate→refine loop is the mechanism cc uses to tune any skill to quality at low token cost.
+It is deterministic and bounded, not open-ended editing:
+
+1. **Evaluate** emits per-dimension scores from the single authoritative rubric
+   (`packages/core/src/rubrics/skill.yaml` — one copy, read by both evaluate and refine) plus
+   findings, each ranked by the failure mode it names and anchored to a location. No second rubric.
+2. **Refine** applies the **smallest edit** that clears each finding (a fix per finding, not a
+   rewrite of the whole body), then **re-evaluates**.
+3. **Stop** on the first of: aggregate score stops improving (Δ < 0.01 between iterations), OR the
+   iteration cap (3) is reached. Residual findings at stop are **reported, never silently dropped** —
+   a stubborn finding is surfaced, not hidden.
+
+**Completion criteria are checkable, not vibes.** A refine run reports "swept N reference files,
+deleted M no-op sentences, score X→Y over K iterations, R residuals" — never "skill improved". If
+you cannot state the before/after score and the residual count, the loop has not completed.
 
 ### Workflow Steps
 

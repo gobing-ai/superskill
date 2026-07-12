@@ -40,9 +40,10 @@ Run evaluation, apply deterministic fixes, then perform LLM content improvement 
 
 Beyond deterministic structural fixes, refine applies two named content fix types: **description
 prune** (three description rules: front-loaded identity, one trigger per branch, no body
-restatement) and the **pruning pass** (no-op hunt — delete don't trim; duplication collapse;
-sediment removal; disclosure moves). Single copy: **cc:cc-skills** workflows reference § "Content
-fix types".
+restatement) and the **pruning pass** (per-sentence no-op hunt — delete the whole failing sentence,
+never trim it; duplication collapse; sediment removal; disclosure moves; **negation flip** — rewrite
+prohibition-steered lines to name the positive target). Single copy: **cc:cc-skills** workflows
+reference § "Content fix types" and the six-mode taxonomy in its skill-engineering theory reference.
 
 ## Implementation
 

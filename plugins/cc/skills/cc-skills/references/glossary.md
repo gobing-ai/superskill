@@ -73,8 +73,8 @@ Avoid: "score" alone when you mean the letter (score is the 0.0–1.0 number; gr
 
 **Proposal** — a versioned, persisted set of `ProposedChange[]` generated (or agent-authored) by
 `evolve`, gated by the double-loop gate before it can be `accepted`. Proposals carry status
-(`draft` / `accepted` / `rejected`) and, per R5, a failure-mode tag naming which of the five named
-failure modes (sprawl/sediment/duplication/no-op/premature-completion) the proposal cures.
+(`draft` / `accepted` / `rejected`) and, per R5, a failure-mode tag naming which of the six named
+failure modes (sprawl/sediment/duplication/no-op/premature-completion/negation) the proposal cures.
 Avoid: "suggestion", "change request" (both used informally elsewhere; "proposal" is the exact
 stored-row term).
 
@@ -83,6 +83,28 @@ snapshot (`<path>.version-<proposalId>`), via `evolve --rollback <id> --confirm`
 confirmation — it is a destructive, file-overwriting operation.
 Avoid: "revert", "undo" (both imply an in-memory operation; rollback is a file-level restore from a
 named snapshot).
+
+## Steering & pruning
+
+Bare vocabulary anchors; the full taxonomy entry (detection question + fix) for each lives in
+[skill-engineering-theory.md](skill-engineering-theory.md) — named here so skill bodies can cite the
+term and link once.
+
+**Negation** — the sixth failure mode: steering by prohibition, which backfires (naming the banned
+behavior primes it — the "don't think of an elephant" effect). Fix by prompting the **positive**
+target instead; keep a prohibition only as an unphraseable-otherwise hard guardrail. The one failure
+mode whose fix flips a sentence's polarity rather than deleting it.
+Avoid: "prohibition smell", "anti-pattern" (too generic — "negation" is the taxonomy term).
+
+**Sentence-level pruning** — running the no-op test on each *sentence in isolation* (not just line
+by line) and deleting the whole failing sentence, never trimming words from it. The discipline that
+turns the no-op fix from a vibe into a checkable pass.
+Avoid: "trimming", "tightening" (both imply word-level shortening; pruning is whole-sentence deletion).
+
+**Refactor hunt** — the proactive search during `refine`/`evolve` for restatements that a single
+**leading word** retires (a triad spelled at three sites collapsing to one anchored token). Not
+reactive cleanup — an assumed-present target you go looking for.
+Avoid: "cleanup", "polish".
 
 ## See also
 

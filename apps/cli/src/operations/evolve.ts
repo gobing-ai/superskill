@@ -105,9 +105,16 @@ export interface TrendEntry {
  * cures, so proposal history doubles as a failure-mode ledger. Definitions live in
  * cc-skills' skill-engineering-theory reference.
  */
-export const FAILURE_MODES = ['sprawl', 'sediment', 'duplication', 'no-op', 'premature-completion'] as const;
+export const FAILURE_MODES = [
+    'sprawl',
+    'sediment',
+    'duplication',
+    'no-op',
+    'premature-completion',
+    'negation',
+] as const;
 
-/** One of the five failure modes an evolve proposal may declare it cures. */
+/** One of the six failure modes an evolve proposal may declare it cures. */
 export type FailureMode = (typeof FAILURE_MODES)[number];
 
 /** A single agent-authored change within an evolve proposal (the `changes[]` element shape). */

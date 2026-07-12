@@ -7,6 +7,7 @@ import {
     extractBody,
     hasPattern,
     keywordDensity,
+    negationDensity,
     noOpDensity,
     parseErrorNote,
     parseFrontmatterSafe,
@@ -98,13 +99,25 @@ function scoreClarity(body: string): DimensionScore {
     // vague done-bounds ("as needed", "understanding reached") that make a step
     // undecidable. Bodies with no step structure are unaffected (checkability returns 1).
     const checkability = completionCheckability(body);
-    const score = clamp(base.score * checkability);
+    // Negation (0077 R5): steering that leans on prohibition ("don't X") instead of
+    // naming the positive target primes the banned behavior. Only a dominant lean is
+    // penalized (a few hard guardrails are legitimate); the factor is gentle because
+    // guardrail-vs-negation is ultimately an LLM-judged call.
+    const negation = negationDensity(body);
+    const negationFactor = negation > 0.5 ? 1 - (negation - 0.5) * 0.6 : 1;
+    const score = clamp(base.score * checkability * negationFactor);
 
     const findings = [...(base.findings ?? [])];
     const recommendations = [...(base.recommendations ?? [])];
     if (checkability < 1) {
         findings.push('Step-shaped content uses vague completion bounds (e.g. "as needed", "when ready").');
         recommendations.push('Replace vague bounds with a decidable done-condition per step.');
+    }
+    if (negation > 0.5) {
+        findings.push('Steering leans on prohibition ("don\'t X") over naming the positive target (negation).');
+        recommendations.push(
+            'Prompt the positive: state the target behavior; keep a prohibition only as an unphraseable hard guardrail.',
+        );
     }
 
     return { score, note: base.note, findings, recommendations };
@@ -238,7 +251,9 @@ function scoreConciseness(body: string, description: string): DimensionScore {
     }
     if (noOp > 0.2) {
         findings.push('Body contains default-behavior phrases that do not change model behavior (no-op candidates).');
-        recommendations.push('Delete no-op instructions rather than trimming them — they add no signal.');
+        recommendations.push(
+            'Run the no-op test per sentence and delete the whole failing sentence — do not trim words from it.',
+        );
     }
     if (descDup > 0.3) {
         findings.push('Body restates the description near-verbatim (duplication).');
