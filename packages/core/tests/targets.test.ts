@@ -1,9 +1,16 @@
 import { describe, expect, it } from 'bun:test';
-import { TARGET_TO_AGENT_NAME, TARGET_TO_RULESYNC, TARGETS } from '../src/targets';
+import {
+    TARGET_GLOBAL_SKILLS_RELDIR,
+    TARGET_SKILLS_RELDIR,
+    TARGET_TO_AGENT_NAME,
+    TARGET_TO_RULESYNC,
+    TARGET_TO_RULESYNC_HOOKS,
+    TARGETS,
+} from '../src/targets';
 
 describe('targets', () => {
-    it('TARGETS covers 8 agents', () => {
-        expect(TARGETS).toHaveLength(8);
+    it('TARGETS covers 9 agents', () => {
+        expect(TARGETS).toHaveLength(9);
         expect(TARGETS).toContain('claude');
         expect(TARGETS).toContain('codex');
         expect(TARGETS).toContain('pi');
@@ -12,6 +19,7 @@ describe('targets', () => {
         expect(TARGETS).toContain('antigravity-cli');
         expect(TARGETS).toContain('antigravity-ide');
         expect(TARGETS).toContain('hermes');
+        expect(TARGETS).toContain('grok');
     });
 
     it('TARGET_TO_RULESYNC maps rulesync-supported targets to ToolTarget strings', () => {
@@ -30,6 +38,7 @@ describe('targets', () => {
         expect(TARGET_TO_RULESYNC).not.toHaveProperty('claude');
         expect(TARGET_TO_RULESYNC).not.toHaveProperty('omp');
         expect(TARGET_TO_RULESYNC).not.toHaveProperty('hermes');
+        expect(TARGET_TO_RULESYNC).not.toHaveProperty('grok');
     });
 
     it('TARGET_TO_AGENT_NAME bridges every Target to an AgentName', () => {
@@ -51,9 +60,16 @@ describe('targets', () => {
         expect(TARGET_TO_AGENT_NAME.opencode).toBe('opencode');
         expect(TARGET_TO_AGENT_NAME['antigravity-cli']).toBe('antigravity-cli');
         expect(TARGET_TO_AGENT_NAME.hermes).toBe('hermes');
+        expect(TARGET_TO_AGENT_NAME.grok).toBe('grok');
     });
 
     it('antigravity-ide (not in AgentName) bridges to opencode fallback', () => {
         expect(TARGET_TO_AGENT_NAME['antigravity-ide']).toBe('opencode');
+    });
+
+    it('grok is absent from rulesync skill reldir maps (native plugin peer of claude/omp)', () => {
+        expect(TARGET_SKILLS_RELDIR).not.toHaveProperty('grok');
+        expect(TARGET_GLOBAL_SKILLS_RELDIR).not.toHaveProperty('grok');
+        expect(TARGET_TO_RULESYNC_HOOKS).not.toHaveProperty('grok');
     });
 });

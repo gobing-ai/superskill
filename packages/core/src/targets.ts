@@ -11,12 +11,13 @@ export const TARGETS = [
     'antigravity-cli',
     'antigravity-ide',
     'hermes',
+    'grok',
 ] as const;
 
 /** Union type of all supported target agents. */
 export type Target = (typeof TARGETS)[number];
 
-/** Map superskill targets to rulesync `ToolTarget` strings. Claude Code, omp, and hermes are not in rulesync. */
+/** Map superskill targets to rulesync `ToolTarget` strings. Claude Code, omp, hermes, and grok are not in rulesync. */
 export const TARGET_TO_RULESYNC: Partial<Record<Target, ToolTarget>> = {
     // Codex, pi, and omp all share '~/.agents/skills/' natively (ADR-010 amendment 2026-06-23)
     // — collapsing them onto rulesync's 'codexcli' target writes one shared copy rather than
@@ -34,8 +35,8 @@ export const TARGET_TO_RULESYNC: Partial<Record<Target, ToolTarget>> = {
 /**
  * Hook-specific target map. Hooks always reach each target's native rulesync generator
  * (`.agents/hooks.json` project, `.gemini/config/hooks.json` global for Antigravity). Targets
- * absent here (claude/pi/omp/hermes) are handled outside rulesync (native install / surrogate
- * shims).
+ * absent here (claude/pi/omp/hermes/grok) are handled outside rulesync (native install /
+ * surrogate shims / Claude-format plugin hooks).
  */
 export const TARGET_TO_RULESYNC_HOOKS: Partial<Record<Target, ToolTarget>> = {
     codex: 'codexcli',
@@ -88,6 +89,13 @@ export const TARGET_GLOBAL_SKILLS_RELDIR: Partial<Record<Target, string>> = {
  * `antigravity-cli` as canonical ids, so those targets map 1:1. Only
  * `antigravity-ide` (not in `AgentName`) still bridges to `opencode`
  * (falls to `translateSlashCommand`'s default `/plugin-command` dialect).
+ *
+ * **Grok (ts-ai-runner ≥ 0.4.8):** maps 1:1 for type completeness, but
+ * `translateSlashCommand('grok', …)` currently resolves through the "all
+ * others" branch to `/plugin-command` (hyphen). Grok's **native plugin**
+ * slash form is Claude-compatible `/plugin:command` (colon). The grok
+ * install path therefore must **never** call `translateSlashCommands` on
+ * installed plugin content (task 0078 R4/R8).
  */
 export const TARGET_TO_AGENT_NAME: Record<Target, AgentName> = {
     claude: 'claude',
@@ -98,4 +106,5 @@ export const TARGET_TO_AGENT_NAME: Record<Target, AgentName> = {
     'antigravity-cli': 'antigravity-cli',
     'antigravity-ide': 'opencode',
     hermes: 'hermes',
+    grok: 'grok',
 };

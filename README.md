@@ -49,6 +49,7 @@ Full walkthrough: [Quick start guide](docs/help/quick_start.md).
 | Agent | Skills | Commands | Subagents | Hooks |
 |-------|:------:|:--------:|:---------:|:-----:|
 | Claude Code | ✓ | ✓ | ✓ | ✓ |
+| Grok Build | ✓ | ✓ | ✓ | ✓ |
 | Codex | ✓ | ✓ | ✓ | — |
 | Pi | ✓ | ✓ | ✓ | — |
 | omp | ✓ | ✓ | ✓ | — |
@@ -57,6 +58,8 @@ Full walkthrough: [Quick start guide](docs/help/quick_start.md).
 | Antigravity CLI | ✓ | — | — | — |
 | Hermes | ✓ | ✓ | — | ✓ |
 | OpenClaw | ✓ | — | — | — |
+
+Grok installs the **native Claude-format plugin** (`--targets grok`): slash form is `/plugin:command` (e.g. `/sp:dev-idea`). Adapted skills under `~/.agents` (from Codex/Pi installs) may still appear as `/plugin-command` in Grok — prefer the colon form for plugin commands.
 
 See [entity locations](docs/help/entity_locations.md) for the exact install directories per agent.
 

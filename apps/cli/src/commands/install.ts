@@ -86,6 +86,17 @@ interface InstallDependencies {
         plugin: string,
         global: boolean,
     ) => Promise<void>;
+    /**
+     * Spawn `grok plugin marketplace add` + `grok plugin install <pluginRoot> --trust`.
+     * Grok 0.2.93 installs from git URL / GitHub shorthand / local path — not
+     * `plugin@marketplace`. Mockable for tests.
+     */
+    runGrokInstall?: (
+        marketplaceRoot: string,
+        marketplaceName: string,
+        plugin: string,
+        pluginRoot: string,
+    ) => Promise<void>;
 }
 
 interface InstallResultCounts {
@@ -112,6 +123,7 @@ export async function executeInstall(
     const runRulesyncImpl = dependencies.runRulesync ?? runRulesync;
     const runClaudeInstallImpl = dependencies.runClaudeInstall ?? defaultRunClaudeInstall;
     const runOmpInstallImpl = dependencies.runOmpInstall ?? defaultRunOmpInstall;
+    const runGrokInstallImpl = dependencies.runGrokInstall ?? defaultRunGrokInstall;
 
     if (options.verbose) echo(`Resolving plugin '${plugin}'...`);
 
@@ -158,12 +170,12 @@ export async function executeInstall(
         targetInputRoots.set(target, targetInputRoot);
     }
 
-    // Step 4: Run rulesync for supported targets. omp is now installed natively
+    // Step 4: Run rulesync for supported targets. omp and grok install natively
     // (marketplace add + plugin install — see dispatch loop); hermes reuses
     // opencode's rulesync output (see ADR-010).
     // Only request features the mapper actually produced — requesting 'mcp' when
     const rulesyncFeatures = ['skills', ...(mapResult.mcp ? (['mcp'] as const) : [])] as const;
-    const rulesyncTargets = targets.filter((t) => t !== 'claude' && t !== 'hermes' && t !== 'omp');
+    const rulesyncTargets = targets.filter((t) => t !== 'claude' && t !== 'hermes' && t !== 'omp' && t !== 'grok');
     if (targets.includes('hermes') && !targets.includes('opencode')) {
         if (!targetInputRoots.has('opencode')) {
             targetInputRoots.set('opencode', prepareTargetRulesyncInput(outputDir, 'opencode', plugin));
@@ -171,6 +183,19 @@ export async function executeInstall(
         rulesyncTargets.push('opencode');
     }
     const resultCounts: InstallResultCounts = { skillsCount: 0, commandsCount: 0, subagentsCount: 0, hooksCount: 0 };
+
+    // R6 dual-path hygiene: Grok loads both native plugins (/plugin:cmd) and
+    // ~/.agents skills (/plugin-cmd). Warn when both land in the same install.
+    const dualPathRulesyncTargets = targets.filter(
+        (t) => t === 'codex' || t === 'pi' || t === 'opencode' || t === 'antigravity-cli' || t === 'antigravity-ide',
+    );
+    if (options.verbose && targets.includes('grok') && dualPathRulesyncTargets.length > 0) {
+        echo(
+            'Warning: installing both grok (native plugin slash /plugin:cmd) and rulesync targets ' +
+                'that adapt commands into ~/.agents/skills (slash /plugin-cmd). Grok scans both; prefer ' +
+                'colon form for plugin commands.',
+        );
+    }
 
     if (rulesyncTargets.length > 0) {
         // R2: pre-create per-target skills parent dirs before rulesync writes.
@@ -318,6 +343,27 @@ export async function executeInstall(
             }
         }
 
+        if (target === 'grok') {
+            // Grok native install (task 0078): Claude-format plugin package via
+            // `grok plugin marketplace add` + `grok plugin install <path> --trust`.
+            // No command→skill adapt, no slash-dialect rewrite, no OMP hook JS —
+            // Grok consumes hooks/hooks.json and /plugin:command natively.
+            if (options.verbose) echo('Grok: registering marketplace and installing plugin...');
+            if (!options.dryRun) {
+                const marketplaceName = resolution.marketplaceName ?? 'superskill';
+                const marketplaceRoot = resolution.marketplaceRoot ?? process.cwd();
+                await runGrokInstallImpl(marketplaceRoot, marketplaceName, plugin, pluginRoot);
+                if (options.verbose) {
+                    const installPath = await resolveGrokInstallPath(plugin);
+                    if (installPath) {
+                        echo(`  Grok install path: ${installPath}`);
+                    } else {
+                        echo('  Grok install path not found via plugin list — install may still have succeeded');
+                    }
+                }
+            }
+        }
+
         // Pi reaches generate() but rulesync emits no hooks for it (hooks column blank, §1 table).
         // Rung (b): superskill-installed shim — pi hooks via @vahor/pi-hooks format (design §1.2)
         if (target === 'pi') {
@@ -417,6 +463,135 @@ interface OmpPluginEntry {
 interface OmpPluginsRegistry {
     version: number;
     plugins: Record<string, OmpPluginEntry[]>;
+}
+
+// ── Grok native install helpers (task 0078) ─────────────────────────────────
+
+/** Minimal entry from `grok plugin list --json` (verified Grok 0.2.93). */
+export interface GrokPluginListEntry {
+    status?: string;
+    name: string;
+    repo_key?: string;
+    version?: string;
+    /** Absolute path under `~/.grok/installed-plugins/`. */
+    path: string;
+    source?: string;
+    marketplace?: string | null;
+}
+
+/**
+ * Parse `grok plugin list --json` output into install entries. Returns an empty
+ * array when the payload is not a JSON array (malformed / empty).
+ */
+export function parseGrokPluginListJson(json: string): GrokPluginListEntry[] {
+    let parsed: unknown;
+    try {
+        parsed = JSON.parse(json) as unknown;
+    } catch {
+        return [];
+    }
+    if (!Array.isArray(parsed)) return [];
+    const out: GrokPluginListEntry[] = [];
+    for (const item of parsed) {
+        if (!item || typeof item !== 'object') continue;
+        const rec = item as Record<string, unknown>;
+        if (typeof rec.name !== 'string' || typeof rec.path !== 'string') continue;
+        out.push({
+            status: typeof rec.status === 'string' ? rec.status : undefined,
+            name: rec.name,
+            repo_key: typeof rec.repo_key === 'string' ? rec.repo_key : undefined,
+            version: typeof rec.version === 'string' ? rec.version : undefined,
+            path: rec.path,
+            source: typeof rec.source === 'string' ? rec.source : undefined,
+            marketplace: rec.marketplace === null || typeof rec.marketplace === 'string' ? rec.marketplace : undefined,
+        });
+    }
+    return out;
+}
+
+/**
+ * Resolve an installed Grok plugin path from already-parsed list entries.
+ * Prefers `status === 'installed'` when multiple rows share a name.
+ */
+export function resolveGrokInstallPathFromList(
+    entries: readonly GrokPluginListEntry[],
+    plugin: string,
+): string | undefined {
+    const matches = entries.filter((e) => e.name === plugin);
+    if (matches.length === 0) return undefined;
+    const installed = matches.find((e) => e.status === 'installed');
+    return (installed ?? matches[0])?.path;
+}
+
+/**
+ * Resolve the install path Grok is using for `plugin` via `grok plugin list --json`.
+ * Falls back to `undefined` when the binary is missing, the list is empty, or the
+ * name is absent — callers must not treat Claude-compat paths as success criteria.
+ */
+export async function resolveGrokInstallPath(plugin: string): Promise<string | undefined> {
+    try {
+        const proc = Bun.spawn(['grok', 'plugin', 'list', '--json'], {
+            stdout: 'pipe',
+            stderr: 'pipe',
+        });
+        const exitCode = await proc.exited;
+        if (exitCode !== 0) return undefined;
+        const text = await new Response(proc.stdout).text();
+        return resolveGrokInstallPathFromList(parseGrokPluginListJson(text), plugin);
+    } catch {
+        return undefined;
+    }
+}
+
+/**
+ * Default Grok installer (Grok Build ≥ 0.2.93).
+ *
+ * Live CLI contract (verified 2026-07-12):
+ * - `grok plugin marketplace add <path|url>` — exit 1 with "already configured" on re-add
+ * - `grok plugin install <source> --trust` — source is git URL / GitHub shorthand / **local path**
+ *   (NOT `plugin@marketplace`); exit 1 with "already installed" on re-install
+ * - Idempotency: tolerate marketplace re-add; best-effort `uninstall --confirm` then install
+ *
+ * No slash-dialect translation and no post-install hook rewrite — Grok loads Claude-format
+ * plugins natively. `pluginRoot` is the install source (path), not a rulesync staging dir.
+ */
+export async function defaultRunGrokInstall(
+    marketplaceRoot: string,
+    marketplaceName: string,
+    plugin: string,
+    pluginRoot: string,
+): Promise<void> {
+    assertSafePathSegment(marketplaceName, 'marketplace name');
+    assertSafePathSegment(plugin, 'plugin name');
+
+    // Marketplace add: tolerate "already configured" (exit 1) for re-runs.
+    const add = Bun.spawn(['grok', 'plugin', 'marketplace', 'add', marketplaceRoot], {
+        stdout: 'pipe',
+        stderr: 'pipe',
+    });
+    const addCode = await add.exited;
+    if (addCode !== 0) {
+        const stderr = await new Response(add.stderr).text();
+        const stdout = await new Response(add.stdout).text();
+        const combined = `${stdout}\n${stderr}`;
+        if (!/already configured/i.test(combined)) {
+            throw new Error(
+                `grok plugin marketplace add failed with exit code ${addCode}: grok plugin marketplace add ${marketplaceRoot}\n${combined.trim()}`,
+            );
+        }
+    }
+
+    // Re-install is non-idempotent without remove: "repo '…' already installed".
+    // Best-effort uninstall (exit non-zero when absent — first install).
+    const remove = Bun.spawn(['grok', 'plugin', 'uninstall', plugin, '--confirm'], {
+        stdout: 'ignore',
+        stderr: 'ignore',
+    });
+    await remove.exited;
+
+    // Install from the plugin directory path (Claude-format layout). Do NOT pass
+    // plugin@marketplace — Grok 0.2.93 does not accept that addressing form.
+    await runCheckedCommand(['grok', 'plugin', 'install', pluginRoot, '--trust'], 'grok plugin install');
 }
 
 /**

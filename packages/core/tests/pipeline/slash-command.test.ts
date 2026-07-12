@@ -21,6 +21,15 @@ describe('translateSlashCommands', () => {
         expect(translateSlashCommands('/rd3:dev-run 0003', 'hermes')).toBe('/rd3-dev-run 0003');
     });
 
+    it('grok AgentName maps to hyphen dialect today — install path must not use this', () => {
+        // ts-ai-runner 0.4.8: translateSlashCommand('grok', …) falls through to
+        // /plugin-command. Grok's native plugin form is /plugin:command (Claude).
+        // Task 0078 R4: the grok install path never calls translateSlashCommands
+        // on installed plugin content (installs pluginRoot as-is with --trust).
+        expect(translateSlashCommands('/rd3:dev-run 0003', 'grok')).toBe('/rd3-dev-run 0003');
+        expect(translateSlashCommands('/rd3:dev-run 0003', 'claude')).toBe('/rd3:dev-run 0003');
+    });
+
     it('leaves non-slash-command lines unchanged', () => {
         expect(translateSlashCommands('Use rd3:dev-run in prose.', 'codex')).toBe('Use rd3:dev-run in prose.');
     });

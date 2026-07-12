@@ -422,20 +422,139 @@ describe('executeInstall', () => {
         expect(c1.cmd[2]).toBe('install');
         expect(c1.cmd[3]).toBe('market@test-mkp');
     });
+
+    it('installs grok natively via marketplace add + path install (task 0078)', async () => {
+        const workspace = createTempWorkspace();
+        createPlugin(workspace, 'm-grok');
+        const stdout = spyOn(process.stdout, 'write').mockImplementation(() => true);
+
+        let rulesyncTargets: string[] = [];
+        let grokInstallArgs: string[] = [];
+        await executeInstall(
+            'm-grok',
+            ['grok'],
+            {
+                global: false,
+                dryRun: false,
+                verbose: true,
+            },
+            {
+                runRulesync: async (targets) => {
+                    rulesyncTargets = [...targets];
+                    return {
+                        rulesCount: 0,
+                        rulesPaths: [],
+                        ignoreCount: 0,
+                        ignorePaths: [],
+                        mcpCount: 0,
+                        mcpPaths: [],
+                        commandsCount: 0,
+                        commandsPaths: [],
+                        subagentsCount: 0,
+                        subagentsPaths: [],
+                        skillsCount: 1,
+                        skillsPaths: ['skills/m-grok-a/SKILL.md'],
+                        hooksCount: 0,
+                        hooksPaths: [],
+                        permissionsCount: 0,
+                        permissionsPaths: [],
+                        skills: [],
+                        hasDiff: false,
+                    };
+                },
+                runGrokInstall: async (marketplaceRoot, marketplaceName, plugin, pluginRoot) => {
+                    grokInstallArgs = [marketplaceRoot, marketplaceName, plugin, pluginRoot];
+                },
+            },
+        );
+
+        // grok is NOT passed to rulesync — native Claude-format plugin install only
+        expect(rulesyncTargets).not.toContain('grok');
+        expect(grokInstallArgs[1]).toBe('superskill');
+        expect(grokInstallArgs[2]).toBe('m-grok');
+        expect(grokInstallArgs[3]).toContain('plugins/m-grok');
+        const output = stdout.mock.calls.map((call) => String(call[0])).join('');
+        expect(output).toContain('Grok: registering marketplace and installing plugin');
+        // R4: no OMP dialect rewrite / hooks generation messaging for grok
+        expect(output).not.toContain('OMP manifest');
+        expect(output).not.toContain('translate');
+        stdout.mockRestore();
+    });
+
+    it('dry-run grok echoes install intent without calling runGrokInstall', async () => {
+        const workspace = createTempWorkspace();
+        createPlugin(workspace, 'dry-grok');
+        const stdout = spyOn(process.stdout, 'write').mockImplementation(() => true);
+        let called = false;
+        await executeInstall(
+            'dry-grok',
+            ['grok'],
+            { global: false, dryRun: true, verbose: true },
+            {
+                runGrokInstall: async () => {
+                    called = true;
+                },
+            },
+        );
+        expect(called).toBe(false);
+        const output = stdout.mock.calls.map((call) => String(call[0])).join('');
+        expect(output).toContain('Grok: registering marketplace and installing plugin');
+        expect(output).toContain('[DRY-RUN] No files were written.');
+        stdout.mockRestore();
+    });
+
+    it('verbose dual-path warning when grok and a rulesync skill target share an install', async () => {
+        const workspace = createTempWorkspace();
+        createPlugin(workspace, 'dual');
+        const stdout = spyOn(process.stdout, 'write').mockImplementation(() => true);
+        await executeInstall(
+            'dual',
+            ['grok', 'codex'],
+            { global: false, dryRun: true, verbose: true },
+            {
+                runRulesync: async () => ({
+                    rulesCount: 0,
+                    rulesPaths: [],
+                    ignoreCount: 0,
+                    ignorePaths: [],
+                    mcpCount: 0,
+                    mcpPaths: [],
+                    commandsCount: 0,
+                    commandsPaths: [],
+                    subagentsCount: 0,
+                    subagentsPaths: [],
+                    skillsCount: 0,
+                    skillsPaths: [],
+                    hooksCount: 0,
+                    hooksPaths: [],
+                    permissionsCount: 0,
+                    permissionsPaths: [],
+                    skills: [],
+                    hasDiff: false,
+                }),
+                runGrokInstall: async () => {},
+            },
+        );
+        const output = stdout.mock.calls.map((call) => String(call[0])).join('');
+        expect(output).toContain('Warning: installing both grok');
+        expect(output).toContain('/plugin:cmd');
+        stdout.mockRestore();
+    });
 });
 
 describe('parseTargets', () => {
     it('returns all targets when raw is undefined', () => {
         const result = parseTargets(undefined);
-        expect(result).toHaveLength(8);
+        expect(result).toHaveLength(9);
         expect(result).toContain('claude');
         expect(result).toContain('codex');
         expect(result).toContain('pi');
+        expect(result).toContain('grok');
     });
 
     it('returns all targets when raw is "all"', () => {
         const result = parseTargets('all');
-        expect(result).toHaveLength(8);
+        expect(result).toHaveLength(9);
     });
 
     it('parses a single target', () => {
@@ -473,6 +592,11 @@ describe('parseTargets', () => {
     it('works with hermes and omp', () => {
         const result = parseTargets('hermes,omp');
         expect(result).toEqual(['hermes', 'omp']);
+    });
+
+    it('works with grok', () => {
+        expect(parseTargets('grok')).toEqual(['grok']);
+        expect(parseTargets('claude,grok')).toEqual(['claude', 'grok']);
     });
 });
 
