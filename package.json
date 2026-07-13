@@ -9,7 +9,7 @@
             "packages/*"
         ],
         "catalog": {
-            "@gobing-ai/ts-ai-runner": "^",
+            "@gobing-ai/ts-ai-runner": "^0.4.9",
             "@gobing-ai/ts-db": "^0.4.9",
             "@gobing-ai/ts-utils": "^0.4.9"
         }
