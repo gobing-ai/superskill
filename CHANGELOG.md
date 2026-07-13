@@ -4,6 +4,13 @@ All notable changes to `@gobing-ai/superskill` are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Conventional Commits](https://www.conventionalcommits.org/).
 
+
+## [0.3.1] - 2026-07-13
+
+### Bug Fixes
+
+- **Anti-hallucination guard no longer false-positives on metrics and engineering citations (task 0079).** The guard's version-number regex `/\bv?\d+\.\d+(?:\.\d+)?\b/` treated every 2-part decimal as a software version, so coverage percentages (`94.87%`), ratios, durations, and pasted test output tripped `requiresExternalVerification` on exactly the most evidenced turns — a `/sp:dev-verify` verdict with `file:line` anchors and `1626 pass / 0 fail` was blocked. Replaced with cue-gated patterns: a decimal only counts as a version when a cue is present (`v2.0`, `version 2.0`, `release 1.4`, `semver 1.2.3`, or 3-part `1.2.3` not followed by `%`). `SOURCE_PATTERNS` now also recognizes `file:line` anchors, `exit 0`/`exit code 0` lines, and `N pass / M fail` test-result lines as valid source citations — coding agents cite via file anchors and pasted command output, not just `Source:` URLs. A bare fenced code block alone is intentionally not credited (too broad). The guard keeps its teeth: an uncited external claim that mentions a version is still blocked. 75 anti-hallucination tests pass (6 new). (`plugins/cc/scripts/anti-hallucination/ah_guard.ts`, `plugins/cc/scripts/anti-hallucination/tests/ah_guard.test.ts`, `plugins/cc/skills/anti-hallucination/references/guard-implementation.md`)
+
 ## [0.3.0] - 2026-07-12
 
 ### New Features

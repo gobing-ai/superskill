@@ -452,6 +452,97 @@ describe('resolveStopContext', () => {
         expect(resolveStopContext('not json', '').allowReason).toContain('invalid context');
     });
 });
+// 0079: version-number false-positive regression. A metrics-dense verification verdict
+// (coverage %, test counts, file:line anchors, exit codes) must NOT read as a version claim.
+describe('requiresExternalVerification (0079: metrics are not versions)', () => {
+    // WHY (0079 R1): the broad /\bv?\d+\.\d+\b/ regex treated ANY d.d decimal as a software
+    // version, so coverage percentages (94.87%), ratios, and durations tripped the gate on
+    // exactly the turns that are most rigorously evidenced. A decimal needs a version cue
+    // (v-prefix, "version"/"release" word, or 3-part semver) to count.
+    const metricsVerdict = [
+        'Verdict: PASS.',
+        'Coverage: func 94.87%, line 100.00%.',
+        'Test result: 1626 pass / 0 fail.',
+        'Evidence: ah_guard.ts:288, foo.ts:12-20, bar.rs:8.',
+        'Exit code: 0.',
+    ].join(' ');
+
+    it('passes a metrics-dense verification verdict (the incident payload)', () => {
+        expect(requiresExternalVerification(metricsVerdict)).toBe(false);
+    });
+
+    it('passes bare 2-part metric decimals without a version cue', () => {
+        expect(requiresExternalVerification('coverage 94.87% line 100.00%')).toBe(false);
+        expect(requiresExternalVerification('ratio 1.5 p95 1.2')).toBe(false);
+        expect(requiresExternalVerification('took 1.5s wall 0.3s')).toBe(false);
+    });
+
+    it('still detects genuine version references (intended positives preserved)', () => {
+        expect(requiresExternalVerification('Version 2.0 introduced this')).toBe(true);
+        expect(requiresExternalVerification('the library version 2.3.1 is required')).toBe(true);
+        expect(requiresExternalVerification('introduced in version 2.0.')).toBe(true);
+        expect(requiresExternalVerification('built for version 1.5')).toBe(true);
+        expect(requiresExternalVerification('shipped as v2.0')).toBe(true);
+        expect(requiresExternalVerification('semver 1.2.3 is the floor')).toBe(true);
+        expect(requiresExternalVerification('pinned at 1.2.3')).toBe(true);
+    });
+});
+
+describe('verifyAntiHallucinationProtocol (0079: metrics verdict is not blocked)', () => {
+    const metricsVerdict = [
+        'Verdict: PASS.',
+        'Coverage: func 94.87%, line 100.00%.',
+        'Test result: 1626 pass / 0 fail.',
+        'Evidence: ah_guard.ts:288, foo.ts:12-20, bar.rs:8.',
+        'Exit code: 0.',
+    ].join(' ');
+
+    it('allows a metrics-dense verification verdict without demanding Source:/confidence', () => {
+        const result = verifyAntiHallucinationProtocol(metricsVerdict);
+        expect(result.ok).toBe(true);
+        expect(result.issues).toBeUndefined();
+    });
+
+    it('still blocks an uncited external claim that mentions a version (guard keeps teeth)', () => {
+        // WHY (0079 R4): the guard must still block when a real external claim is made
+        // without ANY citation. R1/R2 must not over-broaden into "everything passes."
+        const result = verifyAntiHallucinationProtocol(
+            'The framework exposes a helper since version 2.0 and the API returns paginated lists.',
+        );
+        expect(result.ok).toBe(false);
+        expect(result.issues).toContain('source citations for API/library claims');
+    });
+});
+
+describe('hasSourceCitations (0079: credit engineering evidence)', () => {
+    // WHY (0079 R2): coding agents cite via file:line anchors and pasted command output,
+    // not Source: URLs. Recognizing these forms stops evidence-dense replies from being
+    // nagged for a URL citation they never needed. A bare code fence is NOT credited — too
+    // broad, would neuter the guard.
+    it('credits a file:line anchor', () => {
+        expect(hasSourceCitations('Fixed the regex at ah_guard.ts:288 and foo.ts:12-20')).toBe(true);
+    });
+
+    it('credits an exit-code line', () => {
+        expect(hasSourceCitations('Ran the suite: exit 0')).toBe(true);
+        expect(hasSourceCitations('bun test: exit code 0')).toBe(true);
+    });
+
+    it('credits a pasted test-result line', () => {
+        expect(hasSourceCitations('1626 pass / 0 fail')).toBe(true);
+        expect(hasSourceCitations('3 passed and 0 failed')).toBe(true);
+    });
+
+    it('does NOT credit a bare fenced code block alone', () => {
+        const fencedOnly = '```\nconst x = 1;\n```';
+        expect(hasSourceCitations(fencedOnly)).toBe(false);
+    });
+
+    it('still requires some evidence for an uncited external claim', () => {
+        expect(hasSourceCitations('The library provides this feature')).toBe(false);
+        expect(hasSourceCitations('I think this works')).toBe(false);
+    });
+});
 
 describe('extractLastAssistantFromTranscript', () => {
     it('skips trailing tool_use-only assistant turns and returns the last textual turn', () => {

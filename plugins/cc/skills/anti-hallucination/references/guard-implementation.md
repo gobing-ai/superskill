@@ -76,17 +76,19 @@ Messages that don't require external verification (no APIs, libraries, facts) ar
 When a message contains:
 - API mentions
 - Library references
-- Version numbers
+- **Version references** — only when a version cue is present: a `v`-prefix (`v2.0`), a version word (`version 2.0`, `release 1.4`, `semver 1.2.3`), or a 3-part semver (`1.2.3`). Bare 2-part decimals like `94.87` are NOT version claims — they are metrics, percentages, ratios, durations. *(0079)*
 - Documentation links
 - Factual claims
 
 The guard requires BOTH:
-1. Source citations for all claims
+1. Source citations for all claims — recognized forms: `[Source: …]`, `Source: …`, `Sources:` list, URLs, **and (0079) engineering evidence**: `file:line` anchors (`ah_guard.ts:288`), exit-code lines (`exit 0`), pasted test-result lines (`1626 pass / 0 fail`). A bare fenced code block alone is not credited.
 2. Confidence level (HIGH/MEDIUM/LOW)
 
 AND EITHER:
 - Tool usage evidence (showing verification was performed)
 - No red flag phrases
+
+**Why metrics no longer trip the guard (0079):** a metrics-dense verification verdict (`Coverage: func 94.87%, line 100.00%`, `1626 pass / 0 fail`, `exit 0`) used to be blocked because the broad `/\bv?\d+\.\d+\b/` regex read every decimal as a version. The cue-gated regex now requires a version cue, so evidence-dense turns pass instead of being false-positively blocked.
 
 Claude Code delivers the hook payload on **stdin** (`$ARGUMENTS` is a slash-command substitution, not a hook channel). The Stop payload carries `transcript_path` rather than inline messages, so the guard reads the transcript JSONL to find the last textual assistant message.
 

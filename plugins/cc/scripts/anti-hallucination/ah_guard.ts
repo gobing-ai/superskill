@@ -30,13 +30,24 @@ import { logger } from './logger';
 // VERIFICATION PATTERNS
 // =============================================================================
 
-// Source citation patterns (no 'g' flag to avoid stateful lastIndex)
+// Source citation patterns (no 'g' flag to avoid stateful lastIndex). (0079 R2: coding
+// agents cite via file:line anchors and pasted command output, not just Source:/URL —
+// recognize those evidence forms so evidence-dense replies aren't nagged for a URL they
+// never needed. A bare fenced code block is intentionally NOT credited — too broad.)
 const SOURCE_PATTERNS = [
     /\[Source:\s*[^\]]+\]/i, // [Source: URL or Title]
     /Source:\s*\[?[^\n]+\]?/i, // Source: URL or Title
     /Sources:\s*\n\s*-\s*\[?[^\n]+\]/i, // Sources: list format
     /https?:\/\/[^\s)]+/i, // Any HTTP/HTTPS URL
     /\*\*Source\*\*:\s*[^\n]+/i, // Markdown bold Source:
+    // (0079) file:line anchor — the canonical in-repo citation form, e.g. `ah_guard.ts:288`
+    // or `foo.ts:12-20`. Requires a letter extension to avoid matching decimals like 94.87.
+    /\b[a-zA-Z][a-zA-Z0-9_-]*\.[a-zA-Z0-9]+:\d+(?:-\d+)?/,
+    // (0079) explicit exit-code line, e.g. "exit 0", "exit code 1" — evidence a command ran.
+    /\bexit\s+code\s+\d+/i,
+    /\bexit\s+\d+/i,
+    // (0079) pasted test-result line, e.g. "1626 pass / 0 fail" or "3 passed and 0 failed".
+    /\b\d+\s+pass(?:ed)?\s+(?:\/|and)\s+\d+\s+fail(?:ed)?\b/i,
 ];
 
 // Confidence level patterns (no 'g' flag to avoid stateful lastIndex)
@@ -285,7 +296,11 @@ export function hasRedFlags(text: string): string[] {
 // (0077 R1: bare vocabulary must not trigger; these shapes assert a fact about the
 // external world that a reader could act on.)
 const STRONG_CLAIM_PATTERNS = [
-    /\bv?\d+\.\d+(?:\.\d+)?\b/, // Version numbers like 1.2.3 / v2.0
+    // Version references need a cue so metrics/percentages (94.87%, 100.00), ratios,
+    // durations (1.5s) and file:line refs do NOT read as versions. (0079)
+    /\bv\d+(?:\.\d+)+\b/i, // v-prefixed: v2, v2.0, v1.2.3
+    /\b(?:version|release|semver)\s+v?\d+\.\d+/i, // worded: "version 2.0", "release 1.4"
+    /(?<![\d.])\d+\.\d+\.\d+(?![\d.])(?!\s*%)/, // 3-part semver (d.d.d), not part of a longer number, not a %
     /https?:\/\//, // URLs mentioned
     /recent\s+(?:change|update|release)/i,
     /\b(?:was|were|is|are)\s+(?:introduced|added|deprecated|removed|renamed|released)\b/i,
