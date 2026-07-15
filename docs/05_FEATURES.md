@@ -112,6 +112,8 @@ F007 is no longer parallel with F008/F009 — it owns the shared `content/*` pri
 | Spur rule catalog (21 rules) | ✅ |
 | Documentation 00–05 | ✅ |
 | `superskill install` command | ✅ |
+| Harness-aware magent gold masters (tasks 0080/0084) — template + `plugins/cc/skills/cc-magents/references/main-agents/` (7 platforms, Grade A evaluate) | ✅ |
+
 ### Task creation plan
 
 | Order | Feature | Task | Rationale |

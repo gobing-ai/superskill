@@ -12,7 +12,7 @@ priority: P2
 tags: []
 dependencies: ["0082", "0083"]
 created_at: "2026-07-15T17:54:05.286Z"
-updated_at: "2026-07-15T21:38:36.388Z"
+updated_at: "2026-07-15T22:59:56.644Z"
 ---
 
 ## 0084. Produce reference hardened main-agent artifacts per major target family, dogfood via superskill magent evaluate, update docs and changelog
@@ -58,35 +58,67 @@ Two-phase: (1) produce artifacts using the hardened template + platform padding 
 - [x] P5. Update docs (architecture, help/cmd_magent, changelog, main-agents/README migration).
 - [x] P6. Run full `bun run spur-check` gate.
 ### Solution
-Delivered under parent 0080 verify `--fix all` pass (same commit set).
+Delivered under parent 0080; re-verified `/sp:dev-verify 0084 --force` with fresh dogfood.
 
 | Deliverable | file:line | Notes |
 | --- | --- | --- |
-| Gold masters (7) | `plugins/cc/skills/cc-magents/references/main-agents/claude-code.md:1` | Also: codex, pi, omp, openclaw, hermes, grok |
-| Migration / dogfood README | `plugins/cc/skills/cc-magents/references/main-agents/README.md:1` | validate/evaluate/refine commands + migration steps |
+| Gold masters (7) | `plugins/cc/skills/cc-magents/references/main-agents/claude-code.md:1` | Also: codex, pi, omp, openclaw, hermes, grok — Grade A evaluate this session |
+| Migration / dogfood README | `plugins/cc/skills/cc-magents/references/main-agents/README.md:1` | validate/evaluate/refine + migration |
 | Help surface | `docs/help/cmd_magent.md:5` | Harness-aware note + path to gold masters |
-| Architecture | `docs/03_ARCHITECTURE.md:85` | magent + template callouts |
+| Architecture | `docs/03_ARCHITECTURE.md:96` | magent template callout |
+| Features status | `docs/05_FEATURES.md` Phase 2 foundation row | Harness-aware gold masters (0080/0084) |
 | Changelog | `CHANGELOG.md` Unreleased | Task 0080/0084 feature note |
-| Base template (0083) | `packages/core/src/templates/magent/default.md:26` | Harness & Infrastructure (embedded in binary) |
+| Base template (0083) | `packages/core/src/templates/magent/default.md:26` | Harness & Infrastructure |
 
-OpenClaw is not a `superskill magent --target` id; reference was derived then platform-padded. Version bump deferred to release chore (Unreleased only).
+OpenClaw is not a `superskill magent --target` id; reference was platform-padded. Version bump deferred to release chore.
 ### Testing
-**Mode:** closed out as residual of `/sp:dev-verify 0080 --fix all` (parent carried the dogfood; this task owns the gold-master + docs deliverable).
+**Mode:** `/sp:dev-verify 0084 --auto --focus all --fix all --force` (standalone re-audit of done task).
 
-**Commands (fresh evidence from 0080 verify session, re-checked on close-out):**
+**Commands run this session (fresh evidence):**
 
 | Command | Result |
 | --- | --- |
-| `./dist/superskill magent validate` ×7 (`main-agents/*.md`) | PASS — all Valid |
+| `./dist/superskill magent validate` ×7 | PASS — all Valid |
 | `./dist/superskill magent evaluate` ×7 | PASS — aggregate **1.00 / Grade A** each |
 | `./dist/superskill magent refine …/claude-code.md --dry-run` | PASS — No issues; Score 1.00 |
 | `./dist/superskill magent evaluate … --rubric packages/core/src/rubrics/magent.yaml --json` | PASS — envelope-out |
-| `bun run spur-check` | PASS — 1407 pass / 0 fail; post-check rules green |
-| `bun run lint` / `bun run build` | PASS |
+| `./dist/superskill magent evaluate … --save` (×2) + `evolve … --propose-only --json` | PASS — envelope with flat Grade-A trends (rubric via `~/.superskill/rubrics/magent.yaml` or source CLI; compiled binary alone needs rubric on search path) |
+| `bun run lint` | PASS |
+| `bun run spur-check` | PASS — **1436 pass / 0 fail**; post-check rules green |
+| `spur task check 0084 --strict-core` | PASS — L4 feature_id advisory only |
 
-**AC map:** harness-aware + platform-padded → main-agents/*; meta-skill E2E → validate/evaluate/refine; docs → cmd_magent + architecture + README + changelog; gates → spur-check.
+**Section presence (static):** all 7 gold masters contain `## Harness & Infrastructure` and primary **Platform Padding**.
 
-**Coverage:** N/A (documentation/template artifacts; heuristic evaluate is deterministic).
+**Per-requirement traceability**
+
+| Req | Status | Evidence |
+| --- | --- | --- |
+| R1 Reference main-agent files | MET | `plugins/cc/skills/cc-magents/references/main-agents/{claude-code,codex,pi,omp,openclaw,hermes,grok}.md` + README; each harness + platform-padded |
+| R2 Dogfood via meta-skill | MET | validate/evaluate Grade A ×7; refine dry-run 1.00; evaluate envelope-out; evolve --propose-only JSON trends (this session) |
+| R3 Project docs | MET | `docs/help/cmd_magent.md:5`; `docs/03_ARCHITECTURE.md:96`; `docs/05_FEATURES.md` foundation row; `main-agents/README.md` migration |
+| R4 Changelog | MET | `CHANGELOG.md` Unreleased (task 0080/0084); version bump deferred to release cut (documented) |
+
+**Acceptance Criteria Verification**
+
+| AC | Status | Evidence Type | Evidence |
+| --- | --- | --- | --- |
+| Scenario: reference main agents harness-aware and platform-padded | MET | static-ref + command | harness=1 padding≥1 on all 7; evaluate Grade A |
+| Scenario: meta-skill manages end-to-end | MET | command | validate + evaluate + refine + evolve envelope this session |
+| Scenario: docs reflect new main-agent status | MET | static-ref | cmd_magent, architecture, 05_FEATURES foundation row, README migration, CHANGELOG |
+| Scenario: quality gates pass | MET | command | `bun run spur-check` exit 0; 1436 pass / 0 fail |
+
+**Design conformance**
+
+| Claim | Status | Notes |
+| --- | --- | --- |
+| Artifacts under cc-magents/references/main-agents/ | DONE | 7 platforms + README |
+| Platform-native padding from about_main_agent | DONE | Primary platform table per file |
+| Dogfood through enhanced meta-skill | DONE | Grade A evaluate; refine/evolve envelopes |
+| OpenClaw not CLI --target | CHANGED (accepted) | Hand-padded reference; documented in Solution |
+
+**Coverage:** N/A (documentation/template artifacts). Heuristic magent evaluate is deterministic (no LLM for Grade A).
+
+**SECUA (summary):** No secrets; gold masters keep [CRITICAL]/NEVER/safety markers (7/7). Residual: keep gold masters in sync when canonical template changes; feature_id advisory remains open.
 ### Review
 **Verdict: PASS** — all R1–R4 met; gold masters Grade A; gates green.
 
