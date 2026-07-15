@@ -2,6 +2,8 @@
 
 Manage **main-agent** configuration files (`magent` = main-agent). These are the top-level agent config files (e.g. `CLAUDE.md`, `AGENTS.md`, `GEMINI.md`) that customize a coding agent's persona, routing rules, and platform behavior. A magent file has YAML frontmatter (`name`, `description`) and a body with routing, safety, and tone directives.
 
+**Harness-aware (task 0080):** scaffolded and refined magents treat **spur** (task/feature/rule/workflow lifecycle) and **superskill** (skill/agent/command/hook/magent lifecycle + install) as the preferred tool surface when present. The canonical template ships a "Harness & Infrastructure" section; gold-master reference configs for major platforms live at `plugins/cc/skills/cc-magents/references/main-agents/`.
+
 ## How to use it
 
 ### Synopsis

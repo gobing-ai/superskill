@@ -46,6 +46,18 @@ Main-agent support is capability-based. Each platform declares:
 Each platform's resolved values for these attributes live in the capability
 matrix at [references/platform-compatibility.md](references/platform-compatibility.md).
 
+### Harness awareness
+
+`superskill magent` is **harness-aware**: every operation assumes the harness
+(spur + superskill) is the preferred tool surface when present. A scaffolded
+or refined main agent must declare `spur task` / `spur feature` as the
+preferred work-tracking surface and `superskill magent` / `superskill skill`
+as the preferred lifecycle surface, falling back to native tools only for
+operations the harness does not cover. The scaffold, evaluate, refine, and
+evolve commands all emit and reward this declaration. See
+[references/workflows.md](references/workflows.md#harness-usage-workflow) for
+canonical command patterns and the preferred-tools statement template.
+
 ## Operations
 
 | Operation | Command | Purpose |
@@ -96,6 +108,43 @@ Branching:
 
 See [references/workflows.md](references/workflows.md) for full step tables and
 [references/platform-compatibility.md](references/platform-compatibility.md) for the platform capability matrix.
+
+## Rubric and Evaluation Criteria
+
+When `superskill magent evaluate` runs against a main agent, the scorer
+applies the canonical rubric (owned at `packages/core/src/rubrics/magent.yaml`
+— read it there; do not restate weights here, they drift). The following
+dimensions are harness-aware: a manifest that properly positions the harness
+tools and accounts for cross-platform differences scores higher.
+
+| Dimension | What the scorer rewards | Harness-aware signal |
+| --- | --- | --- |
+| **Harness positioning** | The manifest declares `spur task` / `spur feature` as the preferred work-tracking surface and `superskill magent` / `superskill skill` as the preferred lifecycle surface, with a named fallback to native tools. | A "Preferred tools (harness present)" section naming `spur` and `superskill` verbs. |
+| **Cross-platform coverage** | The manifest accounts for platform tool-surface differences (e.g. Claude `Agent` vs Grok `spawn_subagent`, `WebFetch` vs `web_search`) and does not assume a single native surface. | References to the lossy-mappings table or per-platform tool notes. |
+| **Lossy-mapping awareness** | The manifest notes where harness declarations do not survive `superskill install` conversion and names the workaround (e.g. skills by name, not `cc:` deep links; `superskill hook` for cross-platform hooks). | A loss-reporting or workaround note per lossy mapping. |
+| **Confidence honesty** | Platform claims mark confidence levels (HIGH/MEDIUM/LOW) honestly; provisional platforms (Antigravity, Pi, OpenClaw, Hermes, Grok) stay LOW until official docs exist. | Inline confidence markers on platform-specific claims. |
+| **Safety boundaries** | The manifest preserves approval boundaries and does not grant destructive tool permissions silently when porting across platforms. | No new `bypassPermissions` / `--dangerously-skip-permissions` declarations without an explicit guard. |
+
+### `superskill magent` commands are harness-aware
+
+All five operations — **scaffold**, **validate**, **evaluate**, **refine**,
+**evolve** — emit and ingest harness-aware content:
+
+- **scaffold** emits a "Preferred tools (harness present)" section by default
+  when the harness is detected on `PATH`.
+- **evaluate** scores the harness-positioning and cross-platform-coverage
+  dimensions above; a manifest with no harness declaration caps at the
+  pre-harness baseline and cannot reach grade A.
+- **refine** recommends adding the harness declaration and fixing lossy
+  mappings when they are absent.
+- **evolve** proposes longitudinal improvements that keep the harness
+  declaration in sync as the spur/superskill CLI surface changes; the
+  goal-anchor verbatim discipline (F024) prevents a persona from stripping
+  the harness declaration during a rewrite.
+
+The two-call evaluate and evolve seams are platform-agnostic: the envelope
+JSON carries the manifest content + rubric + baseline, so the scorer and
+author/skeptic/judge personas run the same on every host agent.
 
 ## Source Material
 

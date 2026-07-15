@@ -81,7 +81,7 @@ packages/core/src/                # ── Reusable domain logic (@gobing-ai/sup
 │   ├── command.ts                # Slash command quality evaluation heuristics
 │   ├── dimensions.ts             # Shared type-specific dimension registries
 │   ├── hook.ts                   # Hook quality evaluation heuristics
-│   ├── magent.ts                 # Main agent quality evaluation heuristics
+│   ├── magent.ts                 # Main agent quality evaluation heuristics (harness-aware scoring signals via template + cc-magents)
 │   ├── rubric.ts                 # Rubric loader & validator (ADR F022)
 │   └── skill.ts                  # Skill quality evaluation heuristics
 │
@@ -93,6 +93,7 @@ packages/core/src/                # ── Reusable domain logic (@gobing-ai/sup
 │   └── skill.yaml
 │
 ├── templates/                    # ── Built-in scaffold templates, bundled as text imports ──
+│   └── magent/default.md         # Harness-aware main-agent template (spur + superskill first; Platform Padding)
 │
 ├── pipeline/                     # ── Conversion transformations (pure stage functions) ──
 │   ├── adapt-command.ts          # Adapt Claude command .md → Skills 2.0 skill entry

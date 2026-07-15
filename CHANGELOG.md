@@ -5,6 +5,12 @@ All notable changes to `@gobing-ai/superskill` are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Conventional Commits](https://www.conventionalcommits.org/).
 
 
+## [Unreleased]
+
+### New Features
+
+- **Harness-aware main agents (task 0080).** `cc-magents` promotes spur + superskill as first-class infrastructure: expanded platform-capability matrix and harness row (`references/platform-compatibility.md`), harness-usage workflow (`references/workflows.md`), SKILL.md rubric dimensions that reward harness positioning. Canonical magent template (`packages/core/src/templates/magent/default.md`) gains Harness & Infrastructure, Tool Discipline, Verification, and Platform Padding sections. Gold-master reference main agents for Claude Code, Codex, Pi, Omp, OpenClaw, Hermes, and Grok live under `plugins/cc/skills/cc-magents/references/main-agents/` and evaluate at Grade A under `superskill magent evaluate`.
+
 ## [0.3.2] - 2026-07-14
 
 ### New Features
