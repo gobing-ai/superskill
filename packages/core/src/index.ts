@@ -31,6 +31,7 @@ export * from './pipeline/adapt-subagent';
 export * from './pipeline/frontmatter-walk';
 export * from './pipeline/pi-tools';
 export * from './pipeline/rewrite-references';
+export * from './pipeline/select-magent';
 export * from './pipeline/slash-command';
 export * from './pipeline/yaml-utils';
 // ── Quality ──────────────────────────────────────────────────────────────────

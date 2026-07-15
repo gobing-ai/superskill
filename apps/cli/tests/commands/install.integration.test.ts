@@ -668,4 +668,219 @@ describe('executeInstall', () => {
         expect(counts[0]).toBeGreaterThan(0);
         expect(counts[1]).toBe(counts[0]);
     });
+    // ─── Task 0081: magents/ (main-agent config) install scenarios ───
+    // The plugin-min fixture ships one magent: my-agent/ (common AGENTS.md +
+    // AGENTS.claude.md override). Multi-magent tests (AC6/AC8) add foo/ and
+    // bar/ dynamically. These cover the eight acceptance scenarios in docs/tasks/0081.
+
+    it('0081 AC1: plugin without magents installs normally (zero count, no extra files)', async () => {
+        const { marketplacePath, pluginDir } = setupPluginDir();
+        // Strip the magents/ dir so this plugin has none
+        rmSync(join(pluginDir, 'magents'), { recursive: true, force: true });
+        const outRoot = join(tmpDir, 'ac1-out');
+
+        await executeInstall('demo', ['pi'], {
+            marketplacePath,
+            global: false,
+            dryRun: false,
+            verbose: false,
+            outputRoot: outRoot,
+        });
+
+        // No magent output files at the project root
+        expect(existsSync(join(outRoot, 'AGENTS.md'))).toBe(false);
+    });
+
+    it('0081 AC2: common AGENTS.md is selected as fallback for pi', async () => {
+        const { marketplacePath } = setupPluginDir();
+        const outRoot = join(tmpDir, 'ac2-out');
+
+        await executeInstall('demo', ['pi'], {
+            marketplacePath,
+            global: false,
+            dryRun: false,
+            verbose: false,
+            outputRoot: outRoot,
+        });
+
+        // The single magent (my-agent) auto-selects; pi consumes AGENTS.md as fallback.
+        // Output filename is AGENTS.md for every non-claude target.
+        const dest = join(outRoot, 'AGENTS.md');
+        expect(existsSync(dest)).toBe(true);
+        const body = readFileSync(dest, 'utf-8');
+        // Common body identifies itself; the claude override must NOT have been picked.
+        expect(body).toContain('Universal main-agent config');
+        expect(body).not.toContain('Claude-tuned');
+    });
+
+    it('0081 AC3: target-specific override wins for claude (AGENTS.claude.md over AGENTS.md)', async () => {
+        const { marketplacePath } = setupPluginDir();
+        const outRoot = join(tmpDir, 'ac3-out');
+        const captured: string[] = [];
+        const spy = spyOn(process.stdout, 'write').mockImplementation((data) => {
+            captured.push(typeof data === 'string' ? data : data.toString());
+            return true;
+        });
+
+        // Dry-run + verbose: claude's native installer isn't invoked, but the magent
+        // selection still runs and the verbose output records which source was chosen.
+        await executeInstall('demo', ['claude'], {
+            marketplacePath,
+            global: false,
+            dryRun: true,
+            verbose: true,
+            outputRoot: outRoot,
+        });
+        spy.mockRestore();
+
+        const out = captured.join('');
+        // The AGENTS.claude.md override was selected (not the common AGENTS.md) and
+        // the destination is CLAUDE.md (claude's output filename policy).
+        expect(out).toMatch(/claude: magent demo-my-agent → .*CLAUDE\.md \(from .*AGENTS\.claude\.md\)/);
+        // Nothing written in dry-run
+        expect(existsSync(join(outRoot, 'CLAUDE.md'))).toBe(false);
+    });
+
+    it('0081 AC4: claude special naming — CLAUDE.claude.md fixture also resolves', async () => {
+        const { marketplacePath, pluginDir } = setupPluginDir();
+        // Replace the override with the legacy CLAUDE.claude.md name to exercise
+        // the claude candidate list's CLAUDE.claude.md entry.
+        rmSync(join(pluginDir, 'magents', 'my-agent', 'AGENTS.claude.md'), { force: true });
+        writeFileSync(join(pluginDir, 'magents', 'my-agent', 'CLAUDE.claude.md'), '# Legacy variant\n');
+        const outRoot = join(tmpDir, 'ac4-out');
+        const captured: string[] = [];
+        const spy = spyOn(process.stdout, 'write').mockImplementation((data) => {
+            captured.push(typeof data === 'string' ? data : data.toString());
+            return true;
+        });
+
+        await executeInstall('demo', ['claude'], {
+            marketplacePath,
+            global: false,
+            dryRun: true,
+            verbose: true,
+            outputRoot: outRoot,
+        });
+        spy.mockRestore();
+
+        const out = captured.join('');
+        expect(out).toMatch(/from .*CLAUDE\.claude\.md/);
+    });
+
+    it('0081 AC5: shimming rewrites plugin-scoped skill references in the installed magent', async () => {
+        const { marketplacePath } = setupPluginDir();
+        const outRoot = join(tmpDir, 'ac5-out');
+
+        await executeInstall('demo', ['codex'], {
+            marketplacePath,
+            global: false,
+            dryRun: false,
+            verbose: false,
+            outputRoot: outRoot,
+        });
+
+        // The fixture's AGENTS.md contains `demo:coder`. After shimming the
+        // plugin-scoped reference must be rewritten to the local hyphen form.
+        const body = readFileSync(join(outRoot, 'AGENTS.md'), 'utf-8');
+        expect(body).not.toMatch(/demo:coder/);
+    });
+
+    it('0081 AC6: --magent <name> selects only the named magent (multi-magent plugin)', async () => {
+        const { marketplacePath, pluginDir } = setupPluginDir();
+        // Add two more magents so the plugin has foo, bar, and my-agent
+        mkdirSync(join(pluginDir, 'magents', 'foo'), { recursive: true });
+        writeFileSync(join(pluginDir, 'magents', 'foo', 'AGENTS.md'), '# Foo magent\n');
+        mkdirSync(join(pluginDir, 'magents', 'bar'), { recursive: true });
+        writeFileSync(join(pluginDir, 'magents', 'bar', 'AGENTS.md'), '# Bar magent\n');
+        const outRoot = join(tmpDir, 'ac6-out');
+
+        await executeInstall('demo', ['codex'], {
+            marketplacePath,
+            global: false,
+            dryRun: false,
+            verbose: false,
+            outputRoot: outRoot,
+            magent: 'bar',
+        });
+
+        // Only bar's body should be present; foo and my-agent must NOT leak.
+        const body = readFileSync(join(outRoot, 'AGENTS.md'), 'utf-8');
+        expect(body).toContain('Bar magent');
+        expect(body).not.toContain('Foo magent');
+        expect(body).not.toContain('Universal main-agent config');
+    });
+
+    it('0081 AC6b: --magent <name> with an unknown name fails loudly rather than silently installing nothing', async () => {
+        const { marketplacePath } = setupPluginDir();
+        const outRoot = join(tmpDir, 'ac6b-out');
+
+        await expect(
+            executeInstall('demo', ['codex'], {
+                marketplacePath,
+                global: false,
+                dryRun: false,
+                verbose: false,
+                outputRoot: outRoot,
+                magent: 'nonexistent',
+            }),
+        ).rejects.toThrow(/Magent 'nonexistent' not found/);
+    });
+
+    it('0081 AC7: --dry-run --verbose shows selection decisions without writing files', async () => {
+        const { marketplacePath } = setupPluginDir();
+        const outRoot = join(tmpDir, 'ac7-out');
+        const captured: string[] = [];
+        const spy = spyOn(process.stdout, 'write').mockImplementation((data) => {
+            captured.push(typeof data === 'string' ? data : data.toString());
+            return true;
+        });
+
+        await executeInstall('demo', ['claude', 'pi'], {
+            marketplacePath,
+            global: false,
+            dryRun: true,
+            verbose: true,
+            outputRoot: outRoot,
+        });
+        spy.mockRestore();
+
+        const out = captured.join('');
+        // Verbose output names the source file, target, and destination for each magent.
+        expect(out).toMatch(/claude: magent .* → .*CLAUDE\.md/);
+        expect(out).toMatch(/pi: magent .* → .*AGENTS\.md/);
+        expect(out).toContain('[DRY-RUN] No files were written.');
+        // Nothing was actually written
+        expect(existsSync(join(outRoot, 'CLAUDE.md'))).toBe(false);
+        expect(existsSync(join(outRoot, 'AGENTS.md'))).toBe(false);
+    });
+
+    it('0081 AC8: multiple magents without --magent selector skips with a verbose note (no silent install)', async () => {
+        const { marketplacePath, pluginDir } = setupPluginDir();
+        // Add two more magents so the plugin has foo, bar, and my-agent
+        mkdirSync(join(pluginDir, 'magents', 'foo'), { recursive: true });
+        writeFileSync(join(pluginDir, 'magents', 'foo', 'AGENTS.md'), '# Foo magent\n');
+        mkdirSync(join(pluginDir, 'magents', 'bar'), { recursive: true });
+        writeFileSync(join(pluginDir, 'magents', 'bar', 'AGENTS.md'), '# Bar magent\n');
+        const outRoot = join(tmpDir, 'ac8-out');
+        const captured: string[] = [];
+        const spy = spyOn(process.stdout, 'write').mockImplementation((data) => {
+            captured.push(typeof data === 'string' ? data : data.toString());
+            return true;
+        });
+
+        await executeInstall('demo', ['codex'], {
+            marketplacePath,
+            global: false,
+            dryRun: false,
+            verbose: true,
+            outputRoot: outRoot,
+        });
+        spy.mockRestore();
+
+        // Plugin ships 3 magents; with no --magent, emission is skipped (no auto-pick
+        // on ambiguity) and a verbose note explains how to select.
+        const out = captured.join('');
+        expect(out).toMatch(/Magents: 3 staged, no --magent selector — skipping/);
+        expect(existsSync(join(outRoot, 'AGENTS.md'))).toBe(false);
+    });
 });

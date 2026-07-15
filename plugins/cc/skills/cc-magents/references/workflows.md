@@ -188,7 +188,22 @@ superskill skill evolve my-skill --propose-only --json
 ```bash
 # One-shot multi-target install of a Claude Code plugin
 superskill install cc --targets codex,opencode,pi
+
+# Install and select a specific magent (main-agent config) from a multi-magent plugin
+superskill install cc --targets codex --magent dev
+
+# Dry-run with verbose to preview magent variant selection per target
+superskill install cc --targets claude,pi --dry-run --verbose
 ```
+
+A plugin may ship a top-level `magents/<kebab-name>/` directory with per-target
+variant files (`AGENTS.md`, `AGENTS.<target>.md`, `CLAUDE.md`). During install,
+`superskill` selects the best variant per target (target-specific override wins
+over the common `AGENTS.md` fallback), shims plugin-scoped references, and
+writes `AGENTS.md` (or `CLAUDE.md` for claude) to the project root. When the
+plugin ships multiple magents, `--magent <name>` selects one; with no selector
+the install skips magent emission and prints a verbose note. A single magent
+auto-selects.
 
 ### Cross-platform notes
 

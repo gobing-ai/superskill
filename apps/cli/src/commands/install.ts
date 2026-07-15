@@ -12,13 +12,17 @@ import {
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import {
+    adaptMagentForTarget,
     adaptSubagentToPi,
     assertSafePathSegment,
     listResolvablePlugins,
+    magentGlobalDir,
+    magentOutputFilename,
     mapPluginToRulesync,
     resolvePlugin,
     rewriteSkillReferences,
     runRulesync,
+    selectMagentVariant,
     TARGET_GLOBAL_SKILLS_RELDIR,
     TARGET_SKILLS_RELDIR,
     TARGET_TO_RULESYNC_HOOKS,
@@ -39,12 +43,16 @@ export function registerInstall(program: Command): void {
     program
         .command('install')
         .description(
-            "Install a Claude Code plugin's skills, commands, subagents, hooks, and MCP config to target coding agents",
+            "Install a Claude Code plugin's skills, commands, subagents, magents, hooks, and MCP config to target coding agents",
         )
         .argument('<plugin>', 'Plugin name to install')
         .option('--marketplace <path>', 'Path to .claude-plugin/marketplace.json or its containing directory')
         .option('--targets <list>', 'Comma-separated target agents (default: all configured)')
         .option('--no-global', 'Install to project-level instead of user-level global directories')
+        .option(
+            '--magent <name>',
+            'Select a specific magent (main-agent config) to install; auto-selects when exactly one exists',
+        )
         .option('--dry-run', 'Preview without writing files', false)
         .option('--verbose', 'Print each step and file copy', false)
         .action(async (plugin, options) => {
@@ -59,6 +67,7 @@ export function registerInstall(program: Command): void {
                     global,
                     dryRun,
                     verbose,
+                    magent: options.magent as string | undefined,
                 });
             } catch (err) {
                 echo(`Error: ${err instanceof Error ? err.message : String(err)}`);
@@ -73,6 +82,8 @@ interface InstallOptions {
     dryRun: boolean;
     verbose: boolean;
     outputRoot?: string;
+    /** Select a specific magent by directory name; undefined auto-selects when exactly one magent exists. */
+    magent?: string;
 }
 
 interface InstallDependencies {
@@ -139,7 +150,7 @@ export async function executeInstall(
     const mapResult = mapPluginToRulesync(pluginRoot, plugin, outputDir);
     if (options.verbose) {
         echo(
-            `  Skills: ${mapResult.skills}, Commands: ${mapResult.commands}, Subagents: ${mapResult.subagents}, Hooks: ${mapResult.hooks}, MCP: ${mapResult.mcp}`,
+            `  Skills: ${mapResult.skills}, Commands: ${mapResult.commands}, Subagents: ${mapResult.subagents}, Magents: ${mapResult.magents}, Hooks: ${mapResult.hooks}, MCP: ${mapResult.mcp}`,
         );
     }
     // Compat gate: if the canonical hooks.json declares minCliVersion and the installed CLI is
@@ -399,6 +410,12 @@ export async function executeInstall(
             }
         }
     }
+
+    // Step 5: Magents (main-agent configs) — per-target variant selection + shimming.
+    // Runs after rulesync + native dispatch so the project root's other files
+    // already exist; magents land at the repo root (project) or per-target global
+    // config dir. Skipped silently when the plugin ships no magents/.
+    emitMagents(plugin, targets, outputDir, outputRoot, options);
 
     // No silent drop (design §6 exit #2): surface hook emission results for uncovered targets
     // in non-verbose mode. Verbose mode already echoes each result at the dispatch site
@@ -692,6 +709,98 @@ export function postInstallOmp(
     // R4: slash command dialect translation on installed commands/
     transformMarkdownDirectory(join(installPath, 'commands'), 'omp', plugin);
     return hookResult;
+}
+
+/**
+ * Per-target magent (main-agent config) emission: select the best variant
+ * from each staged `.rulesync/magents/<plugin>-<name>/` directory, shim it
+ * (rewrite plugin-scoped references), and write it to the target's config
+ * location.
+ *
+ * Selection: `--magent <name>` picks one explicitly; otherwise auto-selects
+ * when exactly one magent is staged. When the plugin ships no magents, this
+ * is a silent no-op. When `--magent` names a missing magent, fail loudly
+ * (R12) rather than installing nothing without explanation.
+ *
+ * Destination: project mode writes `AGENTS.md` (or `CLAUDE.md` for claude)
+ * to `outputRoot` (the repo root); global mode writes to the target's
+ * per-user config dir via {@link magentGlobalDir}, falling back to
+ * `outputRoot` when the target has no pinned global magent path
+ * (claude/omp/grok — native installers own their layout).
+ */
+function emitMagents(
+    plugin: string,
+    targets: Target[],
+    outputDir: string,
+    outputRoot: string,
+    options: InstallOptions,
+): void {
+    const stagedRoot = join(outputDir, 'magents');
+    if (!existsSync(stagedRoot)) return;
+    const staged = readdirSync(stagedRoot).filter((e) => {
+        const stat = lstatSync(join(stagedRoot, e));
+        return stat.isDirectory();
+    });
+    if (staged.length === 0) return;
+
+    // Resolve which magent(s) to install. `--magent <name>` selects one by its
+    // directory name (the `<plugin>-<name>` staged form, or the bare `<name>`);
+    // otherwise auto-select when exactly one magent exists, and no-op (with a
+    // verbose note) when there are several and no selector — the user must opt in.
+    let selected: string[];
+    if (options.magent) {
+        const wanted = options.magent;
+        const match = staged.find((s) => s === wanted || s === `${plugin}-${wanted}` || s.endsWith(`-${wanted}`));
+        if (!match) {
+            throw new Error(
+                `Magent '${wanted}' not found. Staged magents: ${staged.join(', ')}. ` +
+                    `Use the bare name (e.g. 'dev') or the full '<plugin>-<name>' form.`,
+            );
+        }
+        selected = [match];
+    } else if (staged.length === 1) {
+        const [only] = staged;
+        if (!only) return; // unreachable: length === 1 guarantees an element
+        selected = [only];
+    } else {
+        if (options.verbose) {
+            echo(
+                `  Magents: ${staged.length} staged, no --magent selector — skipping. ` +
+                    `Use --magent <name> to install one. Staged: ${staged.join(', ')}`,
+            );
+        }
+        return;
+    }
+
+    let emitted = 0;
+    for (const target of targets) {
+        for (const magentDir of selected) {
+            const sourceDir = join(stagedRoot, magentDir);
+            const selectedFile = selectMagentVariant(sourceDir, target);
+            if (!selectedFile) {
+                if (options.verbose) {
+                    echo(`  ${target}: no magent variant found in ${magentDir}/ — skipping`);
+                }
+                continue;
+            }
+            const outName = magentOutputFilename(target);
+            const destDir = options.global ? (magentGlobalDir(target, resolveHomeDir()) ?? outputRoot) : outputRoot;
+            const destPath = join(destDir, outName);
+            if (options.verbose) {
+                const relSource = selectedFile.replace(`${process.cwd()}/`, '');
+                echo(`  ${target}: magent ${magentDir} → ${destPath} (from ${relSource})`);
+            }
+            if (options.dryRun) continue;
+            const raw = readFileSync(selectedFile, 'utf-8');
+            const adapted = adaptMagentForTarget(raw, plugin, target);
+            mkdirSync(destDir, { recursive: true });
+            writeFileSync(destPath, adapted);
+            emitted++;
+        }
+    }
+    if (options.verbose && emitted > 0) {
+        echo(`  Magents emitted: ${emitted}`);
+    }
 }
 
 /** Parse a comma-separated targets string. Returns all targets when undefined or "all". Throws on unknown targets. */

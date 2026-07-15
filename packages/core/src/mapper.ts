@@ -14,6 +14,7 @@ export interface MapResult {
     skills: number;
     commands: number;
     subagents: number;
+    magents: number;
     hooks: boolean;
     mcp: boolean;
 }
@@ -115,7 +116,7 @@ export function mapPluginToRulesync(pluginPath: string, pluginName: string, outp
     }
     mkdirSync(outputDir, { recursive: true });
 
-    const result: MapResult = { skills: 0, commands: 0, subagents: 0, hooks: false, mcp: false };
+    const result: MapResult = { skills: 0, commands: 0, subagents: 0, magents: 0, hooks: false, mcp: false };
 
     // Skills: two layouts are supported — flat (`skills/<name>.md`) and the
     // Claude Code standard directory layout (`skills/<name>/SKILL.md`).
@@ -193,6 +194,31 @@ export function mapPluginToRulesync(pluginPath: string, pluginName: string, outp
             const adapted = adaptSubagentToSkill(source, expectedName, pluginName);
             writeFileSync(join(dir, 'SKILL.md'), adapted);
             result.subagents++;
+        }
+    }
+
+    // Magents (main-agent configs): discover top-level `magents/<kebab-name>/` dirs
+    // and stage them verbatim into `.rulesync/magents/<plugin>-<name>/`. Unlike
+    // skills/commands/subagents, magents are NOT downgraded to skills — each
+    // staged directory preserves its original tree (AGENTS.md, AGENTS.<target>.md,
+    // CLAUDE.md, support subdirs) so per-target variant selection + shimming can
+    // run later in the install pipeline against the unmodified source. Only
+    // text files are reference-rewritten; binaries copy byte-for-byte.
+    const magentsDir = join(pluginPath, 'magents');
+    if (existsSync(magentsDir)) {
+        const magentsOut = join(outputDir, 'magents');
+        for (const entry of readdirSync(magentsDir)) {
+            const sourceDir = join(magentsDir, entry);
+            if (!lstatSync(sourceDir).isDirectory()) continue;
+            // Plugin authors must use kebab-case dir names; reject anything else so
+            // downstream target-specific filename resolution stays predictable.
+            assertSafePathSegment(entry, 'magent directory name');
+            if (!/^[a-z][a-z0-9-]*$/.test(entry)) {
+                throw new Error(`Invalid magent directory name '${entry}': must be kebab-case (lowercase, hyphens).`);
+            }
+            const expectedName = `${pluginName}-${entry}`;
+            copyAndRewriteDirectory(sourceDir, join(magentsOut, expectedName), pluginName);
+            result.magents++;
         }
     }
 

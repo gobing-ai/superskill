@@ -30,6 +30,27 @@ Which main-agent (workspace manifest) capabilities each platform supports.
 | Import/modularity | `@import` / progress disclosure | No (concat, 32 KiB cap) | No | No (merged in-memory) | `instructions` array | No | ACP delegation | `-s` skill preload | No |
 | Confidence | HIGH | HIGH | MEDIUM | MEDIUM | MEDIUM | LOW | LOW | LOW | LOW |
 
+### Plugin-Provided Magents (`magents/` install convention)
+
+A Claude Code plugin may ship a top-level `magents/<kebab-name>/` directory
+containing main-agent config variants. `superskill install` discovers these
+during the `.rulesync/` mapping step and stages them at
+`.rulesync/magents/<plugin>-<name>/`. Per target, it selects the best variant
+(most-specific-first: `AGENTS.<target>.md` → `AGENTS.md`; claude also accepts
+`CLAUDE.claude.md` / `CLAUDE.md`), rewrites plugin-scoped skill references
+(`plugin:foo` → `foo` or `plugin-foo`), and writes the result to:
+- **Project mode:** `AGENTS.md` at the repo root (or `CLAUDE.md` for claude).
+- **Global mode:** the target's per-user config dir (`~/.codex/`,
+  `~/.pi/agent/`, `~/.config/opencode/`, `~/.gemini/antigravity-cli/`,
+  `~/.gemini/config/`, `~/.hermes/`); claude/omp/grok use their native
+  installers' own layout.
+
+When the plugin ships multiple magents, `--magent <name>` selects one; with no
+selector, emission is skipped (verbose note). A single magent auto-selects.
+An unknown `--magent` name fails loudly. This convention lets a plugin author
+ship one source tree that fans out to every target's native manifest format
+without hand-maintaining per-platform copies.
+
 ### Native Tool Surface
 
 The native tool namespaces each platform exposes. A main agent that wants to
