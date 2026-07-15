@@ -5,6 +5,16 @@ All notable changes to `@gobing-ai/superskill` are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Conventional Commits](https://www.conventionalcommits.org/).
 
 
+## [0.3.2] - 2026-07-14
+
+### New Features
+
+- **Codex and Cursor plugin manifests added at the repo root.** The `cc` plugin now ships declarative manifests for the Codex and Cursor plugin marketplaces alongside the existing Claude Code marketplace config — `.codex-plugin/plugin.json` (metadata only) and `.cursor-plugin/plugin.json` (metadata + `skills` + `hooks`), mirroring the layout used by the Superpowers vendor sample. The Cursor manifest references a new `plugins/cc/hooks/hooks-cursor.json` that ports the anti-hallucination `stop` hook to Cursor's native hook schema (`version: 1`, lowercase event names), so the guard resolves on Cursor the same way `superskill hook run cc anti-hallucination` already resolves on Claude Code. (`.codex-plugin/plugin.json`, `.cursor-plugin/plugin.json`, `plugins/cc/hooks/hooks-cursor.json`)
+
+### Bug Fixes
+
+- **Anti-hallucination guard recognizes `Confidence: **HIGH**` (bold-on-value).** The `SOURCE_PATTERNS` confidence regex only allowed markdown bold around the label (`**Confidence:** HIGH`), not around the value. A turn ending `Confidence: **HIGH** — verified via endpoint` was missed, so the Stop hook blocked despite a present confidence level. The regex now accepts optional bold on either side (`Confidence: \**(?:HIGH|MEDIUM|LOW)\**`), covering both bold-on-label and bold-on-value forms. 2 new test cases cover the bold-on-value shape. (`plugins/cc/scripts/anti-hallucination/ah_guard.ts`, `plugins/cc/scripts/anti-hallucination/tests/ah_guard.test.ts`)
+
 ## [0.3.1] - 2026-07-13
 
 ### Bug Fixes
