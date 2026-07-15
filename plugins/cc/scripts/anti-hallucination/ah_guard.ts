@@ -52,7 +52,9 @@ const SOURCE_PATTERNS = [
 
 // Confidence level patterns (no 'g' flag to avoid stateful lastIndex)
 const CONFIDENCE_PATTERNS = [
-    /Confidence:\s*(HIGH|MEDIUM|LOW)/i,
+    // Allow optional markdown bold around the value (e.g. `Confidence: **HIGH**`),
+    // not just around the label — both bold-on-value and bold-on-label are valid.
+    /Confidence:\s*\**(?:HIGH|MEDIUM|LOW)\**/i,
     /\*\*Confidence\*\*:\s*(HIGH|MEDIUM|LOW)/i,
     /### Confidence/i,
 ];

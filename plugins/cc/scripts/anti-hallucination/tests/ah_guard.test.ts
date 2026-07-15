@@ -92,6 +92,13 @@ describe('hasConfidenceLevel', () => {
         expect(hasConfidenceLevel('Confidence: MEDIUM')).toBe(true);
     });
 
+    it('detects bold-on-value confidence', () => {
+        // `Confidence: **HIGH**` (bold value, plain label) — the format the guard
+        // previously missed, causing every Stop hook to block despite a present level.
+        expect(hasConfidenceLevel('Confidence: **HIGH** — verified via endpoint')).toBe(true);
+        expect(hasConfidenceLevel('Confidence: **MEDIUM**')).toBe(true);
+    });
+
     it('detects section header', () => {
         expect(hasConfidenceLevel('### Confidence\n\nHIGH')).toBe(true);
     });
