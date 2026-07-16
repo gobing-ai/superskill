@@ -78,6 +78,28 @@ describe('applyFrontmatterChange', () => {
         expect(result).toContain('description: added');
     });
 
+    it('keeps a CRLF file on CRLF instead of emitting mixed endings', () => {
+        // yaml emits LF; parsing is CRLF-aware. Echoing LF delimiters would hand back a CRLF
+        // body under an LF frontmatter block — the mixed-ending class this module guards against.
+        const content = '---\r\nname: old\r\n---\r\n# Body\r\n\r\nText.\r\n';
+        const result = applyFrontmatterChange(content, (doc) => {
+            doc.set('name', 'new');
+        });
+        expect(result).toContain('name: new');
+        expect(result.includes('\r\n')).toBe(true);
+        // No bare LF anywhere: every \n must be preceded by \r.
+        expect(/(^|[^\r])\n/.test(result)).toBe(false);
+    });
+
+    it('leaves an LF file on pure LF', () => {
+        const content = '---\nname: old\n---\n# Body\n';
+        const result = applyFrontmatterChange(content, (doc) => {
+            doc.set('name', 'new');
+        });
+        expect(result).toContain('name: new');
+        expect(result.includes('\r\n')).toBe(false);
+    });
+
     it('preserves key order after mutation', () => {
         const content = '---\nname: first\ndescription: second\nversion: third\n---\nbody';
         const result = applyFrontmatterChange(content, (doc) => {

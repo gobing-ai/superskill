@@ -352,8 +352,15 @@ const TEXT_EXTENSIONS = new Set([
     '.dockerfile',
 ]);
 function isTextFile(filename: string, bytes: Buffer): boolean {
-    const ext = filename.slice(filename.lastIndexOf('.'));
-    if (TEXT_EXTENSIONS.has(ext)) return true;
+    // lastIndexOf returns -1 for a dotless name, and slice(-1) would yield its last
+    // character ('e' for `Makefile`) rather than an extension.
+    const dot = filename.lastIndexOf('.');
+    const ext = dot === -1 ? '' : filename.slice(dot);
+    if (ext && TEXT_EXTENSIONS.has(ext)) return true;
     // Binary detection: NUL byte in first 8KB means binary.
-    return !bytes.subarray(0, 8192).includes(0);
+    if (bytes.subarray(0, 8192).includes(0)) return false;
+    // Undeclared extension: the caller rewrites text by decoding to UTF-8 and re-encoding,
+    // so only claim text when that round-trip is lossless. A NUL-free binary (no early NUL,
+    // no known extension) would otherwise be silently corrupted by the rewrite.
+    return Buffer.from(bytes.toString('utf-8'), 'utf-8').equals(bytes);
 }

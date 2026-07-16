@@ -86,6 +86,19 @@ describe('resolvePlugin', () => {
         );
     });
 
+    it('reports the offending field when the manifest fails schema validation', () => {
+        // A raw ZodError dump is not actionable at the CLI: the operator needs the
+        // manifest path and the field that broke, matching the Invalid-JSON wrap.
+        tmpDir = mkdtempSync('superskill-mp-');
+        const claudePluginDir = join(tmpDir, '.claude-plugin');
+        mkdirSync(claudePluginDir, { recursive: true });
+        const manifestPath = join(claudePluginDir, 'marketplace.json');
+        writeFileSync(manifestPath, JSON.stringify({ plugins: [{ name: 'demo', source: 42 }] }));
+
+        expect(() => resolvePlugin(manifestPath, 'demo')).toThrow('Invalid marketplace manifest');
+        expect(() => resolvePlugin(manifestPath, 'demo')).toThrow('plugins.0.source');
+    });
+
     it('throws on object source with the remote-source message', () => {
         tmpDir = mkdtempSync('superskill-mp-');
         const claudePluginDir = join(tmpDir, '.claude-plugin');

@@ -22,6 +22,25 @@ describe('mapPluginToRulesync', () => {
         expect(existsSync(join(outDir, 'skills', 'demo-b', 'SKILL.md'))).toBe(true);
     });
 
+    it('copies an extensionless binary asset verbatim instead of mangling it through UTF-8', () => {
+        // A binary with no known extension and no NUL in the first 8KB reaches the text
+        // heuristic; rewriting it decodes to UTF-8 and re-encodes, which is lossy. The copy
+        // must be byte-identical or the installed plugin ships a corrupted asset.
+        tmpDir = mkdtempSync('superskill-mapper-');
+        const pluginDir = join(tmpDir, 'plugin');
+        const assetsDir = join(pluginDir, 'skills', 'a', 'assets');
+        mkdirSync(assetsDir, { recursive: true });
+        writeFileSync(join(pluginDir, 'skills', 'a', 'SKILL.md'), '---\nname: a\n---\n# A\n');
+        const binary = Buffer.from([0xff, 0xfe, 0x41, 0x80, 0x90, 0xc3, 0x28, 0xa0]);
+        writeFileSync(join(assetsDir, 'helper'), binary);
+
+        const outDir = join(tmpDir, '.rulesync');
+        mapPluginToRulesync(pluginDir, 'demo', outDir);
+
+        const copied = readFileSync(join(outDir, 'skills', 'demo-a', 'assets', 'helper'));
+        expect(copied.equals(binary)).toBe(true);
+    });
+
     it('maps commands → .rulesync/skills/<plugin>-<name>/SKILL.md (adapted as skill)', () => {
         tmpDir = mkdtempSync('superskill-mapper-');
         const outDir = join(tmpDir, '.rulesync');

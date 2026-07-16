@@ -86,7 +86,17 @@ export function resolvePlugin(marketplacePath: string | undefined, pluginName: s
         throw new Error(`Invalid JSON in marketplace manifest: ${manifestPath}`);
     }
 
-    const manifest = marketplaceSchema.parse(parsed);
+    let manifest: MarketplaceManifest;
+    try {
+        manifest = marketplaceSchema.parse(parsed);
+    } catch (e) {
+        // Mirror the JSON.parse wrap above: a raw ZodError dump is not an actionable CLI error.
+        const detail =
+            e instanceof z.ZodError
+                ? e.issues.map((i) => `${i.path.join('.') || '<root>'}: ${i.message}`).join('; ')
+                : String(e);
+        throw new Error(`Invalid marketplace manifest: ${manifestPath} — ${detail}`);
+    }
     const entry = manifest.plugins.find((p) => p.name === pluginName);
     if (!entry) {
         return null;

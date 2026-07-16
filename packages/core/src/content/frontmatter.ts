@@ -112,6 +112,9 @@ export function applyFrontmatterChange(content: string, mutate: (doc: Document) 
         }
     }
     mutate(doc);
-    const newFm = doc.toString();
-    return `---\n${newFm}---${body}`;
+    // yaml emits LF only. Parsing is CRLF-aware, so echoing LF delimiters here would hand back
+    // a CRLF file with an LF frontmatter block — the mixed-ending bug this module exists to avoid.
+    const eol = raw.includes('\r\n') || body.startsWith('\r\n') ? '\r\n' : '\n';
+    const newFm = eol === '\r\n' ? doc.toString().replace(/\r?\n/g, '\r\n') : doc.toString();
+    return `---${eol}${newFm}---${body}`;
 }

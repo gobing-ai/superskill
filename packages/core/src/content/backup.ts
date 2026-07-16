@@ -10,10 +10,11 @@ import { rmSync } from 'node:fs';
 export async function backupFile(filePath: string): Promise<string> {
     let backupPath = `${filePath}.bak`;
     if (await Bun.file(backupPath).exists()) {
-        // Use millisecond precision to avoid same-minute collisions overwriting prior backups.
+        // Timestamp suffix avoids same-minute collisions overwriting prior backups.
+        // slice(0, 18) keeps one of three millisecond digits, so this is 100ms precision.
         const ts = new Date().toISOString().replace(/[:.]/g, '').slice(0, 18);
         backupPath = `${filePath}.bak.${ts}`;
-        // If even millisecond-precision collides, append a counter.
+        // Within the same 100ms window the suffix repeats, so append a counter.
         let counter = 1;
         while (await Bun.file(backupPath).exists()) {
             backupPath = `${filePath}.bak.${ts}.${counter++}`;
