@@ -1,6 +1,6 @@
 # Tool Usage Guide
 
-Concrete examples for selecting verification tools in rd3 anti-hallucination workflows.
+Concrete examples for selecting verification tools in anti-hallucination workflows.
 
 ## Priority Order
 

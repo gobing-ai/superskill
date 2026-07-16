@@ -3,7 +3,7 @@ name: cc-agents
 description: "Use this skill when the user asks to 'create a new agent', 'scaffold an agent', 'evaluate agent quality', 'validate agent file', 'refine agent definition', or 'plan agent evolution'. Creates, validates, evaluates, refines, and supports longitudinal evolution workflows for subagent definitions across 6 platforms."
 license: Apache-2.0
 metadata:
-  author: cc-agents
+  author: superskill
   version: "3.0.0"
   platforms: "claude-code,gemini-cli,opencode,codex,openclaw,antigravity"
   interactions:

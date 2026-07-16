@@ -8,7 +8,7 @@ updated_at: 2026-06-19
 type: technique
 tags: [hooks, automation, multi-agent, claude-code, codex, pi, opencode, gemini, security, validation, plugin-dev, rulesync]
 metadata:
-  author: cc-agents
+  author: superskill
   platforms: "claude-code,codex,opencode,pi,openclaw,gemini"
   category: plugin-dev
   interactions:

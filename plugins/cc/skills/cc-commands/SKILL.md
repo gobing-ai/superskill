@@ -3,7 +3,7 @@ name: cc-commands
 description: Create, validate, evaluate, refine, and evolve slash commands across platforms. Use for scaffolding new commands, validating structure, evaluating quality, refining based on feedback, planning longitudinal improvements, or generating cross-platform equivalents.
 license: Apache-2.0
 metadata:
-  author: cc-agents
+  author: superskill
   version: "3.0.0"
   platforms: "claude-code,codex,gemini,openclaw,opencode,antigravity"
   interactions:

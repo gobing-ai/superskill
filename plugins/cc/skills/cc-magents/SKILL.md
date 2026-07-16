@@ -3,7 +3,7 @@ name: cc-magents
 description: "Create, validate, evaluate, refine, and evolve main agent customization files across coding-agent platforms using a capability-aware model."
 license: Apache-2.0
 metadata:
-  author: cc-agents
+  author: superskill
   version: "5.0.0"
   platforms: "agents-md,codex,claude-code,gemini-cli,opencode,cursor,copilot,windsurf,cline,zed,amp,aider,openclaw,antigravity,pi"
 ---

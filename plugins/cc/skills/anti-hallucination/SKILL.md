@@ -3,7 +3,7 @@ name: anti-hallucination
 description: Use for ANY task requiring external information (APIs, libraries, frameworks, facts, recent events). Zero-trust verification-before-generation with MCP tool priority.
 license: Apache-2.0
 metadata:
-  author: cc-agents
+  author: superskill
   version: 3.0.0
   platforms: claude-code,codex,antigravity,opencode,openclaw
   interactions:

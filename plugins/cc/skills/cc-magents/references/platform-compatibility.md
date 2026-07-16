@@ -32,24 +32,38 @@ Which main-agent (workspace manifest) capabilities each platform supports.
 
 ### Plugin-Provided Magents (`magents/` install convention)
 
-A Claude Code plugin may ship a top-level `magents/<kebab-name>/` directory
-containing main-agent config variants. `superskill install` discovers these
-during the `.rulesync/` mapping step and stages them at
-`.rulesync/magents/<plugin>-<name>/`. Per target, it selects the best variant
-(most-specific-first: `AGENTS.<target>.md` → `AGENTS.md`; claude also accepts
-`CLAUDE.claude.md` / `CLAUDE.md`), rewrites plugin-scoped skill references
-(`plugin:foo` → `foo` or `plugin-foo`), and writes the result to:
-- **Project mode:** `AGENTS.md` at the repo root (or `CLAUDE.md` for claude).
-- **Global mode:** the target's per-user config dir (`~/.codex/`,
-  `~/.pi/agent/`, `~/.config/opencode/`, `~/.gemini/antigravity-cli/`,
-  `~/.gemini/config/`, `~/.hermes/`); claude/omp/grok use their native
-  installers' own layout.
+Main-agent packages may live in:
 
-When the plugin ships multiple magents, `--magent <name>` selects one; with no
-selector, emission is skipped (verbose note). A single magent auto-selects.
-An unknown `--magent` name fails loudly. This convention lets a plugin author
-ship one source tree that fans out to every target's native manifest format
-without hand-maintaining per-platform copies.
+1. **`plugins/<plugin>/magents/<name>/`** — plugin-shipped (immutable-ish distribution).
+2. **Repo-root `magents/<name>/`** — **preferred for continuously refined packages**
+   (mutable authoring SSOT). Staged as bare `<name>` at install time.
+
+`superskill install` stages both into `.rulesync/magents/`, then emits per target:
+
+| Shape | Behavior |
+| --- | --- |
+| Claude `@` package (`CLAUDE.md` imports `@IDENTITY.md` …) | Copy modular files + CLAUDE.md (Claude expands `@` at launch) |
+| Multi-file without Claude import style | Concat `IDENTITY → SOUL → AGENTS → USER` (overrides win) |
+| Single-file | `AGENTS.<target>.md` → `AGENTS.md` |
+
+**Plugin rules:** `plugins/<plugin>/rules/*.md` (not under magent packages) install
+into auto-load dirs when the target supports them:
+
+| Target | Rules dir |
+| --- | --- |
+| claude | `.claude/rules/` (global: `~/.claude/rules/`) |
+| antigravity-cli / antigravity-ide | `.agents/rules/` |
+| codex, pi, opencode, hermes, omp, grok | *none* — skip (verbose note) |
+
+Cursor (`.cursor/rules`) / Windsurf / Cline support rules folders but are not
+superskill install targets yet. Session memory is **not** a magent file — use
+spur `sp:indexed-context` / `.spur/context/`.
+
+**Example:**
+
+```bash
+superskill install cc --magent team-stark-children --targets claude,codex,pi --verbose
+```
 
 ### Native Tool Surface
 

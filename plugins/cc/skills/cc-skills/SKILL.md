@@ -3,7 +3,7 @@ name: cc-skills
 description: Create, modify, evaluate, and evolve Agent skills. This skill should be used when you want to scaffold a new skill directory, validate skill structure across multiple platforms, generate platform-specific companion files, or run a governed evolution workflow with proposal history and rollback.
 license: Apache-2.0
 metadata:
-  author: cc-agents
+  author: superskill
   version: "3.0.0"
   platforms: "claude-code,codex,antigravity,opencode,openclaw"
   openclaw:
