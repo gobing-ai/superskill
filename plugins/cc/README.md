@@ -19,8 +19,14 @@ plugins/cc/
 │   ├── cc-commands/                 # Slash command lifecycle (v3.0.0, 6 platforms)
 │   ├── cc-hooks/                    # Multi-agent hook system (v3.0.0, 6 platforms)
 │   ├── cc-magents/                  # Main-agent config (v5.0.0, 15 platforms)
+│   └── cc-skills/                   # Skill lifecycle
 ├── commands/                        # Slash command definitions (17)
 ├── agents/                          # Expert subagent definitions (5)
+├── rules/                           # Plugin always-on rules → target rules dirs
+│   ├── 01-discipline.md
+│   ├── 02-harness-first.md
+│   ├── 03-safety.md
+│   └── 04-verification.md
 ├── hooks/                           # Hook definitions
 │   └── hooks.json
 ├── scripts/                         # Executable TypeScript (hook enforcement)
@@ -31,6 +37,10 @@ plugins/cc/
 │       └── tests/                   # Unit tests
 └── README.md                        # This file
 ```
+
+**Main agents (mutable authoring SSOT):** repo-root `magents/<name>/` — not under this
+plugin tree. Install: `superskill install cc --magent team-stark-children` (see
+`magents/team-stark-children/README.md`).
 
 ## Entity Design Purposes
 

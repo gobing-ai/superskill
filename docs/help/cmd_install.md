@@ -1,6 +1,6 @@
 # `superskill install`
 
-Distribute a Claude Code plugin's skills, commands, subagents, hooks, and MCP config to any supported target coding agent. Hooks are routed through a separate rulesync pass so each target reaches its native hook generator.
+Distribute a Claude Code plugin's skills, commands, subagents, **magents** (main-agent configs), hooks, and MCP config to any supported target coding agent. Hooks are routed through a separate rulesync pass so each target reaches its native hook generator.
 
 ## How to use it
 
@@ -18,6 +18,7 @@ superskill install [options] <plugin>
 | `--marketplace <path>` | Path to `.claude-plugin/marketplace.json` or its containing directory. | CWD's `.claude-plugin/` |
 | `--targets <list>` | Comma-separated target agents, or `all`. | all configured |
 | `--no-global` | Install to project-level instead of user-level global directories. | `false` (global) |
+| `--magent <name>` | Select which main-agent package under `magents/` to emit. Required when the plugin ships more than one; auto-selects when exactly one exists. | auto when unique |
 | `--dry-run` | Preview the install without writing files. | `false` |
 | `--verbose` | Print each pipeline step and file copy. | `false` |
 
@@ -25,16 +26,19 @@ superskill install [options] <plugin>
 
 ```bash
 # Install a plugin to every supported target (global, user-level)
-superskill install rd3 --targets all
+superskill install cc --targets all
 
 # Install to specific targets only
-superskill install rd3 --targets codex,pi,antigravity-cli
+superskill install cc --targets codex,pi,antigravity-cli
+
+# Install skills/hooks + emit the team-stark-children main agent
+superskill install cc --magent team-stark-children --verbose
+
+# Project-local main-agent files (CLAUDE.md / AGENTS.md at cwd)
+superskill install cc --magent team-stark-children --no-global --targets claude,codex
 
 # Preview what would be written, no filesystem changes
-superskill install rd3 --targets all --dry-run --verbose
-
-# Install to the current project instead of user home
-superskill install rd3 --targets codex --no-global
+superskill install cc --targets all --dry-run --verbose
 ```
 
 ### Supported targets
@@ -114,10 +118,44 @@ flowchart TD
 | `skills/*.md` | `.rulesync/skills/<plugin>-<name>/SKILL.md` |
 | `commands/*.md` | `.rulesync/commands/<plugin>-<name>.md` |
 | `agents/*.md` | `.rulesync/subagents/<plugin>-<name>.md` |
+| `magents/<name>/` | `.rulesync/magents/<plugin>-<name>/` (tree preserved; not downgraded to skills) |
 | `hooks.json` | deep-merged into `.rulesync/hooks.json` |
 | `mcp.json` | deep-merged into `.rulesync/mcp.json` |
 
 Missing optional directories are handled gracefully — nothing is created for absent inputs.
+
+### Magents (main-agent configs)
+
+**Two discovery roots** (staged into `.rulesync/magents/`):
+
+1. `plugins/<plugin>/magents/` — plugin-shipped packages (prefixed `<plugin>-<name>`).
+2. Marketplace-root `magents/` — **mutable authoring SSOT** (bare `<name>`), e.g. `magents/team-stark-children/`.
+
+**Selection (must stay correct for plugins with zero magents):**
+
+| Situation | Behavior |
+| --- | --- |
+| No magents staged | Silent no-op (skills/hooks/rules still install). Verbose: “none staged”. |
+| Exactly one **plugin-owned** package (`<plugin>-*`) | Auto-select. |
+| Marketplace bare package(s) only | Require `--magent <name>` (never auto-install on `install sp` just because the monorepo has a persona). |
+| Multiple packages, no `--magent` | Skip emission; verbose lists staged names. |
+| `--magent <name>` | Require a match or fail loudly. |
+
+After selection, emission:
+
+1. **Claude import-style** (`CLAUDE.md` contains `@IDENTITY.md` etc.): copy modular package files + `CLAUDE.md` into dest (`~/.claude` global or project root). Claude expands `@` at session start.
+2. **Other targets / non-import packages:** `assembleMagentContent` — multi-file concat `IDENTITY → SOUL → AGENTS → USER` (overrides win) or single-file `AGENTS.<target>.md`. Codex strips bare `@file` lines.
+3. **Plugin rules:** copy `plugins/<plugin>/rules/*.md` into each target’s rules directory when one exists (claude → `.claude/rules/`; antigravity → `.agents/rules/`). Independent of `--magent`. Skip with a verbose note when the target has no rules folder.
+
+Examples:
+
+```bash
+# Plugin with no magents (e.g. spur's sp): skills/hooks only — never fails on missing magent
+superskill install sp --targets all
+
+# Persona from monorepo magents/ (explicit)
+superskill install cc --magent team-stark-children --verbose
+```
 
 ### Stage 3 — Target-specific transforms
 
@@ -203,10 +241,10 @@ sequenceDiagram
     participant H as hooks.ts
     participant FS as Filesystem
 
-    User->>CLI: superskill install rd3 --targets codex,pi
-    CLI->>MP: resolvePlugin(marketplace, "rd3")
+    User->>CLI: superskill install cc --targets codex,pi
+    CLI->>MP: resolvePlugin(marketplace, "cc")
     MP-->>CLI: pluginRoot
-    CLI->>Map: mapPluginToRulesync(pluginRoot, "rd3", ".rulesync")
+    CLI->>Map: mapPluginToRulesync(pluginRoot, "cc", ".rulesync")
     Map->>FS: write .rulesync/{skills,commands,subagents,hooks,mcp}
     Map-->>CLI: MapResult counts
 
@@ -225,7 +263,7 @@ sequenceDiagram
     H->>FS: write ~/.pi/hooks.json (pi-hooks format)
     H-->>CLI: EmitHooksResult
 
-    CLI-->>User: "Installed 'rd3' to 2 target(s)."
+    CLI-->>User: "Installed 'cc' to 2 target(s)."
 ```
 
 ### Key source files

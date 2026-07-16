@@ -197,30 +197,12 @@ export function mapPluginToRulesync(pluginPath: string, pluginName: string, outp
         }
     }
 
-    // Magents (main-agent configs): discover top-level `magents/<kebab-name>/` dirs
-    // and stage them verbatim into `.rulesync/magents/<plugin>-<name>/`. Unlike
-    // skills/commands/subagents, magents are NOT downgraded to skills — each
-    // staged directory preserves its original tree (AGENTS.md, AGENTS.<target>.md,
-    // CLAUDE.md, support subdirs) so per-target variant selection + shimming can
-    // run later in the install pipeline against the unmodified source. Only
-    // text files are reference-rewritten; binaries copy byte-for-byte.
-    const magentsDir = join(pluginPath, 'magents');
-    if (existsSync(magentsDir)) {
-        const magentsOut = join(outputDir, 'magents');
-        for (const entry of readdirSync(magentsDir)) {
-            const sourceDir = join(magentsDir, entry);
-            if (!lstatSync(sourceDir).isDirectory()) continue;
-            // Plugin authors must use kebab-case dir names; reject anything else so
-            // downstream target-specific filename resolution stays predictable.
-            assertSafePathSegment(entry, 'magent directory name');
-            if (!/^[a-z][a-z0-9-]*$/.test(entry)) {
-                throw new Error(`Invalid magent directory name '${entry}': must be kebab-case (lowercase, hyphens).`);
-            }
-            const expectedName = `${pluginName}-${entry}`;
-            copyAndRewriteDirectory(sourceDir, join(magentsOut, expectedName), pluginName);
-            result.magents++;
-        }
-    }
+    // Magents from the plugin tree (optional). Project-root `magents/` (mutable
+    // authoring SSOT) is staged separately by install after mapping — see
+    // {@link stageMagentsFromDir}.
+    result.magents += stageMagentsFromDir(join(pluginPath, 'magents'), pluginName, outputDir, {
+        nameMode: 'plugin-prefixed',
+    });
 
     // hooks.json — convert from Claude Code format to rulesync canonical format.
     const hooksRootPath = join(pluginPath, 'hooks.json');
@@ -296,6 +278,38 @@ function assertSafeOutputDir(outputDir: string): void {
             );
         }
     }
+}
+
+/**
+ * Stage `magents/<kebab-name>/` packages into `.rulesync/magents/`.
+ *
+ * - `nameMode: 'plugin-prefixed'` → stage as `<plugin>-<name>` (plugin-shipped packages).
+ * - `nameMode: 'bare'` → stage as `<name>` (project-root authoring SSOT under repo `magents/`).
+ *
+ * Magents are NOT downgraded to skills. Trees are preserved (CLAUDE.md, layers,
+ * overrides/, rules/). Returns the count of packages staged. Missing dir → 0.
+ */
+export function stageMagentsFromDir(
+    magentsDir: string,
+    pluginName: string,
+    outputDir: string,
+    options: { nameMode: 'plugin-prefixed' | 'bare' },
+): number {
+    if (!existsSync(magentsDir)) return 0;
+    const magentsOut = join(outputDir, 'magents');
+    let count = 0;
+    for (const entry of readdirSync(magentsDir)) {
+        const sourceDir = join(magentsDir, entry);
+        if (!lstatSync(sourceDir).isDirectory()) continue;
+        assertSafePathSegment(entry, 'magent directory name');
+        if (!/^[a-z][a-z0-9-]*$/.test(entry)) {
+            throw new Error(`Invalid magent directory name '${entry}': must be kebab-case (lowercase, hyphens).`);
+        }
+        const stagedName = options.nameMode === 'plugin-prefixed' ? `${pluginName}-${entry}` : entry;
+        copyAndRewriteDirectory(sourceDir, join(magentsOut, stagedName), pluginName);
+        count++;
+    }
+    return count;
 }
 
 /** Recursively copy a directory, rewriting skill references in text files.

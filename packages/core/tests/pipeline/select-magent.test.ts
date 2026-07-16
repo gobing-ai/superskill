@@ -1,11 +1,17 @@
 import { describe, expect, it } from 'bun:test';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import {
     adaptMagentForTarget,
+    assembleMagentContent,
+    isClaudeImportStyle,
+    isMultiFileMagent,
+    listRuleMarkdownFiles,
     magentGlobalDir,
     magentOutputFilename,
+    magentRulesRelDir,
+    resolveMagentLayerFile,
     selectMagentVariant,
 } from '../../src/pipeline/select-magent';
 import type { Target } from '../../src/targets';
@@ -25,7 +31,9 @@ const ALL_TARGETS: Target[] = [
 function makeTmpMagentDir(files: Record<string, string>): string {
     const dir = mkdtempSync(join(tmpdir(), 'magent-select-'));
     for (const [name, body] of Object.entries(files)) {
-        writeFileSync(join(dir, name), body);
+        const path = join(dir, name);
+        mkdirSync(dirname(path), { recursive: true });
+        writeFileSync(path, body);
     }
     return dir;
 }
@@ -105,6 +113,54 @@ describe('selectMagentVariant', () => {
     });
 });
 
+describe('assembleMagentContent (multi-file + overrides)', () => {
+    it('concatenates IDENTITY → SOUL → AGENTS → USER in order', () => {
+        const dir = makeTmpMagentDir({
+            'IDENTITY.md': '# I',
+            'SOUL.md': '# S',
+            'AGENTS.md': '# A',
+            'USER.md': '# U',
+            'MEMORY.md': '# M must not appear',
+            'RULES.md': '# R must not appear',
+        });
+        const body = assembleMagentContent(dir, 'claude');
+        expect(body?.content).toBe('# I\n\n# S\n\n# A\n\n# U\n');
+        expect(body?.content).not.toContain('must not appear');
+        expect(body?.sources).toHaveLength(4);
+        expect(isMultiFileMagent(dir)).toBe(true);
+        rmSync(dir, { recursive: true, force: true });
+    });
+
+    it('prefers overrides/codexcli/AGENTS.md for codex (legacy alias)', () => {
+        const dir = makeTmpMagentDir({
+            'IDENTITY.md': '# I',
+            'AGENTS.md': '# base agents',
+            'overrides/codexcli/AGENTS.md': '# codex override',
+            'USER.md': '# U',
+        });
+        expect(resolveMagentLayerFile(dir, 'codex', 'AGENTS.md')).toBe(join(dir, 'overrides/codexcli/AGENTS.md'));
+        const body = assembleMagentContent(dir, 'codex');
+        expect(body?.content).toContain('# codex override');
+        expect(body?.content).not.toContain('# base agents');
+        expect(body?.content).toContain('# I');
+        expect(body?.content).toContain('# U');
+        expect(body?.sources.some((s) => s.endsWith('overrides/codexcli/AGENTS.md'))).toBe(true);
+        rmSync(dir, { recursive: true, force: true });
+    });
+
+    it('falls back to single-file selectMagentVariant when not multi-file', () => {
+        const dir = makeTmpMagentDir({
+            'AGENTS.md': 'base',
+            'AGENTS.pi.md': 'pi-only',
+        });
+        expect(isMultiFileMagent(dir)).toBe(false);
+        expect(assembleMagentContent(dir, 'pi')?.content).toBe('pi-only');
+        expect(assembleMagentContent(dir, 'codex')?.content).toBe('base');
+        expect(assembleMagentContent(dir, 'pi')?.sources[0]).toBe(join(dir, 'AGENTS.pi.md'));
+        rmSync(dir, { recursive: true, force: true });
+    });
+});
+
 describe('adaptMagentForTarget', () => {
     it('rewrites plugin-scoped skill references so the installed config resolves them locally', () => {
         // A magent often references its own plugin's skills via `plugin:skill-name`.
@@ -116,6 +172,13 @@ describe('adaptMagentForTarget', () => {
     it('is a passthrough when no plugin-scoped references are present', () => {
         const body = '# Agent config\nNo plugin refs here.';
         expect(adaptMagentForTarget(body, 'demo', 'pi')).toBe(body);
+    });
+
+    it('strips bare @file import lines on codex only', () => {
+        const body = '# Title\n@SOUL.md\n\nKeep this.\n';
+        expect(adaptMagentForTarget(body, 'demo', 'codex')).not.toContain('@SOUL.md');
+        expect(adaptMagentForTarget(body, 'demo', 'codex')).toContain('Keep this.');
+        expect(adaptMagentForTarget(body, 'demo', 'claude')).toContain('@SOUL.md');
     });
 });
 
@@ -159,12 +222,38 @@ describe('magentGlobalDir', () => {
         expect(magentGlobalDir('antigravity-ide', home)).toBe(join(home, '.gemini', 'config'));
     });
 
-    it('returns null for claude (native installer owns the layout)', () => {
-        expect(magentGlobalDir('claude', home)).toBeNull();
+    it('resolves claude global to ~/.claude (modular package + CLAUDE.md)', () => {
+        expect(magentGlobalDir('claude', home)).toBe(join(home, '.claude'));
     });
 
-    it('returns null for omp, grok (native installers own the layout)', () => {
+    it('returns null for omp, grok (no pinned global magent path)', () => {
         expect(magentGlobalDir('omp', home)).toBeNull();
         expect(magentGlobalDir('grok', home)).toBeNull();
+    });
+});
+
+describe('isClaudeImportStyle / rules helpers', () => {
+    it('detects CLAUDE.md @-import packages', () => {
+        const dir = makeTmpMagentDir({
+            'CLAUDE.md': '@IDENTITY.md\n@AGENTS.md\n',
+            'IDENTITY.md': '# I',
+            'AGENTS.md': '# A',
+        });
+        expect(isClaudeImportStyle(dir)).toBe(true);
+        rmSync(dir, { recursive: true, force: true });
+    });
+
+    it('lists rule markdown files and maps rules dest dirs', () => {
+        const dir = makeTmpMagentDir({
+            '01-a.md': 'a',
+            '02-b.md': 'b',
+            'README.md': 'not a rule body',
+        });
+        // listRuleMarkdownFiles lists *.md in the rules dir itself (plugin layout).
+        expect(listRuleMarkdownFiles(dir).map((p) => p.split(/[/\\]/).pop())).toEqual(['01-a.md', '02-b.md']);
+        expect(magentRulesRelDir('claude')).toBe(join('.claude', 'rules'));
+        expect(magentRulesRelDir('antigravity-cli')).toBe(join('.agents', 'rules'));
+        expect(magentRulesRelDir('codex')).toBeNull();
+        rmSync(dir, { recursive: true, force: true });
     });
 });

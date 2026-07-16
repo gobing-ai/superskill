@@ -24,6 +24,15 @@ export function resolveContentName(path: string): string {
     if (name === 'SKILL.md') {
         return basename(dirname(path));
     }
+    // Multi-file magent package: …/magents/<pkg>/AGENTS.md or CLAUDE.md → package name
+    if (
+        (name === 'AGENTS.md' || name === 'CLAUDE.md') &&
+        (existsSync(join(dirname(path), 'IDENTITY.md')) ||
+            existsSync(join(dirname(path), 'SOUL.md')) ||
+            existsSync(join(dirname(path), 'USER.md')))
+    ) {
+        return basename(dirname(path));
+    }
     const ext = extname(name);
     if (ext === '.md') {
         return name.slice(0, -3);
@@ -44,14 +53,26 @@ export function resolveContentName(path: string): string {
  * @param opts  Resolution options.
  * @returns     Resolved absolute file path, or `null` if not found.
  */
+/** Prefer AGENTS.md then CLAUDE.md inside a multi-file magent package directory. */
+function resolveMagentPackageEntry(dir: string): string | null {
+    for (const entry of ['AGENTS.md', 'CLAUDE.md'] as const) {
+        const p = join(dir, entry);
+        if (existsSync(p) && statSync(p).isFile()) return p;
+    }
+    return null;
+}
+
 export function resolveContentPath(type: ContentType, name: string, opts?: ResolvePathOptions): string | null {
-    // If name is already a path to an existing file, return it unchanged.
+    // If name is already a path to an existing file or package directory, resolve it.
     if (name.includes('/') || name.includes('\\')) {
         if (existsSync(name)) {
             const st = statSync(name);
             if (st.isDirectory()) {
                 const skillMd = join(name, 'SKILL.md');
                 if (existsSync(skillMd)) return skillMd;
+                // Multi-file magent package directory (magents/<pkg>/ or absolute path).
+                const magentEntry = resolveMagentPackageEntry(name);
+                if (magentEntry) return magentEntry;
             } else {
                 return name;
             }
@@ -72,10 +93,19 @@ export function resolveContentPath(type: ContentType, name: string, opts?: Resol
         if (existsSync(skillSubdirDirForm)) return skillSubdirDirForm;
     }
 
+    // Magents are often multi-file packages under magents/<name>/{AGENTS,CLAUDE}.md
+    if (type === 'magent') {
+        const pkgDir = join(base, 'magents', name);
+        if (existsSync(pkgDir) && statSync(pkgDir).isDirectory()) {
+            const entry = resolveMagentPackageEntry(pkgDir);
+            if (entry) return entry;
+        }
+    }
+
     // Direct match: baseDir/<name>.md
     const direct = join(base, `${name}.md`);
     if (existsSync(direct)) return direct;
-    // Type-specific subdirectories
+    // Type-specific subdirectories (flat .md)
     const subdirs: Record<ContentType, string> = {
         skill: 'skills',
         command: 'commands',

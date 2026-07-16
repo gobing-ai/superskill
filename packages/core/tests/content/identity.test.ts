@@ -180,4 +180,32 @@ describe('resolveContentPath', () => {
             teardown();
         }
     });
+
+    it('resolves multi-file magent package by bare name → magents/<name>/AGENTS.md', () => {
+        setup();
+        try {
+            const pkg = join(tmpDir, 'magents', 'team-stark-children');
+            mkdirSync(pkg, { recursive: true });
+            const agents = join(pkg, 'AGENTS.md');
+            writeFileSync(agents, '# ops\n');
+            writeFileSync(join(pkg, 'IDENTITY.md'), '# id\n');
+            expect(resolveContentPath('magent', 'team-stark-children', { baseDir: tmpDir })).toBe(agents);
+            expect(resolveContentName(agents)).toBe('team-stark-children');
+        } finally {
+            teardown();
+        }
+    });
+
+    it('resolves multi-file magent package directory path to AGENTS.md', () => {
+        setup();
+        try {
+            const pkg = join(tmpDir, 'magents', 'team-stark-children');
+            mkdirSync(pkg, { recursive: true });
+            const agents = join(pkg, 'AGENTS.md');
+            writeFileSync(agents, '# ops\n');
+            expect(resolveContentPath('magent', pkg)).toBe(agents);
+        } finally {
+            teardown();
+        }
+    });
 });

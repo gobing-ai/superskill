@@ -691,6 +691,36 @@ describe('executeInstall', () => {
         expect(existsSync(join(outRoot, 'AGENTS.md'))).toBe(false);
     });
 
+    it('marketplace-only bare magent is not auto-installed without --magent', async () => {
+        // Simulates monorepo magents/ next to plugins when installing a plugin that
+        // has no magents of its own (e.g. install sp while team-stark-children exists).
+        const { marketplacePath, pluginDir } = setupPluginDir();
+        rmSync(join(pluginDir, 'magents'), { recursive: true, force: true });
+        // marketplacePath is …/.claude-plugin/marketplace.json → root is two levels up
+        const marketplaceRoot = join(marketplacePath, '..', '..');
+        const bare = join(marketplaceRoot, 'magents', 'team-stark-children');
+        mkdirSync(bare, { recursive: true });
+        writeFileSync(join(bare, 'AGENTS.md'), '# bare marketplace persona\n');
+        const outRoot = join(tmpDir, 'bare-magent-out');
+        const captured: string[] = [];
+        const spy = spyOn(process.stdout, 'write').mockImplementation((chunk: string | Uint8Array) => {
+            captured.push(typeof chunk === 'string' ? chunk : new TextDecoder().decode(chunk));
+            return true;
+        });
+
+        await executeInstall('demo', ['pi'], {
+            marketplacePath,
+            global: false,
+            dryRun: false,
+            verbose: true,
+            outputRoot: outRoot,
+        });
+        spy.mockRestore();
+
+        expect(existsSync(join(outRoot, 'AGENTS.md'))).toBe(false);
+        expect(captured.join('')).toMatch(/pass --magent/);
+    });
+
     it('0081 AC2: common AGENTS.md is selected as fallback for pi', async () => {
         const { marketplacePath } = setupPluginDir();
         const outRoot = join(tmpDir, 'ac2-out');
@@ -880,7 +910,7 @@ describe('executeInstall', () => {
         // Plugin ships 3 magents; with no --magent, emission is skipped (no auto-pick
         // on ambiguity) and a verbose note explains how to select.
         const out = captured.join('');
-        expect(out).toMatch(/Magents: 3 staged, no --magent selector — skipping/);
+        expect(out).toMatch(/Magents: 3 staged \(3 plugin-owned\); pass --magent/);
         expect(existsSync(join(outRoot, 'AGENTS.md'))).toBe(false);
     });
 });

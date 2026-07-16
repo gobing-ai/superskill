@@ -14,15 +14,20 @@ import { join } from 'node:path';
 import {
     adaptMagentForTarget,
     adaptSubagentToPi,
+    assembleMagentContent,
     assertSafePathSegment,
+    CLAUDE_PACKAGE_FILES,
+    isClaudeImportStyle,
     listResolvablePlugins,
+    listRuleMarkdownFiles,
     magentGlobalDir,
     magentOutputFilename,
+    magentRulesRelDir,
     mapPluginToRulesync,
     resolvePlugin,
     rewriteSkillReferences,
     runRulesync,
-    selectMagentVariant,
+    stageMagentsFromDir,
     TARGET_GLOBAL_SKILLS_RELDIR,
     TARGET_SKILLS_RELDIR,
     TARGET_TO_RULESYNC_HOOKS,
@@ -411,11 +416,21 @@ export async function executeInstall(
         }
     }
 
-    // Step 5: Magents (main-agent configs) — per-target variant selection + shimming.
-    // Runs after rulesync + native dispatch so the project root's other files
-    // already exist; magents land at the repo root (project) or per-target global
-    // config dir. Skipped silently when the plugin ships no magents/.
+    // Step 5: Magents (main-agent configs).
+    // Mutable authoring SSOT: marketplace-root `magents/` (sibling to plugins/),
+    // not process.cwd() alone — cwd may be a test harness or unrelated project.
+    // Plugin-shipped magents were already staged by mapPluginToRulesync.
+    if (resolution.marketplaceRoot) {
+        const projectMagents = join(resolution.marketplaceRoot, 'magents');
+        const n = stageMagentsFromDir(projectMagents, plugin, outputDir, { nameMode: 'bare' });
+        if (n > 0 && options.verbose) {
+            echo(`  Project magents staged: ${n} from ${projectMagents}`);
+        }
+    }
+    // Magents optional: plugins without magents/ (and no --magent) no-op cleanly.
     emitMagents(plugin, targets, outputDir, outputRoot, options);
+    // Plugin-level rules optional: plugins without rules/ no-op cleanly.
+    emitPluginRules(pluginRoot, targets, outputRoot, options);
 
     // No silent drop (design §6 exit #2): surface hook emission results for uncovered targets
     // in non-verbose mode. Verbose mode already echoes each result at the dispatch site
@@ -714,21 +729,13 @@ export function postInstallOmp(
 }
 
 /**
- * Per-target magent (main-agent config) emission: select the best variant
- * from each staged `.rulesync/magents/<plugin>-<name>/` directory, shim it
- * (rewrite plugin-scoped references), and write it to the target's config
- * location.
+ * Per-target magent emission from staged `.rulesync/magents/`.
  *
- * Selection: `--magent <name>` picks one explicitly; otherwise auto-selects
- * when exactly one magent is staged. When the plugin ships no magents, this
- * is a silent no-op. When `--magent` names a missing magent, fail loudly
- * (R12) rather than installing nothing without explanation.
- *
- * Destination: project mode writes `AGENTS.md` (or `CLAUDE.md` for claude)
- * to `outputRoot` (the repo root); global mode writes to the target's
- * per-user config dir via {@link magentGlobalDir}, falling back to
- * `outputRoot` when the target has no pinned global magent path
- * (claude/omp/grok — native installers own their layout).
+ * - **Claude import-style** (`CLAUDE.md` with `@IDENTITY.md` etc.): copy package
+ *   layer files + CLAUDE.md into the dest dir so Claude expands `@` at session start.
+ * - **Other targets / non-import packages:** assemble (concat or single-file) + shim.
+ * Plugin rules (`plugins/<plugin>/rules/`) are emitted separately via
+ * {@link emitPluginRules} — not from the magent package.
  */
 function emitMagents(
     plugin: string,
@@ -745,63 +752,128 @@ function emitMagents(
     });
     if (staged.length === 0) return;
 
-    // Resolve which magent(s) to install. `--magent <name>` selects one by its
-    // directory name (the `<plugin>-<name>` staged form, or the bare `<name>`);
-    // otherwise auto-select when exactly one magent exists, and no-op (with a
-    // verbose note) when there are several and no selector — the user must opt in.
+    // Selection policy (plugins without magents must no-op cleanly):
+    // - --magent <name> → require a match (plugin-prefixed or bare marketplace name).
+    // - no --magent → auto-select only when exactly one *plugin-owned* package is staged
+    //   (`<plugin>-*`). Marketplace-root packages (bare names under monorepo `magents/`)
+    //   always require --magent so `install sp` never overwrites AGENTS.md just because
+    //   the marketplace happens to ship a persona package next to the plugins.
+    // - zero staged → silent no-op (verbose note).
     let selected: string[];
     if (options.magent) {
         const wanted = options.magent;
         const match = staged.find((s) => s === wanted || s === `${plugin}-${wanted}` || s.endsWith(`-${wanted}`));
         if (!match) {
             throw new Error(
-                `Magent '${wanted}' not found. Staged magents: ${staged.join(', ')}. ` +
-                    `Use the bare name (e.g. 'dev') or the full '<plugin>-<name>' form.`,
+                `Magent '${wanted}' not found. Staged magents: ${staged.join(', ') || '(none)'}. ` +
+                    `Use the bare name (e.g. 'team-stark-children') or '<plugin>-<name>'. ` +
+                    `Omit --magent when the plugin has no main-agent package.`,
             );
         }
         selected = [match];
-    } else if (staged.length === 1) {
-        const [only] = staged;
-        if (!only) return; // unreachable: length === 1 guarantees an element
-        selected = [only];
     } else {
-        if (options.verbose) {
-            echo(
-                `  Magents: ${staged.length} staged, no --magent selector — skipping. ` +
-                    `Use --magent <name> to install one. Staged: ${staged.join(', ')}`,
-            );
+        const pluginOwned = staged.filter((s) => s === plugin || s.startsWith(`${plugin}-`));
+        if (pluginOwned.length === 1) {
+            const [only] = pluginOwned;
+            if (!only) return;
+            selected = [only];
+        } else if (pluginOwned.length === 0 && staged.length === 0) {
+            if (options.verbose) {
+                echo(`  Magents: none staged for '${plugin}' — skipping main-agent emission`);
+            }
+            return;
+        } else {
+            if (options.verbose) {
+                echo(
+                    `  Magents: ${staged.length} staged (${pluginOwned.length} plugin-owned); ` +
+                        `pass --magent <name> to install. Staged: ${staged.join(', ')}`,
+                );
+            }
+            return;
         }
-        return;
     }
 
     let emitted = 0;
     for (const target of targets) {
         for (const magentDir of selected) {
             const sourceDir = join(stagedRoot, magentDir);
-            const selectedFile = selectMagentVariant(sourceDir, target);
-            if (!selectedFile) {
+            const destDir = options.global ? (magentGlobalDir(target, resolveHomeDir()) ?? outputRoot) : outputRoot;
+
+            // Claude Code: prefer modular package + @ imports when CLAUDE.md uses them.
+            if (target === 'claude' && isClaudeImportStyle(sourceDir)) {
                 if (options.verbose) {
-                    echo(`  ${target}: no magent variant found in ${magentDir}/ — skipping`);
+                    echo(`  ${target}: magent ${magentDir} → ${join(destDir, 'CLAUDE.md')} (Claude @import package)`);
+                }
+                if (!options.dryRun) {
+                    mkdirSync(destDir, { recursive: true });
+                    for (const name of CLAUDE_PACKAGE_FILES) {
+                        const src = join(sourceDir, name);
+                        if (!existsSync(src)) continue;
+                        const raw = readFileSync(src, 'utf-8');
+                        writeFileSync(join(destDir, name), adaptMagentForTarget(raw, plugin, target));
+                    }
+                }
+                emitted++;
+                continue;
+            }
+
+            const assembly = assembleMagentContent(sourceDir, target);
+            if (!assembly) {
+                if (options.verbose) {
+                    echo(`  ${target}: no magent content in ${magentDir}/ — skipping`);
                 }
                 continue;
             }
             const outName = magentOutputFilename(target);
-            const destDir = options.global ? (magentGlobalDir(target, resolveHomeDir()) ?? outputRoot) : outputRoot;
             const destPath = join(destDir, outName);
             if (options.verbose) {
-                const relSource = selectedFile.replace(`${process.cwd()}/`, '');
+                const agentsSource = assembly.sources.find((s) => /(?:^|\/)(?:AGENTS|CLAUDE)(?:\.[^/]+)?\.md$/.test(s));
+                const primary = agentsSource ?? assembly.sources[assembly.sources.length - 1] ?? sourceDir;
+                const relSource = primary.replace(`${process.cwd()}/`, '');
                 echo(`  ${target}: magent ${magentDir} → ${destPath} (from ${relSource})`);
             }
-            if (options.dryRun) continue;
-            const raw = readFileSync(selectedFile, 'utf-8');
-            const adapted = adaptMagentForTarget(raw, plugin, target);
-            mkdirSync(destDir, { recursive: true });
-            writeFileSync(destPath, adapted);
+            if (!options.dryRun) {
+                const adapted = adaptMagentForTarget(assembly.content, plugin, target);
+                mkdirSync(destDir, { recursive: true });
+                writeFileSync(destPath, adapted);
+            }
             emitted++;
         }
     }
     if (options.verbose && emitted > 0) {
         echo(`  Magents emitted: ${emitted}`);
+    }
+}
+
+/**
+ * Copy plugin-level `plugins/<plugin>/rules/*.md` into each target's rules
+ * directory when supported. Independent of magent selection — rules are
+ * distribution constraints for the plugin, not persona layers.
+ */
+function emitPluginRules(pluginRoot: string, targets: Target[], outputRoot: string, options: InstallOptions): void {
+    const rulesDir = join(pluginRoot, 'rules');
+    const ruleFiles = listRuleMarkdownFiles(rulesDir);
+    if (ruleFiles.length === 0) return;
+
+    for (const target of targets) {
+        const rel = magentRulesRelDir(target);
+        if (!rel) {
+            if (options.verbose) {
+                echo(`  ${target}: ${ruleFiles.length} plugin rule(s) skipped (no rules directory for this target)`);
+            }
+            continue;
+        }
+        const destRoot = options.global ? (magentGlobalDir(target, resolveHomeDir()) ?? outputRoot) : outputRoot;
+        const rulesDest = join(destRoot, rel);
+        if (options.verbose) {
+            echo(`  ${target}: plugin rules → ${rulesDest} (${ruleFiles.length} file(s))`);
+        }
+        if (options.dryRun) continue;
+        mkdirSync(rulesDest, { recursive: true });
+        for (const src of ruleFiles) {
+            const name = src.split(/[/\\]/).pop() ?? 'rule.md';
+            copyFileSync(src, join(rulesDest, name));
+        }
     }
 }
 
