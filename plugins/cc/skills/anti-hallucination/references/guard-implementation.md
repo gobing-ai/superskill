@@ -29,10 +29,11 @@ The guard writes the canonical Claude Stop JSON to stdout:
 
 ## Hook Configuration
 
-Add to your `.claude/hooks/hooks.json`:
+This is what the plugin ships in `plugins/cc/hooks/hooks.json`:
 
 ```json
 {
+  "minCliVersion": "0.2.19",
   "hooks": {
     "Stop": [
       {
@@ -40,7 +41,7 @@ Add to your `.claude/hooks/hooks.json`:
         "hooks": [
           {
             "type": "command",
-            "command": "bun ${CLAUDE_PLUGIN_ROOT}/scripts/anti-hallucination/ah_guard.ts",
+            "command": "superskill hook run cc anti-hallucination",
             "timeout": 10
           }
         ]
@@ -49,6 +50,13 @@ Add to your `.claude/hooks/hooks.json`:
   }
 }
 ```
+
+The command is a **portable PATH command**, not a plugin-root script path
+(`bun ${CLAUDE_PLUGIN_ROOT}/scripts/...`): it resolves on every target with `superskill` on PATH,
+and the dispatcher (`apps/cli/src/commands/hook-run.ts`) routes `cc/anti-hallucination` to the guard
+engine. Targets without `superskill` on PATH fail open (the hook is treated as allow). `minCliVersion`
+gates install so an older CLI cannot register a hook whose runtime contract (stdin payload
+resolution + exit-2 block signal) it does not implement.
 
 For platforms without hooks, use `validate_response.ts` instead. See `non-hook-enforcement.md`.
 

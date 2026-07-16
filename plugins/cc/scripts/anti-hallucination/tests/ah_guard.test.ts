@@ -187,6 +187,17 @@ describe('requiresExternalVerification', () => {
         expect(requiresExternalVerification('Check the official documentation first')).toBe(false);
     });
 
+    it('passes ordinary implementation talk even when it carries a capability coupler', () => {
+        // WHY: the fixtures above are all coupler-free, so they cannot fail for the reason the
+        // rule exists. Describing your *own* code is the most common shape in a coding reply and
+        // it routinely pairs `function`/`method` with a coupler — "the function returns early".
+        // Those name local code, not an external artifact, so they must never demand a citation.
+        expect(requiresExternalVerification('The function returns early when the list is empty.')).toBe(false);
+        expect(requiresExternalVerification('I refactored the method so it accepts a second argument.')).toBe(false);
+        expect(requiresExternalVerification('This helper function throws when the path is missing.')).toBe(false);
+        expect(requiresExternalVerification('I added a function that emits a warning on bad input.')).toBe(false);
+    });
+
     it('detects weak vocabulary coupled with a capability assertion', () => {
         expect(requiresExternalVerification('The library provides this feature')).toBe(true);
         expect(requiresExternalVerification('This framework exposes a helper')).toBe(true);
@@ -548,6 +559,19 @@ describe('hasSourceCitations (0079: credit engineering evidence)', () => {
     it('still requires some evidence for an uncited external claim', () => {
         expect(hasSourceCitations('The library provides this feature')).toBe(false);
         expect(hasSourceCitations('I think this works')).toBe(false);
+    });
+
+    it('does not credit a hostname:port as a file:line anchor', () => {
+        // WHY: `example.com:8080` structurally matches `name.ext:digits`, so mentioning a server
+        // address would clear the citation gate. A TLD is not evidence. Denylisting TLDs (rather
+        // than allowlisting code extensions) keeps every real anchor credited — an unknown
+        // extension must never cost a citation, since that blocks an evidenced reply.
+        expect(hasSourceCitations('Server runs at example.com:8080 locally.')).toBe(false);
+        expect(hasSourceCitations('redis.local:6379 is up')).toBe(false);
+        expect(hasSourceCitations('hit api.example.io:443 directly')).toBe(false);
+        expect(hasSourceCitations('ah_guard.ts:288')).toBe(true);
+        expect(hasSourceCitations('see main.py:42 and lib.rs:7')).toBe(true);
+        expect(hasSourceCitations('foo.ts:12-20')).toBe(true);
     });
 });
 

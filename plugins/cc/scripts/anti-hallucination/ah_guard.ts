@@ -42,7 +42,11 @@ const SOURCE_PATTERNS = [
     /\*\*Source\*\*:\s*[^\n]+/i, // Markdown bold Source:
     // (0079) file:line anchor — the canonical in-repo citation form, e.g. `ah_guard.ts:288`
     // or `foo.ts:12-20`. Requires a letter extension to avoid matching decimals like 94.87.
-    /\b[a-zA-Z][a-zA-Z0-9_-]*\.[a-zA-Z0-9]+:\d+(?:-\d+)?/,
+    // The TLD denylist keeps `example.com:8080` from passing as a citation. It is a denylist
+    // rather than a code-extension allowlist on purpose: a missed extension would *uncredit* a
+    // real citation and block an evidenced reply (the 0079 failure mode), whereas no source file
+    // ends in `.com`/`.io`/`.dev`, so excluding TLDs cannot cost a legitimate anchor.
+    /\b[a-zA-Z][a-zA-Z0-9_-]*\.(?!(?:com|org|net|edu|gov|mil|io|dev|app|ai|co|info|biz|local|me|us|uk|cn|jp|de|fr):)[a-zA-Z0-9]+:\d+(?:-\d+)?/,
     // (0079) explicit exit-code line, e.g. "exit 0", "exit code 1" — evidence a command ran.
     /\bexit\s+code\s+\d+/i,
     /\bexit\s+\d+/i,
@@ -96,7 +100,7 @@ interface VerificationResult {
  * surfacing the allow reason ("Task is complete", "No content to verify") just adds per-turn chat
  * noise. A block rides on the top-level `decision: "block"` + `reason` channel — that feedback is the
  * point of blocking (Stop has no `allowStop`/`feedback` fields — that shape fails Claude's
- * hook-output validation). The exit code stays the allow/deny signal (0 = allow, 1 = deny) for
+ * hook-output validation). The exit code stays the allow/deny signal (0 = allow, 2 = deny) for
  * agents that key off it.
  */
 export function buildStopOutput(result: VerificationResult): string {
@@ -312,7 +316,11 @@ const STRONG_CLAIM_PATTERNS = [
 
 // External-artifact vocabulary — too common in ordinary implementation talk
 // ("added a helper function", "refactored the method") to trigger alone.
-const WEAK_KEYWORD_PATTERN = /\b(?:api|library|framework|sdk|package|method|function|endpoint|documentation)\b/i;
+// `function`/`method` are deliberately absent: they name the agent's *own* code far more often
+// than an external one, and the coupler below cannot tell "the function returns early" (local,
+// needs nothing) from "the API returns a list" (external, needs a citation). Keeping them made
+// the guard nag on the most common sentence shape in a coding reply.
+const WEAK_KEYWORD_PATTERN = /\b(?:api|library|framework|sdk|package|endpoint|documentation)\b/i;
 
 // Capability couplers: a weak keyword only becomes a claim when the text asserts what the
 // external thing does/has ("the API returns…", "this framework exposes…").

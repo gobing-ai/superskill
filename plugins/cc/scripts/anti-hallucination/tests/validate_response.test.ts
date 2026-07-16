@@ -36,21 +36,34 @@ describe('readStdinText', () => {
             expect(path).toBe('/dev/stdin');
             expect(encoding).toBe('utf-8');
             return 'stdin response';
-        });
+        }, false);
 
         expect(text).toBe('stdin response');
     });
 
     it('returns undefined for blank stdin', () => {
-        expect(readStdinText(() => '   ')).toBeUndefined();
+        expect(readStdinText(() => '   ', false)).toBeUndefined();
     });
 
     it('returns undefined when stdin cannot be read', () => {
         expect(
             readStdinText(() => {
                 throw new Error('boom');
-            }),
+            }, false),
         ).toBeUndefined();
+    });
+
+    it('never reads stdin on a TTY, so manual invocation cannot hang', () => {
+        // WHY: `bun validate_response.ts` with nothing piped used to block on /dev/stdin until
+        // EOF — an interactive terminal never sends one, so the CLI hung with no prompt.
+        let readAttempted = false;
+        const text = readStdinText(() => {
+            readAttempted = true;
+            return 'should never be read';
+        }, true);
+
+        expect(text).toBeUndefined();
+        expect(readAttempted).toBe(false);
     });
 });
 

@@ -32,7 +32,14 @@ export function validateResponseText(text: string | undefined): ValidationResult
     return verifyAntiHallucinationProtocol(text);
 }
 
-export function readStdinText(readTextFile: ReadTextFile = readFileSync): string | undefined {
+export function readStdinText(
+    readTextFile: ReadTextFile = readFileSync,
+    isTty: boolean = Boolean(process.stdin.isTTY),
+): string | undefined {
+    // A TTY means no caller piped a payload (manual invocation) — reading /dev/stdin would block
+    // on an interactive terminal until EOF, hanging the CLI with no prompt. Same guard as
+    // `ah_guard.ts`'s entry point.
+    if (isTty) return undefined;
     try {
         const input = readTextFile('/dev/stdin', 'utf-8');
         return input.trim().length > 0 ? input : undefined;
