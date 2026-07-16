@@ -3,11 +3,7 @@ import { appendFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileS
 import { join } from 'node:path';
 import { echo, echoError } from '@gobing-ai/ts-utils';
 import type { Command } from 'commander';
-import {
-    buildStopOutput,
-    resolveStopContext,
-    verifyAntiHallucinationProtocol,
-} from '../../../../plugins/cc/scripts/anti-hallucination/ah_guard';
+import { runStopGuard } from '../../../../plugins/cc/scripts/anti-hallucination/ah_guard';
 import { cliVersion } from '../version';
 
 /**
@@ -130,32 +126,21 @@ const spTaskWriteGuard: HookRunner = {
 };
 
 // ── cc/anti-hallucination ───────────────────────────────────────────────────
-
 /**
  * Stop hook: block the agent from stopping when its last message claims external facts without the
  * anti-hallucination protocol (source citations / confidence level / verification-tool evidence).
- * Payload resolution is {@link resolveStopContext}: stdin carries what real hosts send (Claude Code
- * Stop payload with `transcript_path` + `stop_hook_active` loop guard; omp's `agent_end` event with
- * `messages`); the `ARGUMENTS` env var is the legacy/test channel and wins when set. Emits the
- * canonical Stop JSON via {@link buildStopOutput} (allow → bare `hookSpecificOutput.hookEventName`;
- * block → top-level `decision:"block"` + `reason`) and exits 0 (allow) / 2 (block, reason on stderr —
- * Claude Code treats exit 1 as a non-blocking error, so 1 could never block a Stop).
+ * A thin adapter over {@link runStopGuard}: the Stop branch table (payload resolution → allow on
+ * loop guard / unreadable input → verify → allow / block) lives there, single-sourced; this runner
+ * only maps its {@link StopGuardResult} to a {@link HookRunResult} (`output` to stdout, `stderr`
+ * to the exit-2 reason channel, `exitCode` as the cross-agent allow/block signal). Payload channels
+ * (Claude Code `transcript_path` + `stop_hook_active` loop guard; omp `agent_end` `messages`; the
+ * `ARGUMENTS` legacy/test channel) are resolved inside `runStopGuard` via `resolveStopContext`.
  * Fails open (allow stop) on empty/invalid payloads or missing content.
  */
 const ccAntiHallucination: HookRunner = {
     run(env, stdinText) {
-        const allowStop = (reason: string): HookRunResult => ({
-            output: buildStopOutput({ ok: true, reason }),
-            exitCode: 0,
-        });
-
-        const resolved = resolveStopContext(env.ARGUMENTS, stdinText);
-        if (resolved.allowReason) return allowStop(resolved.allowReason);
-        if (resolved.content === undefined) return allowStop('No content to verify');
-
-        const result = verifyAntiHallucinationProtocol(resolved.content);
-        if (result.ok) return allowStop(result.reason);
-        return { output: buildStopOutput(result), exitCode: 2, stderr: result.reason };
+        const result = runStopGuard(env.ARGUMENTS, stdinText);
+        return { output: result.output, exitCode: result.exitCode, stderr: result.stderr };
     },
 };
 

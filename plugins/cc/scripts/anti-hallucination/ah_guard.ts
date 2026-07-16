@@ -391,33 +391,58 @@ export function verifyAntiHallucinationProtocol(text: string): VerificationResul
 }
 
 // =============================================================================
-// MAIN ENTRY POINT
+// STOP GUARD — single orchestration owner
 // =============================================================================
 
-export function main(stdinText = ''): number {
-    const resolved = resolveStopContext(Bun.env.ARGUMENTS, stdinText);
+/** Result of running the Stop guard end-to-end: canonical Stop JSON + exit code, stderr on block. */
+export interface StopGuardResult {
+    /** Canonical Claude Code Stop-hook JSON (built by {@link buildStopOutput}). */
+    output: string;
+    /** Allow → 0; block → 2 (the universal cross-agent block signal; exit 1 is a non-blocking error). */
+    exitCode: 0 | 2;
+    /** Block reason; present only when the protocol denies the stop. */
+    stderr?: string;
+}
 
+/**
+ * Run the Stop guard end-to-end. The single owner of the Stop branch table: resolve the payload
+ * ({@link resolveStopContext}) → allow on loop guard / unreadable input → allow when no content
+ * was extracted → verify via {@link verifyAntiHallucinationProtocol} → allow on ok / block on deny
+ * (canonical Stop JSON + stderr reason + exit 2). Adapters ({@link main} CLI, `ccAntiHallucination`
+ * HookRunner) call this and only translate the result to their I/O shape — they never re-implement
+ * the branches. Fails open (allow) on empty/invalid/`stop_hook_active` payloads by construction of
+ * `resolveStopContext`.
+ */
+export function runStopGuard(argumentsEnv: string | undefined, stdinText: string): StopGuardResult {
+    const resolved = resolveStopContext(argumentsEnv, stdinText);
     if (resolved.allowReason) {
-        logger.log(buildStopOutput({ ok: true, reason: resolved.allowReason }));
-        return 0;
+        return { output: buildStopOutput({ ok: true, reason: resolved.allowReason }), exitCode: 0 };
     }
-
-    // Handle case where content couldn't be extracted
     if (resolved.content === undefined) {
-        logger.log(buildStopOutput({ ok: true, reason: 'No content to verify' }));
-        return 0;
+        return { output: buildStopOutput({ ok: true, reason: 'No content to verify' }), exitCode: 0 };
     }
-
-    // Verify anti-hallucination protocol
     const result = verifyAntiHallucinationProtocol(resolved.content);
+    if (result.ok) {
+        return { output: buildStopOutput(result), exitCode: 0 };
+    }
+    return { output: buildStopOutput(result), exitCode: 2, stderr: result.reason };
+}
 
-    logger.log(buildStopOutput(result));
+// =============================================================================
+// MAIN ENTRY POINT (thin CLI adapter)
+// =============================================================================
 
-    if (result.ok) return 0;
-    // Deny: exit 2 is the universal cross-agent block signal (Claude Code treats exit 1 as a
-    // non-blocking error and only feeds exit-2 stderr back to the model), reason on stderr.
-    logger.error(result.reason);
-    return 2;
+/**
+ * Direct CLI entry: a thin adapter over {@link runStopGuard}. Writes the canonical Stop JSON via
+ * `logger.log`, the block reason to `logger.error` (Claude Code feeds exit-2 stderr back to the
+ * model; exit 1 is a non-blocking error so it could never block a Stop), and returns the exit code.
+ * The branch table lives in `runStopGuard` — this surface only translates I/O.
+ */
+export function main(stdinText = ''): number {
+    const result = runStopGuard(Bun.env.ARGUMENTS, stdinText);
+    logger.log(result.output);
+    if (result.stderr !== undefined) logger.error(result.stderr);
+    return result.exitCode;
 }
 
 if (import.meta.main) {

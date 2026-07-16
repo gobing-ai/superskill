@@ -108,6 +108,9 @@ CLI binary: `apps/cli` exposes `bin: { cli: "./src/index.ts" }`. The `.ts` entry
 - Coverage target is **line >= 90% and function >= 90% in aggregate** (`coverageThreshold` in `bunfig.toml`).
 - Names describe behavior under a condition; assertions tie to the requirement, not the implementation.
 - For CLI stdout assertions, spy on `process.stdout.write` (the CLI uses it directly so output is testable without log-format coupling).
+- **Residual-proof negatives for heuristic/regex gates.** A negative fixture that claims "this rule does not fire on shape X" must carry every trigger half the production rule could fire on for the scenario under test, and still assert "does not fire." A negative that omits a half only locks the *bare-half baseline* — it cannot certify a compound residual is gone.
+- Worked example (anti-hallucination `requiresExternalVerification`, keyword ∧ coupler gate): a coupler-free `"Added a helper function"` is a baseline bare-vocab regression (proves `function` alone does not fire); `"The function returns early when the list is empty."` is residual-proof (weak-name + `returns` coupler, still `false` after dropping `function`/`method` from the weak set). Intentional external positives (`api`/`library`/`endpoint` + coupler → `true`) stay asserting `true`.
+- Label fixtures honestly: a `describe`/`it` name or comment must state whether it is a baseline (bare-half) or residual-proof (compound-carrying) negative. A structurally-powerless negative certified as "compound residual fixed" is a false green and will miss the next residual of the same class.
 
 ## Architecture decision record (binding)
 

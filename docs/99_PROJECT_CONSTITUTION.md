@@ -417,6 +417,7 @@ if it recurs, a new rule in §6.
 - [2026-06-11] spur-new: The command-surface block was missing 11 shipped verbs across 4 nouns;
   it had been edited from memory. Regenerate factual blocks from code registrations, never from
   recall (§6.7 rule 1).
+- [2026-07-15] 0085: A residual-proof negative-fixture rule landed in `AGENTS.md` § Testing (heuristic/regex gates with compound triggers). The lesson: three rounds of fixing the same residual class (`requiresExternalVerification`) traced to negatives that avoided the trigger half — encode the methodology, not just the fix.
 
 ## 9. Bootstrapping a new project
 

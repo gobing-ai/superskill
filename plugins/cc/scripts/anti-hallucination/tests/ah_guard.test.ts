@@ -179,7 +179,10 @@ describe('requiresExternalVerification', () => {
     // verification would nag on nearly every substantive coding reply. Only
     // assertion-shaped external claims may demand citations.
 
-    it('passes ordinary implementation talk that merely uses the vocabulary', () => {
+    it('baseline: passes ordinary implementation talk that uses bare vocabulary with no coupler', () => {
+        // BASELINE (bare-half regression): none of these carry a capability coupler, so they
+        // only prove the bare weak keyword alone does not fire. They cannot certify the
+        // compound residual (keyword + coupler) is handled — see the residual-proof case below.
         expect(requiresExternalVerification('Added a helper function for the parser')).toBe(false);
         expect(requiresExternalVerification('Refactored the method and renamed the local variable')).toBe(false);
         expect(requiresExternalVerification('Using the REST API to fetch data')).toBe(false);
@@ -187,11 +190,11 @@ describe('requiresExternalVerification', () => {
         expect(requiresExternalVerification('Check the official documentation first')).toBe(false);
     });
 
-    it('passes ordinary implementation talk even when it carries a capability coupler', () => {
-        // WHY: the fixtures above are all coupler-free, so they cannot fail for the reason the
-        // rule exists. Describing your *own* code is the most common shape in a coding reply and
-        // it routinely pairs `function`/`method` with a coupler — "the function returns early".
-        // Those name local code, not an external artifact, so they must never demand a citation.
+    it('residual-proof: passes local-code talk that carries a capability coupler (keyword + coupler, still false)', () => {
+        // RESIDUAL-PROOF (compound-carrying): these carry both a weak-name (`function`/`method`)
+        // AND a coupler (`returns`/`accepts`/`throws`/`emits`) — the exact shape that fired as a
+        // false positive in 0077 R1's residual. They name local code, not an external artifact,
+        // so they must stay false after `function`/`method` were dropped from the weak set.
         expect(requiresExternalVerification('The function returns early when the list is empty.')).toBe(false);
         expect(requiresExternalVerification('I refactored the method so it accepts a second argument.')).toBe(false);
         expect(requiresExternalVerification('This helper function throws when the path is missing.')).toBe(false);
