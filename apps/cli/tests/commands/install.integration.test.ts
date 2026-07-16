@@ -848,7 +848,7 @@ describe('executeInstall', () => {
         // Verbose output names the source file, target, and destination for each magent.
         expect(out).toMatch(/claude: magent .* → .*CLAUDE\.md/);
         expect(out).toMatch(/pi: magent .* → .*AGENTS\.md/);
-        expect(out).toContain('[DRY-RUN] No files were written.');
+        expect(out).toContain('[DRY-RUN] No files were written to install targets');
         // Nothing was actually written
         expect(existsSync(join(outRoot, 'CLAUDE.md'))).toBe(false);
         expect(existsSync(join(outRoot, 'AGENTS.md'))).toBe(false);

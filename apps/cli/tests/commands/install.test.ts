@@ -88,7 +88,7 @@ describe('registerInstall', () => {
 
         const output = stdout.mock.calls.map((call) => String(call[0])).join('');
         // --no-global means project-level install → dry-run still works
-        expect(output).toContain('[DRY-RUN] No files were written.');
+        expect(output).toContain('[DRY-RUN] No files were written to install targets');
         stdout.mockRestore();
     });
     it('install command option --dry-run defaults to false', () => {
@@ -128,7 +128,9 @@ describe('registerInstall', () => {
         ]);
 
         expect(stdout).toHaveBeenCalled();
-        expect(stdout.mock.calls.map((call) => String(call[0])).join('')).toContain('[DRY-RUN] No files were written.');
+        expect(stdout.mock.calls.map((call) => String(call[0])).join('')).toContain(
+            '[DRY-RUN] No files were written to install targets',
+        );
         stdout.mockRestore();
     });
 });
@@ -206,7 +208,7 @@ describe('executeInstall', () => {
         expect(output).toContain('Plugin root:');
         expect(output).toContain('Running rulesync for codex');
         expect(output).toContain('Skills written: 1, Commands: 1, Subagents: 1, Hooks: 0');
-        expect(output).toContain('[DRY-RUN] No files were written.');
+        expect(output).toContain('[DRY-RUN] No files were written to install targets');
         stdout.mockRestore();
     });
 
@@ -499,7 +501,7 @@ describe('executeInstall', () => {
         expect(called).toBe(false);
         const output = stdout.mock.calls.map((call) => String(call[0])).join('');
         expect(output).toContain('Grok: registering marketplace and installing plugin');
-        expect(output).toContain('[DRY-RUN] No files were written.');
+        expect(output).toContain('[DRY-RUN] No files were written to install targets');
         stdout.mockRestore();
     });
 

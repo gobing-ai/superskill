@@ -429,7 +429,9 @@ export async function executeInstall(
     }
 
     if (options.dryRun) {
-        echo('[DRY-RUN] No files were written.');
+        // `.rulesync/` staging is always refreshed — mapPluginToRulesync cleans and rewrites it
+        // before any dispatch. Dry-run suppresses writes to the install targets, not to staging.
+        echo('[DRY-RUN] No files were written to install targets (.rulesync/ staging was refreshed).');
     } else {
         echo(`Installed '${plugin}' to ${targets.length} target(s).`);
     }

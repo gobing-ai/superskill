@@ -80,7 +80,9 @@ function parseCanonicalHooks(config: CanonicalHooksConfig): ParsedHook[] {
 function deriveHookName(command: string): string {
     const parts = command.trim().split(/\s+/);
     const last = parts[parts.length - 1] ?? 'hook';
-    return last.replace(/[^a-zA-Z0-9_-]/g, '');
+    // The strip runs after the ?? fallback, so a token with no alphanumerics (a trailing
+    // glob, a redirect) would otherwise yield '' and write a hidden module named `.js`.
+    return last.replace(/[^a-zA-Z0-9_-]/g, '') || 'hook';
 }
 
 /**

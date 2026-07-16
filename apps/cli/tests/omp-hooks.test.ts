@@ -251,6 +251,27 @@ describe('generateOmpHookModules', () => {
         }
     });
 
+    it('falls back to a named stem when the command ends in a token with no filename-safe chars', () => {
+        // A trailing glob/redirect strips to '' — without a fallback the module is written as
+        // a hidden file named `.js`, which omp's `*.js` loader would not pick up as a hook.
+        const sourceDir = makeTempDir();
+        const installPath = makeTempDir();
+        try {
+            writeHooksJson(sourceDir, {
+                hooks: {
+                    preToolUse: [{ matcher: 'Bash', hooks: [{ type: 'command', command: 'run-checks *' }] }],
+                },
+            });
+            const result = generateOmpHookModules(sourceDir, installPath);
+            const written = requireString(result.files[0], 'generated hook path');
+            expect(written).toEndWith('hook.js');
+            expect(written).not.toEndWith('/.js');
+        } finally {
+            rmSync(sourceDir, { recursive: true, force: true });
+            rmSync(installPath, { recursive: true, force: true });
+        }
+    });
+
     it('emits an ESM module with a default factory export (omp loader contract)', () => {
         const sourceDir = makeTempDir();
         const installPath = makeTempDir();
