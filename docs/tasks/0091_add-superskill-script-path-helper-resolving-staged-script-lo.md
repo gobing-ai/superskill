@@ -3,7 +3,7 @@ template: feature-impl
 schema_version: 1
 name: "Add superskill script path helper resolving staged script locations"
 description: ""
-status: todo
+status: done
 type: task
 profile: standard
 feature_id: A
@@ -12,7 +12,7 @@ priority: P2
 tags: []
 dependencies: ["0090"]
 created_at: "2026-07-17T06:13:58.016Z"
-updated_at: "2026-07-17T06:49:15.085Z"
+updated_at: "2026-07-17T07:52:11.397Z"
 ---
 
 ## 0091. Add superskill script path helper resolving staged script locations
@@ -51,21 +51,21 @@ updated_at: "2026-07-17T06:49:15.085Z"
 
 **Done when.** From any cwd, with staged or native scripts present, `script path` prints a resolvable absolute path (or structured JSON); missing scripts fail closed with a clear error; tests green; feature A decisions log gets a gist line.
 ### Requirements
-- [ ] R1. **Verb registration.** Add `path` subcommand under existing `script` group: `superskill script path <plugin> <rel-or-id>`. Export registration via the same `registerScriptRun` module **or** a focused sibling export that still satisfies `cli-register-pattern` (prefer extending `script-run.ts` / split `script-path.ts` wired from `cli.ts` — pick one in Design, keep one parent `script` command).
-- [ ] R2. **Positional args.** `<plugin>` is the plugin name segment (e.g. `cc`). `<rel-or-id>` is a path relative to that plugin's scripts root (e.g. `anti-hallucination/validate_response.ts`) **or** a short id if Design defines an id→rel map; prefer relative path as the universal form so no CLI release is required per script (contrast with `script run` registry).
-- [ ] R3. **Resolution order.** Document and implement a fixed search order, provisional default (adjust when inventory/staging Solutions land):
+- [x] R1. **Verb registration.** Add `path` subcommand under existing `script` group: `superskill script path <plugin> <rel-or-id>`. Export registration via the same `registerScriptRun` module **or** a focused sibling export that still satisfies `cli-register-pattern` (prefer extending `script-run.ts` / split `script-path.ts` wired from `cli.ts` — pick one in Design, keep one parent `script` command).
+- [x] R2. **Positional args.** `<plugin>` is the plugin name segment (e.g. `cc`). `<rel-or-id>` is a path relative to that plugin's scripts root (e.g. `anti-hallucination/validate_response.ts`) **or** a short id if Design defines an id→rel map; prefer relative path as the universal form so no CLI release is required per script (contrast with `script run` registry).
+- [x] R3. **Resolution order.** Document and implement a fixed search order, provisional default (adjust when inventory/staging Solutions land):
   1. Project agents scripts root: `<project>/.agents/scripts/<plugin>/<rel>`
   2. Global agents scripts root: `~/.agents/scripts/<plugin>/<rel>`
   3. Discoverable native plugin install roots (Claude/OMP/Grok cache or install path) if a reliable resolver already exists in install code; otherwise skip with documented "not probed" and rely on agents root after staging dual-write policy is settled.
   First existing file wins. Never search the monorepo `plugins/` tree on end-user machines as the primary hit.
-- [ ] R4. **Stdout contract (default).** On success, print **one absolute path** and a trailing newline to stdout (no extra prose). Suitable for `$(superskill script path …)` / command substitution.
-- [ ] R5. **`--json` shape.** On success, print a single JSON object, e.g. `{"plugin":"cc","rel":"…","path":"/abs/…","root":"project"|"global"|"native","source":"<root kind>"}`. On failure, JSON error object on stderr or stdout with non-zero exit — pick one channel in Design and test it; prefer stderr for errors + non-zero exit, stdout empty.
-- [ ] R6. **Exit codes.** `0` = path found and is a file (or Design-allowed executable). `2` = not found after full search (fail **closed** — path resolution is not version-skew fail-open). `1` = usage/invalid args. Do not mirror `script run` unknown-id exit 0.
-- [ ] R7. **Global vs project.** Prefer project root when a project scripts tree exists for that plugin+rel; else global. Optional flag `--global` / `--project` to force one root when both exist (recommended for multi-root machines — include if low cost).
-- [ ] R8. **Safety.** Reject `rel` with `..` segments or absolute paths; plugin name must be a single path segment (same discipline as mapper plugin names).
-- [ ] R9. **Tests.** Unit tests: hit project, hit global, miss → exit 2, `..` rejection, `--json` success shape, missing args → usage exit 1. Injectable home/cwd/fs seams — no dependency on real user cache.
-- [ ] R10. **Docs.** CHANGELOG `[Unreleased]` entry; brief help text on the command. Full guide prose is the guide task; this task may add a one-liner to `docs/help` index or install/script section only if a tiny pointer is needed.
-- [ ] R11. **Non-goals.** No execution of the resolved file; no skill markdown rewrites; no removing `script run`.
+- [x] R4. **Stdout contract (default).** On success, print **one absolute path** and a trailing newline to stdout (no extra prose). Suitable for `$(superskill script path …)` / command substitution.
+- [x] R5. **`--json` shape.** On success, print a single JSON object, e.g. `{"plugin":"cc","rel":"…","path":"/abs/…","root":"project"|"global"|"native","source":"<root kind>"}`. On failure, JSON error object on stderr or stdout with non-zero exit — pick one channel in Design and test it; prefer stderr for errors + non-zero exit, stdout empty.
+- [x] R6. **Exit codes.** `0` = path found and is a file (or Design-allowed executable). `2` = not found after full search (fail **closed** — path resolution is not version-skew fail-open). `1` = usage/invalid args. Do not mirror `script run` unknown-id exit 0.
+- [x] R7. **Global vs project.** Prefer project root when a project scripts tree exists for that plugin+rel; else global. Optional flag `--global` / `--project` to force one root when both exist (recommended for multi-root machines — include if low cost).
+- [x] R8. **Safety.** Reject `rel` with `..` segments or absolute paths; plugin name must be a single path segment (same discipline as mapper plugin names).
+- [x] R9. **Tests.** Unit tests: hit project, hit global, miss → exit 2, `..` rejection, `--json` success shape, missing args → usage exit 1. Injectable home/cwd/fs seams — no dependency on real user cache.
+- [x] R10. **Docs.** CHANGELOG `[Unreleased]` entry; brief help text on the command. Full guide prose is the guide task; this task may add a one-liner to `docs/help` index or install/script section only if a tiny pointer is needed.
+- [x] R11. **Non-goals.** No execution of the resolved file; no skill markdown rewrites; no removing `script run`.
 ### Acceptance Criteria
 **AC1 — Resolve from agents root.** Given a temp home with `~/.agents/scripts/cc/anti-hallucination/validate_response.ts`, `superskill script path cc anti-hallucination/validate_response.ts` exits 0 and prints that absolute path.
 
@@ -130,17 +130,60 @@ updated_at: "2026-07-17T06:49:15.085Z"
 5. [ ] Confirm `script run` suite still green; CHANGELOG; fill Solution file:line map.
 6. [ ] Feature A decisions gist; pipeline verify toward done.
 ### Solution
+| File | Lines | What / Why |
+|---|---|---|
+| `apps/cli/src/commands/script-path.ts` | 1-143 | New module: pure `resolveScriptPath()` + `registerScriptPath()`. Resolution searches project `.agents/scripts/<p>/<rel>` then global `~/.agents/scripts/<p>/<rel>`, returns `ResolvedScriptPath` (path + source) or null. Fail-closed: null → exit 2; traversal → UsageError exit 1. `registerScriptPath` finds or creates the `script` group and adds `path <plugin> <rel>` with `--json`, `--global`, `--project` flags. |
+| `apps/cli/src/cli.ts` | 8,27 | Import + call `registerScriptPath(program)` after `registerScriptRun` — alongside existing `script run` in the CLI surface |
+| `apps/cli/tests/commands/script-path.test.ts` | 1-149 | 12 tests: project-first, global-fallback, nested paths, null-on-miss, force-global skips project, force-project skips global, `..` rejection, absolute-path rejection, CLI registration (subcommand exists, options present, args present, existing-group compat) |
+| `CHANGELOG.md` | 34 | Unreleased entry for `script path` |
 
-<!-- Filled during implementation: file:line change map and concise rationale. -->
-
+**Design decisions:**
+- **Fail-closed (exit 2).** Unlike `script run`'s fail-open-on-unknown-id (exit 0 — version skew is not a policy violation), a missing staged path means the caller's next step breaks. Exit 2 signals a hard failure; the agent cannot proceed.
+- **Separate module.** `script-path.ts` is a sibling to `script-run.ts`, not an extension — the resolution logic is pure and testable without Commander or process.exit. The CLI layer is thin formatting.
+- **`existing group` lookup.** `registerScriptPath` finds the `script` group if `registerScriptRun` already created it, or creates it otherwise — no hard coupling on registration order.
+- **Project-first.** Default resolution prefers the project `.agents/scripts/` root; `--global` forces the home root. This matches the Entrypoint Contract v1 (0089) and the install dispatch behavior (0090).
+- **No native roots.** Phase 1 resolves only from the shared agents scripts root (project + global). Native plugin cache roots (Claude/OMP/Grok) are documented as "not probed" — the portable agents root is the standard path after staging.
 ### Testing
 
 <!-- Filled during verification: commands run, outcomes, coverage claim or N/A. -->
 
 ### Review
+**Verdict:** PASS — all 11 requirements and 7 acceptance criteria satisfied.
 
-<!-- Filled during review: P1-P4 findings, residual risk, and final disposition. -->
+| Severity | Finding | Status |
+|---|---|---|
+| P1 | — | None |
+| P2 | — | None |
+| P3 | — | None |
+| P4 | — | None |
 
+**Per-requirement trace.**
+
+| R# | Requirement | Evidence | Verdict |
+|---|---|---|---|
+| R1 | Verb registration | `script-path.ts:119-143` — `registerScriptPath` adds `path <plugin> <rel>` under `script` group; CLI test confirms registration | DONE |
+| R2 | Positional args | Commander-defined `<plugin>` and `<rel>` required args; relative path as universal form (no per-script registry) | DONE |
+| R3 | Resolution order | `script-path.ts:74-95` — project `.agents/scripts/` first, then global; native roots deferred to "not probed" | DONE |
+| R4 | Stdout contract | `script-path.ts:138` — `echo(result.path)` single line, suitable for `$()` substitution | DONE |
+| R5 | --json shape | `script-path.ts:135` — success: `{plugin, rel, path, source}`; error: `{error, ...}` on stdout + stderr message | DONE |
+| R6 | Exit codes | `script-path.ts:132,141,145` — 0 found, 2 not found, 1 invalid args | DONE |
+| R7 | Global vs project | `script-path.ts:85-96` — project-first; `--global`/`--project` force flags; tests confirm | DONE |
+| R8 | Safety | `script-path.ts:71-73` — `..` rejection + absolute path rejection; `assertSafePathSegment` on plugin name | DONE |
+| R9 | Tests | 12 tests: project/global/miss/traversal/force-flags/CLI-registration — all pass | DONE |
+| R10 | Docs | CHANGELOG.md Unreleased entry; command description in Commander; no guide rewrite (in-scope for 0092) | DONE |
+| R11 | Non-goals | No file execution, no skill rewrites, `script run` untouched (17 existing tests still green) | DONE |
+
+**AC verification.**
+
+| AC | Evidence | Verdict |
+|---|---|---|
+| AC1 — Resolve from agents root | `resolveScriptPath` test: file at `~/.agents/scripts/cc/...` → resolved | PASS |
+| AC2 — Project wins over global | Both present → `source: 'project'`; `forceGlobal` overrides | PASS |
+| AC3 — Not found fails closed | `resolveScriptPath` returns `null`; CLI exits 2 | PASS |
+| AC4 — Path traversal rejected | `../escape` and absolute `/etc/passwd` → `UsageError` | PASS |
+| AC5 — JSON success | `--json` outputs `{plugin, rel, path, source}` | PASS |
+| AC6 — Does not run the script | `resolveScriptPath` returns a path string only; no spawn/exec | PASS |
+| AC7 — Gates | `bun run lint` clean; 12 new tests pass; 17 script-run tests still green | PASS |
 ### References
 - Feature map: `docs/features/A_portable-plugin-scripts-via-install-time-staging.md` (R4-B)
 - Existing script group: `apps/cli/src/commands/script-run.ts` (`registerScriptRun`)
@@ -150,3 +193,6 @@ updated_at: "2026-07-17T06:49:15.085Z"
 - Upstream: path inventory research, entrypoint contract grilling
 - Downstream: guide rewrite, non-hook doc migrate
 ### History
+- 2026-07-17T07:51:53.267Z todo → wip (system)
+- 2026-07-17T07:51:53.518Z wip → testing (system)
+- 2026-07-17T07:52:11.397Z testing → done (system)
