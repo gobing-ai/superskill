@@ -133,8 +133,9 @@ describe('task 0032 — cc personas wiring and hide validate', () => {
         const VALID_VERBS = ['agent', 'skill', 'command', 'hook', 'magent', 'install', 'superskill'];
         for (const type of SKILL_TYPES) {
             const content = readFileSync(join(SKILLS_DIR, type, 'SKILL.md'), 'utf-8');
-            // Check for `superskill <verb>` patterns where <verb> is not in the valid set
-            const verbMatches = content.matchAll(/superskill\s+([a-z][a-z-]*)/g);
+            // Same-line only: `[ \t]+` (not `\s+`) so YAML frontmatter like
+            // `author: superskill\n  version: "3.0.0"` is not a false-positive CLI verb.
+            const verbMatches = content.matchAll(/superskill[ \t]+([a-z][a-z-]*)/g);
             for (const m of verbMatches) {
                 const verb = m[1];
                 if (verb && !VALID_VERBS.includes(verb)) {

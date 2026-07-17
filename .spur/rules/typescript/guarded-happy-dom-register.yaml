@@ -1,0 +1,32 @@
+# Local override for the portable guarded-happy-dom-register rule.
+#
+# superskill is a CLI-only repo and has no apps/web test tree. The upstream
+# rule's include set (apps/web/tests/**) therefore resolves to zero files, which
+# makes rg exit 2 and turns the pre-check into a misconfiguration (or an
+# evaluator error when stderr capture is incomplete under non-TTY/bun run).
+# Keep package.json as a stable harmless anchor so the evaluator is empty-safe
+# here while still catching raw register() calls if web tests are introduced later.
+#
+# Sibling precedent: happy-dom-teardown.yaml (same empty-include class).
+include:
+  - "package.json"
+  - "apps/web/tests/**/*.test.ts"
+  - "apps/web/tests/**/*.test.tsx"
+exclude:
+  - "**/node_modules/**"
+  - "**/dist/**"
+  - "apps/web/tests/happy-dom.ts"
+
+rules:
+  - id: guarded-happy-dom-register
+    description: >
+      Do not call `GlobalRegistrator.register()` directly in a web test — a
+      second caller in the same suite throws "already been globally registered"
+      and loses every test in that file (a CI-only failure that never reproduces
+      in isolation). Use `registerHappyDom()` from apps/web/tests/happy-dom.ts,
+      which guards the call; it is the single sanctioned register() caller.
+    severity: warning
+    evaluator:
+      type: rg
+      config:
+        pattern: "GlobalRegistrator\\.register\\(\\)"
