@@ -42,11 +42,13 @@ const SOURCE_PATTERNS = [
     /\*\*Source\*\*:\s*[^\n]+/i, // Markdown bold Source:
     // (0079) file:line anchor — the canonical in-repo citation form, e.g. `ah_guard.ts:288`
     // or `foo.ts:12-20`. Requires a letter extension to avoid matching decimals like 94.87.
-    // The TLD denylist keeps `example.com:8080` from passing as a citation. It is a denylist
-    // rather than a code-extension allowlist on purpose: a missed extension would *uncredit* a
-    // real citation and block an evidenced reply (the 0079 failure mode), whereas no source file
-    // ends in `.com`/`.io`/`.dev`, so excluding TLDs cannot cost a legitimate anchor.
-    /\b[a-zA-Z][a-zA-Z0-9_-]*\.(?!(?:com|org|net|edu|gov|mil|io|dev|app|ai|co|info|biz|local|me|us|uk|cn|jp|de|fr):)[a-zA-Z0-9]+:\d+(?:-\d+)?/,
+    // The TLD denylist keeps `example.com:8080` / `foo.test:1` from passing as a citation. It is a
+    // denylist rather than a code-extension allowlist on purpose: a missed extension would
+    // *uncredit* a real citation and block an evidenced reply (the 0079 failure mode), whereas no
+    // source file ends in `.com`/`.io`/`.dev`/`.xyz`, so excluding TLDs cannot cost a legitimate
+    // anchor. Expand the denylist when a host:port form is observed clearing the gate.
+    // TLD denylist only — never include real source extensions (ts/js/py/go/rs/sh/pl/…).
+    /\b[a-zA-Z][a-zA-Z0-9_-]*\.(?!(?:com|org|net|edu|gov|mil|io|dev|app|ai|co|info|biz|local|me|us|uk|cn|jp|de|fr|xyz|test|cloud|tech|site|online|store|shop|blog|tv|cc|pro|name|to|ly|gg|fm|au|ca|br|ru|kr|tw|hk|sg|nz|za|mx|es|it|nl|se|no|fi|ch|at|be|ie|pt|cz|ro|hu|tr|il|sa|ae|th|vn|ph|my|pk|bd|ng|eg|ar|cl|pe):)[a-zA-Z0-9]+:\d+(?:-\d+)?/,
     // (0079) explicit exit-code line, e.g. "exit 0", "exit code 1" — evidence a command ran.
     /\bexit\s+code\s+\d+/i,
     /\bexit\s+\d+/i,
@@ -340,13 +342,19 @@ export function requiresExternalVerification(text: string): boolean {
 }
 
 export function verifyAntiHallucinationProtocol(text: string): VerificationResult {
-    if (!text || text.trim().length < 50) {
-        // Empty or very short messages are OK
+    if (!text || text.trim().length === 0) {
         return { ok: true, reason: 'Task is complete' };
     }
 
-    // Check if content requires verification
+    // Check if content requires verification (shared by the short-message floor below).
     const needsVerification = requiresExternalVerification(text);
+
+    // Very short *internal* notes ("Done", "OK") skip the protocol. Short external
+    // claims must not use the length floor as a smuggle path — "The API returns X."
+    // is still a claim even under 50 characters.
+    if (text.trim().length < 50 && !needsVerification) {
+        return { ok: true, reason: 'Task is complete' };
+    }
 
     if (!needsVerification) {
         // Internal discussion, no verification needed

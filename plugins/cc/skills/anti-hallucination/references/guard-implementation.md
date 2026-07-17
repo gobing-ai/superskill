@@ -127,8 +127,14 @@ const RED_FLAG_PATTERNS = [
 
 ### Adjusting Verification Threshold
 
-Modify the minimum message length check in `verifyAntiHallucinationProtocol`:
+Very short *internal* notes (`"Done"`, `"LGTM"`) skip the protocol when
+`requiresExternalVerification` is false. Short **external** claims still require
+citations — the length floor is not a smuggle path. Adjust the floor in
+`verifyAntiHallucinationProtocol`:
 
 ```typescript
-if (!text || text.trim().length < 50) {  // Change 50 to your threshold
+// Empty → allow. Length < 50 *and* no external claim → allow.
+// Short external claims (e.g. "The API returns a list.") still verify.
+if (!text || text.trim().length === 0) { /* allow */ }
+if (text.trim().length < 50 && !needsVerification) {  // Change 50 to your threshold
 ```

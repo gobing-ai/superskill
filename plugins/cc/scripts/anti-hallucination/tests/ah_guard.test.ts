@@ -236,6 +236,22 @@ describe('verifyAntiHallucinationProtocol', () => {
         expect(result.ok).toBe(true);
     });
 
+    it('does not let short external claims smuggle past the length floor', () => {
+        // WHY: length < 50 used to allow *any* short text, so "The API returns a list."
+        // (needsVerification=true, no citation) exited ok:true. The floor only applies to
+        // short *internal* notes; short external claims still need the protocol.
+        const shortApi = verifyAntiHallucinationProtocol('The API returns a list.');
+        expect(shortApi.ok).toBe(false);
+        expect(shortApi.issues).toContain('source citations for API/library claims');
+
+        const shortLib = verifyAntiHallucinationProtocol('This library supports OAuth.');
+        expect(shortLib.ok).toBe(false);
+
+        // Still allow short non-claims.
+        expect(verifyAntiHallucinationProtocol('LGTM')).toBeTruthy();
+        expect(verifyAntiHallucinationProtocol('LGTM').ok).toBe(true);
+    });
+
     it('allows internal discussion without verification', () => {
         const result = verifyAntiHallucinationProtocol('Let me think about the architecture approach');
         expect(result.ok).toBe(true);
@@ -572,9 +588,16 @@ describe('hasSourceCitations (0079: credit engineering evidence)', () => {
         expect(hasSourceCitations('Server runs at example.com:8080 locally.')).toBe(false);
         expect(hasSourceCitations('redis.local:6379 is up')).toBe(false);
         expect(hasSourceCitations('hit api.example.io:443 directly')).toBe(false);
+        // Residual TLDs that previously cleared the gate (expanded denylist).
+        expect(hasSourceCitations('foo.test:1 is not a file anchor')).toBe(false);
+        expect(hasSourceCitations('svc.xyz:9000 is up')).toBe(false);
+        expect(hasSourceCitations('edge.cloud:443')).toBe(false);
         expect(hasSourceCitations('ah_guard.ts:288')).toBe(true);
         expect(hasSourceCitations('see main.py:42 and lib.rs:7')).toBe(true);
         expect(hasSourceCitations('foo.ts:12-20')).toBe(true);
+        // Code extensions that must never be denylisted as TLDs.
+        expect(hasSourceCitations('setup.sh:5')).toBe(true);
+        expect(hasSourceCitations('main.rs:10')).toBe(true);
     });
 });
 
