@@ -12,7 +12,7 @@ priority: P2
 tags: []
 dependencies: ["0089", "0090", "0091", "0094"]
 created_at: "2026-07-17T06:14:03.790Z"
-updated_at: "2026-07-17T22:46:20.891Z"
+updated_at: "2026-07-17T22:51:02.264Z"
 ---
 
 ## 0095. Supersede ADR-015 copied-on-install wording and extend ADR-022 scope
@@ -137,24 +137,55 @@ updated_at: "2026-07-17T22:46:20.891Z"
 
 **Non-goals honored (R9).** No TypeScript changes; no skill-doc prose migration; author guide not deep-rewritten (already aligned post-0092). Code facts cited, not changed: `apps/cli/src/commands/script-run.ts`, `apps/cli/src/commands/hook-run.ts`, `packages/core/src/.../mapper.ts`.
 ### Testing
-Docs/decision-only task — no code, no unit tests. Verification is the drift gate + grep gate.
+**Verify date:** 2026-07-17 (`--force --focus all --fix all`)
 
-**Commands run:**
-- `grep -nE "copied on install|never (stage|cop|absorb)" docs/04_DESIGN.md docs/help/bundled_plugin.md AGENTS.md` → **0 hits** (surface docs clean).
-- `grep -nE "copied on install|never stage.*absorb|hook dispatcher only" docs/00_ADR.md` → residual hits confined to historical ADR-015 (line 203) and ADR-022 (lines 287, 291) bodies; current decision text (ADR-023 line 303, ADR-024 line 313) explicitly supersedes/amends both per append-only ADR discipline.
-- `spur task update --section Solution --from-file ... 0095` → `Updated section 'Solution' in task 0095`.
-- `spur task update 0095 testing` → `0095: wip → testing` (FSM accepted transition).
+**Coverage:** N/A (documentation / ADR-only; no runtime code path).
 
-**Coverage claim:** N/A (no code diff). AC7 explicitly forbids code changes; `git diff` for this task is docs/AGENTS/CHANGELOG + task Solution only.
+**Commands run (this pass):**
 
-**Acceptance verification:**
-- AC1 (ADR supersession trail) — ADR-023 + ADR-024 appended with explicit "supersedes"/"amended" language.
-- AC2 (dual contract in ADR) — ADR-023 §Decision names layout + staging destination + path standard + optional registry absorption.
-- AC3 (ADR-022 not hook-only) — ADR-024 revises "hook dispatcher only" to "script dispatcher family".
-- AC4 (04/bundled aligned) — 04 line 51 rewritten; bundled line 40 verified pre-aligned.
-- AC5 (AGENTS aligned) — line 135 updated to family scope with ADR-024 cross-reference.
-- AC6 (grep gate) — see command outputs above; gate passes for surface docs.
-- AC7 (no code diff) — `git status` confirms only docs/AGENTS/CHANGELOG/task changes.
+| Command | Outcome |
+|---|---|
+| `rg -n "copied on install" docs/04_DESIGN.md docs/help/bundled_plugin.md AGENTS.md` | **0 hits** (AC6 surface) |
+| ADR-023 / ADR-024 present in `docs/00_ADR.md` | L295–319 (AC1–AC3) |
+| `AGENTS.md:135` script dispatcher family + ADR-024 | MET (AC5) |
+| `docs/04_DESIGN.md:51-56` dual contract + staging | MET (AC4) |
+| `docs/help/bundled_plugin.md:40` staging + dual contract | MET (AC4) |
+| `CHANGELOG.md:39` #0095 Documentation entry | MET (R8) |
+| `bun run lint` | clean |
+| `spur task check 0095 --strict-core --json` | pass |
+| Commit `a51ba6d` file list | docs/AGENTS/CHANGELOG/task only (AC7) |
+
+**Residual fixes (`--fix all`):**
+1. Feature A **Decisions so far** was missing 0095 gist — added.
+2. Feature A open item on staged entrypoint runtimes marked resolved by 0089 + ADR-023.
+
+**Per-Requirement Traceability**
+
+| Req | Status | Evidence |
+|-----|--------|----------|
+| R1 Delivery ADR | MET | `docs/00_ADR.md:295-305` ADR-023 dual contract |
+| R2 ADR-022 amendment | MET | `docs/00_ADR.md:309-319` ADR-024 script dispatcher family |
+| R3 AGENTS.md | MET | `AGENTS.md:135` |
+| R4 04_DESIGN | MET | `docs/04_DESIGN.md:51-56` |
+| R5 bundled_plugin | MET | `docs/help/bundled_plugin.md:40` |
+| R6 Drift grep | MET | surface greps 0; historical ADR-015/022 bodies by design |
+| R7 Hook decision | MET | ADR-023 Detail cites 0094 R6-B; hooks stay hook run |
+| R8 CHANGELOG | MET | `CHANGELOG.md:39` #0095 |
+| R9 Non-goals | MET | no TS in a51ba6d |
+
+**Acceptance Criteria Verification**
+
+| AC | Status | Evidence Type | Evidence |
+|----|--------|---------------|----------|
+| AC1 ADR supersession trail | MET | static-ref | ADR-023 supersedes ADR-015 wording; ADR-024 amends ADR-022 |
+| AC2 Dual contract in ADR | MET | static-ref | ADR-023 Decision: layout + staging + path + optional registry |
+| AC3 Not hook-only | MET | static-ref | ADR-024 + script-run.ts:4 deep-import |
+| AC4 Derived docs | MET | static-ref | 04_DESIGN + bundled_plugin |
+| AC5 AGENTS aligned | MET | static-ref | AGENTS.md:135 |
+| AC6 Grep gate | MET | command | surface greps empty this pass |
+| AC7 No code | MET | command | a51ba6d docs/AGENTS/CHANGELOG/task only |
+
+**Design conformance:** DONE. **SECUA:** docs-only; residual feature-A gist gap fixed.
 ### Review
 Self-review against AC1-AC7. Docs/decision task; findings table below uses bare severity values per FSM guard contract.
 
