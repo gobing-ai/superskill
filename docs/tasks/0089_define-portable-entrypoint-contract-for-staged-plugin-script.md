@@ -12,7 +12,7 @@ priority: P2
 tags: []
 dependencies: []
 created_at: "2026-07-17T06:13:55.464Z"
-updated_at: "2026-07-17T07:20:29.332Z"
+updated_at: "2026-07-17T07:24:20.634Z"
 ---
 
 ## 0089. Define portable entrypoint contract for staged plugin scripts
@@ -255,9 +255,68 @@ Path is the **standard** surface. `script run` is kept for backward compatibilit
 | Build step tooling for TS → JS compilation | Future | Plugin authors own their build; superskill MAY offer `bun build` conventions |
 | Interactive stdin (`--non-tty-input` semantics) | Future | Currently `readStdinGuarded()` returns undefined on TTY; staged entrypoints inherit OS TTY behavior |
 ### Testing
+**Task type:** `wayfinder:grilling` — decision artifact only; no production code (R8). Coverage: N/A (documentation/design-only; no runtime code path added).
 
-<!-- Filled during verification: commands run, outcomes, coverage claim or N/A. -->
+**Re-verify session:** 2026-07-17 `/sp-dev-verify 0089 --auto --next --force --focus all --fix all`.
 
+**Per-requirement traceability**
+
+| Req | Status | Evidence type | Evidence |
+|-----|--------|---------------|----------|
+| R1 entrypoint vs library | MET | static-ref | Solution §1 shebang/name table; MUST/MUST NOT |
+| R2 allowed runtimes | MET | static-ref | Solution §2 Node+bash portable; Bun dev-only (R2-B); bridge TS→JS |
+| R3 shebang/shape | MET | static-ref | Solution §3 `#!/usr/bin/env node|bash`; install does not rewrite |
+| R4 forbidden forms | MET | static-ref | Solution §4 six banned patterns + canonical forms |
+| R5 canonical doc form | MET | static-ref | Solution §5 `$(superskill script path …)` pipe/args; 0091 owns flags |
+| R6 exit-code classes | MET | static-ref | Solution §6 dual table; grounded in `hook-run.ts` exit 0/2 comments + `script-run.ts` 0/1 validation |
+| R7 dual contract | MET | static-ref | Solution §7 path-vs-script-run table; `cc/validate-response` example |
+| R8 deliverable + map | MET | static-ref | Solution filled; feature A Decisions so far line 73 (0089 gist) |
+
+**Acceptance Criteria Verification**
+
+| AC | Status | Evidence type | Evidence |
+|----|--------|---------------|----------|
+| AC1 Normative contract | MET | static-ref | Titled **Entrypoint Contract v1** with MUST/MUST NOT throughout |
+| AC2 R2-B honored | MET | static-ref | Bun under "Non-portable (dev-repo only)" §2 |
+| AC3 Dual contract table | MET | static-ref | §7 eight-dimension table + path vs `script run` examples |
+| AC4 Exit-code separation | MET | static-ref | §6 validation 0/1 vs hook 0/2; MUST NOT wire validation into hooks.json |
+| AC5 Downstream-citable | MET | static-ref | Deferred items → 0090–0095 owners; contract specific for implementers |
+| AC6 Map updated | MET | static-ref | `docs/features/A_…md:73` 0089 gist present (re-checked this session) |
+
+**Design conformance**
+
+| Claim | Status | Evidence |
+|-------|--------|----------|
+| Anchor R2-B/R4-B/R5-B | DONE | Dual path standard; Bun non-portable; path helper form |
+| Ground in anti-patterns + shipped exit codes | DONE | Guide + hook-run/script-run comments cited |
+| Decision only, no code | DONE | R8; no apps/cli changes for this WBS |
+| Output shape complete | DONE | Contract + dual table + anti-patterns + deferred |
+
+**SECUA (decision artifact)**
+
+| Dim | Finding | Severity |
+|-----|---------|----------|
+| S | N/A — no code | — |
+| E | N/A | — |
+| C | Exit-code and anti-pattern claims match shipped hook/script-run docs; line cites slightly drifted from file churn (semantic match holds) | minor |
+| C | `scripts-map.json` is both a recognition marker and deferred to 0090 — intentional deferred | advisory |
+| U | Contract is implementable by 0090–0093 | — |
+| A | Correctly keeps hook.json migration out of scope (0094) | — |
+
+**Residual**
+
+- Plan checklist still shows unchecked `[ ]` despite History `done` — process hygiene only.
+- Testing was empty before this re-verify; filled now.
+
+**Gates this session**
+
+- `spur task check 0089` — PASS
+- `spur task check 0089 --strict-core` — PASS
+- Feature A gist line 73 present; OMP-independent contract re-read against hook-run/script-run headers
+
+**Coverage:** N/A (documentation/design-only; no runtime code path added).
+
+**Fix pass (`--fix all`):** no UNMET/PARTIAL core rows; no code repair required.
 ### Review
 **Verdict:** PASS — all 8 requirements and 6 acceptance criteria satisfied. No code changes (decision artifact only).
 
