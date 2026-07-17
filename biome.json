@@ -8,7 +8,6 @@
         "ignoreUnknown": true,
         "includes": [
             "**",
-            "!**/.wolf/hooks",
             "!**/.claude",
             "!**/dist",
             "!**/.turbo",

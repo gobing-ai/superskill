@@ -8,7 +8,7 @@
 - vendors/openclaw/{AGENTS.md, docs/AGENTS.md, docs/agent-runtime-architecture.md, docs/tools/}  
 - vendors/hermes-agent/AGENTS.md + skill/tool structure  
 - superskill: plugins/cc/skills/cc-magents/{SKILL.md,references/platform-compatibility.md}, packages/core/src/quality/magent.ts, apps/cli/templates/magent/default.md, docs/03_ARCHITECTURE.md, pipeline/*, targets.ts (inferred from architecture + cerebrum)  
-- .wolf/cerebrum.md (target taxonomy, install facts, 2026-06/07 entries)  
+- .spur/context/learnings.md (target taxonomy, install facts, 2026-06/07 entries; formerly .wolf/cerebrum.md)  
 
 **Verification note on referenced file:** `docs/about_main_agent.md` was added by operator (2026-07-14) from prior project. Full content read + cross-checked against vendors/ (agent-skills, pi, oh-my-pi/omp, openclaw, hermes-agent) + superskill `quality/magent.ts`, pipeline adapters, and omp system-prompt docs. See dedicated verification section below. This analysis remains the primary-sourced SSOT.
 

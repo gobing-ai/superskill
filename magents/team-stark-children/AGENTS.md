@@ -258,7 +258,8 @@ Always-on when installed: **`anti-hallucination`**. One skill per task when chai
    `.spur/context/` (`anatomy.md`, `learnings.md`, `pitfalls.md`, `buglog.md`,
    `memory.md`, `token-ledger.jsonl`). No fixed magent MEMORY file.
    Absent context dir → continue; do not block.
-5. OpenWolf `.wolf/` when present — prefer indexed notes over full-tree re-reads.
+5. Legacy OpenWolf `.wolf/` (superseded by `sp:indexed-context`) — if present in an
+   older project, prefer its indexed notes over full-tree re-reads.
 
 ---
 

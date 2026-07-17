@@ -2,10 +2,19 @@
 
 Guidance for AI coding agents working in this repository. `CLAUDE.md` and `GEMINI.md` symlink here.
 
-## OpenWolf
-@.wolf/OPENWOLF.md
+## Indexed context
 
-This project uses OpenWolf for context management. Read and follow .wolf/OPENWOLF.md every session. Check .wolf/cerebrum.md before generating code. Check .wolf/anatomy.md before reading files.
+`.spur/context/` (gitignored) via **`sp:indexed-context`**:
+
+1. `anatomy.md` — file one-liners + token estimates. Check before reading files.
+2. `learnings.md` — conventions / decisions / user preferences. Check before generating code.
+3. `pitfalls.md` — dated do-not-repeat entries. Check before touching an area with history.
+4. `buglog.md` — structured bug patterns (error, root cause, fix, tags).
+5. `memory.md` — session log; append at milestones (`| HH:MM | description | file(s) | outcome | ~tokens |`).
+6. `token-ledger.jsonl` — auto (hooks); never hand-edit.
+
+After creating, deleting, or renaming files: update `anatomy.md`. After fixing a bug: append to
+`buglog.md` (and `pitfalls.md` if it is a do-not-repeat lesson). Absent context dir: continue; do not block.
 
 ## Project
 
