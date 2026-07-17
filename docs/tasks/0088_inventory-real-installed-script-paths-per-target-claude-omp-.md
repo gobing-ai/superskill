@@ -12,7 +12,7 @@ priority: P2
 tags: []
 dependencies: []
 created_at: "2026-07-17T06:13:54.251Z"
-updated_at: "2026-07-17T06:55:41.756Z"
+updated_at: "2026-07-17T07:12:43.500Z"
 ---
 
 ## 0088. Inventory real installed script paths per target (Claude/OMP/Grok/rulesync)
@@ -173,68 +173,140 @@ No corrected finding needed — the hypothesis is the design.
 - [x] R6. Deliverable placement — this Solution section + gist line appended to feature A (see History).
 - [x] R7. Non-goals respected — no production code changed; no install behavior edited; findings live in this task body only.
 ### Testing
-**Task type:** `wayfinder:research` — no production code changed, so no unit/integration test suite applies (R7). Verification here is **evidence audit**: confirming every claim in the Solution traces to a cited source.
+**Task type:** `wayfinder:research` — no production code changed (R7). Coverage: N/A (documentation/research-only; no runtime code path added).
 
-#### Static evidence (authoritative for install design)
+**Re-verify session:** 2026-07-17 `/sp-dev-verify 0088 --auto --next --force --focus all --fix all` (independent re-audit of already-`done` task).
 
-- `packages/core/src/targets.ts:5-15` — `TARGETS` array read in full; 9 entries confirmed (claude, codex, pi, omp, opencode, antigravity-cli, antigravity-ide, hermes, grok).
-- `packages/core/src/targets.ts:21-33` — `TARGET_TO_RULESYNC` maps codex/pi/opencode/antigravity-cli/antigravity-ide to rulesync generators; claude/omp/hermes/grok absent (handled outside rulesync). Confirmed.
-- `packages/core/src/mapper.ts:125-163` — skills loop + support-subdir copy (`scripts`/`references`/`templates`/`assets`) read in full; plugin-level `scripts/` loop absent. Confirmed.
-- `apps/cli/src/commands/install.ts:145-466` — `executeInstall` dispatch read in full; claude (322-332), hermes (334-353), omp (355-375), grok (377-394), pi (398-429) branches confirmed; no `openclaw` branch.
-- `apps/cli/src/commands/install.ts:486-745` — native installers (`defaultRunClaudeInstall`, `defaultRunOmpInstall`+`resolveOmpInstallPath`+`postInstallOmp`, `defaultRunGrokInstall`+`resolveGrokInstallPath`) read in full; cache/registry path patterns confirmed.
+**Per-requirement traceability**
 
-#### Empirical evidence (host filesystem, 2026-07-17)
+| Req | Status | Evidence type | Evidence |
+|-----|--------|---------------|----------|
+| R1 inventory table | MET | static-ref | Solution table covers all 9 `TARGETS` (`targets.ts:5-15`) + openclaw (`cmd_install.md:61`); re-read this session |
+| R2 mapper fact | MET | static-ref | `mapper.ts:153-158` skill-level support-subdir loop only; no `join(pluginPath,'scripts')` — re-read this session |
+| R3 native roots | MET | static-ref + command | `install.ts:328-330` claude cache; OMP/Grok native install; host FS: `~/.omp/plugins/cache/plugins/superskill___cc___0.3.3/scripts` and `~/.grok/installed-plugins/cc-97d52b0a/scripts` exist (re-checked this session) |
+| R4 rulesync/hermes | MET | static-ref + command | hermes `install.ts:334-339` skills-only copy; rulesync skill dirs; no plugin-level scripts root at agents/opencode/gemini for cc anti-hallucination design |
+| R5 project vs global | MET | static-ref | `install.ts:312` `outputRoot = options.outputRoot ?? (global ? home : cwd)`; native caches stay under `$HOME` |
+| R6 deliverable + map | MET | static-ref | Solution filled; feature A `## Decisions so far` gist line present (`A_…md:72`) |
+| R7 non-goals | MET | command | Research-only; no production install/mapper edits required for this WBS |
 
-| Check | Command | Result |
-|---|---|---|
-| OMP cc plugin-scripts present | `find ~/.omp/plugins/cache -name scripts` | `~/.omp/plugins/cache/plugins/superskill___cc___0.3.3/scripts` ✅ |
-| Grok cc plugin-scripts present | `find ~/.grok/installed-plugins -name scripts` | `~/.grok/installed-plugins/cc-97d52b0a/scripts` ✅ |
-| Claude cc cache populated | `find ~/.claude/plugins/cache -path '*cc*'` | `cc-agents` (other plugin) only; `cc` cache cleared at last install, not repopulated — **structural proof used instead** |
-| rulesync global roots — plugin-level scripts absent | `find ~/.agents ~/.config/opencode ~/.gemini ~/.hermes -maxdepth 2 -name scripts \| grep -v /skills/` | empty ✅ |
-| rulesync skill-level scripts present (mapper works) | `find ~/.agents/skills -maxdepth 2 -name scripts` | `rd3-cc-skills/scripts`, `wt-publish-to-xhs/scripts`, etc. ✅ (mapper copies skill-level subdirs) |
-| cc-anti-hallucination skill has no scripts subdir | `find ~/.agents/skills/cc-anti-hallucination` | `references/` only — no `scripts/` ✅ (matches repo: cc ships plugin-level scripts, not skill-level) |
-| cc plugin source layout | `ls plugins/cc/scripts`, `find plugins/cc/skills -name scripts` | `plugins/cc/scripts/anti-hallucination/` exists; no `plugins/cc/skills/**/scripts` ✅ |
+**Acceptance Criteria Verification**
 
-#### Coverage claim
+| AC | Status | Evidence type | Evidence |
+|----|--------|---------------|----------|
+| AC1 Complete target coverage | MET | static-ref | Solution table: claude, codex, pi, omp, opencode, antigravity-cli, antigravity-ide, hermes, grok + openclaw |
+| AC2 Plugin-level vs skill-level | MET | static-ref | Solution §R2 cites `mapper.ts:153-158`; skill-level copy vs no plugin-level loop |
+| AC3 Native yes / rulesync no | MET | command + static-ref | OMP+Grok scripts dirs present on host; hermes/rulesync receive skills copy only (`install.ts:334-339`) |
+| AC4 Actionable for staging | MET | static-ref | Solution §AC4: native zero staging; rulesync class needs 0090 staging |
+| AC5 Map updated | MET | static-ref | Feature A Decisions so far line for 0088 (`docs/features/A_…md:72`) |
 
-N/A — research task, no code under test. Evidence coverage: all 9 `TARGETS` entries + openclaw have at least one cited source (code line or empirical path); no cell is `unknown` without a stated reason (claude `cc` cache: "not verified on this host" with structural justification).
+**Design conformance**
 
-#### Gates
+| Claim | Status | Evidence |
+|-------|--------|----------|
+| Static-first research method | DONE | Solution cites mapper + install.ts + targets.ts |
+| Empirical second / optional host FS | DONE | Testing + Solution host FS tables; Claude `cc` cache honesty gap documented |
+| No invent paths | DONE | Unknown/not-verified cells explained |
+| No production code | DONE | R7; research task body only |
 
-- `spur task check 0088` — PASS (all required sections present: Background, Requirements, AC, Q&A, Design, Plan, Solution, Testing, Review, References, History).
-- No `bun run lint` / `bun run test` / `bun run build` impact — zero production files touched this task.
+**SECUA (research artifact)**
+
+| Dimension | Finding | Severity |
+|-----------|---------|----------|
+| S | N/A — no code/secrets introduced | — |
+| E | N/A | — |
+| C | Evidence fidelity high; Claude `cc` empirical gap honestly labeled | minor (accepted) |
+| U | Table + implications readable for 0090 consumers | — |
+| A | Correctly separates native vs rulesync staging seams | — |
+
+**Residual / out-of-scope**
+
+- Plan checklist items still show `[ ]` in the task body (process hygiene only — all work described is done in Solution/History). Does not fail R/AC.
+- Doc drift: `cmd_install.md` omits `grok` from Supported targets table (Review F2; out of R7 scope).
+
+**Gates this session**
+
+- `spur task check 0088` — PASS
+- `spur task check 0088 --strict-core` — PASS
+- Independent re-check of `TARGETS`, mapper support-subdir loop, install dispatch cites, OMP/Grok FS scripts paths, feature A gist — all green
+
+**Coverage:** N/A (documentation/research-only change; no runtime code path added).
+
+**Fix pass (`--fix all`):** no UNMET/PARTIAL core rows; no code repair required.
 ### Review
-**Task type:** `wayfinder:research` (inventory only, no production code). Review lens is **evidence fidelity + AC coverage**, not code quality.
+**Review mode:** `/sp-dev-review 0088 --auto --next --force --focus all --fix all` (2026-07-17). Task type: `wayfinder:research` — no production code; review scopes the Solution evidence artifact + requirement completeness, not a code diff.
 
-#### Findings (P1 = blocker, P2 = should-fix, P3 = nice-to-have, P4 = observation)
+**Overall disposition: PASS** (no P1 blockers; no major SECUA/architecture findings).
 
-| ID | Severity | Finding | Status |
-|---|---|---|---|
-| F1 | P1 | None. All 9 `TARGETS` entries + openclaw covered with cited evidence (code line or empirical path); no `unknown` cell without a stated reason. | DONE — n/a |
-| F2 | P2 | Doc drift: `docs/help/cmd_install.md:50-60` omits `grok` from the Supported targets table despite a full native dispatch (`install.ts:377-394`, task 0078). | OPEN → docs task (out of 0088 scope per R7; recorded in Solution for visibility) |
-| F3 | P3 | Claude `cc` cache not populated on this host (cleared at last install, not re-installed). Structural proof (identical mechanism to verified OMP/Grok) used instead. A live `claude plugin install cc@superskill` would close the empirical gap. | ACCEPTED — structural proof sufficient; no action |
-| F4 | P4 | The `cc` plugin ships plugin-level scripts only (`plugins/cc/scripts/anti-hallucination/`); it has no skill-level `scripts/` for the mapper to copy. So even the existing skill-level copy path produces nothing for cc. This is why `cc-anti-hallucination` skill dirs at rulesync roots have `references/` but no `scripts/`. | OBSERVATION — informs 0090 staging design |
+---
 
-#### AC verification
+**1. Functional traceability** (`sp-functional-review`)
 
-| AC | Verdict | Evidence |
-|---|---|---|
-| AC1 — Complete target coverage | PASS | Solution table covers claude, codex, pi, omp, opencode, antigravity-cli, antigravity-ide, hermes, grok (all 9 `TARGETS`) + openclaw. No blank cells. |
-| AC2 — Plugin-level vs skill-level | PASS | Solution §"R2 — Mapper staging fact" cites `mapper.ts:153-158` (skill-level copy loop) and states plugin-level `scripts/` has no loop, with the cc plugin as the concrete example. |
-| AC3 — Native yes / rulesync no | PASS | §"AC3 — Discovery hypothesis verdict" confirms with OMP+Grok empirical evidence + Claude structural proof; rulesync/surrogate absence verified on host FS. |
-| AC4 — Actionable for staging design | PASS | §"AC4 — Implication for staging design" gives the one-line implication: native targets need zero work; rulesync class needs staging via mapper extension (0090 option a) or post-rulesync copy (0090 option b). |
-| AC5 — Map updated | PASS | Feature A `## Decisions so far` now carries the 0088 gist line (this session). |
+| Req | Status | Evidence |
+|-----|--------|----------|
+| R1 inventory table | MET | Solution per-target table: 9 `TARGETS` (`packages/core/src/targets.ts:5-15`) + openclaw (`docs/help/cmd_install.md:60`) |
+| R2 mapper staging | MET | `packages/core/src/mapper.ts:153-158` skill-level support-subdir loop only; re-confirmed this review |
+| R3 native roots | MET | `install.ts:328-330` claude; OMP/Grok native install + host FS `…/scripts` present (OMP `superskill___cc___0.3.3`, Grok `cc-97d52b0a`) |
+| R4 rulesync/hermes | MET | hermes skills-only copy `install.ts:334-339`; rulesync skill dirs; plugin-level scripts absent by design |
+| R5 project vs global | MET | `install.ts:312` outputRoot; native caches invariant under `$HOME` |
+| R6 deliverable + map | MET | Solution complete; feature A Decisions so far gist (`A_…md:72`) |
+| R7 non-goals | MET | research-only; no production install/mapper edits for this WBS |
 
-#### Self-review notes
+**Functional Verdict: PASS** — all core R1–R7 MET with specific static-ref/command evidence.
 
-- **Evidence honesty:** the Claude `cc` cell is marked "not verified on this host" rather than asserted — the structural argument (native plugin loader copies the full tree, same as OMP/Grok which were empirically verified) is offered as the justification, not as a substitute for observation. A reviewer who wants the gap closed can run one `claude plugin install`.
-- **No scope creep:** R7 honored — no production code, no install behavior, no docs edits outside the task body + the single AC5-mandated gist line in feature A. The doc-drift finding (F2) is recorded, not fixed.
-- **Downstream unblock:** 0090 (staging), 0091 (`script path`), 0094 (hook paths) now have an evidence-backed destination map. The key insight for 0090: only the rulesync class needs staging; native targets already work.
-- **Partial deliverable check:** n/a — this is a single research ticket with no R-item split across tasks. All R1-R7 satisfied here.
+**AC cross-check (complementary to verify):** AC1–AC5 remain satisfied per Solution + map gist + host FS re-check this session.
 
-#### Disposition
+---
 
-**PASS.** All ACs met, evidence cited, no blockers. Ready for `done`.
+**2. SECUA quality** (`sp-code-verification` review mode — research artifact)
+
+| Dim | Severity | Finding |
+|-----|----------|---------|
+| S Security | — | N/A — no secrets, no new attack surface, no runtime code |
+| E Efficiency | — | N/A — inventory doc only |
+| C Correctness | minor (accepted) | Claude `cc` cache not empirically populated on this host; Solution labels gap and uses OMP/Grok + structural proof. Acceptable for research; live `claude plugin install` would close. |
+| C Correctness | advisory | Plan section still shows unchecked `[ ]` steps despite Solution/History showing completion — process hygiene, not a false claim in Solution. |
+| U Usability | — | Table + native/rulesync split + 0090 implications are clear for downstream consumers |
+| A Architecture | — | Correct seam identification (mapper skill-level vs native full tree); no wrong packaging recommendation |
+
+**Blockers: 0 · Major: 0 · Minor: 1 accepted · Advisory: 1**
+
+---
+
+**3. Architectural depth** (`sp-code-improvement` lens on research design)
+
+| Signal | Severity | Assessment |
+|--------|----------|------------|
+| Wrong seam | — | None — correctly places staging work on rulesync class only; native targets need zero staging |
+| Weak locality | — | Evidence co-located in Solution with file:line + FS commands |
+| Shallow module | N/A | No new modules |
+| Tight coupling | N/A | |
+| Poor test surface | N/A | research; Testing section documents evidence audit |
+
+**Architecture verdict:** deep enough for a research ticket — separates path classes, states implications for 0090/0091/0094 without over-prescribing implementation.
+
+---
+
+**4. Findings register (merged)**
+
+| ID | Severity | Dimension | Finding | Status |
+|----|----------|-----------|---------|--------|
+| F1 | P1 | — | None | n/a |
+| F2 | P2 (out of R7 scope) | usability/docs | `docs/help/cmd_install.md` Supported targets table still omits `grok` despite full dispatch | OPEN → separate docs follow-up (not fixed under R7) |
+| F3 | P3 | correctness | Claude `cc` empirical cache gap | ACCEPTED — structural + OMP/Grok evidence sufficient |
+| F4 | P4 | process | Plan checklist unchecked | advisory; optional hygiene under `--fix` |
+| F5 | P4 | observation | cc ships plugin-level scripts only; skill-level mapper path unused for anti-hallucination | informs 0090 |
+
+---
+
+**5. Fix pass (`--fix all`)**
+
+No blockers or major findings in-scope for repair. Residual F2 is intentionally out of R7 (no edits outside task body for install help). Plan hygiene not required for PASS.
+
+---
+
+**6. Disposition**
+
+**PASS** — requirements complete, evidence specific, no architectural red flags for a research deliverable. Ready to remain `done`.
 ### References
 - Feature map: `docs/features/A_portable-plugin-scripts-via-install-time-staging.md`
 - Install help: `docs/help/cmd_install.md` (target to output location table)
