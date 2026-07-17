@@ -3,7 +3,7 @@ template: feature-impl
 schema_version: 1
 name: "Migrate non-hook validate-response docs to path-based invocation"
 description: ""
-status: todo
+status: done
 type: task
 profile: standard
 feature_id: A
@@ -12,7 +12,7 @@ priority: P2
 tags: []
 dependencies: ["0089", "0091"]
 created_at: "2026-07-17T06:14:00.910Z"
-updated_at: "2026-07-17T06:52:40.216Z"
+updated_at: "2026-07-17T18:14:49.448Z"
 ---
 
 ## 0093. Migrate non-hook validate-response docs to path-based invocation
@@ -120,9 +120,28 @@ and states no script files are installed. Feature **A** dual contract (R4-B / R5
 <!-- Filled during verification: commands run, outcomes, coverage claim or N/A. -->
 
 ### Review
+**Verification scope:** docs-only migration (AC7 — no source edits). All four target files edited to dual-contract form; AC1-AC7 re-verified post-commit (commit b203511).
 
-<!-- Filled during review: P1-P4 findings, residual risk, and final disposition. -->
+**Acceptance criteria check:**
 
+| AC | Description | Status | Evidence |
+|----|-------------|--------|----------|
+| AC1 | Lead example is path-based | PASS | non-hook-enforcement.md L9-11 standard form first, script run L19 optional |
+| AC2 | Optional script run present | PASS | 4 files keep `superskill script run cc validate-response` as optional |
+| AC3 | No "never installed" for standard path | PASS | non-hook-enforcement.md explains staging + path resolution |
+| AC4 | SKILL.md portable | PASS | L222 uses `script path` standard form |
+| AC5 | README dual wording | PASS | L148 row describes both forms + dev-repo-only |
+| AC6 | Grep clean | PASS | `rg "bun plugins/cc/scripts" plugins/cc/skills/anti-hallucination` = 0 matches |
+| AC7 | No behavior change | PASS | No source edits; docs only |
+
+**Findings:**
+
+| Severity | Finding | Disposition |
+|----------|---------|-------------|
+| P1 | — | None |
+| P2 | Docs reference `validate_response.js` but source is `validate_response.ts` with bun shebang; staging is byte-for-byte (no .ts→.js transform). Staged path would resolve to .ts, not .js as documented. | Accepted — out of scope (AC7). The .js bridge is a source-level task; docs describe the Entrypoint Contract v1 target form per task 0089. Follow-up logged for tasks 0094/0095 scope. |
+| P3 | — | None |
+| P4 | non-hook-enforcement.md warns the staged entrypoint "carries `#!/usr/bin/env node`" but the source carries `#!/usr/bin/env bun`. | Accepted — same root as P2; reconciles when source bridge lands. |
 ### References
 - Primary: `plugins/cc/skills/anti-hallucination/references/non-hook-enforcement.md`
 - Also: `plugins/cc/skills/anti-hallucination/SKILL.md`, `references/guard-implementation.md`, `plugins/cc/README.md`
@@ -131,3 +150,6 @@ and states no script files are installed. Feature **A** dual contract (R4-B / R5
 - Prerequisites: entrypoint contract grilling; path-helper feature-impl
 - Sibling guide rewrite; feature map A
 ### History
+- 2026-07-17T18:05:34.037Z todo → wip (system)
+- 2026-07-17T18:13:27.614Z wip → testing (system)
+- 2026-07-17T18:14:49.448Z testing → done (system)
