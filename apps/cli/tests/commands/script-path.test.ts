@@ -153,10 +153,12 @@ describe('runScriptPathAction', () => {
         rel: string,
         options: { json?: boolean; global?: boolean; project?: boolean } = {},
         overrides?: { home?: string; projectRoot?: string },
-    ): { exits: number[]; lines: string[] } {
+    ): { exits: number[]; lines: string[]; errors: string[] } {
         const exits: number[] = [];
         const lines: string[] = [];
-        const spy = spyOnLog((l) => lines.push(l));
+        const errors: string[] = [];
+        const outSpy = spyOnStream(process.stdout, 'stdout', (l) => lines.push(l));
+        const errSpy = spyOnStream(process.stderr, 'stderr', (l) => errors.push(l));
         try {
             runScriptPathAction(
                 plugin,
@@ -171,8 +173,9 @@ describe('runScriptPathAction', () => {
         } catch {
             // exitFn throws — expected
         }
-        spy.mockRestore();
-        return { exits, lines };
+        outSpy.mockRestore();
+        errSpy.mockRestore();
+        return { exits, lines, errors };
     }
 
     it('exits 0 and prints path when script found', () => {
@@ -282,23 +285,34 @@ describe('registerScriptPath CLI', () => {
                 throw new Error(`exit ${code}`);
             },
         });
-        const spy = spyOnLog(() => {});
+        const outSpy = spyOnStream(process.stdout, 'stdout', () => {});
+        const errSpy = spyOnStream(process.stderr, 'stderr', () => {});
         try {
             await program.parseAsync(['node', 'superskill', 'script', 'path', 'cc', '../escape']);
         } catch {
             // exit throws
         }
-        spy.mockRestore();
+        outSpy.mockRestore();
+        errSpy.mockRestore();
         expect(exits).toEqual([1]);
     });
 });
 
 /**
- * Spy on process.stdout.write — used for capturing output from `echo()` calls
- * inside `runScriptPathAction`. Restore with `spy.mockRestore()`.
+ * Spy on a writable stream (`process.stdout`/`process.stderr`) so that
+ * output from `echo()` / `echoError()` is captured instead of leaking to
+ * the terminal. Restore with `spy.mockRestore()`.
+ *
+ * Without the stderr spy, the non-JSON error paths in `runScriptPathAction`
+ * (invalid args, not-found) leak their messages via `echoError` even though
+ * the tests only assert on exit codes.
  */
-function spyOnLog(capture: (line: string) => void) {
-    return spyOn(process.stdout, 'write').mockImplementation((data: unknown) => {
+function spyOnStream(
+    stream: typeof process.stdout | typeof process.stderr,
+    _label: 'stdout' | 'stderr',
+    capture: (line: string) => void,
+) {
+    return spyOn(stream, 'write').mockImplementation((data: unknown) => {
         capture(String(data));
         return true;
     });
