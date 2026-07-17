@@ -12,7 +12,7 @@ priority: P2
 tags: []
 dependencies: ["0088", "0089"]
 created_at: "2026-07-17T06:13:56.755Z"
-updated_at: "2026-07-17T07:38:30.932Z"
+updated_at: "2026-07-17T07:47:00.492Z"
 ---
 
 ## 0090. Stage plugin-level scripts on superskill install (mapper + dispatch)
@@ -128,26 +128,64 @@ updated_at: "2026-07-17T07:38:30.932Z"
 |---|---|---|
 | `packages/core/src/mapper.ts` | 20-21 | Added `scripts: number` field to `MapResult` — surfaces staged file count for verbose install output |
 | `packages/core/src/mapper.ts` | 119-127 | Initialize `scripts: 0` in result object |
-| `packages/core/src/mapper.ts` | 228-237 | Plugin-level scripts staging: copies `pluginRoot/scripts` → `.rulesync/scripts/<plugin>/` via `copyAndRewriteDirectory`, counts files via new helper |
-| `packages/core/src/mapper.ts` | 402-420 | New `countFilesInDir()` helper — iterative dir walk with symlink skip |
-| `packages/core/tests/mapper.test.ts` | 332-367 | Two new test cases: scripts present → staged + preserved tree shape; scripts absent → `scripts: 0` + no junk dir |
-| `apps/cli/src/commands/install.ts` | 170 | Verbose output now includes `Scripts: N` count |
-| `apps/cli/src/commands/install.ts` | 447-449 | Call `stagePluginScripts()` after rulesync dispatch + before hook-emit summary |
-| `apps/cli/src/commands/install.ts` | 899-917 | New `countFilesInDir()` helper in install.ts (local copy, same logic as mapper) |
-| `apps/cli/src/commands/install.ts` | 934-960 | New `stagePluginScripts()` function: copies `.rulesync/scripts/<plugin>/` → `<outputRoot>/.agents/scripts/<plugin>/`, honors `dryRun`/`verbose`, replaces only plugin subdir on re-install |
-| `apps/cli/tests/commands/install.integration.test.ts` | 919-1006 | Three new integration tests: scripts staged to `.agents/scripts/<plugin>/` (verified content preserved), no scripts dir → no error, dry-run → no write |
+| `packages/core/src/mapper.ts` | 236-245 | Plugin-level scripts staging: copies `pluginRoot/scripts` → `.rulesync/scripts/<plugin>/` via `copyAndRewriteDirectory`, counts files via `countFilesInDir` |
+| `packages/core/src/mapper.ts` | 402-420 | `countFilesInDir()` helper — iterative dir walk with symlink skip (single source of truth for counts) |
+| `packages/core/tests/mapper.test.ts` | 332-367 | Two mapper cases: scripts present → staged + preserved tree; scripts absent → `scripts: 0` + no junk dir |
+| `apps/cli/src/commands/install.ts` | 170 | Verbose output includes `Scripts: N` count |
+| `apps/cli/src/commands/install.ts` | 447-455 | Gate: `needsSharedScriptsRoot` — stage only for rulesync/hermes target class; native-only verbose note, no shared-root write |
+| `apps/cli/src/commands/install.ts` | 905-945 | `stagePluginScripts()` — copy `.rulesync/scripts/<plugin>/` → `<outputRoot>/.agents/scripts/<plugin>/`, honors dryRun/verbose, replaces only plugin subdir; uses mapper file count (no local re-walk) |
+| `apps/cli/tests/commands/install.integration.test.ts` | 918+ | Integration: rulesync stage, missing scripts, dry-run, **native-only skip**, hermes stage, mixed native+rulesync, re-install refresh + sibling preserve |
 | `CHANGELOG.md` | 33 | Unreleased entry for plugin-level scripts staging |
 
 **Design decisions:**
-- **Tree shape preserved.** Plugin `scripts/anti-hallucination/validate.js` → `.agents/scripts/cc/anti-hallucination/validate.js` — subdirectory nesting intact, never flattened into skill dirs (ADR-015 anti-pattern avoided).
-- **Dedup.** `stagePluginScripts` runs once per install regardless of target count — multiple rulesync targets share the single `~/.agents/scripts/` root.
-- **Native skip.** Claude, OMP, Grok receive `scripts/` through their own plugin install CLIs (full plugin tree); no duplicate copy needed. The function is called regardless but no-ops because `.rulesync/scripts/` exists only when the mapping produced it — and for native-only installs, rulesync is never called so the scripts tree is never staged to the shared root.
-- **Re-install safe.** `rmSync(dest, { recursive: true })` before copy — refreshes only `.../scripts/<plugin>/`, never the entire `.agents/scripts/` tree (other plugins survive).
-- **No `.ts` gate.** Entrypoint Contract v1 (0089) bans `.ts` entrypoint staging, but this task implements the copy mechanism — the contract enforcement belongs to a future validate step, not the copy itself.
+- **Tree shape preserved.** Plugin `scripts/anti-hallucination/validate.js` → `.agents/scripts/cc/anti-hallucination/validate.js` — subdirectory nesting intact (ADR-015).
+- **Dedup.** `stagePluginScripts` runs once per install when any non-native target is present — multiple rulesync targets share one root.
+- **Native skip (residual fix 2026-07-17).** Pure claude/omp/grok installs do **not** write `~/.agents/scripts/<plugin>/`. Shared-root staging runs only when the target set includes rulesync or hermes. Mixed installs (e.g. claude+codex) still stage for the rulesync half.
+- **Re-install safe.** `rmSync(dest)` refreshes only `.../scripts/<plugin>/`, never the full `.agents/scripts/` tree.
+- **Count ownership.** Mapper owns `countFilesInDir`; install reuses `mapResult.scripts` for verbose output (no duplicated walker).
+- **No `.ts` gate.** Entrypoint Contract v1 (0089) enforcement is out of scope for the copy mechanism.
 ### Testing
+**Verify date:** 2026-07-17 (residual fix pass after force verify)
 
-<!-- Filled during verification: commands run, outcomes, coverage claim or N/A. -->
+**Commands run (this pass):**
+- `bun test packages/core/tests/mapper.test.ts apps/cli/tests/commands/install.integration.test.ts` → **55 pass, 0 fail**
+- `bun run lint` → Biome clean + typecheck exit 0
 
+**Coverage:** targeted suites. Residual fix covered: native-only skip (+verbose note), hermes stage, mixed native+rulesync, re-install refresh (plugin subdir only; sibling plugins preserved).
+
+**Residual fixes applied**
+- Native-only installs no longer dual-write to `.agents/scripts` (Design §3 / AC5)
+- Removed install-local `countFilesInDir` (use `mapResult.scripts`)
+- Added integration tests for native skip, hermes, mixed, re-install refresh
+
+**Per-Requirement Traceability**
+
+| Req | Status | Evidence |
+|-----|--------|----------|
+| R1 | MET | `mapper.ts:236-245` + mapper tests |
+| R2 | MET | Nested path preserved in mapper tests |
+| R3 | MET | Skill subdir loop untouched; mapper suite green |
+| R4 | MET | `stagePluginScripts` + rulesync integration test |
+| R5 | MET | hermes integration: stages to shared agents root |
+| R6 | MET | native-only test: no `.agents/scripts/demo`; verbose native note |
+| R7 | MET | plugin-scoped rm only; re-install test preserves `other/keep.js` |
+| R8 | MET | 2 mapper + 7 install scripts-related integration tests |
+| R9 | MET | CHANGELOG Unreleased |
+| R10 | MET | no script path / prose / hooks / compile |
+
+**Acceptance Criteria Verification**
+
+| AC | Status | Evidence Type | Evidence |
+|----|--------|---------------|----------|
+| AC1 | MET | test | mapper stages nested tree |
+| AC2 | MET | test | missing scripts → scripts:0 |
+| AC3 | MET | test | skill support subdirs still green |
+| AC4 | MET | test | rulesync + hermes stage to `.agents/scripts` |
+| AC5 | MET | test | native-only does not create `.agents/scripts/demo` |
+| AC6 | MET | test | dry-run no write |
+| AC7 | MET | command | lint + 55 tests green |
+
+**Design conformance:** all claims DONE (native no-op claim now implemented). **SECUA:** no residual major/minor from prior verify.
 ### Review
 **Verdict:** PASS — all 10 requirements and 7 acceptance criteria satisfied.
 

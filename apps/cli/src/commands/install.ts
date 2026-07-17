@@ -444,9 +444,15 @@ export async function executeInstall(
     emitMagents(plugin, targets, outputDir, outputRoot, options);
     // Plugin-level rules optional: plugins without rules/ no-op cleanly.
     emitPluginRules(pluginRoot, targets, outputRoot, options);
-    // Plugin-level scripts — stage to shared agents scripts root for rulesync + hermes.
-    // Native targets (claude/omp/grok) already receive scripts/ through their own plugin install CLI.
-    stagePluginScripts(outputDir, plugin, outputRoot, options);
+    // Plugin-level scripts → shared agents scripts root for rulesync + hermes only.
+    // Native class (claude/omp/grok) already receives scripts/ via host plugin install (R3-B / R6);
+    // do not invent ~/.agents/scripts as a required second tree for native-only installs (AC5).
+    const needsSharedScriptsRoot = targets.some((t) => t !== 'claude' && t !== 'omp' && t !== 'grok');
+    if (needsSharedScriptsRoot) {
+        stagePluginScripts(outputDir, plugin, outputRoot, options, mapResult.scripts);
+    } else if (options.verbose && mapResult.scripts > 0) {
+        echo('  Plugin scripts: native targets include scripts/ via host plugin install (no shared-root stage)');
+    }
 
     // No silent drop (design §6 exit #2): surface hook emission results for uncovered targets
     // in non-verbose mode. Verbose mode already echoes each result at the dispatch site
@@ -896,40 +902,20 @@ function emitPluginRules(pluginRoot: string, targets: Target[], outputRoot: stri
     }
 }
 
-/** Recursively count regular files in a directory (skips symlinks). */
-function countFilesInDir(root: string): number {
-    let count = 0;
-    const stack = [root];
-    while (stack.length > 0) {
-        const dir = stack.pop();
-        if (!dir) continue;
-        for (const entry of readdirSync(dir)) {
-            const fullPath = join(dir, entry);
-            const stat = lstatSync(fullPath);
-            if (stat.isSymbolicLink()) continue;
-            if (stat.isDirectory()) {
-                stack.push(fullPath);
-            } else {
-                count++;
-            }
-        }
-    }
-    return count;
-}
-
 /**
  * Stage plugin-level scripts from the canonical .rulesync/scripts/<plugin>/ tree
  * to the shared agents scripts root (~/.agents/scripts/<plugin>/ or project twin).
  *
- * Called once per install, not per target — the scripts root is shared across all
- * rulesync + hermes targets (dedup to avoid N identical copies when installing
- * --targets all). Native targets (claude/omp/grok) already receive scripts/ through
- * their own plugin install CLI — no duplicate staging needed.
+ * Called once per install when the target set includes rulesync or hermes — not per
+ * target (dedup when installing `--targets all`). Native-only installs never call this
+ * (caller gates on target class). File count comes from {@link MapResult.scripts} so
+ * we do not re-walk the tree (mapper already counted).
  *
  * @param outputDir  The .rulesync/ staging root produced by {@link mapPluginToRulesync}.
  * @param pluginName The plugin prefix (e.g. "cc").
  * @param outputRoot The global home dir or project cwd/outputRoot override.
  * @param options    Install options for dryRun/verbose gating.
+ * @param stagedFileCount Mapper-reported file count for verbose logging.
  * @returns Number of files staged, or 0 when no plugin-level scripts exist.
  */
 function stagePluginScripts(
@@ -937,18 +923,18 @@ function stagePluginScripts(
     pluginName: string,
     outputRoot: string,
     options: InstallOptions,
+    stagedFileCount: number,
 ): number {
     const stagedSource = join(outputDir, 'scripts', pluginName);
     if (!existsSync(stagedSource)) return 0;
 
-    const count = countFilesInDir(stagedSource);
     const dest = join(outputRoot, '.agents', 'scripts', pluginName);
 
     if (options.verbose) {
-        echo(`  Plugin scripts: staging ${count} file(s) to ${dest}`);
+        echo(`  Plugin scripts: staging ${stagedFileCount} file(s) to ${dest}`);
     }
 
-    if (options.dryRun) return count;
+    if (options.dryRun) return stagedFileCount;
 
     // Replace only <plugin>/ subdir — never the entire .agents/scripts/ tree (other plugins).
     if (existsSync(dest)) {
@@ -956,7 +942,7 @@ function stagePluginScripts(
     }
     copyDirectory(stagedSource, dest);
 
-    return count;
+    return stagedFileCount;
 }
 
 /** Parse a comma-separated targets string. Returns all targets when undefined or "all". Throws on unknown targets. */

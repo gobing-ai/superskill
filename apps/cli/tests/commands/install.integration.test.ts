@@ -1002,4 +1002,115 @@ describe('executeInstall', () => {
         // dry-run: scripts are NOT written
         expect(existsSync(join(outRoot, '.agents', 'scripts', 'demo'))).toBe(false);
     });
+
+    it('native-only install (claude) does not stage scripts to .agents/scripts/', async () => {
+        const { marketplacePath, pluginDir } = setupPluginDir();
+        const scriptsDir = join(pluginDir, 'scripts', 'util');
+        mkdirSync(scriptsDir, { recursive: true });
+        writeFileSync(join(scriptsDir, 'helper.js'), '// native-only');
+
+        const outRoot = join(tmpDir, 'out-native');
+        mkdirSync(outRoot, { recursive: true });
+
+        const captured: string[] = [];
+        const spy = spyOn(process.stdout, 'write').mockImplementation((data) => {
+            captured.push(typeof data === 'string' ? data : data.toString());
+            return true;
+        });
+
+        // dry-run: native installer not invoked; still proves shared-root stage is gated off
+        await executeInstall('demo', ['claude'], {
+            marketplacePath,
+            global: false,
+            dryRun: true,
+            verbose: true,
+            outputRoot: outRoot,
+        });
+        spy.mockRestore();
+
+        expect(existsSync(join(outRoot, '.agents', 'scripts', 'demo'))).toBe(false);
+        expect(captured.join('')).toMatch(/native targets include scripts\/ via host plugin install/);
+    });
+
+    it('hermes target stages scripts to shared agents root', async () => {
+        const { marketplacePath, pluginDir } = setupPluginDir();
+        const scriptsDir = join(pluginDir, 'scripts', 'util');
+        mkdirSync(scriptsDir, { recursive: true });
+        writeFileSync(join(scriptsDir, 'helper.js'), '// hermes stage');
+
+        const outRoot = join(tmpDir, 'out-hermes');
+        mkdirSync(outRoot, { recursive: true });
+
+        await executeInstall(
+            'demo',
+            ['hermes'],
+            { marketplacePath, global: false, dryRun: false, verbose: false, outputRoot: outRoot },
+            { runRulesync: async () => mockEmptyRulesyncResult() },
+        );
+
+        expect(existsSync(join(outRoot, '.agents', 'scripts', 'demo', 'util', 'helper.js'))).toBe(true);
+        expect(readFileSync(join(outRoot, '.agents', 'scripts', 'demo', 'util', 'helper.js'), 'utf-8')).toBe(
+            '// hermes stage',
+        );
+    });
+
+    it('mixed native+rulesync still stages scripts (shared root for rulesync half)', async () => {
+        const { marketplacePath, pluginDir } = setupPluginDir();
+        const scriptsDir = join(pluginDir, 'scripts', 'util');
+        mkdirSync(scriptsDir, { recursive: true });
+        writeFileSync(join(scriptsDir, 'helper.js'), '// mixed');
+
+        const outRoot = join(tmpDir, 'out-mixed');
+        mkdirSync(outRoot, { recursive: true });
+
+        await executeInstall(
+            'demo',
+            ['claude', 'codex'],
+            { marketplacePath, global: false, dryRun: false, verbose: false, outputRoot: outRoot },
+            {
+                runRulesync: async () => mockEmptyRulesyncResult(),
+                runClaudeInstall: async () => {},
+            },
+        );
+
+        expect(existsSync(join(outRoot, '.agents', 'scripts', 'demo', 'util', 'helper.js'))).toBe(true);
+    });
+
+    it('re-install refreshes only the plugin scripts subdir (verbose count)', async () => {
+        const { marketplacePath, pluginDir } = setupPluginDir();
+        const scriptsDir = join(pluginDir, 'scripts', 'util');
+        mkdirSync(scriptsDir, { recursive: true });
+        writeFileSync(join(scriptsDir, 'helper.js'), '// v1');
+
+        const outRoot = join(tmpDir, 'out-refresh');
+        mkdirSync(outRoot, { recursive: true });
+        // Stale sibling under another plugin must survive re-install of demo
+        const otherPlugin = join(outRoot, '.agents', 'scripts', 'other');
+        mkdirSync(otherPlugin, { recursive: true });
+        writeFileSync(join(otherPlugin, 'keep.js'), '// keep');
+        // Pre-existing demo tree with stale content
+        const demoDest = join(outRoot, '.agents', 'scripts', 'demo', 'util');
+        mkdirSync(demoDest, { recursive: true });
+        writeFileSync(join(demoDest, 'helper.js'), '// stale');
+        writeFileSync(join(demoDest, 'orphan.js'), '// should be removed on refresh');
+
+        const captured: string[] = [];
+        const spy = spyOn(process.stdout, 'write').mockImplementation((data) => {
+            captured.push(typeof data === 'string' ? data : data.toString());
+            return true;
+        });
+
+        await executeInstall(
+            'demo',
+            ['codex'],
+            { marketplacePath, global: false, dryRun: false, verbose: true, outputRoot: outRoot },
+            { runRulesync: async () => mockEmptyRulesyncResult() },
+        );
+        spy.mockRestore();
+
+        expect(readFileSync(join(outRoot, '.agents', 'scripts', 'demo', 'util', 'helper.js'), 'utf-8')).toBe('// v1');
+        expect(existsSync(join(outRoot, '.agents', 'scripts', 'demo', 'util', 'orphan.js'))).toBe(false);
+        expect(readFileSync(join(otherPlugin, 'keep.js'), 'utf-8')).toBe('// keep');
+        expect(captured.join('')).toMatch(/Plugin scripts: staging 1 file\(s\)/);
+    });
 });
