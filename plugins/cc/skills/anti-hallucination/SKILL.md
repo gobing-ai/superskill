@@ -219,7 +219,7 @@ If the target coding platform does not support hook execution, follow the same p
 **Preferred enforcement order:**
 
 1. **Spur workflow (Phase 4, pending)**: Run the agent through `spur workflow run anti-hallucination.yaml --vars '{"agent":"codex"}'` — a single workflow that captures the final answer, validates it with the anti-hallucination guard engine, and only returns the answer if validation passes. Replaces the former per-agent launcher scripts.
-2. **Direct validation**: Validate a captured answer with `plugins/cc/scripts/anti-hallucination/validate_response.ts` (reads `RESPONSE_TEXT` or stdin).
+2. **Direct validation**: Validate a captured answer by resolving the staged entrypoint and running it — standard form `"$(superskill script path cc anti-hallucination/validate_response.js)"` (reads `RESPONSE_TEXT` or stdin; portable Node runtime, installed by `superskill install cc`). Optional absorbed one-liner: `superskill script run cc validate-response`.
 3. **Reviewer pass**: Use a second review step that checks for sources, confidence, and verification evidence before accepting the answer.
 4. **Structured output contract**: Require the final answer to include explicit `sources`, `confidence`, and `verification_steps` fields that can be validated by the host application or workflow.
 5. **Instruction-only fallback**: If no wrapper, reviewer, or validator is available, the agent must treat unsupported verification as blocking for strong claims and explicitly label the answer as unverified.
@@ -235,7 +235,7 @@ If the target coding platform does not support hook execution, follow the same p
 
 Treat `ah_guard.ts` as the reusable verification engine and hooks as only one adapter. For platforms without hooks, use wrappers, reviewer workflows, or host-side validation instead of duplicating the verification rules.
 
-See `references/non-hook-enforcement.md` for the validation adapter and cross-agent enforcement patterns, including `validate_response.ts` and the pending spur workflow.
+See `references/non-hook-enforcement.md` for the validation adapter and cross-agent enforcement patterns, including the staged `validate_response` entrypoint (`script path` standard + `script run` optional) and the pending spur workflow.
 
 ## Additional Resources
 

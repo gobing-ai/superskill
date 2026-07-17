@@ -58,7 +58,7 @@ engine. Targets without `superskill` on PATH fail open (the hook is treated as a
 gates install so an older CLI cannot register a hook whose runtime contract (stdin payload
 resolution + exit-2 block signal) it does not implement.
 
-For platforms without hooks, use `validate_response.ts` instead. See `non-hook-enforcement.md`.
+For platforms without hooks, validate a captured answer via the staged entrypoint — standard: `"$(superskill script path cc anti-hallucination/validate_response.js)"`; optional absorbed one-liner: `superskill script run cc validate-response`. See `non-hook-enforcement.md`.
 
 ## Input Channels
 
