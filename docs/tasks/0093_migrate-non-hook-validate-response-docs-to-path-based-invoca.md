@@ -12,7 +12,7 @@ priority: P2
 tags: []
 dependencies: ["0089", "0091"]
 created_at: "2026-07-17T06:14:00.910Z"
-updated_at: "2026-07-17T18:14:49.448Z"
+updated_at: "2026-07-17T18:22:07.491Z"
 ---
 
 ## 0093. Migrate non-hook validate-response docs to path-based invocation
@@ -53,16 +53,16 @@ and states no script files are installed. Feature **A** dual contract (R4-B / R5
 
 **Done when.** Grep under `plugins/cc` for non-hook validate guidance shows path-based standard + optional script run; no “files never installed” claim for non-hook path; no target-facing `bun plugins/cc/scripts`; feature A decisions log gets a gist line.
 ### Requirements
-- [ ] R1. **Primary invocation = path form.** In `non-hook-enforcement.md`, the lead “reusable adapter” example uses the standard path-based form from entrypoint + path-helper Solutions (e.g. resolve with `script path` then run via portable runner, or the single documented recipe those Solutions mandate). Absolute cache paths and repo-relative `bun` paths must not appear as target forms.
-- [ ] R2. **Optional script run retained.** Same doc keeps a clearly labeled **optional / absorbed** subsection: `superskill script run cc validate-response` still valid (no FS path; requires CLI with registry entry). Do not delete the registry surface from docs.
-- [ ] R3. **Remove absorption-only claims.** Drop or rewrite prose that says script files are never installed / only deep-import works for non-hook validation, once staging is the standard story.
-- [ ] R4. **All usage examples updated.** Host-side, pipe, reviewer workflow, and structured-output patterns in `non-hook-enforcement.md` show the **standard** path form first; script run may appear as alternate one-liner where useful.
-- [ ] R5. **Exit-code table kept.** 0/1 validation semantics vs hook exit 2 remain; still forbid wiring validate entrypoint into `hooks.json`.
-- [ ] R6. **SKILL.md fix.** Replace bare `plugins/cc/scripts/anti-hallucination/validate_response.ts` “Direct validation” wording with portable standard form (+ optional script run). Dev-repo-only `bun` path, if mentioned, must be labeled dev-only.
-- [ ] R7. **Plugin README row.** `validate_response.ts` table row: install targets use path standard; optional `script run`; direct bun = dev-repo-only; hooks still `hook run`.
-- [ ] R8. **Guard-implementation pointer.** Ensure non-hook pointer does not contradict dual contract.
-- [ ] R9. **Grep gate.** `rg -n "bun plugins/cc/scripts" plugins/cc/skills/anti-hallucination` → 0. `rg -n "script run cc validate-response" plugins/cc` still finds optional docs. Standard path command string from Solutions appears ≥1 in non-hook-enforcement.
-- [ ] R10. **Non-goals.** No engine/code changes; no guide file rewrite; no CHANGELOG required beyond optional one-liner if desired (guide/CHANGELOG may cover platform story).
+- [x] R1. **Primary invocation = path form.** In `non-hook-enforcement.md`, the lead “reusable adapter” example uses the standard path-based form from entrypoint + path-helper Solutions (e.g. resolve with `script path` then run via portable runner, or the single documented recipe those Solutions mandate). Absolute cache paths and repo-relative `bun` paths must not appear as target forms.
+- [x] R2. **Optional script run retained.** Same doc keeps a clearly labeled **optional / absorbed** subsection: `superskill script run cc validate-response` still valid (no FS path; requires CLI with registry entry). Do not delete the registry surface from docs.
+- [x] R3. **Remove absorption-only claims.** Drop or rewrite prose that says script files are never installed / only deep-import works for non-hook validation, once staging is the standard story.
+- [x] R4. **All usage examples updated.** Host-side, pipe, reviewer workflow, and structured-output patterns in `non-hook-enforcement.md` show the **standard** path form first; script run may appear as alternate one-liner where useful.
+- [x] R5. **Exit-code table kept.** 0/1 validation semantics vs hook exit 2 remain; still forbid wiring validate entrypoint into `hooks.json`.
+- [x] R6. **SKILL.md fix.** Replace bare `plugins/cc/scripts/anti-hallucination/validate_response.ts` “Direct validation” wording with portable standard form (+ optional script run). Dev-repo-only `bun` path, if mentioned, must be labeled dev-only.
+- [x] R7. **Plugin README row.** `validate_response.ts` table row: install targets use path standard; optional `script run`; direct bun = dev-repo-only; hooks still `hook run`.
+- [x] R8. **Guard-implementation pointer.** Ensure non-hook pointer does not contradict dual contract.
+- [x] R9. **Grep gate.** `rg -n "bun plugins/cc/scripts" plugins/cc/skills/anti-hallucination` → 0. `rg -n "script run cc validate-response" plugins/cc` still finds optional docs. Standard path command string from Solutions appears ≥1 in non-hook-enforcement.
+- [x] R10. **Non-goals.** No engine/code changes; no guide file rewrite; no CHANGELOG required beyond optional one-liner if desired (guide/CHANGELOG may cover platform story).
 ### Acceptance Criteria
 **AC1 — Lead example is path-based.** Opening adapter block in `non-hook-enforcement.md` is not solely `script run`; standard path form is first.
 
@@ -112,13 +112,70 @@ and states no script files are installed. Feature **A** dual contract (R4-B / R5
 4. [ ] Patch SKILL.md, README row, guard-implementation pointer as needed.
 5. [ ] Run greps (R9); fill Solution with file list; feature A gist; done.
 ### Solution
+| File | Lines | What / Why |
+|---|---|---|
+| `plugins/cc/skills/anti-hallucination/references/non-hook-enforcement.md` | 9-45 | Lead path-based standard form; interim honesty callout (`.ts` only today); optional `script run` as working install form |
+| `plugins/cc/skills/anti-hallucination/references/non-hook-enforcement.md` | 42-52 | Exit 0/1 table; forbid wiring into hooks.json |
+| `plugins/cc/skills/anti-hallucination/references/non-hook-enforcement.md` | 64-140 | Usage patterns path-first with optional script run alternate |
+| `plugins/cc/skills/anti-hallucination/SKILL.md` | 222 | Direct-validation dual contract bullet |
+| `plugins/cc/skills/anti-hallucination/references/guard-implementation.md` | 61 | Non-hook pointer dual wording |
+| `plugins/cc/README.md` | 148 | validate_response.ts row dual contract + interim working optional |
+| `docs/features/A_portable-plugin-scripts-via-install-time-staging.md` | Decisions | 0093 gist line under Decisions so far |
 
-<!-- Filled during implementation: file:line change map and concise rationale. -->
-
+**Design decisions:**
+- Path form is **standard** per R4-B / Entrypoint Contract (`validate_response.js` recipe).
+- `script run cc validate-response` retained as **optional** (R5-B) and documented as the **working** install-target form until a portable `.js` twin is staged (docs-only honesty; AC7 — no engine change).
+- No `bun plugins/cc/scripts` in skill docs (R9 / AC6).
+- Hooks unchanged (`hook run`).
 ### Testing
+**Verify date:** 2026-07-17 (`--force --focus all --fix all`)
 
-<!-- Filled during verification: commands run, outcomes, coverage claim or N/A. -->
+**Coverage:** N/A (documentation-only change; no runtime code path added).
 
+**Commands run (this pass):**
+
+| Command | Outcome |
+|---|---|
+| `rg -n "bun plugins/cc/scripts" plugins/cc/skills/anti-hallucination` | 0 matches (AC6 / R9) |
+| `rg -n "script run cc validate-response" plugins/cc` | ≥1 hits (optional retained) |
+| `rg -n "script path cc anti-hallucination" plugins/cc/skills/anti-hallucination` | ≥1 hits (standard form present) |
+| `rg` for `never installed` / absorption-only claims | none |
+| `spur task check 0093 --strict-core --json` | pass after Requirements `[x]` flip |
+| `bun run lint` | clean (docs-only) |
+
+**Residual fixes (`--fix all`):**
+1. Honesty callout: source is still `validate_response.ts` (Bun shebang); path examples use Contract `.js` form; until twin ships, prefer optional `script run` for working installs.
+2. Feature A decisions gist line for 0093.
+3. Solution/Testing filled (were placeholders); Requirements checkboxes flipped.
+
+**Per-Requirement Traceability**
+
+| Req | Status | Evidence |
+|-----|--------|----------|
+| R1 Primary = path form | MET | non-hook-enforcement.md lead block path form first |
+| R2 Optional script run | MET | optional section + usage patterns keep `script run cc validate-response` |
+| R3 No absorption-only | MET | staging + path story; no "never installed" |
+| R4 All examples path-first | MET | host/pipe/reviewer/structured patterns path first |
+| R5 Exit codes 0/1 | MET | Exit Codes table; forbid hooks.json wiring |
+| R6 SKILL.md portable | MET | Direct validation dual-contract bullet |
+| R7 README dual | MET | validate_response.ts row dual wording |
+| R8 Guard pointer | MET | guard-implementation.md dual pointer |
+| R9 Grep gate | MET | command evidence above |
+| R10 Non-goals | MET | docs only; no engine/registry edits |
+
+**Acceptance Criteria Verification**
+
+| AC | Status | Evidence Type | Evidence |
+|----|--------|---------------|----------|
+| AC1 Lead path-based | MET | static-ref | non-hook-enforcement.md standard block before optional |
+| AC2 Optional script run | MET | static-ref + command | 10 hits for `script run cc validate-response` |
+| AC3 No never-installed | MET | command | absorption-only greps empty |
+| AC4 SKILL.md portable | MET | static-ref | SKILL.md dual-contract direct validation |
+| AC5 README dual | MET | static-ref | README row standard + optional |
+| AC6 Grep clean | MET | command | `bun plugins/cc/scripts` = 0 under skill |
+| AC7 No behavior change | MET | static-ref | no validate_response.ts / registry edits |
+
+**Design conformance:** DONE. Residual P2 (`.js` twin missing) documented as interim honesty + optional working form — not silent NOT DONE.
 ### Review
 **Verification scope:** docs-only migration (AC7 — no source edits). All four target files edited to dual-contract form; AC1-AC7 re-verified post-commit (commit b203511).
 

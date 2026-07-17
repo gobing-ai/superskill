@@ -10,34 +10,42 @@ The **standard** adapter for this mode resolves the staged validator entrypoint 
 portable runner. `superskill install cc` (task 0090) stages
 `plugins/cc/scripts/anti-hallucination/validate_response.*` under the target's scripts root
 (`~/.agents/scripts/cc/anti-hallucination/…` on rulesync targets; the full plugin tree on native
-targets — claude/omp/grok), and `superskill script path cc anti-hallucination/validate_response.js`
-resolves that absolute path from any cwd:
+targets — claude/omp/grok). Entrypoint Contract v1 (task 0089) names the portable recipe:
 
 ```bash
-# Standard — resolve the staged entrypoint, then run via its shebang runner
+# Standard — resolve the staged portable entrypoint, then run via its shebang runner
 "$(superskill script path cc anti-hallucination/validate_response.js)"
 ```
 
-The staged entrypoint carries `#!/usr/bin/env node` (or a portable equivalent per the Entrypoint
-Contract) so it runs on every supported target with Node on PATH — no Bun required on the host. It
-validates a final answer using the same `verifyAntiHallucinationProtocol` logic as `ah_guard.ts`.
+Contract target: a Node-runnable `.js` (or `.mjs`) twin with a portable shebang so every install
+host with Node on PATH can execute it — no Bun required. It validates a final answer using the same
+`verifyAntiHallucinationProtocol` logic as `ah_guard.ts`.
+
+> **Current repo state (interim).** The source tree still ships only
+> `plugins/cc/scripts/anti-hallucination/validate_response.ts` (`#!/usr/bin/env bun`). Staging is
+> byte-for-byte, so `script path …/validate_response.js` fails closed (exit 2) until a portable
+> `.js` twin is added. **Until that twin ships, use the optional registry form below** for a working
+> install-target invocation. The path recipe above remains the dual-contract **standard** authors
+> must document and ship toward.
 
 **Optional (binary registry).** If your target has the `superskill` CLI with the `cc/validate-response`
-runner registered (`apps/cli/src/commands/script-run.ts`), the one-liner form still works:
+runner registered (`apps/cli/src/commands/script-run.ts`), the one-liner form still works — and is
+the **working** install-target form until the portable `.js` twin lands:
 
 ```bash
 # Optional — run the absorbed registry entry (no FS path needed; requires CLI ≥ 0.3.x)
+# Working today on install targets without a .js twin
 superskill script run cc validate-response
 ```
 
 Both forms share the same engine, the same exit codes, and the same input modes. Prefer the **path**
-form when the target has been installed via `superskill install cc` (the validator is then a real
-file on disk); prefer `script run` only when you want to stay inside the CLI with no staged files.
+form once the portable entrypoint is staged; prefer `script run` when you need a working invocation
+today or want to stay inside the CLI with no staged files.
 
 > **Dev-repo only.** Invoking the source `.ts` file directly via Bun from a repo checkout
 > (the file lives under `plugins/cc/scripts/anti-hallucination/`) works **only from a source
 > checkout** and is not an install-target form — the path is repo-relative and Bun is not a required
-> target runtime. Use it for local debugging, never in skill docs.
+> target runtime. Use it for local debugging, never as the primary skill-doc recipe.
 
 ## Exit Codes
 
