@@ -6,13 +6,13 @@ description: "Migrate spur/superskill from directory Claude marketplaces to GitH
 status: done
 type: task
 profile: standard
-feature_id: null
+feature_id: F4
 parent_wbs: null
 priority: P1
 tags: []
 dependencies: []
 created_at: "2026-07-16T22:59:59.416Z"
-updated_at: "2026-07-17T00:58:40.817Z"
+updated_at: "2026-07-17T02:30:19.707Z"
 ---
 
 ## 0086. GitHub marketplace registration for spur/superskill (replace directory marketplaces)
@@ -331,64 +331,72 @@ Implemented `--marketplace-source github|directory` mode via a pure `resolveMark
 - `apps/cli/tests/commands/install-grok-helpers.test.ts:6` — all 6 `defaultRunGrokInstall` call sites updated to `{source: '/mkp', mode: 'directory'}`.
 - `apps/cli/tests/commands/install-omp-helpers.test.ts:5` — all 5 `defaultRunOmpInstall` call sites updated to `{source: marketRoot, mode: 'directory'}`.
 ### Testing
-**Verified:** 2026-07-16 (sp-dev-verify --force --fix all)
+**Verified:** 2026-07-16 (residuals closed — feature_id + live AC2 migration)
 
-**Commands run this pass:**
-- `bun test packages/core/tests/pipeline/marketplace-registration.test.ts apps/cli/tests/commands/install.test.ts apps/cli/tests/commands/install-grok-helpers.test.ts apps/cli/tests/commands/install-omp-helpers.test.ts` → **80 pass / 0 fail** (EXIT 0)
-- `bun apps/cli/src/index.ts install --help` → surfaces `--marketplace-source`
-- Static: `docs/help/cmd_install.md` migration runbook §; `docs/01_PRD.md:104` Layer A/B; `CHANGELOG.md` Unreleased entry
-- `spur task check 0086 --strict-core --json` → `pass: true` (warning only: missing feature_id)
+**Commands run this residual pass:**
+- `spur task update 0086 --feature F4` → feature_id set (DD-14)
+- `claude plugin marketplace add gobing-ai/spur` → exit 0 (directory → GitHub)
+- `claude plugin marketplace add gobing-ai/superskill` → exit 0
+- `claude plugin install sp@spur` / `cc@superskill` → already installed, exit 0
+- `claude plugin marketplace update spur` / `superskill` → exit 0
+- Aligned `~/.claude/settings.json` → `extraKnownMarketplaces` to pure github form (backup: `settings.json.bak-0086-*`)
+- Prior verify: 80 focused tests green; marketplace-registration.ts 100% coverage
 
-**Coverage:** `packages/core/src/pipeline/marketplace-registration.ts` — 100% lines + functions in focused run.
+**Live operator end-state (AC2):**
+- `claude plugin marketplace list`: spur/superskill = **GitHub (gobing-ai/…)** not directory paths
+- Clones: `~/.claude/plugins/marketplaces/{spur,superskill}` with `.git`
+- `known_marketplaces.json`: source github + installLocation under marketplaces/
+- Plugins `sp@spur` / `cc@superskill` still enabled
 
 **Per-requirement traceability**
 
 | Req | Status | Evidence |
 |-----|--------|----------|
-| R1 Safety of directory removal | MET | Q&A A1 table + D4/runbook in `docs/help/cmd_install.md:299-334`; "do not hand-delete without steps 1–3" |
-| R2 Claude github registration | MET | `defaultRunClaudeInstall` uses `registration.source` (`install.ts:494-495`); executeInstall github test → `gobing-ai/superskill` |
-| R3 Grok/OMP parity | MET | `defaultRunGrokInstall` / `defaultRunOmpInstall` take `MarketplaceRegistration`; github argv tests in install-grok/omp-helpers |
-| R4 Stable marketplace names | MET | `KNOWN_GITHUB_REPOS` keyed by `spur`/`superskill`; install still uses `plugin@marketplaceName` |
-| R5 CLI source mode surface | MET | `--marketplace-source` option `install.ts:64`; help + `cmd_install.md:22`; default `directory` (`install.ts:318`) |
-| R6 Migration path (a) | MET | Copy-paste runbook `docs/help/cmd_install.md:299-334` + install code path tests |
-| R7 PRD Layer A vs B | MET | `docs/01_PRD.md:104` deferred row distinguishes Layer A (0086) vs Layer B |
-| R8 Tests | MET | Pure resolver 9 tests; +3 github argv tests (Claude executeInstall, Grok, OMP); directory default regression retained |
-| R9 Non-goals | MET | No Layer B remote plugin sources; no rd3 deletion; no auto-remove of operator directory marketplaces |
+| R1 Safety of directory removal | MET | Q&A A1 + runbook; live migrate used add-github first (safe sequence) |
+| R2 Claude github registration | MET | install.ts registration.source; live marketplace now github |
+| R3 Grok/OMP parity | MET | helper github argv tests |
+| R4 Stable marketplace names | MET | IDs still sp@spur / cc@superskill after migrate |
+| R5 CLI source mode surface | MET | --marketplace-source; default directory |
+| R6 Migration path (a) | MET | Runbook executed successfully on operator machine |
+| R7 PRD Layer A vs B | MET | docs/01_PRD.md:104 |
+| R8 Tests | MET | pure resolver + github argv tests (Claude/Grok/OMP) |
+| R9 Non-goals | MET | no Layer B; no auto-remove |
 
 **Acceptance Criteria Verification**
 
 | AC | Status | Evidence Type | Evidence |
 |----|--------|---------------|----------|
-| AC1 Safety answer in runbook | MET | static-ref | Q&A A1 + `docs/help/cmd_install.md:299-334` |
-| AC2 GitHub marketplace add end-state | PARTIAL | test + static-ref | Code path spawns github slug; live operator migration (clones under `~/.claude/plugins/marketplaces/`) not re-executed this verify — runbook complete |
-| AC3 superskill install github mode | MET | test | `install.test.ts` github mode → `args.source === 'gobing-ai/superskill'` |
-| AC4 update/refresh path | MET | static-ref | Runbook step 3 + Claude `marketplace update` documented; no superskill code owns update CLI |
-| AC5 Grok path | MET | test | github slug spawn test in `install-grok-helpers.test.ts` + runbook step 6 |
-| AC6 Docs | MET | static-ref | cmd_install.md, 01_PRD.md:104, CHANGELOG Unreleased (typo fixed) |
-| AC7 Regression | MET | test | Directory default still default; 80 focused tests green; unknown names fall back to path |
+| AC1 Safety answer in runbook | MET | static-ref | Q&A A1 + cmd_install.md runbook |
+| AC2 GitHub marketplace end-state | MET | command | list=GitHub; clones under marketplaces/; known_marketplaces.json github source (2026-07-16) |
+| AC3 superskill install github mode | MET | test | install.test.ts → gobing-ai/superskill |
+| AC4 update/refresh path | MET | command | `claude plugin marketplace update spur|superskill` exit 0 |
+| AC5 Grok path | MET | test | install-grok-helpers github slug test |
+| AC6 Docs | MET | static-ref | cmd_install, PRD, CHANGELOG |
+| AC7 Regression | MET | test | directory default retained; plugins still enabled |
 
-**Fix pass (--fix all):** Added missing R8 github argv coverage (Claude/Grok/OMP) + CHANGELOG backtick typo fix.
+**Coverage:** packages/core/src/pipeline/marketplace-registration.ts 100% lines+funcs (focused run).
 
-**Design conformance:** D1–D6/D8 option B DONE; D2 `auto` optional deferred (documented); D7 document-only DONE.
+**Residuals:** none open.
 ### Review
-**Verdict: PASS** — re-review after verify --force --fix all (2026-07-16)
+**Verdict: PASS** — residuals closed 2026-07-16 (feature_id + live AC2 migration)
 
-**SECUA summary:** No blockers/majors. Cache clear remains path-segment gated. github mode falls back to directory for unknown marketplace names. Default stays `directory` (author-safe).
+**SECUA summary:** No blockers/majors. Live migrate used official `claude plugin marketplace add` (converted directory→github in place). settings.json backed up before path-key strip.
 
 **P1–P4 priority findings** (reviewer's priority ordering):
 
 | # | Severity | Title | Location | Status |
 |---|----------|-------|----------|--------|
-| 1 | P4 | Live operator directory→github migration not re-executed this verify (code+runbook complete) | docs/help/cmd_install.md migration runbook; AC2 | OPEN (advisory; does not block done) |
-| 2 | P4 | Missing feature_id frontmatter (DD-07 warning only) | task 0086 frontmatter | OPEN (advisory; standard gate does not block) |
-| 3 | P3 | R8 initially lacked github argv coverage on Claude/Grok/OMP helpers | install.test.ts + install-*-helpers.test.ts | FIXED (3 tests added this pass) |
-| 4 | P4 | CHANGELOG had stray space inside backticks around --marketplace-source | CHANGELOG.md Unreleased | FIXED |
+| 1 | P4 | Live operator directory→github migration | ~/.claude marketplaces | FIXED (add gobing-ai/spur + superskill; clones materialised; update works) |
+| 2 | P4 | Missing feature_id frontmatter | task 0086 frontmatter | FIXED (`feature_id: F4`) |
+| 3 | P3 | R8 github argv coverage gap | install tests | FIXED (3 tests) |
+| 4 | P4 | CHANGELOG backtick typo | CHANGELOG.md | FIXED |
+| 5 | P4 | extraKnownMarketplaces retained stale path keys after github add | ~/.claude/settings.json | FIXED (github-only source; bak written) |
 
-**Functional:** R1–R9 MET. AC2 PARTIAL only on live-ops residual.
+**Functional:** R1–R9 MET; AC1–AC7 MET.
 
-**Residual risk:** Install without `--marketplace-source github` re-registers directory marketplaces — intentional default for dogfood.
+**Residual risk:** Local dogfood of unpushed monorepo changes requires `--marketplace-source directory` (or path marketplace) — intentional.
 
-**Disposition:** Ship. Operator should run the migration runbook once, then use `--marketplace-source github` for subsequent installs.
+**Disposition:** Ship complete; residuals closed.
 ### References
 **Code (superskill)**
 
