@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'bun:test';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { mapPluginToRulesync } from '../src/mapper';
 
@@ -260,6 +260,78 @@ describe('mapPluginToRulesync', () => {
 
         expect(() => mapPluginToRulesync(FIXTURE_DIR, '../escape', outDir)).toThrow('single path segment');
         expect(() => mapPluginToRulesync(FIXTURE_DIR, 'nested/name', outDir)).toThrow('single path segment');
+    });
+
+    it('refuses an outputDir that equals the plugin path (would wipe the source)', () => {
+        // Same failure class as packageSkill bug-038: clean-before-write of the
+        // source tree itself deletes skills/ before anything is mapped.
+        tmpDir = mkdtempSync('superskill-mapper-');
+        const pluginDir = join(tmpDir, 'plugin');
+        mkdirSync(join(pluginDir, 'skills', 'alpha'), { recursive: true });
+        writeFileSync(join(pluginDir, 'skills', 'alpha', 'SKILL.md'), '---\nname: alpha\n---\n# A\n');
+
+        expect(() => mapPluginToRulesync(pluginDir, 'demo', pluginDir)).toThrow('overlaps the source');
+        // Source must survive the refused call.
+        expect(existsSync(join(pluginDir, 'skills', 'alpha', 'SKILL.md'))).toBe(true);
+    });
+
+    it('refuses an outputDir that is an ancestor of the plugin path', () => {
+        tmpDir = mkdtempSync('superskill-mapper-');
+        const pluginDir = join(tmpDir, 'plugin');
+        mkdirSync(join(pluginDir, 'skills', 'alpha'), { recursive: true });
+        writeFileSync(join(pluginDir, 'skills', 'alpha', 'SKILL.md'), '---\nname: alpha\n---\n# A\n');
+
+        expect(() => mapPluginToRulesync(pluginDir, 'demo', tmpDir)).toThrow('overlaps the source');
+        expect(existsSync(join(pluginDir, 'skills', 'alpha', 'SKILL.md'))).toBe(true);
+    });
+
+    it('refuses an outputDir nested inside the plugin path', () => {
+        // Even plugin/.rulesync nests under the source tree; clean-before-write of a
+        // nested path is refused so a future scripts/ or skills/ collision cannot
+        // silently destroy source content (matches packageSkill nesting policy).
+        tmpDir = mkdtempSync('superskill-mapper-');
+        const pluginDir = join(tmpDir, 'plugin');
+        mkdirSync(join(pluginDir, 'skills', 'alpha'), { recursive: true });
+        writeFileSync(join(pluginDir, 'skills', 'alpha', 'SKILL.md'), '---\nname: alpha\n---\n# A\n');
+        const nestedOut = join(pluginDir, '.rulesync');
+
+        expect(() => mapPluginToRulesync(pluginDir, 'demo', nestedOut)).toThrow('overlaps the source');
+        expect(existsSync(join(pluginDir, 'skills', 'alpha', 'SKILL.md'))).toBe(true);
+    });
+
+    it('refuses outputDir that resolves to cwd (protected path)', () => {
+        tmpDir = mkdtempSync('superskill-mapper-');
+        expect(() => mapPluginToRulesync(FIXTURE_DIR, 'demo', process.cwd())).toThrow('protected path');
+    });
+
+    it('refuses outputDir that is a symlink to cwd (realpath protected path)', () => {
+        // resolve() alone would accept a symlink whose string path is not cwd; realpath must catch it.
+        tmpDir = mkdtempSync('superskill-mapper-');
+        const linkPath = join(tmpDir, 'cwd-link');
+        try {
+            symlinkSync(process.cwd(), linkPath);
+        } catch {
+            // Platforms that cannot create dir symlinks — skip without failing the suite.
+            return;
+        }
+        expect(() => mapPluginToRulesync(FIXTURE_DIR, 'demo', linkPath)).toThrow('protected path');
+    });
+
+    it('setSkillName via map preserves CRLF frontmatter when rewriting the skill name', () => {
+        tmpDir = mkdtempSync('superskill-mapper-');
+        const pluginDir = join(tmpDir, 'plugin');
+        mkdirSync(join(pluginDir, 'skills'), { recursive: true });
+        // CRLF skill with an existing name — rewrite must keep CRLF and not touch body `name:`.
+        writeFileSync(
+            join(pluginDir, 'skills', 'a.md'),
+            '---\r\nname: old\r\ndescription: d\r\n---\r\n\r\n```\r\nname: example\r\n```\r\n',
+        );
+        const outDir = join(tmpDir, '.rulesync');
+        mapPluginToRulesync(pluginDir, 'demo', outDir);
+        const out = readFileSync(join(outDir, 'skills', 'demo-a', 'SKILL.md'), 'utf-8');
+        expect(out).toContain('---\r\nname: demo-a\r\n');
+        expect(out).toContain('name: example');
+        expect(out.includes('name: old')).toBe(false);
     });
 
     // ── Directory layout (Claude Code standard) ──

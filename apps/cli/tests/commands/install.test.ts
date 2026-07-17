@@ -701,6 +701,29 @@ describe('resolvePluginRoot — marketplace name safety', () => {
     });
 });
 
+describe('resolvePluginRoot — plugin name safety', () => {
+    it('rejects path-escaping plugin names before any FS resolution', () => {
+        // join('plugins', '../decoy') normalizes to 'decoy' outside plugins/.
+        // Without the segment guard, a sibling dir that looks like a plugin would
+        // be returned as pluginRoot from the public resolvePluginRoot API.
+        const root = createTempWorkspace();
+        mkdirSync(join(root, 'decoy', 'skills'), { recursive: true });
+        writeFileSync(join(root, 'decoy', 'skills', 'a.md'), '---\nname: a\n---\n');
+
+        expect(() => resolvePluginRoot('../decoy')).toThrow('single path segment');
+        expect(() => resolvePluginRoot('a/b')).toThrow('single path segment');
+        expect(() => resolvePluginRoot('..')).toThrow('single path segment');
+    });
+
+    it('still resolves a normal plugins/<name> layout', () => {
+        const root = createTempWorkspace();
+        createPlugin(root, 'demo');
+        const resolution = resolvePluginRoot('demo');
+        expect(resolution.pluginRoot).toContain('plugins');
+        expect(resolution.pluginRoot).toContain('demo');
+    });
+});
+
 describe('runCheckedCommand', () => {
     it('resolves when the command exits 0', async () => {
         await runCheckedCommand(['true'], 'noop step');

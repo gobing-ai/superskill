@@ -1,7 +1,8 @@
 import { cpSync, existsSync, mkdirSync, rmSync, statSync } from 'node:fs';
-import { basename, dirname, join, relative, resolve } from 'node:path';
+import { basename, dirname, join, resolve } from 'node:path';
 import { cwd } from 'node:process';
 import { resolveContentPath } from '../content/identity';
+import { pathsNestOrEqual } from '../content/paths';
 
 /** Options for the package operation. */
 export interface PackageOptions {
@@ -77,9 +78,7 @@ export async function packageSkill(name: string, opts: PackageOptions = {}): Pro
     // destroys the source before anything is copied — refuse instead.
     const resolvedOut = resolve(outputDir);
     const resolvedSrc = resolve(skillDir);
-    const outToSrc = relative(resolvedOut, resolvedSrc);
-    const srcToOut = relative(resolvedSrc, resolvedOut);
-    if (!outToSrc.startsWith('..') || !srcToOut.startsWith('..')) {
+    if (pathsNestOrEqual(resolvedOut, resolvedSrc)) {
         throw new Error(
             `Refusing to package '${skillName}': output directory '${resolvedOut}' overlaps the source ` +
                 `skill directory '${resolvedSrc}' — cleaning it would delete the source. ` +

@@ -497,6 +497,11 @@ async function defaultRunClaudeInstall(
     marketplaceName: string,
     plugin: string,
 ): Promise<void> {
+    // Same defense as grok/omp install helpers: marketplace + plugin key the
+    // `plugin@marketplace` address and must be single path segments.
+    assertSafePathSegment(marketplaceName, 'marketplace name');
+    assertSafePathSegment(plugin, 'plugin name');
+
     // marketplace add is idempotent — if already registered, claude CLI exits 0
     // with a notice. source is either an absolute path (directory mode) or an
     // `owner/repo` slug (github mode).
@@ -666,7 +671,9 @@ export async function defaultRunOmpInstall(
 ): Promise<void> {
     // The name flows into omp CLI args and the registry key; a manifest name like `..`
     // or `a/b` would corrupt the `<plugin>@<marketplace>` addressing downstream.
+    // Plugin is the left half of `plugin@marketplace` — same segment rule as grok.
     assertSafePathSegment(marketplaceName, 'marketplace name');
+    assertSafePathSegment(plugin, 'plugin name');
 
     // Idempotent re-registration: `omp plugin marketplace add` exits 1 when the marketplace
     // is already registered (omp 16.x; `--force` does not bypass the check), so remove it
@@ -925,6 +932,8 @@ function stagePluginScripts(
     options: InstallOptions,
     stagedFileCount: number,
 ): number {
+    // pluginName is the leaf of a recursive rmSync target under .agents/scripts/.
+    assertSafePathSegment(pluginName, 'plugin name');
     const stagedSource = join(outputDir, 'scripts', pluginName);
     if (!existsSync(stagedSource)) return 0;
 
@@ -972,6 +981,11 @@ export function parseTargets(raw: string | undefined): Target[] {
  * Claude target to register the local marketplace before installing.
  */
 export function resolvePluginRoot(plugin: string, marketplacePath?: string): PluginResolution {
+    // Fail before any FS probe: join('plugins', plugin) normalizes `../x` out of
+    // plugins/ and would resolve a sibling/ancestor tree that happens to look like
+    // a plugin. mapPluginToRulesync also asserts, but resolvePluginRoot is public
+    // and must not return an escaped pluginRoot on its own.
+    assertSafePathSegment(plugin, 'plugin name');
     const resolved = resolvePlugin(marketplacePath, plugin);
     if (resolved) {
         const manifestRoot = resolved.marketplaceRoot;

@@ -1,6 +1,6 @@
 import { existsSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { join } from 'node:path';
+import { join, relative, resolve } from 'node:path';
 import { cwd } from 'node:process';
 
 /** Options for data root resolution. */
@@ -43,4 +43,20 @@ export function getDBPath(opts?: PathOptions): string {
  */
 export function getProposalsDir(opts?: PathOptions): string {
     return join(getDataRoot(opts), '.superskill', 'proposals');
+}
+
+/**
+ * True when two paths are equal after resolve, or one is an ancestor of the other.
+ *
+ * Used before clean-before-write (`rmSync` recursive): if the delete target nests
+ * with the source tree, the clean step would destroy the source. Fail-closed on
+ * cross-root relatives (Windows different drives) — safer to refuse than delete.
+ */
+export function pathsNestOrEqual(a: string, b: string): boolean {
+    const ra = resolve(a);
+    const rb = resolve(b);
+    const aToB = relative(ra, rb);
+    const bToA = relative(rb, ra);
+    // Equal → relative is ''. Nested → one relative lacks a leading '..'.
+    return !aToB.startsWith('..') || !bToA.startsWith('..');
 }

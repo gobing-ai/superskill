@@ -313,6 +313,17 @@ describe('defaultRunOmpInstall', () => {
         expect(spawnCalls).toHaveLength(0);
     });
 
+    it('rejects a plugin name that is not a single path segment, before any spawn', async () => {
+        // Plugin is the left half of `plugin@marketplace` — same segment rule as
+        // defaultRunGrokInstall. Throw before any omp CLI call.
+        const marketRoot = makeTempDir('superskill-omp-market-');
+        await expect(
+            defaultRunOmpInstall({ source: marketRoot, mode: 'directory' }, 'superskill', '../evil', true),
+        ).rejects.toThrow('single path segment');
+
+        expect(spawnCalls).toHaveLength(0);
+    });
+
     it('throws when an omp CLI step exits non-zero instead of reporting success', async () => {
         const failingStub = ((args: string[]): StubChild => {
             spawnCalls = [...spawnCalls, args];

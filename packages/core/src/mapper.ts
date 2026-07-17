@@ -1,8 +1,19 @@
-import { existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import {
+    existsSync,
+    lstatSync,
+    mkdirSync,
+    readdirSync,
+    readFileSync,
+    realpathSync,
+    rmSync,
+    writeFileSync,
+} from 'node:fs';
 import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
+import { findFrontmatterBounds } from './content/frontmatter';
 import { CLAUDE_TO_CANONICAL_EVENT } from './content/hook-events';
 import { assertSafePathSegment } from './content/identity';
+import { pathsNestOrEqual } from './content/paths';
 import { adaptCommandToSkill } from './pipeline/adapt-command';
 import { adaptSubagentToSkill } from './pipeline/adapt-subagent';
 import { rewriteSkillReferences } from './pipeline/rewrite-references';
@@ -70,18 +81,22 @@ function convertClaudeHooksToCanonical(claudeJson: JsonObject): JsonObject {
 /** Update the `name:` frontmatter field to the prefixed canonical name.
  *  If no `name:` field exists, insert one after the opening `---`. Edits are
  *  scoped to the frontmatter block so a line-start `name:` in the body (e.g.
- *  inside a fenced example) is never clobbered. */
+ *  inside a fenced example) is never clobbered. Uses {@link findFrontmatterBounds}
+ *  so LF and CRLF delimiters match the rest of the frontmatter stack. */
 function setSkillName(content: string, newName: string): string {
-    const fmMatch = content.match(/^---\r?\n[\s\S]*?\r?\n---(?=\r?\n|$)/);
-    if (!fmMatch) {
+    const bounds = findFrontmatterBounds(content);
+    if (!bounds) {
         // No frontmatter block — prepend one (mirrors the command/subagent stub path).
         return `---\nname: ${newName}\n---\n\n${content}`;
     }
-    const block = fmMatch[0];
-    const updated = /^name:\s*.+$/m.test(block)
-        ? block.replace(/^name:\s*.+$/m, `name: ${newName}`)
-        : block.replace(/^---\s*$/m, `---\nname: ${newName}`);
-    return updated + content.slice(block.length);
+    const opener = content.slice(0, bounds.rawStart);
+    const raw = content.slice(bounds.rawStart, bounds.rawEnd);
+    const eol = opener.includes('\r\n') || raw.includes('\r\n') ? '\r\n' : '\n';
+    const lines = raw.length === 0 ? [] : raw.split(/\r?\n/);
+    // Drop every existing name: line — the mapper owns the canonical name.
+    const rest = lines.filter((line) => !/^name:\s*/.test(line));
+    const newYaml = [`name: ${newName}`, ...rest].join(eol);
+    return opener + newYaml + content.slice(bounds.rawEnd);
 }
 
 /**
@@ -111,6 +126,17 @@ export function mapPluginToRulesync(pluginPath: string, pluginName: string, outp
     // to filesystem root, home dir, or cwd — a CLI bug or bad --output could
     // otherwise destroy user data irrecoverably.
     assertSafeOutputDir(outputDir);
+    // Same class as packageSkill bug-038: clean-before-write of an output that
+    // nests with the plugin tree deletes the source before anything is mapped.
+    const resolvedOut = resolve(outputDir);
+    const resolvedPlugin = resolve(pluginPath);
+    if (pathsNestOrEqual(resolvedOut, resolvedPlugin)) {
+        throw new Error(
+            `Refusing to map plugin '${pluginName}': output directory '${resolvedOut}' overlaps the source ` +
+                `plugin directory '${resolvedPlugin}' — cleaning it would delete the source. ` +
+                `Pass an outputDir outside the plugin directory.`,
+        );
+    }
     // Clean the output directory to prevent stale data from previous installs
     // leaking into this plugin's mapping.
     if (existsSync(outputDir)) {
@@ -285,13 +311,29 @@ function isJsonObject(value: unknown): value is JsonObject {
     return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
+/**
+ * Resolve a path for safety comparison: `resolve`, then `realpath` when the
+ * path exists so a symlink to home/cwd/root cannot bypass the protected-path
+ * check via a benign path string.
+ */
+function resolveForSafety(path: string): string {
+    const resolved = resolve(path);
+    if (!existsSync(resolved)) return resolved;
+    try {
+        return realpathSync(resolved);
+    } catch {
+        // Broken symlink / race — compare with the non-real path (fail-closed only
+        // when it still matches a protected string; missing realpath is not a pass).
+        return resolved;
+    }
+}
+
 /** Reject paths that would cause destructive recursive deletes if passed to rmSync. */
 function assertSafeOutputDir(outputDir: string): void {
-    const resolved = resolve(outputDir);
-    const home = homedir();
-    const dangerous = [home, process.cwd(), '/', '/home', '/Users'];
+    const resolved = resolveForSafety(outputDir);
+    const dangerous = [resolveForSafety(homedir()), resolveForSafety(process.cwd()), '/', '/home', '/Users'];
     for (const danger of dangerous) {
-        if (resolved === resolve(danger)) {
+        if (resolved === danger) {
             throw new Error(
                 `Refusing to delete output directory '${resolved}': resolves to a protected path ` +
                     `(home, cwd, or filesystem root). Use a subdirectory.`,
