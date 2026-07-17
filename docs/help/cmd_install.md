@@ -52,7 +52,8 @@ superskill install cc --marketplace-source github --verbose
 | `claude` | `claude plugin install` CLI | Claude Code marketplace |
 | `codex` | rulesync | `~/.agents/skills/` |
 | `pi` | rulesync + superskill hook shim | `~/.agents/skills/` (+ `~/.pi/agent/agents/` for agents) |
-| `omp` | native (reads `~/.agents/skills/`) + hook shim | `~/.agents/skills/` |
+| `omp` | native (`omp plugin install` via claude-plugins provider) + hook shim | `~/.omp/plugins/cache/plugins/<marketplace>___<plugin>___<version>/` |
+| `grok` | native (`grok plugin install` CLI, Claude-format package) | `~/.grok/installed-plugins/<plugin>-<hash>/` |
 | `opencode` | rulesync | `~/.config/opencode/skills/` |
 | `antigravity-cli` | rulesync | `~/.gemini/antigravity-cli/skills/` |
 | `antigravity-ide` | rulesync | `~/.gemini/config/skills/` |
@@ -88,7 +89,7 @@ flowchart TD
 
     subgraph "Stage 4: Generate"
         G["runRulesync<br/>(rulesync.ts)"]
-        CL["claude plugin install<br/>(direct CLI)"]
+    CL["claude / omp / grok<br/>plugin install (direct CLI)"]
     end
 
     subgraph "Stage 5: Dispatch"
@@ -184,7 +185,8 @@ flowchart LR
         OC[opencode] --> ROC[opencode]
         AGCLI[antigravity-cli] --> RAGCLI[antigravity-cli]
         AGIDE[antigravity-ide] --> RAGIDE[antigravity-ide]
-        OMP[omp] -.->|"surrogate"| RPI
+        OMP[omp] -.->|"no rulesync"| OMPDIRECT[direct CLI]
+        GRK[grok] -.->|"no rulesync"| GRKDIRECT[direct CLI]
         HE[hermes] -.->|"surrogate"| ROC
     end
     subgraph "TARGET_TO_RULESYNC (skills)"
@@ -210,7 +212,7 @@ flowchart LR
     end
 ```
 
-`omp` reuses `pi`'s rulesync output; `hermes` reuses `opencode`'s (ADR-010). Claude, omp, and hermes have no rulesync mapping and are skipped by `runRulesync()`. The hooks map omits `pi`/`omp`/`hermes` — those targets get hooks via the surrogate shim (pi-hooks format for pi/omp, verbatim copy for hermes).
+`omp` and `grok` install natively via their own plugin CLIs (no rulesync pass); `hermes` reuses `opencode`'s rulesync output (ADR-010). Claude, omp, grok, and hermes have no rulesync mapping and are skipped by `runRulesync()`. The hooks map omits `pi`/`omp`/`grok`/`hermes` — `pi`/`omp` get hooks via the pi-hooks surrogate shim; `grok` consumes `hooks.json` natively; `hermes` gets a verbatim `hooks.json` copy.
 
 ### Stage 4 — Generate target outputs
 
@@ -220,15 +222,16 @@ Two generation paths:
 
    **Two-pass hook routing (task 0151):** `hooks` is NOT carried in the main pass. The main pass carries `skills` (+ `mcp` when present) through the skills map (`TARGET_TO_RULESYNC`). When the plugin produced a canonical `hooks.json` (`mapResult.hooks`), a **second hooks-only pass** routes through `TARGET_TO_RULESYNC_HOOKS` so each Antigravity target reaches its own native hook generator (`antigravity-cli` → `.agents/hooks.json` project, `antigravity-ide` → `.gemini/config/hooks.json` global) instead of being collapsed onto `codexcli` (which would emit codex-style hook files at the wrong path). `pi`/`omp` have no rulesync hook target and are handled by the surrogate shim below; `hermes` gets `hooks.json` copied verbatim. A hookless plugin makes a single skills-only pass.
 
-2. **Claude path** — spawns `claude plugin install <plugin>@local --path <pluginRoot>` directly, inheriting stdio.
+2. **Native plugin paths** — `claude`, `omp`, and `grok` each install via their own plugin CLIs (`claude plugin install`, `omp plugin install`, `grok plugin install`), receiving the full Claude-format plugin tree. These three targets all receive plugin-level `scripts/` natively.
 
 ### Stage 5 — Dispatch surrogate targets + emit hooks
 
-For targets rulesync does not cover, superskill copies the surrogate's generated output and emits hooks:
+For targets rulesync does not cover, superskill either installs natively (omp, grok) or copies the surrogate's generated output and emits hooks:
 
 - **`hermes`** — copies `opencode` rulesync skills to `~/.hermes/skills/`, then `emitHermesHooks()` copies the canonical `hooks.json` to `~/.hermes/hooks.json`.
-- **`omp`** — reads skills from shared `~/.agents/skills/` natively; `emitPiStyleHooks()` converts canonical hooks to `@vahor/pi-hooks` format at `~/.omp/agent/hooks.json`.
+- **`omp`** — installs natively via `omp plugin install` (full plugin tree at `~/.omp/plugins/cache/`); `emitPiStyleHooks()` converts canonical hooks to `@vahor/pi-hooks` format at `~/.omp/agent/hooks.json`.
 - **`pi`** — rulesync emits skills (to `~/.agents/skills/`) but not hooks; `emitPiStyleHooks()` fills the gap with the `@vahor/pi-hooks` shim.
+- **`grok`** — installs natively via `grok plugin install <path> --trust` (full plugin tree at `~/.grok/installed-plugins/<plugin>-<hash>/`); no hook shim, direct Claude-format plugin.
 
 Hook emission results are always surfaced (no silent drop) — each `EmitHooksResult.message` is printed to stdout.
 
@@ -290,7 +293,7 @@ sequenceDiagram
 
 ### Design notes
 
-- **ADR-010 (surrogate targets)** — `omp` and `hermes` have no rulesync engine of their own. They reuse `pi` and `opencode` rulesync output respectively, then superskill copies the generated files and emits target-specific hooks.
+- **ADR-010 (surrogate targets)** — `hermes` has no rulesync engine of its own; it reuses `opencode` rulesync output, then superskill copies the generated files and emits `hooks.json` verbatim. `omp` and `grok` install natively via their own plugin CLIs (no rulesync pass), so they receive the full Claude-format plugin tree. `pi` uses the `codexcli` rulesync output for skills (`~/.agents/skills/`) but needs `emitPiStyleHooks()` to convert hooks to `@vahor/pi-hooks` format.
 - **`outputRoots` is mandatory** — `runRulesync()` always passes `outputRoots: [homedir() | cwd()]`. Relying on rulesync's default (`process.cwd()`) would write to the wrong place.
 - **Hooks are never silently dropped** — every `EmitHooksResult.message` is echoed, even in non-verbose mode, so the user knows what hook shims were installed.
 - **`--dry-run`** propagates through rulesync (`dryRun: true`) and skips all filesystem copies and the `claude plugin install` spawn.

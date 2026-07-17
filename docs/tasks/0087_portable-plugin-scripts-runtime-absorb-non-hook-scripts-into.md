@@ -3,16 +3,16 @@ template: standard
 schema_version: 1
 name: "Portable plugin scripts runtime — absorb non-hook scripts into superskill script run dispatcher"
 description: ""
-status: done
+status: blocked
 type: task
 profile: standard
-feature_id: F4
+feature_id: A
 parent_wbs: null
 priority: P2
 tags: []
-dependencies: []
+dependencies: ["0088", "0089"]
 created_at: "2026-07-17T04:13:41.653Z"
-updated_at: "2026-07-17T05:05:10.742Z"
+updated_at: "2026-07-17T06:14:42.379Z"
 ---
 
 ## 0087. Portable plugin scripts runtime — absorb non-hook scripts into superskill script run dispatcher
@@ -244,3 +244,5 @@ Both classes share one physical convention: source lives in `plugins/<plugin>/sc
 - 2026-07-17T04:25:54.369Z todo → wip (system)
 - 2026-07-17T05:05:10.507Z wip → testing (system)
 - 2026-07-17T05:05:10.742Z testing → done (system)
+- 2026-07-17T06:13:51.505Z done → wip (system)
+- 2026-07-17T06:14:42.379Z wip → blocked (system)
