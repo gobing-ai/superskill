@@ -70,6 +70,7 @@ Every agent-skill-related plugin script is delivered by `superskill install` sta
 <!-- Populated as tickets resolve: `- [WBS title](path) — one-line gist` -->
 - (charting session) Discovery locked C + R2-B…R7-B — see Notes.
 - [0088 Inventory real installed script paths](../tasks/0088_inventory-real-installed-script-paths-per-target-claude-omp-.md) — native targets (claude/omp/grok) already land full plugin trees incl. `scripts/`; rulesync+surrogate targets (codex/pi/opencode/antigravity-*/hermes) get skill dirs only — plugin-level `scripts/` absent. Mapper (`mapper.ts:153-158`) copies skill-level subdirs only; staging seam for the rulesync class is task 0090.
+- [0089 Define portable entrypoint contract](../tasks/0089_define-portable-entrypoint-contract-for-staged-plugin-script.md) — Entrypoint Contract v1: Node `.js`/`.mjs` + POSIX `.sh` as portable runtimes (no Bun on target); `$(superskill script path <p> <id>)` as canonical doc form; exit 0/1 for validation CLIs vs exit 2 for hook blocks; path is standard surface, `script run` optional legacy.
 
 ## Not yet specified
 
