@@ -28,7 +28,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ### New Features
 
-- **Marketplace registration source: `--marketplace-source github`.** `superskill install` now supports registering marketplaces as GitHub repos (e.g. `claude plugin marketplace add gobing-ai/superskill`) instead of only local directory paths. Local directory mode remains the default for authoring/dogfood. Grok and OMP install helpers mirror the source-mode choice. Includes a migration runbook for operators moving from directory to github-backed registrations. (#0086)
+- **Marketplace registration source: ` --marketplace-source github`.** `superskill install` now supports registering marketplaces as GitHub repos (e.g. `claude plugin marketplace add gobing-ai/superskill`) instead of only local directory paths. Local directory mode remains the default for authoring/dogfood. Grok and OMP install helpers mirror the source-mode choice. Includes a migration runbook for operators moving from directory to github-backed registrations. (#0086)
+- **`superskill script run <plugin> <script-id>` — portable non-hook plugin scripts.** Non-hook scripts under `plugins/<plugin>/scripts/` are now invocable on every install target through the CLI binary, mirroring `hook run` for hook scripts. First registered script: `cc/validate-response` (anti-hallucination answer validator, exit 0/1 validation semantics). The dispatcher deep-imports script engines at build time (ADR-022), so skill docs no longer depend on repo-relative `bun` paths that break on install targets. Unknown script ids fail open with a stderr warning (version-skew posture, same as `hook run`). (#0087)
 
 ## [0.3.2] - 2026-07-14
 

@@ -40,7 +40,7 @@ Instead, the CLI **deep-imports** plugin script modules at build time (ADR-022 b
 
 ## Class 2 — non-hook scripts
 
-**Contract.** Skill docs invoke non-hook scripts through the script dispatcher (lands with task 0087; until then the only member of this class is `cc/validate-response`):
+**Contract.** Skill docs invoke non-hook scripts through the script dispatcher (`cc/validate-response` is the first registered member of this class):
 
 ```bash
 printf '%s' "$FINAL_ANSWER" | superskill script run cc validate-response
@@ -87,4 +87,4 @@ Is it triggered by a host hook event (Stop/PreToolUse/…)?
 | Surface | State |
 |---|---|
 | `superskill hook run` + `HookRunner` registry | Shipped (v0.2.19+); `cc/anti-hallucination` registered |
-| `superskill script run` + `ScriptRunner` registry | Lands with task 0087; first entry `cc/validate-response`. Until then `cc/validate-response` is invocable only from a repo checkout (`bun plugins/cc/scripts/anti-hallucination/validate_response.ts`) |
+| `superskill script run` + `ScriptRunner` registry | Shipped (task 0087); `cc/validate-response` registered. Dispatcher at `apps/cli/src/commands/script-run.ts`; exit 0/1 validation semantics; unknown ids fail open with a stderr warning |
