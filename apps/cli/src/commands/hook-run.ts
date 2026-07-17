@@ -63,13 +63,49 @@ function preToolUseDecision(decision: 'allow' | 'deny', reason?: string): HookRu
 }
 
 /**
+ * Tokenize a `SPUR_BIN` override with quote-aware splitting so paths containing
+ * spaces work when quoted (`"/opt/my tools/spur" --flag`). Unquoted spaces still
+ * separate argv tokens. Single- and double-quoted runs preserve interior spaces.
+ */
+export function parseSpurBinSpec(spec: string): string[] {
+    const tokens: string[] = [];
+    let cur = '';
+    let quote: '"' | "'" | null = null;
+    for (let i = 0; i < spec.length; i++) {
+        const c = spec[i];
+        if (quote) {
+            if (c === quote) {
+                quote = null;
+            } else {
+                cur += c;
+            }
+            continue;
+        }
+        if (c === '"' || c === "'") {
+            quote = c;
+            continue;
+        }
+        if (c === ' ' || c === '\t') {
+            if (cur.length > 0) {
+                tokens.push(cur);
+                cur = '';
+            }
+            continue;
+        }
+        cur += c;
+    }
+    if (cur.length > 0) tokens.push(cur);
+    return tokens;
+}
+
+/**
  * Resolve whether a file path is owned by a Spur task. Shells out to `spur task resolve --strict --json`:
  * exit 0 → owned, non-zero → unowned, spawn/timeout failure → unknown (fail open). Honors `SPUR_BIN`
- * for a custom binary (args allowed, space-separated).
+ * for a custom binary (optional args; quote paths that contain spaces).
  */
 export function resolveSpurTaskOwnership(filePath: string, cwd: string): TaskOwnership {
     const spurBin = process.env.SPUR_BIN || 'spur';
-    const parts = spurBin.split(' ');
+    const parts = parseSpurBinSpec(spurBin);
     const cmd = parts[0] ?? 'spur';
     const args = [...parts.slice(1), 'task', 'resolve', filePath, '--strict', '--json'];
     const res = spawnSync(cmd, args, {
@@ -218,6 +254,20 @@ const spContextPostTool: HookRunner = {
         } catch {
             // fail-open: a broken ledger must never wedge the agent
         }
+
+        // Keep running totals on .session.json so Stop is O(1) (no full ledger scan).
+        try {
+            const sessionPath = join(dir, '.session.json');
+            const raw = JSON.parse(readFileSync(sessionPath, 'utf-8')) as Record<string, unknown>;
+            if (typeof raw.session === 'string' && raw.session === session) {
+                if (type === 'read') raw.reads = (typeof raw.reads === 'number' ? raw.reads : 0) + 1;
+                else raw.writes = (typeof raw.writes === 'number' ? raw.writes : 0) + 1;
+                raw.tokens = (typeof raw.tokens === 'number' ? raw.tokens : 0) + tokens;
+                writeFileSync(sessionPath, JSON.stringify(raw));
+            }
+        } catch {
+            // fail-open: missing counters fall back at Stop
+        }
         return OK;
     },
 };
@@ -258,7 +308,7 @@ const spContextSessionStart: HookRunner = {
     },
 };
 
-/** Stop: compute session rollup from the ledger, append `session_end`, clean up `.session.json`. */
+/** Stop: read O(1) totals from `.session.json`, append `session_end`, clean up session file. */
 const spContextSessionStop: HookRunner = {
     run(env) {
         const dir = spurContextDir(env);
@@ -266,43 +316,41 @@ const spContextSessionStop: HookRunner = {
         if (!existsSync(sessionFile)) return OK;
 
         let sessionId = '';
+        let reads = 0;
+        let writes = 0;
+        let tokens = 0;
         try {
-            const data = JSON.parse(readFileSync(sessionFile, 'utf-8'));
-            if (typeof data === 'object' && data !== null && 'session' in data && typeof data.session === 'string') {
-                sessionId = data.session;
+            const data = JSON.parse(readFileSync(sessionFile, 'utf-8')) as Record<string, unknown>;
+            if (typeof data.session !== 'string' || data.session.length === 0) return OK;
+            sessionId = data.session;
+            // Prefer running counters maintained by PostToolUse (O(1)). Fall back to a
+            // one-shot ledger scan only when counters are absent (legacy session files).
+            if (typeof data.reads === 'number' || typeof data.writes === 'number' || typeof data.tokens === 'number') {
+                reads = typeof data.reads === 'number' ? data.reads : 0;
+                writes = typeof data.writes === 'number' ? data.writes : 0;
+                tokens = typeof data.tokens === 'number' ? data.tokens : 0;
+            } else {
+                const ledgerPath = join(dir, 'token-ledger.jsonl');
+                if (existsSync(ledgerPath)) {
+                    for (const line of readFileSync(ledgerPath, 'utf-8').split('\n')) {
+                        if (!line.trim()) continue;
+                        try {
+                            const evt = JSON.parse(line) as Record<string, unknown>;
+                            if (evt.session !== sessionId) continue;
+                            if (evt.type === 'read') reads++;
+                            else if (evt.type === 'write') writes++;
+                            if (typeof evt.tokens === 'number') tokens += evt.tokens;
+                        } catch {
+                            // skip unparseable lines
+                        }
+                    }
+                }
             }
         } catch {
             return OK;
         }
-        if (!sessionId) return OK;
 
         const ledgerPath = join(dir, 'token-ledger.jsonl');
-        let reads = 0;
-        let writes = 0;
-        let tokens = 0;
-        if (existsSync(ledgerPath)) {
-            for (const line of readFileSync(ledgerPath, 'utf-8').split('\n')) {
-                if (!line.trim()) continue;
-                try {
-                    const evt = JSON.parse(line);
-                    if (
-                        typeof evt !== 'object' ||
-                        evt === null ||
-                        (evt as Record<string, unknown>).session !== sessionId
-                    )
-                        continue;
-                    const type = (evt as Record<string, unknown>).type;
-                    if (type === 'read') reads++;
-                    else if (type === 'write') writes++;
-                    if (typeof (evt as Record<string, unknown>).tokens === 'number') {
-                        tokens += (evt as Record<string, unknown>).tokens as number;
-                    }
-                } catch {
-                    // skip unparseable lines
-                }
-            }
-        }
-
         const event = {
             ts: new Date().toISOString(),
             session: sessionId,

@@ -3,7 +3,7 @@ import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Command } from 'commander';
-import { hookRun, registerHookRun, runSpTaskWriteGuard } from '../../src/commands/hook-run';
+import { hookRun, parseSpurBinSpec, registerHookRun, runSpTaskWriteGuard } from '../../src/commands/hook-run';
 import { cliVersion } from '../../src/version';
 
 /**
@@ -94,6 +94,21 @@ describe('hook run — dispatcher', () => {
         } finally {
             process.stderr.write = originalErr;
         }
+    });
+});
+
+describe('parseSpurBinSpec', () => {
+    it('splits unquoted tokens on spaces', () => {
+        expect(parseSpurBinSpec('spur --flag')).toEqual(['spur', '--flag']);
+    });
+
+    it('preserves spaces inside double- or single-quoted paths', () => {
+        expect(parseSpurBinSpec('"/opt/my tools/spur" task')).toEqual(['/opt/my tools/spur', 'task']);
+        expect(parseSpurBinSpec("'/opt/my tools/spur' --x")).toEqual(['/opt/my tools/spur', '--x']);
+    });
+
+    it('returns a single token when the whole binary path is quoted', () => {
+        expect(parseSpurBinSpec('"/Applications/Spur CLI/spur"')).toEqual(['/Applications/Spur CLI/spur']);
     });
 });
 
@@ -334,6 +349,11 @@ describe('hook run — sp/context-* (indexed-context token ledger, all fail-open
         expect(readEvt).toBeDefined();
         expect(readEvt.file).toBe('/tmp/x.md');
         expect(readEvt.tokens).toBeGreaterThan(0);
+        // Running totals on .session.json keep Stop O(1).
+        const session = JSON.parse(readFileSync(join(tmpRoot, '.spur', 'context', '.session.json'), 'utf-8'));
+        expect(session.reads).toBe(1);
+        expect(session.writes).toBe(0);
+        expect(session.tokens).toBe(readEvt.tokens);
     });
 
     it('context-post-tool: fails open (exit 0, no ledger write) without a session', () => {
