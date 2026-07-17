@@ -113,6 +113,23 @@ describe('resolveScriptPath', () => {
     it('rejects absolute paths as rel', () => {
         expect(() => resolveScriptPath({ plugin: 'cc', rel: '/etc/passwd' })).toThrow(UsageError);
     });
+
+    it('allows filenames that contain ".." as a substring but not as a segment', () => {
+        const { projectRoot } = setupTree({ projectScript: 'file..ts' });
+        const result = resolveScriptPath({ plugin: 'cc', rel: 'file..ts', projectRoot });
+        expect(result).not.toBeNull();
+        expect(result?.path).toContain('file..ts');
+    });
+
+    it('returns null when the candidate path is a directory, not a file', () => {
+        tmpDir = mkdtempSync('superskill-script-path-');
+        const projectRoot = join(tmpDir, 'project');
+        const dirPath = join(projectRoot, '.agents', 'scripts', 'cc', 'cmd');
+        mkdirSync(dirPath, { recursive: true });
+        // candidate is the directory itself (rel points at a dir, not a file)
+        const result = resolveScriptPath({ plugin: 'cc', rel: 'cmd', projectRoot });
+        expect(result).toBeNull();
+    });
 });
 describe('runScriptPathAction', () => {
     let tmpDir: string;

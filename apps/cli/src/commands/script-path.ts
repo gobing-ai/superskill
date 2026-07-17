@@ -1,4 +1,4 @@
-import { existsSync } from 'node:fs';
+import { existsSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { assertSafePathSegment } from '@gobing-ai/superskill-core';
@@ -53,11 +53,19 @@ export interface ScriptPathOptions {
  * Returns the first existing file, or null when not found.
  * Rejects `rel` containing `..` segments or absolute paths.
  */
+/** True when `rel` is absolute, empty, or contains a `..` path segment (segment-wise, not substring). */
+function isUnsafeRel(rel: string): boolean {
+    if (!rel || rel.startsWith('/') || rel.startsWith('\\') || /^[a-zA-Z]:[\\/]/.test(rel)) {
+        return true;
+    }
+    // Segment check avoids false positives on filenames like `file..ts` while blocking `../x` and `a/../b`.
+    return rel.split(/[/\\]/).some((seg) => seg === '..' || seg === '');
+}
+
 export function resolveScriptPath(opts: ScriptPathOptions): ResolvedScriptPath | null {
     assertSafePathSegment(opts.plugin, 'plugin name');
 
-    // Reject path traversal and absolute paths in rel
-    if (opts.rel.startsWith('/') || opts.rel.includes('..')) {
+    if (isUnsafeRel(opts.rel)) {
         throw new UsageError(
             `Invalid relative path: "${opts.rel}". Must be a plain relative path without ".." segments.`,
         );
@@ -83,8 +91,15 @@ export function resolveScriptPath(opts: ScriptPathOptions): ResolvedScriptPath |
     }
 
     for (const candidate of candidates) {
+        // R6: only a regular file counts as "found" — directories must not win resolution.
         if (existsSync(candidate.path)) {
-            return candidate;
+            try {
+                if (statSync(candidate.path).isFile()) {
+                    return candidate;
+                }
+            } catch {
+                // Race / permission: treat as miss and continue search
+            }
         }
     }
 
