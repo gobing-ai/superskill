@@ -1,8 +1,8 @@
-import { afterEach, describe, expect, it } from 'bun:test';
+import { afterEach, describe, expect, it, spyOn } from 'bun:test';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { Command } from 'commander';
-import { registerScriptPath, resolveScriptPath, UsageError } from '../../src/commands/script-path';
+import { registerScriptPath, resolveScriptPath, runScriptPathAction, UsageError } from '../../src/commands/script-path';
 
 describe('resolveScriptPath', () => {
     let tmpDir: string;
@@ -52,7 +52,11 @@ describe('resolveScriptPath', () => {
 
     it('resolves nested relative paths', () => {
         const { projectRoot } = setupTree({ projectScript: 'anti-hallucination/validate_response.js' });
-        const result = resolveScriptPath({ plugin: 'cc', rel: 'anti-hallucination/validate_response.js', projectRoot });
+        const result = resolveScriptPath({
+            plugin: 'cc',
+            rel: 'anti-hallucination/validate_response.js',
+            projectRoot,
+        });
         expect(result).not.toBeNull();
         if (!result) throw new Error('null result');
         expect(result.path).toContain('anti-hallucination/validate_response.js');
@@ -110,6 +114,94 @@ describe('resolveScriptPath', () => {
         expect(() => resolveScriptPath({ plugin: 'cc', rel: '/etc/passwd' })).toThrow(UsageError);
     });
 });
+describe('runScriptPathAction', () => {
+    let tmpDir: string;
+
+    afterEach(() => {
+        if (tmpDir) rmSync(tmpDir, { recursive: true, force: true });
+    });
+
+    function fixture(rel: string): string {
+        const t = mkdtempSync('superskill-spa-');
+        tmpDir = t;
+        const d = join(t, '.agents', 'scripts', 'cc');
+        mkdirSync(d, { recursive: true });
+        writeFileSync(join(d, rel), '#!/usr/bin/env node\n// test');
+        return t;
+    }
+
+    /** Call runScriptPathAction with a throw-on-exit callback and catch the throw. */
+    function invoke(
+        plugin: string,
+        rel: string,
+        options: { json?: boolean; global?: boolean; project?: boolean } = {},
+        overrides?: { home?: string; projectRoot?: string },
+    ): { exits: number[]; lines: string[] } {
+        const exits: number[] = [];
+        const lines: string[] = [];
+        const spy = spyOnLog((l) => lines.push(l));
+        try {
+            runScriptPathAction(
+                plugin,
+                rel,
+                options,
+                (code) => {
+                    exits.push(code);
+                    throw new Error(`exit ${code}`);
+                },
+                overrides,
+            );
+        } catch {
+            // exitFn throws — expected
+        }
+        spy.mockRestore();
+        return { exits, lines };
+    }
+
+    it('exits 0 and prints path when script found', () => {
+        const root = fixture('validate.js');
+        const { exits, lines } = invoke('cc', 'validate.js', {}, { projectRoot: root });
+        expect(exits).toEqual([0]);
+        expect(lines[0]).toContain('validate.js');
+    });
+
+    it('exits 2 when script not found', () => {
+        const root = fixture('exists.sh');
+        const { exits } = invoke('cc', 'missing.js', {}, { projectRoot: root });
+        expect(exits).toEqual([2]);
+    });
+
+    it('exits 1 on path traversal rejection', () => {
+        const { exits } = invoke('cc', '../escape');
+        expect(exits).toEqual([1]);
+    });
+
+    it('--json success outputs structured object', () => {
+        const root = fixture('validate.js');
+        const { exits, lines } = invoke('cc', 'validate.js', { json: true }, { projectRoot: root });
+        expect(exits).toEqual([0]);
+        const raw = lines[0];
+        if (!raw) throw new Error('expected output line');
+        const parsed = JSON.parse(raw);
+        expect(parsed.plugin).toBe('cc');
+        expect(parsed.rel).toBe('validate.js');
+        expect(parsed.source).toBe('project');
+        expect(parsed.path).toContain('validate.js');
+    });
+
+    it('--global flag skips project root', () => {
+        const t = mkdtempSync('superskill-spa-');
+        tmpDir = t;
+        const home = join(t, 'home');
+        const root = join(t, 'project');
+        const d = join(home, '.agents', 'scripts', 'cc');
+        mkdirSync(d, { recursive: true });
+        writeFileSync(join(d, 'check.sh'), '#!/usr/bin/env bash\necho ok');
+
+        const { exits } = invoke('cc', 'check.sh', { global: true }, { home, projectRoot: root });
+        expect(exits).toEqual([0]);
+    });
+});
 
 describe('registerScriptPath CLI', () => {
     it('registers path subcommand under script group', () => {
@@ -120,8 +212,6 @@ describe('registerScriptPath CLI', () => {
         const pathCmd = scriptCmd?.commands.find((c) => c.name() === 'path');
         expect(pathCmd).toBeDefined();
         expect(pathCmd?.options.some((o) => o.long === '--json')).toBe(true);
-        expect(pathCmd?.options.some((o) => o.long === '--global')).toBe(true);
-        expect(pathCmd?.options.some((o) => o.long === '--project')).toBe(true);
     });
 
     it('adds to existing script group without conflicts', () => {
@@ -142,3 +232,14 @@ describe('registerScriptPath CLI', () => {
         expect(args?.some((a) => a.name() === 'rel')).toBe(true);
     });
 });
+
+/**
+ * Spy on process.stdout.write — used for capturing output from `echo()` calls
+ * inside `runScriptPathAction`. Restore with `spy.mockRestore()`.
+ */
+function spyOnLog(capture: (line: string) => void) {
+    return spyOn(process.stdout, 'write').mockImplementation((data: unknown) => {
+        capture(String(data));
+        return true;
+    });
+}

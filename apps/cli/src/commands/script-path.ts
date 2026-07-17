@@ -100,10 +100,67 @@ export class UsageError extends Error {
 }
 
 /**
+ * Run the script path CLI action with an injectable exit function for tests.
+ */
+export function runScriptPathAction(
+    plugin: string,
+    rel: string,
+    options: { json?: boolean; global?: boolean; project?: boolean },
+    exitFn: (code: number) => never,
+    overrides?: { home?: string; projectRoot?: string },
+): void {
+    let result: ResolvedScriptPath | null;
+    try {
+        result = resolveScriptPath({
+            plugin,
+            rel,
+            forceGlobal: options.global,
+            forceProject: options.project,
+            home: overrides?.home,
+            projectRoot: overrides?.projectRoot,
+        });
+    } catch (err) {
+        if (err instanceof UsageError) {
+            if (options.json) {
+                echo(JSON.stringify({ error: 'invalid_args', message: err.message }));
+            }
+            echoError(err.message);
+            exitFn(1);
+        }
+        throw err;
+    }
+
+    if (!result) {
+        const searched: string[] = [];
+        if (!options.global) searched.push('<project>/.agents/scripts');
+        if (!options.project) searched.push('~/.agents/scripts');
+        const msg = `Script not found: "${plugin}/${rel}". Searched: ${searched.join(', ')}.`;
+        if (options.json) {
+            echo(JSON.stringify({ error: 'not_found', plugin, rel, searched }));
+        }
+        echoError(msg);
+        exitFn(2);
+    }
+
+    if (options.json) {
+        echo(JSON.stringify({ plugin, rel, path: result.path, source: result.source }));
+    } else {
+        echo(result.path);
+    }
+    exitFn(0);
+}
+
+/**
  * Register `superskill script path <plugin> <rel>` on the program.
  * Attaches to the existing `script` group (created by `registerScriptRun`).
+ * @param ci  Inject the exit function for tests — defaults to `process.exit`.
  */
-export function registerScriptPath(program: Command): void {
+export function registerScriptPath(program: Command, ci?: { exit(code: number): never }): void {
+    const exitFn =
+        ci?.exit ??
+        ((code: number) => {
+            process.exit(code);
+        });
     // Look up the existing `script` group or create it if `registerScriptRun` wasn't called.
     let group = program.commands.find((c) => c.name() === 'script');
     if (!group) {
@@ -117,41 +174,6 @@ export function registerScriptPath(program: Command): void {
         .option('--global', 'Resolve only from the global scripts root (~/.agents/scripts/)')
         .option('--project', 'Resolve only from the project scripts root')
         .action((plugin: string, rel: string, options: { json?: boolean; global?: boolean; project?: boolean }) => {
-            try {
-                const result = resolveScriptPath({
-                    plugin,
-                    rel,
-                    forceGlobal: options.global,
-                    forceProject: options.project,
-                });
-
-                if (!result) {
-                    const searched = [];
-                    if (!options.global) searched.push('<project>/.agents/scripts');
-                    if (!options.project) searched.push('~/.agents/scripts');
-                    const msg = `Script not found: "${plugin}/${rel}". Searched: ${searched.join(', ')}.`;
-                    if (options.json) {
-                        echo(JSON.stringify({ error: 'not_found', plugin, rel, searched }));
-                    }
-                    echoError(msg);
-                    process.exit(2);
-                }
-
-                if (options.json) {
-                    echo(JSON.stringify({ plugin, rel, path: result.path, source: result.source }));
-                } else {
-                    echo(result.path);
-                }
-                process.exit(0);
-            } catch (err) {
-                if (err instanceof UsageError) {
-                    if (options.json) {
-                        echo(JSON.stringify({ error: 'invalid_args', message: err.message }));
-                    }
-                    echoError(err.message);
-                    process.exit(1);
-                }
-                throw err;
-            }
+            runScriptPathAction(plugin, rel, options, exitFn);
         });
 }
