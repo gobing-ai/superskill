@@ -12,7 +12,7 @@ priority: P2
 tags: []
 dependencies: ["0089", "0090", "0091", "0094"]
 created_at: "2026-07-17T06:14:03.790Z"
-updated_at: "2026-07-17T22:33:46.402Z"
+updated_at: "2026-07-17T22:46:20.891Z"
 ---
 
 ## 0095. Supersede ADR-015 copied-on-install wording and extend ADR-022 scope
@@ -49,24 +49,24 @@ updated_at: "2026-07-17T22:33:46.402Z"
 
 **Done when.** ADR chain is unambiguous for dual contract; 04/bundled_plugin/AGENTS match; greps clean of contradictory “never staged” vs “copied on install” without mechanism; feature A gist line written.
 ### Requirements
-- [ ] R1. **New ADR entry (delivery model).** Add a dated ADR that states the dual contract:
+- [x] R1. **New ADR entry (delivery model).** Add a dated ADR that states the dual contract:
   - Plugin-level source layout remains `plugins/<plugin>/scripts/<feature>/` (prose-only skills — keep ADR-015 layout intent).
   - **Delivery:** install stages plugin-level scripts for the rulesync/hermes class to a stable agents scripts root; native marketplace installs keep full plugin trees (cite inventory/staging Solutions).
   - **Invocation standard:** `script path` + portable entrypoint contract for skill docs.
   - **Invocation optional:** compile-time registry `script run` / `hook run` for absorbed pure engines (CLI release coupling intentional).
   - Supersedes ADR-015 phrase “copied on install” as underspecified; replaces absorption-only “never stage” interim docs.
-- [ ] R2. **ADR-022 amendment.** New dated entry or amendment expands blessed deep-import consumers to the **script dispatcher family** under `apps/cli/src/commands/` that deep-imports `plugins/cc/scripts/**` (at minimum `hook-run.ts` and `script-run.ts`), still rejecting `packages/*` → `plugins/*` and unbounded third parties without a new ADR. Update constraint language that said “hook dispatcher only.”
-- [ ] R3. **AGENTS.md sync.** Conventions bullet for the blessed exception matches R2 (not hook-only).
-- [ ] R4. **04_DESIGN.md sync.** Plugin-level scripts surface section describes staging destinations + dual invocation; remove bare “copied on install, deduped” without mechanism.
-- [ ] R5. **bundled_plugin.md sync.** Same factual alignment as R4 (short table OK).
-- [ ] R6. **Drift grep.** After edits, no remaining claim in `docs/00_ADR.md` (current decision text), `04_DESIGN.md`, `bundled_plugin.md`, or `AGENTS.md` that:
+- [x] R2. **ADR-022 amendment.** New dated entry or amendment expands blessed deep-import consumers to the **script dispatcher family** under `apps/cli/src/commands/` that deep-imports `plugins/cc/scripts/**` (at minimum `hook-run.ts` and `script-run.ts`), still rejecting `packages/*` → `plugins/*` and unbounded third parties without a new ADR. Update constraint language that said “hook dispatcher only.”
+- [x] R3. **AGENTS.md sync.** Conventions bullet for the blessed exception matches R2 (not hook-only).
+- [x] R4. **04_DESIGN.md sync.** Plugin-level scripts surface section describes staging destinations + dual invocation; remove bare “copied on install, deduped” without mechanism.
+- [x] R5. **bundled_plugin.md sync.** Same factual alignment as R4 (short table OK).
+- [x] R6. **Drift grep.** After edits, no remaining claim in `docs/00_ADR.md` (current decision text), `04_DESIGN.md`, `bundled_plugin.md`, or `AGENTS.md` that:
   - scripts are only ever absorbed and never staged, **or**
   - scripts are “copied on install” with no path/mechanism, **or**
   - ADR-022 is hook-run-only while `script-run.ts` deep-imports remain.
   (Historical task Solutions may still describe past states — out of scope.)
-- [ ] R7. **Hook decision reflection.** ADR text matches hook-path design Solution (keep hook run vs path unify) — do not invent a third story.
-- [ ] R8. **CHANGELOG** `[Unreleased]` docs entry listing ADR + surface doc sync.
-- [ ] R9. **Non-goals.** No TypeScript changes; no skill-doc migration; guide deep rewrite only if still contradictory after guide task (prefer pointer to guide).
+- [x] R7. **Hook decision reflection.** ADR text matches hook-path design Solution (keep hook run vs path unify) — do not invent a third story.
+- [x] R8. **CHANGELOG** `[Unreleased]` docs entry listing ADR + surface doc sync.
+- [x] R9. **Non-goals.** No TypeScript changes; no skill-doc migration; guide deep rewrite only if still contradictory after guide task (prefer pointer to guide).
 ### Acceptance Criteria
 **AC1 — ADR supersession trail.** `docs/00_ADR.md` contains a new dated entry (or entries) with clear supersedes/amends language for ADR-015 delivery wording and ADR-022 consumer scope.
 

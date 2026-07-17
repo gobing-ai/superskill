@@ -12,7 +12,7 @@ priority: P2
 tags: []
 dependencies: ["0088", "0089"]
 created_at: "2026-07-17T06:14:02.191Z"
-updated_at: "2026-07-17T22:28:31.405Z"
+updated_at: "2026-07-17T22:39:19.112Z"
 ---
 
 ## 0094. Design hook-path unification without CLAUDE_PLUGIN_ROOT regression
@@ -189,17 +189,34 @@ The `.js` twin (proposed 0096) was flagged as a P2 finding in task 0093's review
 **No deprecation of `hook run` is recommended.** `hook run` remains the canonical, portable, fail-open-safe hooks.json form for the foreseeable future.
 
 ### Testing
-N/A — design artifact only (AC6). All citations are `file:line` references read in this session against the current working tree (`b669837` + `9ca2d13`); no code was executed.
+**Verify date:** 2026-07-17 (`--force --focus all --fix all`)
 
-Verification of non-regression claims was by code inspection:
-- `hooks.ts:174-192` — pi dedup by command string (confirmed).
-- `hooks.ts:274-296` — hermes dedup by `(matcher, command)` signature (confirmed).
-- `omp-hooks.ts:128-141` — generated module shells out to `superskill` binary (confirmed).
-- `install.ts:178-184,287,342,368,399,744-746` — `hooksBlockedByCliVersion` honored across every emitter branch (confirmed).
-- `hook-run.ts:339-347` — unknown id fail-open with loud warning (confirmed).
-- `install.ts:921-946` — `stagePluginScripts` lands at `~/.agents/scripts/<plugin>/` (confirmed, task 0090).
-- `install.ts:450` — `needsSharedScriptsRoot` native-class skip gate (confirmed).
+**Coverage:** N/A (design-only / grilling artifact; no production code).
 
+**Commands / inspections this pass:**
+
+| Check | Outcome |
+|---|---|
+| `spur task check 0094 --strict-core --json` | `pass: true` |
+| Options table Options 1–4 present with portability / minCliVersion / emitter churn / skew columns | MET (AC1) |
+| Recommended form is PATH `superskill hook run` — no `${CLAUDE_PLUGIN_ROOT}` | MET (AC2); `plugins/cc/hooks/hooks.json:10` |
+| Emitter matrix covers pi, hermes, omp, codex, opencode, antigravity-*, grok, claude | MET (AC3) |
+| minCliVersion policy: stay + gate at `install.ts:178-191` | MET (AC4); all emitter branches honor `hooksBlockedByCliVersion` |
+| R6-B narrowed + feature A gist line present | MET (AC5); follow-up **0096** proposed for `.js` twin |
+| No production code in task scope | MET (AC6) |
+| `bun run lint` | clean |
+
+**Citation re-probe (working tree):**
+- `hooks.json:2` minCliVersion `0.2.19`; command `superskill hook run cc anti-hallucination` at L10
+- `install.ts:178-191` minCliVersion gate; L287/342/368/399/744 hooksBlocked paths
+- `hooks.ts` pi dedup by command (`mergePiHooks` ~L174-192); hermes signature dedup (~L274-296)
+- `omp-hooks.ts:128-141` `spawnSync` of superskill
+- `hook-run.ts:339-347` fail-open unknown id (ADR-020)
+- `install.ts:450` needsSharedScriptsRoot; `stagePluginScripts` ~L921-960
+
+**Residual fix this pass:** feature A "Not yet specified" bullet on emitter rewrite marked resolved by 0094.
+
+**Per-Requirement / AC:** R1–R9 MET; AC1–AC6 MET. No UNMET/PARTIAL; `--fix all` had only the open-question cleanup above.
 ### Review
 | Severity | Finding | Status |
 |----------|---------|--------|

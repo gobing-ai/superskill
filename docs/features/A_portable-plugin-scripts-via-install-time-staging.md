@@ -81,9 +81,9 @@ Every agent-skill-related plugin script is delivered by `superskill install` sta
 
 - Exact resolution order for `script path` when both native plugin root and `~/.agents/scripts/` exist (multi-target machine).
 - Whether staged entrypoints are Node-only, shell-only, or allow a small set of compiled JS emitted at install.
-- How hermes/omp/pi emitters rewrite hook commands if hooks leave `hook run` (R6-B).
+- ~~How hermes/omp/pi emitters rewrite hook commands if hooks leave `hook run` (R6-B).~~ **Resolved by 0094:** they do not leave `hook run` — zero emitter rewrites; R6-B = delivery unify only.
 - Whether third-party marketplace plugins (not in this monorepo) get the same staging without a CLI release.
-- Interaction with `minCliVersion` if hooks stop calling the CLI.
+- ~~Interaction with `minCliVersion` if hooks stop calling the CLI.~~ **Resolved by 0094:** hooks keep `hook run`; minCliVersion gate role unchanged.
 - Project-mode (`--no-global`) twin path conventions for scripts root.
 - Whether to deprecate/remove `script run` after path is standard, or keep forever for pure in-binary validators.
 - Coverage/gate impact of staging TS tests under new install destinations.
