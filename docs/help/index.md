@@ -36,6 +36,7 @@ Two layers:
 | [Quality system](quality_system.md) | Rubrics, scoring dimensions, two-call seam, double-loop gate, empirical behavior gate |
 | [Entity locations](entity_locations.md) | Where superskill writes each entity type per target agent |
 | [Bundled `cc` plugin](bundled_plugin.md) | The shipped Claude Code plugin — entities, delegation pattern, scripts |
+| [Plugin script organization](how_to_organize_scripts_for_plugin_development.md) | Two-class script model (hook vs non-hook), `hook run` / `script run` dispatchers, authoring anti-patterns |
 | [Development guide](development.md) | Stack, workspace layout, build commands, verification gate, code style |
 
 ## Command overview
