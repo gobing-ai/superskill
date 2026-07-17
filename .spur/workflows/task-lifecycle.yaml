@@ -1,0 +1,127 @@
+"$schema": "@gobing-ai/spur/schemas/state-machine-workflow.schema.json"
+kind: state-machine
+name: task-lifecycle
+description: >
+  Task lifecycle FSM (design §2.3, §5.1). States are the canonical TaskStatus
+  vocabulary (DD-01); transitions encode the §2.3 graph; guards invoke
+  `${vars.spurBin} task check` at the wip→testing and testing→done placements.
+  `done` is re-enterable (reopen with a warning); `cancelled` is terminal.
+  Guard commands reference the check verb (0051) — structural validation passes
+  today, behavioral wiring activates as the verb ships. Unconditional transitions
+  use the `always` guard (externally-driven via `requestTransition`, not
+  auto-advance).
+initialState: backlog
+terminalStates:
+  - cancelled
+vars:
+  spurBin: 'spur'
+  wbs: '0000'
+
+states:
+  - id: backlog
+    description: Initial state — task exists but has not been triaged.
+  - id: todo
+    description: Triaged and ready to start.
+  - id: wip
+    description: Actively being worked on.
+  - id: testing
+    description: Implementation complete; under test/verification.
+  - id: blocked
+    description: Impediment; work suspended.
+  - id: done
+    description: Completed. Re-enterable (reopen with warning + mandatory History entry).
+  - id: cancelled
+    description: Terminal — abandoned.
+
+transitions:
+  # Forward path: backlog → todo → wip → testing → done
+  - from: backlog
+    to: todo
+    description: Triage — task is ready to start
+    guard:
+      kind: always
+  - from: todo
+    to: wip
+    description: Start work
+    guard:
+      kind: always
+  - from: wip
+    to: testing
+    description: Implementation complete; enter testing
+    guard:
+      kind: shell
+      options:
+        command: '${vars.spurBin} task check ${vars.wbs}'
+  - from: testing
+    to: done
+    description: Testing passed — task complete
+    guard:
+      kind: shell
+      options:
+        command: '${vars.spurBin} task check ${vars.wbs} --strict-core'
+
+  # Reopen: done → wip (warned, mandatory History entry)
+  - from: done
+    to: wip
+    description: Reopen — work resumed (warning + mandatory History entry)
+    guard:
+      kind: always
+
+  # Blocked ↔ (todo, wip, testing) — bidirectional from/to active states
+  - from: todo
+    to: blocked
+    description: Blocked by an impediment
+    guard:
+      kind: always
+  - from: blocked
+    to: todo
+    description: Impediment resolved — back to todo
+    guard:
+      kind: always
+  - from: wip
+    to: blocked
+    description: Blocked by an impediment
+    guard:
+      kind: always
+  - from: blocked
+    to: wip
+    description: Impediment resolved — back to wip
+    guard:
+      kind: always
+  - from: testing
+    to: blocked
+    description: Blocked by an impediment
+    guard:
+      kind: always
+  - from: blocked
+    to: testing
+    description: Impediment resolved — back to testing
+    guard:
+      kind: always
+
+  # Cancel: any non-terminal → cancelled (terminal)
+  - from: backlog
+    to: cancelled
+    description: Cancel task
+    guard:
+      kind: always
+  - from: todo
+    to: cancelled
+    description: Cancel task
+    guard:
+      kind: always
+  - from: wip
+    to: cancelled
+    description: Cancel task
+    guard:
+      kind: always
+  - from: testing
+    to: cancelled
+    description: Cancel task
+    guard:
+      kind: always
+  - from: blocked
+    to: cancelled
+    description: Cancel task
+    guard:
+      kind: always

@@ -1,0 +1,99 @@
+"$schema": "@gobing-ai/spur/schemas/state-machine-workflow.schema.json"
+kind: state-machine
+name: feature-lifecycle
+description: >
+  Feature lifecycle FSM (design §2.3, §5.1, DD-13). States are the canonical
+  FeatureStatus vocabulary; transitions encode the §2.3 graph including the
+  `verifying` status (DD-13). Guards invoke `${vars.spurBin} feature check`
+  at the active→verifying and verifying→done placements. `cancelled` is terminal.
+  Guard commands reference the check verb (0057) — structural validation passes
+  today, behavioral wiring activates as the verb ships. Unconditional transitions
+  use the `always` guard (externally-driven via `requestTransition`, not
+  auto-advance).
+initialState: backlog
+terminalStates:
+  - cancelled
+vars:
+  spurBin: 'spur'
+  featureId: X
+
+states:
+  - id: backlog
+    description: Initial state — feature exists but not yet started.
+  - id: active
+    description: Actively being worked on. P0 in active/verifying is the project goal (B09).
+  - id: verifying
+    description: >
+      Feature verification work (DD-13). Makes verification derivable —
+      listable, event-triggerable, assignable.
+  - id: blocked
+    description: Impediment; work suspended.
+  - id: done
+    description: Completed and verified.
+  - id: cancelled
+    description: Terminal — abandoned.
+
+transitions:
+  # Forward path: backlog → active → verifying → done
+  - from: backlog
+    to: active
+    description: Start feature work
+    guard:
+      kind: always
+  - from: active
+    to: verifying
+    description: >
+      Enter feature verification. Warns unless all linked tasks are done/cancelled.
+    guard:
+      kind: shell
+      options:
+        command: '${vars.spurBin} feature check ${vars.featureId}'
+  - from: verifying
+    to: done
+    description: >
+      Feature verified — complete. Runs strict check (AC validated, traceability clean).
+    guard:
+      kind: shell
+      options:
+        command: '${vars.spurBin} feature check ${vars.featureId} --strict'
+
+  # Rework: verifying → active (mandatory History entry)
+  - from: verifying
+    to: active
+    description: Rework — feature sent back to active (mandatory History entry)
+    guard:
+      kind: always
+
+  # Blocked ↔ active — bidirectional
+  - from: active
+    to: blocked
+    description: Blocked by an impediment
+    guard:
+      kind: always
+  - from: blocked
+    to: active
+    description: Impediment resolved
+    guard:
+      kind: always
+
+  # Cancel: any non-terminal → cancelled (terminal)
+  - from: backlog
+    to: cancelled
+    description: Cancel feature
+    guard:
+      kind: always
+  - from: active
+    to: cancelled
+    description: Cancel feature
+    guard:
+      kind: always
+  - from: verifying
+    to: cancelled
+    description: Cancel feature
+    guard:
+      kind: always
+  - from: blocked
+    to: cancelled
+    description: Cancel feature
+    guard:
+      kind: always

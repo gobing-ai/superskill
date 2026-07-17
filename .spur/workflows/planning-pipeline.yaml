@@ -1,0 +1,197 @@
+# Planning pipeline — front-half of the development workflow (task 0088, design §6).
+#
+# Orchestration is configuration (ADR-022 / §3.2): this is YAML over the existing
+# dual-workflow engine — zero new engine code. The pipeline automates steps 3–6 of the
+# ideation→implementation chain: phasing → feature-ID derivation → design-doc generation →
+# design-doc approval. It terminates at a drafted feature list and hands off to sp:spur-dev
+# (steps 7–12), which is already shipped and unchanged.
+#
+# Every authoritative-doc touch invokes sp:doc-evolve to honor the constitution §5 sync triggers.
+# Derived docs (docs/design/*, docs/features/*, 05_FEATURES index) are auto-written; high-risk
+# authoritative edits (02_ROADMAP phasing, 04_DESIGN index) are STAGED to docs/plans/ for human
+# commit (Q3 — hybrid by risk).
+#
+# Shape: phasing(HITL) → feature-id → design-gen → design-approval(HITL) → handoff
+#        (phasing skipped when profile=auto; design-approval skipped when profile=auto
+#         AND design_approved=true — taste gates pause even in auto unless prior approval
+#         is encoded, per design doc HITL taxonomy).
+#
+# Vars (passed as a JSON object via `--vars`):
+#   slug     — the design-doc slug, e.g. `--vars '{"slug":"auth-migration"}'`
+#   profile  — set `--vars '{"profile":"auto"}'` to skip the HITL gates (Q4)
+#   feature  — optional parent feature ID for derivation context
+#   design_approved — "true" only when the operator explicitly approved the design in-session;
+#              lets profile=auto route around the design-approval taste gate (default "false")
+#
+# Seeded by `spur init`; adapt the agent.run inputs to your project's command set.
+
+"$schema": "@gobing-ai/spur/schemas/state-machine-workflow.schema.json"
+kind: state-machine
+name: planning-pipeline
+description: "Front-half planning pipeline (phasing → feature-ID → design-gen → design-approval → handoff)"
+iterationBound: 20
+initialState: start
+terminalStates:
+  - handoff
+  - cancelled
+vars:
+  slug: "draft"
+  profile: "interactive"
+  feature: ""
+  design_approved: "false"
+  __hitlAnswer: ""
+  spurBin: "spur"
+  agent: "omp"
+  stepTimeoutMs: "600000"
+
+states:
+  - id: start
+    description: >
+      Entry pass-through. Routes to the phasing HITL gate (interactive) or straight to
+      feature-id (profile=auto), so the phasing onEnter hitl.confirm only fires when a
+      human is in the loop. No actions — a pure routing node.
+
+  - id: phasing
+    description: >
+      Decide whether this requirement needs a new phase in 02_ROADMAP. The HITL gate asks
+      the operator; if a new phase is needed, the edit is STAGED to docs/plans/ (never
+      auto-written — Q3). Under profile=auto this state is never entered (start routes
+      around it straight to feature-id).
+    onEnter:
+      - kind: hitl.confirm
+        options:
+          prompt: "Does this requirement need a new phase in 02_ROADMAP? (Stage the edit if yes.)"
+
+  - id: feature-id
+    description: >
+      Allocate the feature id via the canonical `spur feature create` verb (it owns the
+      hierarchical ID rule per DD-14). The agent derives a feature name from ${vars.slug}
+      and invokes the verb; the new id is captured for the design-doc generation step.
+    onEnter:
+      - kind: agent.run
+        options:
+          agent: ${vars.agent}
+          input: "Allocate a feature id for slug ${vars.slug} via the canonical verb. Run `${vars.spurBin} feature create \"<human title derived from ${vars.slug}>\" --parent ${vars.feature} --json` and capture the new feature id from the JSON output into .spur/run/plan-feature-id.txt for the design-gen step. If an existing feature for ${vars.slug} is appropriate, use its id instead and write it to the same file. Do not re-implement id-allocation rules in prose; the verb owns them."
+          expectFile: .spur/run/plan-feature-id.txt
+          timeoutMs: ${vars.stepTimeoutMs}
+
+  - id: design-gen
+    description: >
+      Author the design doc at docs/design/${vars.slug}.md from the brainstormed feature
+      draft (docs/plans/${vars.slug}-drafted.md). ADVISORY: use the highest-quality coding
+      agent available (Q8 — tier rule is guidance, not enforced). Invokes sp:doc-evolve to
+      stage the 04_DESIGN index edit (never auto-write the authoritative index — Q3).
+    onEnter:
+      - kind: agent.run
+        options:
+          agent: ${vars.agent}
+          input: "Author the design doc at docs/design/${vars.slug}.md from docs/plans/${vars.slug}-drafted.md. Invoke sp:doc-evolve to stage the 04_DESIGN index edit."
+          timeoutMs: ${vars.stepTimeoutMs}
+
+  - id: design-approval
+    description: >
+      HITL gate — the highest-leverage gate in the pipeline. Loop until the operator
+      approves the design doc. Under profile=auto this state is skipped ONLY when
+      vars.design_approved=true (explicit prior approval); otherwise the taste gate
+      pauses even in auto mode (design doc HITL taxonomy). Loop back to design-gen
+      for revisions.
+    pause: true
+    onEnter:
+      - kind: hitl.confirm
+        options:
+          prompt: "Approve the design doc at docs/design/${vars.slug}.md? (Loop back to design-gen for revisions.)"
+
+  - id: handoff
+    description: >
+      Terminal — design doc approved; the drafted feature list is ready. Hand off to
+      sp:spur-dev (steps 7–12), which starts at `spur feature create`. The seam is the
+      drafted-feature-list file at docs/plans/${vars.slug}-drafted.md.
+    # Checkpoint write: record session state for resume (Phase 4, task 0171 R3)
+    onEnter:
+      - kind: shell
+        options:
+          command: 'mkdir -p .spur/memory/sessions && echo "checkpoint: planning-pipeline handoff slug=${vars.slug} ts=$(date -u +%Y-%m-%dT%H:%M:%SZ)" > .spur/memory/sessions/${vars.slug}-checkpoint.md'
+
+  - id: cancelled
+    description: Terminal — planning abandoned by the operator.
+
+transitions:
+  # ── start: route AROUND the phasing HITL gate when profile=auto ──
+  # Auto-skip guard tried FIRST: under profile=auto the run goes straight to
+  # feature-id and never ENTERS phasing (whose onEnter hitl.confirm would block).
+  # Otherwise fall through to phasing for the human gate.
+  - from: start
+    to: feature-id
+    description: profile=auto — skip the phasing HITL gate.
+    guard:
+      kind: shell
+      options:
+        command: 'test "${vars.profile}" = auto'
+  - from: start
+    to: phasing
+    description: Interactive — enter the phasing HITL gate.
+    guard:
+      kind: always
+
+  # ── phasing: HITL gate (reached only when profile != auto) ──
+  - from: phasing
+    to: feature-id
+    description: Phasing decided — proceed to feature-ID derivation.
+    guard:
+      kind: shell
+      options:
+        command: 'test "${vars.__hitlAnswer}" = yes || test "${vars.__hitlAnswer}" = no'
+  - from: phasing
+    to: cancelled
+    description: Operator cancelled planning.
+    guard:
+      kind: shell
+      options:
+        command: 'test "${vars.__hitlAnswer}" = cancel'
+
+  # ── linear body ──
+  - from: feature-id
+    to: design-gen
+    description: Feature ID derived — generate the design doc.
+    guard:
+      kind: always
+
+  # ── design-gen → design-approval, OR skip the HITL gate when profile=auto AND design_approved=true ──
+  # Auto-skip guard tried FIRST: under profile=auto with explicit prior approval,
+  # route straight to handoff without entering design-approval. Without prior
+  # approval, the taste gate pauses even in auto (design doc HITL taxonomy).
+  - from: design-gen
+    to: handoff
+    description: profile=auto AND design_approved=true — skip the design-approval HITL gate.
+    guard:
+      kind: shell
+      options:
+        command: 'test "${vars.profile}" = auto && test "${vars.design_approved}" = true'
+  - from: design-gen
+    to: design-approval
+    description: Design doc drafted — gate on human approval.
+    guard:
+      kind: always
+
+  # ── design-approval: HITL gate (reached only when profile != auto) ──
+  - from: design-approval
+    to: handoff
+    description: Design approved — hand off to sp:spur-dev.
+    guard:
+      kind: shell
+      options:
+        command: 'test "${vars.__hitlAnswer}" = yes'
+  - from: design-approval
+    to: design-gen
+    description: Rework — operator requested design revisions.
+    guard:
+      kind: shell
+      options:
+        command: 'test "${vars.__hitlAnswer}" = no'
+  - from: design-approval
+    to: cancelled
+    description: Operator cancelled planning.
+    guard:
+      kind: shell
+      options:
+        command: 'test "${vars.__hitlAnswer}" = cancel'

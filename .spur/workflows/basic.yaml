@@ -2,6 +2,7 @@
 # iteration bound is exhausted. Authored for the @gobing-ai/ts-dual-workflow-engine
 # state-machine schema (initialState / states[].id / onEnter / top-level transitions).
 # See Architecture Section 5 and Design Section 3.3.
+"$schema": "@gobing-ai/spur/schemas/state-machine-workflow.schema.json"
 name: basic
 kind: state-machine
 description: The canonical implement-check-fix-until-pass loop

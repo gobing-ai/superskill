@@ -1,31 +1,31 @@
-# CLI surface consistency — structural checks for Commander-based CLI command
-# files. DISABLED: this project uses a direct script entrypoint
-# rather than the Commander registerXxxCommand convention
-# these rules enforce. Re-enable if/when a Commander CLI is introduced.
+# CLI surface consistency — structural checks that every command file follows
+# the registerXxx(program) Commander wiring convention.
 #
-# Part of the surface category (not in recommended-pre-check).
+# Re-enabled 2026-07-16: superskill DOES use Commander — 7/8 command files export
+# `registerXxx(program: Command)` (install/skill/agent/command/hook/magent/hook-run).
+# Note the local convention omits the `Command` suffix the spur-new pattern requires,
+# so the pattern here is `register\w+\(` not `register\w+Command\(`.
+# `cli-json-output` stays skipped: --json output is delegated to shared formatters
+# (formatValidationResult etc.), not per-file JSON.stringify — a per-file `require`
+# rule would false-positive on every command.
+#
+# Part of the recommended-pre-check preset. Run:
+#   spur rule run --preset recommended-pre-check
+
+include:
+  - "apps/cli/src/commands/*.ts"
+
+exclude:
+  - "apps/cli/src/commands/helpers.ts"
 
 rules:
   - id: cli-register-pattern
     description: >
-      Every CLI command file must export a registerXxxCommand(program, context)
-      function matching the standard Commander.js wiring pattern.
-      DISABLED: superskill does not use the Commander registerXxxCommand convention.
-    enabled: false
+      Every CLI command file must export a registerXxx(program) function matching
+      the standard Commander.js wiring pattern.
+    severity: error
     evaluator:
       type: rg
       config:
-        pattern: "export function register\\w+Command\\("
-        mode: require
-
-  - id: cli-json-output
-    description: >
-      Command files that register --json options must call toJson() or
-      JSON.stringify() to produce machine-readable output.
-      DISABLED: superskill does not use the Commander registerXxxCommand convention.
-    enabled: false
-    evaluator:
-      type: rg
-      config:
-        pattern: "toJson\\b|JSON\\.stringify\\b"
+        pattern: "export function register\\w+\\("
         mode: require

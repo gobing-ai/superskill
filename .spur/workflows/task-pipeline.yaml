@@ -1,0 +1,306 @@
+# Task execution pipeline — one run per execution attempt of a task (design §6).
+#
+# Orchestration is configuration (ADR-022 / §3.2): this is YAML over the existing
+# dual-workflow engine — zero new engine code. The pipeline NEVER touches files
+# directly — `record` writes via `spur task update --section`, and status moves go
+# through the normal `spur task update <wbs> <status>` verb so the lifecycle guards
+# (0055) apply identically. Run linkage is written to `task_run_links` (kind=pipeline).
+#
+# Shape: precheck → implement → test → review → approve(HITL) → verify → record → done
+#        (precheck failure short-circuits to `failed`; approve routes to `failed` on
+#        operator rejection or `cancelled` on operator cancel — R1, bug-750).
+#
+# Vars (passed as a JSON object via `--vars`):
+#   wbs      — the task WBS (required), e.g. `--vars '{"wbs":"0042"}'`
+#   profile  — set `--vars '{"profile":"auto"}'` to skip the HITL approve gate (R4)
+#
+# Seeded by `spur init`; adapt the agent.run inputs to your project's command set.
+
+"$schema": "@gobing-ai/spur/schemas/state-machine-workflow.schema.json"
+kind: state-machine
+name: task-pipeline
+description: "Standard task execution pipeline (precheck → implement → test → review → approve → verify → record → done)"
+iterationBound: 20
+initialState: precheck
+terminalStates:
+  - done
+  - failed
+  - cancelled
+vars:
+  wbs: "0000"
+  profile: "standard"
+  # PATH-independent spur invocation for shell guards/actions. The CLI overrides this
+  # at run start (resolveSpurBin); the literal default is a safe fallback so direct/dry
+  # runs and `workflow validate` resolve the template. (See AGENTS.md / ADR-026.)
+  spurBin: "spur"
+  # Agent the pipeline's agent.run steps invoke. Override per run with
+  # `--vars '{"agent":"claude"}'`. Pinned (not left to the AiRunner's <default>
+  # selection) so a broken/misconfigured agent on the box can't silently capture the run.
+  agent: "omp"
+  # Step-level timeout for agent.run steps in milliseconds. A timed-out agent
+  # subprocess is killed (not abandoned) and the step fails → pipeline routes to
+  # `failed`. Override per run with `--vars '{"stepTimeoutMs":120000}'`.
+  stepTimeoutMs: "600000"
+  # Timeout for the `implement` step specifically (R2a). Implementation is the
+  # heaviest agent.run step (full read/write/test-probe loop) and has timed out
+  # at the 600s default in five consecutive dogfood runs (bugs 742/744/746/748),
+  # a 100% failure rate at that budget. 30 min gives real headroom; STOP and
+  # record honestly rather than raising it further without operator sign-off.
+  implementTimeoutMs: "1800000"
+  # Answer captured by the approve gate's hitl.confirm (R1): "yes" | "no" | "cancel".
+  # Empty by default; only meaningful once the approve state has been entered.
+  __hitlAnswer: ""
+
+states:
+  - id: precheck
+    description: >
+      Pre-flight structural validation. The precheck→implement guard runs
+      `spur task check <wbs>`; a failure routes to `failed` (blocked report).
+    onEnter:
+      - kind: shell
+        options:
+          command: "${vars.spurBin} agent doctor ${vars.agent}"
+      - kind: note
+        options:
+          # R4 task_run_links linkage (kind=pipeline) is written by a WorkflowService
+          # hook at run start — see the 0062 follow-up note; there is no link-writing
+          # CLI verb to call from a shell step, so it cannot live in pure YAML.
+          message: "Pipeline start for task ${vars.wbs}."
+
+  - id: implement
+    description: >
+      Run agent-driven implementation via /sp:dev-run --mode implement, THEN move the
+      task to `wip` via the normal verb. The lifecycle transition fires AFTER the
+      implement agent.run succeeds — onEnter runs in declaration order and the default
+      'fail' policy halts the sequence (routing the run to `failed`) if the agent.run
+      fails or times out, so a halted implement never leaves the task at `wip` with an
+      empty Solution (the F3 half-state). The `--no-lifecycle` flag is correct here: the
+      pipeline owns this transition; the FSM guard would otherwise re-run `spur task
+      check`, which is precheck's job.
+      NOTE: this step must NOT call /sp:dev-run in full mode (the default) —
+      that command DRIVES this pipeline, so calling it here recurses.
+      --mode implement is the single-step implement entry.
+    onEnter:
+      - kind: agent.run
+        options:
+          agent: ${vars.agent}
+          input: >-
+            /sp:dev-run --mode implement ${vars.wbs} --auto.
+            Work only in this working tree on task ${vars.wbs}; NEVER invoke
+            `spur workflow run` or `/sp:dev-run` without `--mode implement` —
+            this step IS the pipeline (bug-742).
+          timeoutMs: ${vars.implementTimeoutMs}
+      - kind: shell
+        options:
+          command: "${vars.spurBin} task update ${vars.wbs} wip --no-lifecycle"
+      # Post-implement cleanup: auto-format any unformatted output the agent produced.
+      # The agent may leave files that don't pass `biome check`, which then fails
+      # `bun run lint` downstream. Running format here is cheap (< 1 s) and prevents
+      # the test stage from tripping on a purely mechanical formatting defect (dogfood
+      # bug-733 — omp left agent-run.test.ts unformatted, causing a spurious lint gate
+      # failure that the ## Testing section mis-attributed to "pre-existing gaps").
+      - kind: shell
+        options:
+          command: "bun run format"
+
+  - id: test
+    description: Test execution + coverage via /sp:dev-unit.
+    onEnter:
+      - kind: agent.run
+        options:
+          agent: ${vars.agent}
+          input: /sp:dev-unit ${vars.wbs} --auto
+          timeoutMs: ${vars.stepTimeoutMs}
+      # Post-test gate: run the project's full lint gate (biome check + tsc). If the
+      # implement or test step left unformatted files or type errors, the run routes to
+      # `failed` rather than letting an agent-authored `## Testing` claim "all pass"
+      # against a red gate (dogfood bug-733).
+      - kind: shell
+        options:
+          command: "bun run lint"
+
+  - id: review
+    description: Three-dimensional code review via /sp:dev-review (functional requirements traceability + SECUA framework (Security, Efficiency, Correctness, Usability, Architecture) + architecture depth), findings written to `## Review`.
+    onEnter:
+      - kind: agent.run
+        options:
+          agent: ${vars.agent}
+          input: /sp:dev-review ${vars.wbs} --auto
+          timeoutMs: ${vars.stepTimeoutMs}
+
+  - id: approve
+    description: >
+      Human-in-the-loop approval gate. Under `profile=auto` this state is never entered
+      (review routes around it straight to verify). In interactive mode this state pauses
+      the run for `spur workflow continue` (E3), making approval an explicit operator action.
+      The operator's answer is routed (R1, bug-750): yes -> verify; no -> failed (rejection
+      recorded, not silently approved); cancel -> cancelled (a distinct terminal state).
+    pause: true
+    onEnter:
+      - kind: hitl.confirm
+        options:
+          prompt: "Approve task ${vars.wbs} to proceed to verification?"
+
+  - id: verify
+    description: >
+      Functional verification (BDD + traceability) via /sp:dev-verify. The agent's
+      captured answer is written to `.spur/run/<wbs>-verify-answer.txt`; a deterministic
+      shell step then derives the verdict and writes the gate artifact
+      `.spur/run/<wbs>-verdict.json` (so the completion gate reads a real verdict, not
+      agent discretion — R9). The verdict is PASS only if the agent both reported PASS
+      AND `spur task check` passes; otherwise FAIL.
+    onEnter:
+      - kind: agent.run
+        options:
+          agent: ${vars.agent}
+          input: /sp:dev-verify ${vars.wbs} --auto --fix all
+          timeoutMs: ${vars.stepTimeoutMs}
+          answerFile: .spur/run/${vars.wbs}-verify-answer.txt
+      - kind: shell
+        options:
+          command: "${vars.spurBin} task verdict ${vars.wbs} --from-answer .spur/run/${vars.wbs}-verify-answer.txt"
+
+  - id: record
+    description: >
+      Record pipeline results into the task file via `spur task record` —
+      Testing/Review from the verdict, Solution backfilled from git diff as a
+      safety net, optional transition to testing. A single verb replaces the
+      previous ~50 lines of embedded shell (0108; ADR-022).
+    onEnter:
+      - kind: shell
+        options:
+          command: "${vars.spurBin} task record ${vars.wbs} --solution-from-diff --transition testing"
+
+  - id: done
+    description: >
+      Terminal — task executed, verified, and recorded. The `record → done`
+      guard runs `spur task check` before certifying; a genuinely non-compliant
+      task routes to `failed` instead of a silent bad `done`.
+    onEnter:
+      - kind: shell
+        options:
+          command: "${vars.spurBin} task update ${vars.wbs} done --no-lifecycle"
+      - kind: note
+        options:
+          message: "Pipeline complete for task ${vars.wbs} (done gate cleared)."
+      # Checkpoint write: record session state for resume (Phase 4, task 0171 R3)
+      - kind: shell
+        options:
+          command: 'mkdir -p .spur/memory/sessions && echo "checkpoint: task-pipeline done wbs=${vars.wbs} ts=$(date -u +%Y-%m-%dT%H:%M:%SZ)" > .spur/memory/sessions/${vars.wbs}-checkpoint.md'
+
+  - id: failed
+    description: Terminal — precheck (or a gated step) failed; reported, not advanced.
+
+  - id: cancelled
+    description: Terminal — pipeline cancelled by operator at the approval gate (R1).
+
+transitions:
+  # ── precheck: shell guard runs `spur task check`; pass → implement, fail → failed ──
+  - from: precheck
+    to: implement
+    description: Precheck passed — begin implementation.
+    guard:
+      kind: shell
+      options:
+        command: "${vars.spurBin} task check ${vars.wbs}"
+  - from: precheck
+    to: failed
+    description: Precheck failed — report and stop (no fall-through to implement).
+    guard:
+      kind: shell
+      options:
+        command: '! ${vars.spurBin} task check ${vars.wbs}'
+
+  # ── linear body ──
+  - from: implement
+    to: test
+    description: Implementation done — run tests.
+    guard:
+      kind: always
+  - from: test
+    to: review
+    description: Tests done — run review.
+    guard:
+      kind: always
+  # ── review → approve, OR skip the HITL gate entirely when profile=auto (R4) ──
+  # Declaration order matters: the auto-skip guard is tried FIRST, so under
+  # profile=auto the run routes straight to verify and never ENTERS approve
+  # (whose onEnter hitl.confirm would otherwise block). Otherwise fall through
+  # to approve for the human gate.
+  - from: review
+    to: verify
+    description: profile=auto — skip the human approval gate, go straight to verify.
+    guard:
+      kind: shell
+      options:
+        command: 'test "${vars.profile}" = auto'
+  - from: review
+    to: approve
+    description: Review done — gate on human approval.
+    guard:
+      kind: always
+
+  # ── approve: HITL gate (reached only when profile != auto). Routed by the
+  # operator's captured answer (R1, bug-750) — three ordered guards, declaration
+  # order matters (yes first, then no, then cancel), mirroring idea-pipeline's
+  # design-approval gate (.spur/workflows/idea-pipeline.yaml:352-366). No
+  # `always` edge remains out of `approve`. ──
+  - from: approve
+    to: verify
+    description: Approved — proceed to verification.
+    guard:
+      kind: shell
+      options:
+        command: 'test "${vars.__hitlAnswer}" = yes'
+  - from: approve
+    to: failed
+    description: Operator rejected at the approval gate — report and stop.
+    guard:
+      kind: shell
+      options:
+        command: 'test "${vars.__hitlAnswer}" = no'
+  - from: approve
+    to: cancelled
+    description: Operator cancelled at the approval gate.
+    guard:
+      kind: shell
+      options:
+        command: 'test "${vars.__hitlAnswer}" = cancel'
+
+  # ── completion gate (the YAML-native replacement for rd3's default-on --postflight-verify) ──
+  # The verify step emits .spur/run/<wbs>-verdict.json. Only `verdict: PASS` clears
+  # the gate to `record`; any non-PASS (PARTIAL/FAIL), a missing file, or malformed
+  # JSON routes to `failed`. Declaration order: PASS guard tried FIRST.
+  - from: verify
+    to: record
+    description: Verification verdict is PASS — record results and proceed to done.
+    guard:
+      kind: shell
+      options:
+        command: 'test "$(jq -r .verdict .spur/run/${vars.wbs}-verdict.json 2>/dev/null)" = PASS'
+  - from: verify
+    to: failed
+    description: Verification verdict is not PASS (PARTIAL/FAIL/missing) — block before done.
+    guard:
+      kind: shell
+      options:
+        command: 'test "$(jq -r .verdict .spur/run/${vars.wbs}-verdict.json 2>/dev/null)" != PASS'
+  # ── done gate: record → done/failed gated on `spur task check` (ADR-026 amendment 2026-06-23) ──
+  # The record step guarantees every done-required section ([Solution, Testing, Review])
+  # has real content (each owned by its pipeline step). This guard is defense-in-depth —
+  # it certifies the matrix before done; a genuinely non-compliant task routes to failed.
+  # Declaration order: pass guard first.
+  - from: record
+    to: done
+    description: Task check passed — certify done.
+    guard:
+      kind: shell
+      options:
+        command: "${vars.spurBin} task check ${vars.wbs}"
+  - from: record
+    to: failed
+    description: Task check failed — block before done; investigate missing sections.
+    guard:
+      kind: shell
+      options:
+        command: '! ${vars.spurBin} task check ${vars.wbs}'

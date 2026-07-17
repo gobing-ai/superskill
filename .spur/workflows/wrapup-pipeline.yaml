@@ -1,0 +1,240 @@
+# Wrap-up pipeline — post-execution wrap-up for one task or a batch (design §wrapup-pipeline).
+#
+# Orchestration is configuration (ADR-022 / §3.2): this is YAML over the existing
+# dual-workflow engine — zero new engine code. The pipeline NEVER mutates task status —
+# wrap-up consumes completed tasks and produces learning/metrics/doc artifacts only.
+# Feature transitions go through `spur feature update` so the feature-lifecycle guards
+# apply identically. Branch cleanup is an irreversible HITL gate — it always pauses,
+# even under --auto (Iron Law #6: irreversible action -> surface to human).
+#
+# Shape: start -> task-resolve -> doc-sync -> learning-capture -> metrics-record
+#          -> feature-transition (conditional: if vars.feature set)
+#          -> branch-cleanup (conditional: if vars.merge=true)
+#          -> done
+#        (task-resolve with empty list short-circuits to `skipped`).
+#
+# Vars (passed as a JSON object via `--vars`):
+#   tasks    — JSON array of WBS strings, passed as a JSON-encoded STRING value (the CLI
+#              rejects non-string --vars values), e.g. --vars '{"tasks":"[\"0167\"]"}'
+#   feature  — feature id to advance through legal lifecycle edges (optional)
+#   profile  — set --vars '{"profile":"auto"}' to skip objective confirmations
+#   merge    — set --vars '{"merge":"true"}' to run branch cleanup (irreversible HITL)
+#   spurBin  — PATH-independent spur invocation (overridden by CLI at run start)
+#   agent    — agent for agent.run steps (default: omp)
+#
+# Seeded by `spur init`; adapt the agent.run inputs to your project's command set.
+
+"$schema": "@gobing-ai/spur/schemas/state-machine-workflow.schema.json"
+kind: state-machine
+name: wrapup-pipeline
+description: "Post-execution wrap-up: doc-sync, learning-capture, metrics, feature-transition, branch-cleanup"
+iterationBound: 10
+initialState: start
+terminalStates:
+  - done
+  - skipped
+vars:
+  tasks: "[]"
+  feature: ""
+  profile: "standard"
+  merge: "false"
+  spurBin: "spur"
+  agent: "omp"
+  stepTimeoutMs: "600000"
+
+states:
+  - id: start
+    description: >
+      Pipeline start. Task statuses are NOT mutated by wrap-up — wrap-up consumes
+      completed tasks and produces learning/metrics/doc artifacts only.
+    onEnter:
+      - kind: note
+        options:
+          message: "Wrap-up pipeline start for tasks: ${vars.tasks}. Task statuses are NOT mutated."
+
+  - id: task-resolve
+    description: >
+      Validate the task list passed by the wrapper is non-empty. The command wrapper
+      (dev-wrap/dev-wrapall) resolves the task list and passes it as vars.tasks;
+      this state validates it before proceeding. Empty list routes to `skipped`.
+    onEnter:
+      - kind: note
+        options:
+          message: "Resolving task list: ${vars.tasks}"
+
+  - id: doc-sync
+    description: >
+      Dispatch sp:doc-evolve once for the entire batch. Project-level doc drift repair
+      runs once, not per-task. The agent reads the batch's completed tasks, identifies
+      doc drift (04_DESIGN, 03_ARCHITECTURE, 00_ADR, docs/design/*), and repairs it
+      following the constitution's edit rules. Does NOT write task or feature corpus.
+    onEnter:
+      - kind: agent.run
+        options:
+          agent: ${vars.agent}
+          input: "Run sp:doc-evolve for completed tasks ${vars.tasks}. Repair doc drift in 04_DESIGN, 03_ARCHITECTURE, 00_ADR, docs/design/* following the constitution edit rules. Do not write task or feature corpus files."
+          timeoutMs: ${vars.stepTimeoutMs}
+
+  - id: learning-capture
+    description: >
+      Append working learnings to .spur/memory/learnings.md. The agent extracts
+      insights from the batch and writes them to a capture file; a downstream shell
+      step appends that file to the learnings scratchpad. This decouples content
+      generation from file persistence: the shell step's exit code is the real
+      success signal, and the capture file is verified before the append.
+    onEnter:
+      - kind: agent.run
+        options:
+          agent: ${vars.agent}
+          input: "Extract working learnings from tasks ${vars.tasks}. Output as markdown grouped by date and task WBS. Include: conventions discovered, errors hit and resolved, patterns that worked, gotchas. Output raw markdown (no code fences) — your answer will be captured to a file and appended to .spur/memory/learnings.md."
+          answerFile: .spur/run/wrapup-learnings.md
+          expectFile: .spur/run/wrapup-learnings.md
+          timeoutMs: ${vars.stepTimeoutMs}
+      - kind: shell
+        options:
+          command: 'test -s .spur/run/wrapup-learnings.md && mkdir -p .spur/memory && cat .spur/run/wrapup-learnings.md >> .spur/memory/learnings.md && printf "\n" >> .spur/memory/learnings.md'
+
+  - id: metrics-record
+    description: >
+      Append one JSONL row per task to .spur/memory/wrapup-metrics.jsonl. The agent
+      produces the JSONL content to a capture file; a downstream shell step appends
+      it. Each row records: task WBS, feature id, status, verdict, timestamp.
+      Append-only and machine-readable. The capture+shell decoupling means a
+      non-empty capture file is verified before the append (the agent.run exit-0
+      is no longer the sole success signal — the shell step's exit code gates the
+      write).
+    onEnter:
+      - kind: agent.run
+        options:
+          agent: ${vars.agent}
+          input: "For each task in ${vars.tasks}, read the task file and output one JSONL line per task with fields: wbs, feature_id, status, verdict (from .spur/run/<wbs>-verdict.json if available), timestamp. Output raw JSONL (no code fences) — your answer will be captured to a file and appended to .spur/memory/wrapup-metrics.jsonl."
+          answerFile: .spur/run/wrapup-metrics.jsonl
+          expectFile: .spur/run/wrapup-metrics.jsonl
+          timeoutMs: ${vars.stepTimeoutMs}
+      - kind: shell
+        options:
+          command: 'test -s .spur/run/wrapup-metrics.jsonl && mkdir -p .spur/memory && cat .spur/run/wrapup-metrics.jsonl >> .spur/memory/wrapup-metrics.jsonl'
+
+  - id: feature-transition
+    description: >
+      If vars.feature is set, advance the feature through the legal forward path of
+      the feature-lifecycle FSM via `spur feature advance` (task 0180 F9c / ADR-029).
+      The verb walks backlog → active → verifying → done idempotently, verifying the
+      observed status after every hop, and returns a per-hop trail. Replaces the prior
+      ~20-line inline shell ladder; the verb now owns the multi-hop walk + legal-edge
+      enforcement. Task statuses are NOT mutated.
+    onEnter:
+      - kind: shell
+        options:
+          command: '${vars.spurBin} feature advance ${vars.feature} --json'
+
+  - id: branch-cleanup
+    description: >
+      Irreversible HITL gate. If vars.merge=true, dispatch branch cleanup (merge or
+      delete). This gate ALWAYS pauses — even under --auto — because branch operations
+      are irreversible (Auto-Decision Principle #6). The operator must explicitly confirm.
+    pause: true
+    onEnter:
+      - kind: hitl.confirm
+        options:
+          prompt: "Branch cleanup for tasks ${vars.tasks}. This is IRREVERSIBLE (merge or delete). Confirm to proceed?"
+
+  - id: done
+    description: >
+      Terminal — wrap-up complete. Output summary: tasks wrapped, learnings captured,
+      metrics recorded, feature advanced (if applicable), branch cleaned (if applicable).
+    onEnter:
+      - kind: note
+        options:
+          message: "Wrap-up pipeline complete for tasks: ${vars.tasks}. Learnings at .spur/memory/learnings.md, metrics at .spur/memory/wrapup-metrics.jsonl."
+      # Checkpoint write: record session state for resume (Phase 4, task 0171 R3)
+      - kind: shell
+        options:
+          command: 'mkdir -p .spur/memory/sessions && echo "checkpoint: wrapup-pipeline done tasks=${vars.tasks} ts=$(date -u +%Y-%m-%dT%H:%M:%SZ)" > .spur/memory/sessions/wrapup-checkpoint.md'
+
+  - id: skipped
+    description: Terminal — wrap-up skipped (empty task list or operator abort).
+
+transitions:
+  # ── start -> task-resolve ──
+  - from: start
+    to: task-resolve
+    description: Begin wrap-up.
+    guard:
+      kind: always
+
+  # ── task-resolve: non-empty -> doc-sync, empty -> skipped ──
+  - from: task-resolve
+    to: doc-sync
+    description: Task list resolved and non-empty — begin doc-sync.
+    guard:
+      kind: shell
+      options:
+        command: 'test "$(echo "${vars.tasks}" | jq length)" -gt 0'
+  - from: task-resolve
+    to: skipped
+    description: Task list is empty — skip wrap-up.
+    guard:
+      kind: shell
+      options:
+        command: 'test "$(echo "${vars.tasks}" | jq length)" -eq 0'
+
+  # ── linear body: doc-sync -> learning-capture -> metrics-record ──
+  - from: doc-sync
+    to: learning-capture
+    description: Doc sync complete — capture learnings.
+    guard:
+      kind: always
+  - from: learning-capture
+    to: metrics-record
+    description: Learnings captured — record metrics.
+    guard:
+      kind: always
+
+  # ── metrics-record: conditional routing based on feature and merge ──
+  # Declaration order matters: feature-transition is tried first (if feature is set),
+  # then branch-cleanup (if merge=true but no feature), then done (neither).
+  - from: metrics-record
+    to: feature-transition
+    description: Feature id is set — advance feature through legal lifecycle edges.
+    guard:
+      kind: shell
+      options:
+        command: 'test -n "${vars.feature}"'
+  - from: metrics-record
+    to: branch-cleanup
+    description: No feature id, but merge is requested — go to branch cleanup.
+    guard:
+      kind: shell
+      options:
+        command: 'test -z "${vars.feature}" && test "${vars.merge}" = true'
+  - from: metrics-record
+    to: done
+    description: No feature id and no merge — wrap-up is done.
+    guard:
+      kind: shell
+      options:
+        command: 'test -z "${vars.feature}" && test "${vars.merge}" != true'
+
+  # ── feature-transition: -> branch-cleanup (if merge) or done ──
+  - from: feature-transition
+    to: branch-cleanup
+    description: Feature advanced — merge is requested.
+    guard:
+      kind: shell
+      options:
+        command: 'test "${vars.merge}" = true'
+  - from: feature-transition
+    to: done
+    description: Feature advanced — no merge requested.
+    guard:
+      kind: shell
+      options:
+        command: 'test "${vars.merge}" != true'
+
+  # ── branch-cleanup: HITL confirmed -> done ──
+  - from: branch-cleanup
+    to: done
+    description: Branch cleanup confirmed — wrap-up complete.
+    guard:
+      kind: always

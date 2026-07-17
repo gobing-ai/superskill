@@ -1,0 +1,130 @@
+# Docs-only task pipeline — one run per documentation/design-doc deliverable.
+#
+# This sibling of task-pipeline.yaml handles tasks whose output is a document, not a
+# code change. It keeps docs deliverables out of the implement/test/verify code gate
+# and routes them through an explicit docs-review HITL gate.
+
+"$schema": "@gobing-ai/spur/schemas/state-machine-workflow.schema.json"
+kind: state-machine
+name: docs-pipeline
+description: "Docs-only execution pipeline (draft -> docs-review -> record -> done)"
+iterationBound: 12
+initialState: draft
+terminalStates:
+  - done
+  - failed
+  - cancelled
+vars:
+  wbs: "0000"
+  profile: "standard"
+  spurBin: "spur"
+  agent: "omp"
+  stepTimeoutMs: "600000"
+  __hitlAnswer: ""
+
+states:
+  - id: draft
+    description: >
+      Author or update the documentation deliverable for task ${vars.wbs}. This is a
+      docs-only path: do not run implementation, unit-test generation, or code review
+      steps from task-pipeline.yaml.
+    onEnter:
+      - kind: agent.run
+        options:
+          agent: ${vars.agent}
+          input: >-
+            /sp:dev-run --mode implement ${vars.wbs} --auto.
+            Treat this as a docs-only/design-doc deliverable: update the requested
+            documentation and do not add product code or tests unless the task
+            explicitly requires them.
+          timeoutMs: ${vars.stepTimeoutMs}
+      - kind: shell
+        options:
+          command: "${vars.spurBin} task update ${vars.wbs} wip --no-lifecycle"
+
+  - id: docs-review
+    description: >
+      Human documentation review gate. Under profile=auto this state is skipped; in
+      interactive mode it pauses for explicit approval before recording completion.
+    pause: true
+    onEnter:
+      - kind: hitl.confirm
+        options:
+          prompt: "Approve docs-only deliverable for task ${vars.wbs}?"
+
+  - id: record
+    description: >
+      Record the docs-only outcome into the task file. The task record verb backfills
+      Solution from the diff and moves the task to testing; the done gate still runs
+      the normal task matrix check before completion.
+    onEnter:
+      - kind: shell
+        options:
+          command: "${vars.spurBin} task record ${vars.wbs} --solution-from-diff --transition testing"
+
+  - id: done
+    description: Terminal — docs deliverable reviewed and recorded.
+    onEnter:
+      - kind: shell
+        options:
+          command: "${vars.spurBin} task update ${vars.wbs} done --no-lifecycle"
+      - kind: note
+        options:
+          message: "Docs pipeline complete for task ${vars.wbs}."
+
+  - id: failed
+    description: Terminal — docs pipeline failed or was rejected.
+
+  - id: cancelled
+    description: Terminal — docs pipeline cancelled by operator.
+
+transitions:
+  - from: draft
+    to: record
+    description: profile=auto — skip the docs-review HITL gate.
+    guard:
+      kind: shell
+      options:
+        command: 'test "${vars.profile}" = auto'
+  - from: draft
+    to: docs-review
+    description: Interactive — enter docs-review.
+    guard:
+      kind: always
+
+  - from: docs-review
+    to: record
+    description: Docs approved — record results.
+    guard:
+      kind: shell
+      options:
+        command: 'test "${vars.__hitlAnswer}" = yes'
+  - from: docs-review
+    to: failed
+    description: Docs rejected — stop for revision.
+    guard:
+      kind: shell
+      options:
+        command: 'test "${vars.__hitlAnswer}" = no'
+  - from: docs-review
+    to: cancelled
+    description: Operator cancelled docs review.
+    guard:
+      kind: shell
+      options:
+        command: 'test "${vars.__hitlAnswer}" = cancel'
+
+  - from: record
+    to: done
+    description: Task check passed — certify done.
+    guard:
+      kind: shell
+      options:
+        command: "${vars.spurBin} task check ${vars.wbs}"
+  - from: record
+    to: failed
+    description: Task check failed — block before done.
+    guard:
+      kind: shell
+      options:
+        command: '! ${vars.spurBin} task check ${vars.wbs}'

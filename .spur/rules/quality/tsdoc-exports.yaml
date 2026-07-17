@@ -1,7 +1,6 @@
 # TSDoc-on-exports — enforced by Spur's post-check gate.
 # Adapted from ts-libs and re-scoped to Bun workspaces layout.
-# Severity: info — TSDoc is aspirational for this project; bump to error
-# once exports are documented.
+# Severity: error — TSDoc on exports is enforced by the post-check gate.
 include:
   - "apps/**/src/**/*.ts"
   - "packages/**/src/**/*.ts"

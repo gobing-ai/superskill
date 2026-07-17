@@ -32,6 +32,8 @@ rules:
       - "**/*.sh"
       - "**/*.bash"
       - "package.json"
+      - ".github/**/*.yml"
+      - ".github/**/*.yaml"
 
   - id: no-env-files
     description: ".env files must not be committed; use checked-in examples only (AGENTS.md: never commit .env*)."

@@ -1,116 +1,133 @@
-"$schema": "@gobing-ai/ts-dual-workflow-engine/schemas/state-machine-workflow.schema.json"
+"$schema": "@gobing-ai/spur/schemas/state-machine-workflow.schema.json"
 kind: state-machine
 name: feature-dev
 description: >
-  End-to-end feature-development loop: brainstorm → new-task → refine → implement →
-  check (autofix+spur-check) → fix (until clean) → verify. Agent-driven steps use
-  agent.run; the check gate uses rule.check for deterministic constraint gating.
-  The session latch (Q8) auto-continues agent sessions across steps — no per-step
-  `continue` wiring needed.
+  End-to-end FEATURE development loop: brainstorm → plan (decompose) → execute-tasks →
+  feature-verify → done. Drives a whole feature (one description → a feature with BDD AC →
+  many tasks → all tasks done → feature verified), NOT a single task — for one deliverable
+  use task-pipeline.yaml directly.
+
+  The engine has no native for-each over a dynamic task list, so the execute-tasks step
+  DELEGATES the fan-out: a single agent.run instructs the agent to run every pending task
+  under the feature through task-pipeline.yaml, enumerated via `spur task list --feature`.
+  This mirrors how /sp:dev-run --mode full delegates its inner work loop (ADR-022: orchestration
+  is configuration — zero new engine code).
+
+  Shape: brainstorm → plan → execute-tasks(delegated loop) → feature-verify → done
+         (plan failure or a non-PASS task short-circuits to `failed`).
+
+  Vars (passed as a JSON object via `--vars`):
+    featureId — the feature ID this loop drives (required), e.g. `--vars '{"featureId":"B3"}'`
+    agent     — agent the agent.run steps invoke; override `--vars '{"agent":"claude"}'`
+    profile   — `auto` skips the per-task HITL approval inside task-pipeline
+    spurBin   — PATH-independent spur invocation (CLI overrides at run start; literal fallback)
+
+  Seeded by `spur init`; adapt the agent.run inputs to your project's command set.
 iterationBound: 20
 initialState: brainstorm
 terminalStates:
   - done
   - failed
 vars:
-  taskId: TASK-ID
+  featureId: ""
+  agent: "omp"
+  profile: "standard"
+  spurBin: "spur"
 
 states:
   - id: brainstorm
-    description: Turn vague intent into a structured feature list via /rd3:dev-brainstorm
-    onEnter:
-      - kind: agent.run
-        options:
-          input: /rd3:dev-brainstorm
-
-  - id: new-task
-    description: Convert the feature list into a task file via /rd3:dev-new-task
-    onEnter:
-      - kind: agent.run
-        options:
-          input: /rd3:dev-new-task
-
-  - id: refine
-    description: Auto-refine the task definition via /rd3:dev-refine
-    onEnter:
-      - kind: agent.run
-        options:
-          input: /rd3:dev-refine ${vars.taskId} --focus all --auto
-
-  - id: implement
-    description: Implement + verify the task via /rd3:dev-run
-    onEnter:
-      - kind: agent.run
-        options:
-          input: /rd3:dev-run ${vars.taskId} --auto --verify
-
-  - id: check
     description: >
-      Deterministic constraint gate via rule.check (recommended-pre-check preset).
-      Catches formatting, type, and structural issues before verification.
+      Turn vague intent into a validated feature with BDD acceptance criteria via
+      /sp:dev-brainstorm --feature. The grilling interview maps the decision space; the
+      --feature exit authors AC and loops `spur feature check` until clean. Record the
+      derived feature ID into ${vars.featureId} for the downstream steps.
     onEnter:
-      - kind: rule.check
+      - kind: agent.run
         options:
-          preset: recommended-pre-check
-          failOn: warning
+          agent: ${vars.agent}
+          input: /sp:dev-brainstorm --feature
 
-  - id: fix
+  - id: plan
     description: >
-      Fix failures from the check gate. The latched agent session carries context
-      from the previous steps so the fixer knows what went wrong.
+      Decompose the validated feature into a CLI-validated task batch via /sp:dev-plan.
+      The batch-create gate (task-batch.schema.json) rejects a malformed decomposition,
+      so a bad plan never lands tasks.
     onEnter:
       - kind: agent.run
         options:
-          input: "Fix the failures from the previous check pass for task ${vars.taskId}; run /rd3:dev-fixall or /rd3:dev-unit as appropriate."
+          agent: ${vars.agent}
+          input: /sp:dev-plan --feature ${vars.featureId}
 
-  - id: verify
-    description: Cross-agent verification via /rd3:dev-verify
+  - id: execute-tasks
+    description: >
+      Drive EVERY pending task under the feature to done (e.g. `/sp:dev-runall --feature ${featureId} --auto`).
+      The agent enumerates the work with `spur task list --feature ${featureId} --status todo --json`,
+      then runs each task through task-pipeline.yaml (precheck → implement → test → review → approve → verify → record → done).
+      It stops and reports on the first non-PASS verdict — a failing task fails the feature.
     onEnter:
       - kind: agent.run
         options:
-          input: /rd3:dev-verify ${vars.taskId} --auto --fix all --force --channel codex/auto
+          agent: ${vars.agent}
+          input: >
+            Run every pending task under feature ${vars.featureId} to done. Enumerate with
+            `${vars.spurBin} task list --feature ${vars.featureId} --status todo --json`; then
+            for each WBS run the standard single-task pipeline VERBATIM:
+            `${vars.spurBin} workflow run .spur/workflows/task-pipeline.yaml --vars
+            '{"wbs":"<wbs>","profile":"${vars.profile}","agent":"${vars.agent}"}' --async --json`,
+            polling `${vars.spurBin} workflow trace <run-id>` until terminal and inspecting
+            `.spur/run/<wbs>-verdict.json`. Stop and report on the first non-PASS verdict
+            (a failing task fails the feature).
+
+  - id: feature-verify
+    description: >
+      Certify the feature is complete: `spur feature check ${featureId} --strict` validates the
+      AC, traceability, and that all linked tasks are done. A clean strict check is the only
+      proof the feature is shippable.
 
   - id: done
-    description: Terminal — feature implemented, checked, and verified successfully.
+    description: Terminal — feature planned, all tasks executed, and the feature verified.
+    # Checkpoint write: record session state for resume (Phase 4, task 0171 R3)
+    onEnter:
+      - kind: shell
+        options:
+          command: 'mkdir -p .spur/memory/sessions && echo "checkpoint: feature-dev done featureId=${vars.featureId} ts=$(date -u +%Y-%m-%dT%H:%M:%SZ)" > .spur/memory/sessions/${vars.featureId}-checkpoint.md'
 
   - id: failed
-    description: Terminal — check loop exhausted iterationBound without passing.
+    description: Terminal — plan rejected, a task failed verification, or the feature check did not pass.
 
 transitions:
-  # Linear prefix: brainstorm → new-task → refine → implement → check
+  # Linear prefix: brainstorm → plan → execute-tasks
   - from: brainstorm
-    to: new-task
-    description: Feature list captured; create the task file
-
-  - from: new-task
-    to: refine
-    description: Task file created; refine it
-
-  - from: refine
-    to: implement
-    description: Task refined; implement it
-
-  - from: implement
-    to: check
-    description: Implementation done; run the gate
-
-  # Check gate: action-ok guard FIRST so a passing check short-circuits to verify.
-  - from: check
-    to: verify
-    description: Check passed — advance to cross-agent verification
+    to: plan
+    description: Feature validated; decompose it into tasks
     guard:
-      kind: action-ok
+      kind: always
 
-  - from: check
-    to: fix
-    description: Check failed — route to a fix attempt
+  - from: plan
+    to: execute-tasks
+    description: Tasks created; execute them
+    guard:
+      kind: always
 
-  # Fix loop: always return to check after a fix attempt
-  - from: fix
-    to: check
-    description: Fix applied; re-run the gate
+  - from: execute-tasks
+    to: feature-verify
+    description: All tasks reported done; verify the feature
+    guard:
+      kind: always
 
-  # Verify → done
-  - from: verify
+  # ── feature-verify gate: strict check certifies done, else fail ──
+  # Declaration order: the pass guard is tried FIRST.
+  - from: feature-verify
     to: done
-    description: Verification passed — workflow complete
+    description: Strict feature check passed — the feature is complete.
+    guard:
+      kind: shell
+      options:
+        command: "${vars.spurBin} feature check ${vars.featureId} --strict"
+  - from: feature-verify
+    to: failed
+    description: Strict feature check failed — block before done; investigate incomplete tasks or AC.
+    guard:
+      kind: shell
+      options:
+        command: '! ${vars.spurBin} feature check ${vars.featureId} --strict'
