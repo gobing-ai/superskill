@@ -55,12 +55,15 @@ export function walkFrontmatter(content: string, opts: FrontmatterWalkOptions): 
     let injectedName = false;
 
     for (const line of lines) {
+        // split('\n') leaves a trailing \r on CRLF content; preserve it on injected
+        // lines so we don't mix LF into an otherwise CRLF frontmatter block.
+        const cr = line.endsWith('\r') ? '\r' : '';
         if (!pastOpener) {
             if (line.trim() === '---') {
                 inFrontmatter = true;
                 pastOpener = true;
                 out.push(line);
-                out.push(`name: ${opts.expectedName}`);
+                out.push(`name: ${opts.expectedName}${cr}`);
                 injectedName = true;
                 continue;
             }
@@ -71,7 +74,9 @@ export function walkFrontmatter(content: string, opts: FrontmatterWalkOptions): 
         if (inFrontmatter) {
             if (line.trim() === '---') {
                 if (opts.closerInjection?.shouldInject(seenInBlock)) {
-                    out.push(...opts.closerInjection.lines);
+                    for (const inject of opts.closerInjection.lines) {
+                        out.push(inject.endsWith('\r') ? inject : `${inject}${cr}`);
+                    }
                 }
                 inFrontmatter = false;
                 out.push(line);

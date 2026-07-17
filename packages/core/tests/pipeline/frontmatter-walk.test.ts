@@ -30,6 +30,23 @@ describe('walkFrontmatter — opener handling', () => {
         expect(lines[2]).toBe('description: hi');
     });
 
+    it('preserves CRLF on injected name and closer-injection lines', () => {
+        // split('\n') leaves trailing \r on CRLF files; injected lines must keep
+        // that terminator so the walker does not mix LF into a CRLF block.
+        const input = '---\r\ndescription: hi\r\n---\r\nbody\r\n';
+        const out = walkFrontmatter(input, {
+            ...baseOpts,
+            closerInjection: {
+                lines: ['disable-model-invocation: true'],
+                shouldInject: () => true,
+            },
+        });
+        expect(out).toContain('---\r\nname: my-command\r\n');
+        expect(out).toContain('disable-model-invocation: true\r\n---\r\n');
+        // No bare LF-only name line (would appear as "name: my-command\n" without \r).
+        expect(out.includes('name: my-command\n') && !out.includes('name: my-command\r\n')).toBe(false);
+    });
+
     it('preserves preamble lines that appear before the opening ---', () => {
         // Lines 66-68 of frontmatter-walk.ts: preamble content is pushed through
         // untouched until the first --- is seen.
