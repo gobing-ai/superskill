@@ -120,14 +120,14 @@ export function runScriptPathAction(
             projectRoot: overrides?.projectRoot,
         });
     } catch (err) {
-        if (err instanceof UsageError) {
-            if (options.json) {
-                echo(JSON.stringify({ error: 'invalid_args', message: err.message }));
-            }
-            echoError(err.message);
-            exitFn(1);
+        // resolveScriptPath only throws UsageError (via assertSafePathSegment);
+        // treat any error as a usage error — print message and exit 1.
+        const msg = err instanceof Error ? err.message : String(err);
+        if (options.json) {
+            echo(JSON.stringify({ error: 'invalid_args', message: msg }));
         }
-        throw err;
+        echoError(msg);
+        exitFn(1);
     }
 
     if (!result) {
@@ -156,11 +156,7 @@ export function runScriptPathAction(
  * @param ci  Inject the exit function for tests — defaults to `process.exit`.
  */
 export function registerScriptPath(program: Command, ci?: { exit(code: number): never }): void {
-    const exitFn =
-        ci?.exit ??
-        ((code: number) => {
-            process.exit(code);
-        });
+    const exitFn = ci?.exit ?? process.exit;
     // Look up the existing `script` group or create it if `registerScriptRun` wasn't called.
     let group = program.commands.find((c) => c.name() === 'script');
     if (!group) {

@@ -189,6 +189,30 @@ describe('runScriptPathAction', () => {
         expect(parsed.path).toContain('validate.js');
     });
 
+    it('--json on invalid_args emits structured error', () => {
+        const { exits, lines } = invoke('cc', '../escape', { json: true });
+        expect(exits).toEqual([1]);
+        const raw = lines[0];
+        if (!raw) throw new Error('expected output line');
+        const parsed = JSON.parse(raw);
+        expect(parsed.error).toBe('invalid_args');
+        expect(typeof parsed.message).toBe('string');
+    });
+
+    it('--json on not_found emits structured error with searched paths', () => {
+        const root = fixture('exists.sh');
+        const { exits, lines } = invoke('cc', 'missing.js', { json: true }, { projectRoot: root });
+        expect(exits).toEqual([2]);
+        const raw = lines[0];
+        if (!raw) throw new Error('expected output line');
+        const parsed = JSON.parse(raw);
+        expect(parsed.error).toBe('not_found');
+        expect(parsed.plugin).toBe('cc');
+        expect(parsed.rel).toBe('missing.js');
+        expect(Array.isArray(parsed.searched)).toBe(true);
+        expect(parsed.searched.length).toBeGreaterThan(0);
+    });
+
     it('--global flag skips project root', () => {
         const t = mkdtempSync('superskill-spa-');
         tmpDir = t;
@@ -230,6 +254,25 @@ describe('registerScriptPath CLI', () => {
         const args = pathCmd?.registeredArguments;
         expect(args?.some((a) => a.name() === 'plugin')).toBe(true);
         expect(args?.some((a) => a.name() === 'rel')).toBe(true);
+    });
+
+    it('CLI action exits 1 on path traversal (covers .action arrow)', async () => {
+        const program = new Command().name('superskill');
+        const exits: number[] = [];
+        registerScriptPath(program, {
+            exit: (code) => {
+                exits.push(code);
+                throw new Error(`exit ${code}`);
+            },
+        });
+        const spy = spyOnLog(() => {});
+        try {
+            await program.parseAsync(['node', 'superskill', 'script', 'path', 'cc', '../escape']);
+        } catch {
+            // exit throws
+        }
+        spy.mockRestore();
+        expect(exits).toEqual([1]);
     });
 });
 
