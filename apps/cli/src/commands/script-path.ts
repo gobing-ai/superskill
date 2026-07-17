@@ -62,6 +62,21 @@ function isUnsafeRel(rel: string): boolean {
     return rel.split(/[/\\]/).some((seg) => seg === '..' || seg === '');
 }
 
+/**
+ * Resolve a staged plugin script path under the dual contract.
+ *
+ * Search order: project root `.agents/scripts/<plugin>/<rel>` first, then
+ * global `~/.agents/scripts/<plugin>/<rel>` (unless `--global` / `--project`
+ * restricts the search). Only regular files count as a hit; directories are
+ * treated as misses.
+ *
+ * Throws `UsageError` for unsafe `rel` (absolute path, empty, or `..`
+ * segment). Returns null when no candidate file exists — callers should
+ * surface this as exit 2 (fail-closed).
+ *
+ * @param opts Plugin name, relative script path, and search flags.
+ * @returns The first regular-file candidate with its source, or null.
+ */
 export function resolveScriptPath(opts: ScriptPathOptions): ResolvedScriptPath | null {
     assertSafePathSegment(opts.plugin, 'plugin name');
 
