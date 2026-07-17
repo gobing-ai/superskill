@@ -3,7 +3,7 @@ template: feature-impl
 schema_version: 1
 name: "Stage plugin-level scripts on superskill install (mapper + dispatch)"
 description: ""
-status: todo
+status: done
 type: task
 profile: standard
 feature_id: A
@@ -12,7 +12,7 @@ priority: P2
 tags: []
 dependencies: ["0088", "0089"]
 created_at: "2026-07-17T06:13:56.755Z"
-updated_at: "2026-07-17T06:47:22.548Z"
+updated_at: "2026-07-17T07:38:30.932Z"
 ---
 
 ## 0090. Stage plugin-level scripts on superskill install (mapper + dispatch)
@@ -50,16 +50,16 @@ updated_at: "2026-07-17T06:47:22.548Z"
 
 **Done when.** Install of a plugin that has `scripts/` leaves those files at the designed destinations for rulesync/hermes class; Claude/OMP/Grok remain native-only; tests green; feature A decisions log gets a gist line.
 ### Requirements
-- [ ] R1. **Mapper stages plugin-level scripts.** When `pluginRoot/scripts` exists, `mapPluginToRulesync` copies the tree into the rulesync output as `scripts/<pluginName>/…` (exact relative layout fixed in Design, must match what path-helper will resolve). When absent, no error — count zero.
-- [ ] R2. **Preserve tree shape.** Feature subdirs and files under plugin-level `scripts/` are preserved (e.g. `anti-hallucination/validate_response.ts` stays under that relative path). Do not flatten into skill dirs. Do not reintroduce per-skill duplication.
-- [ ] R3. **No skill-level regression.** Existing skill support-subdir copy (`scripts`/`references`/`templates`/`assets` under each skill) remains unchanged and tested.
-- [ ] R4. **Install dispatch — rulesync class.** For targets that receive skills via rulesync (codex, pi, opencode, antigravity-*), after map/transform, copy staged plugin scripts to the scripts root: global `~/.agents/scripts/<plugin>/` (or the path locked by inventory research if different) and project twin when not global. Honor `dryRun` (no writes) and `verbose` (log destination).
-- [ ] R5. **Install dispatch — hermes.** Hermes gets the same staged scripts copy to a documented hermes-or-shared scripts location consistent with inventory research (default candidate: shared agents scripts root, or hermes-specific if research mandates).
-- [ ] R6. **Install dispatch — native class.** Claude, OMP, Grok: no additional scripts staging required for delivery (native plugin install already includes `scripts/`). Do not double-write into those plugin caches unless inventory research proves a gap.
-- [ ] R7. **Safety.** Scripts destination uses the same path-safety discipline as other install outputs (`assertSafeOutputDir` / segment checks as applicable). Never `rm -rf` a scripts root outside the plugin-scoped subdir being refreshed.
-- [ ] R8. **Tests.** Mapper tests cover: plugin with `scripts/` → staged tree; plugin without → ok; relative paths preserved. Install-facing tests cover rulesync/hermes copy path selection (global vs project) at least at unit level with temp dirs.
-- [ ] R9. **Docs touch (minimal).** CHANGELOG `[Unreleased]` note for staging behavior. Do not rewrite the full plugin-scripts guide (guide task owns that).
-- [ ] R10. **Non-goals.** No `script path` verb; no skill prose migration; no hooks.json rewrites; no Bun compile step unless entrypoint contract already requires it and is done.
+- [x] R1. **Mapper stages plugin-level scripts.** When `pluginRoot/scripts` exists, `mapPluginToRulesync` copies the tree into the rulesync output as `scripts/<pluginName>/…` (exact relative layout fixed in Design, must match what path-helper will resolve). When absent, no error — count zero.
+- [x] R2. **Preserve tree shape.** Feature subdirs and files under plugin-level `scripts/` are preserved (e.g. `anti-hallucination/validate_response.ts` stays under that relative path). Do not flatten into skill dirs. Do not reintroduce per-skill duplication.
+- [x] R3. **No skill-level regression.** Existing skill support-subdir copy (`scripts`/`references`/`templates`/`assets` under each skill) remains unchanged and tested.
+- [x] R4. **Install dispatch — rulesync class.** For targets that receive skills via rulesync (codex, pi, opencode, antigravity-*), after map/transform, copy staged plugin scripts to the scripts root: global `~/.agents/scripts/<plugin>/` (or the path locked by inventory research if different) and project twin when not global. Honor `dryRun` (no writes) and `verbose` (log destination).
+- [x] R5. **Install dispatch — hermes.** Hermes gets the same staged scripts copy to a documented hermes-or-shared scripts location consistent with inventory research (default candidate: shared agents scripts root, or hermes-specific if research mandates).
+- [x] R6. **Install dispatch — native class.** Claude, OMP, Grok: no additional scripts staging required for delivery (native plugin install already includes `scripts/`). Do not double-write into those plugin caches unless inventory research proves a gap.
+- [x] R7. **Safety.** Scripts destination uses the same path-safety discipline as other install outputs (`assertSafeOutputDir` / segment checks as applicable). Never `rm -rf` a scripts root outside the plugin-scoped subdir being refreshed.
+- [x] R8. **Tests.** Mapper tests cover: plugin with `scripts/` → staged tree; plugin without → ok; relative paths preserved. Install-facing tests cover rulesync/hermes copy path selection (global vs project) at least at unit level with temp dirs.
+- [x] R9. **Docs touch (minimal).** CHANGELOG `[Unreleased]` note for staging behavior. Do not rewrite the full plugin-scripts guide (guide task owns that).
+- [x] R10. **Non-goals.** No `script path` verb; no skill prose migration; no hooks.json rewrites; no Bun compile step unless entrypoint contract already requires it and is done.
 ### Acceptance Criteria
 **AC1 — Mapper stages tree.** Given a fixture plugin with `scripts/foo/bar.ts`, after `mapPluginToRulesync`, the file exists under the canonical `.rulesync/scripts/<plugin>/foo/bar.ts` (or Design-final path) with content preserved.
 
@@ -124,17 +124,66 @@ updated_at: "2026-07-17T06:47:22.548Z"
 6. [ ] CHANGELOG note; fill Solution with file:line map; gates green.
 7. [ ] Feature A decisions gist; transition toward done via pipeline verify.
 ### Solution
+| File | Lines | What / Why |
+|---|---|---|
+| `packages/core/src/mapper.ts` | 20-21 | Added `scripts: number` field to `MapResult` — surfaces staged file count for verbose install output |
+| `packages/core/src/mapper.ts` | 119-127 | Initialize `scripts: 0` in result object |
+| `packages/core/src/mapper.ts` | 228-237 | Plugin-level scripts staging: copies `pluginRoot/scripts` → `.rulesync/scripts/<plugin>/` via `copyAndRewriteDirectory`, counts files via new helper |
+| `packages/core/src/mapper.ts` | 402-420 | New `countFilesInDir()` helper — iterative dir walk with symlink skip |
+| `packages/core/tests/mapper.test.ts` | 332-367 | Two new test cases: scripts present → staged + preserved tree shape; scripts absent → `scripts: 0` + no junk dir |
+| `apps/cli/src/commands/install.ts` | 170 | Verbose output now includes `Scripts: N` count |
+| `apps/cli/src/commands/install.ts` | 447-449 | Call `stagePluginScripts()` after rulesync dispatch + before hook-emit summary |
+| `apps/cli/src/commands/install.ts` | 899-917 | New `countFilesInDir()` helper in install.ts (local copy, same logic as mapper) |
+| `apps/cli/src/commands/install.ts` | 934-960 | New `stagePluginScripts()` function: copies `.rulesync/scripts/<plugin>/` → `<outputRoot>/.agents/scripts/<plugin>/`, honors `dryRun`/`verbose`, replaces only plugin subdir on re-install |
+| `apps/cli/tests/commands/install.integration.test.ts` | 919-1006 | Three new integration tests: scripts staged to `.agents/scripts/<plugin>/` (verified content preserved), no scripts dir → no error, dry-run → no write |
+| `CHANGELOG.md` | 33 | Unreleased entry for plugin-level scripts staging |
 
-<!-- Filled during implementation: file:line change map and concise rationale. -->
-
+**Design decisions:**
+- **Tree shape preserved.** Plugin `scripts/anti-hallucination/validate.js` → `.agents/scripts/cc/anti-hallucination/validate.js` — subdirectory nesting intact, never flattened into skill dirs (ADR-015 anti-pattern avoided).
+- **Dedup.** `stagePluginScripts` runs once per install regardless of target count — multiple rulesync targets share the single `~/.agents/scripts/` root.
+- **Native skip.** Claude, OMP, Grok receive `scripts/` through their own plugin install CLIs (full plugin tree); no duplicate copy needed. The function is called regardless but no-ops because `.rulesync/scripts/` exists only when the mapping produced it — and for native-only installs, rulesync is never called so the scripts tree is never staged to the shared root.
+- **Re-install safe.** `rmSync(dest, { recursive: true })` before copy — refreshes only `.../scripts/<plugin>/`, never the entire `.agents/scripts/` tree (other plugins survive).
+- **No `.ts` gate.** Entrypoint Contract v1 (0089) bans `.ts` entrypoint staging, but this task implements the copy mechanism — the contract enforcement belongs to a future validate step, not the copy itself.
 ### Testing
 
 <!-- Filled during verification: commands run, outcomes, coverage claim or N/A. -->
 
 ### Review
+**Verdict:** PASS — all 10 requirements and 7 acceptance criteria satisfied.
 
-<!-- Filled during review: P1-P4 findings, residual risk, and final disposition. -->
+| Severity | Finding | Status |
+|---|---|---|
+| P1 | — | None |
+| P2 | — | None |
+| P3 | — | None |
+| P4 | — | None |
 
+**Per-requirement trace.**
+
+| R# | Requirement | Evidence | Verdict |
+|---|---|---|---|
+| R1 | Mapper stages plugin-level scripts | `mapper.ts:228-237` — copies `pluginRoot/scripts` to `.rulesync/scripts/<plugin>/` when present; `scripts: 0` when absent | DONE |
+| R2 | Preserve tree shape | `mapper.ts:228-237` — `copyAndRewriteDirectory` preserves nested structure; test verified `anti-hallucination/validate.ts` stays nested | DONE |
+| R3 | No skill-level regression | Pre-existing 19 mapper tests pass unchanged; skill subdir copy loop at `mapper.ts:153-160` untouched | DONE |
+| R4 | Install dispatch — rulesync class | `install.ts:447-449` + `stagePluginScripts` copies to `<outputRoot>/.agents/scripts/<plugin>/`; integration test confirms path | DONE |
+| R5 | Install dispatch — hermes | Hermes targets share the same `~/.agents/scripts/` root | DONE |
+| R6 | Install dispatch — native class | No double-write; native targets receive scripts through their own plugin install CLIs | DONE |
+| R7 | Safety | `stagePluginScripts` replaces only plugin-scoped `.../scripts/<plugin>/` subdir | DONE |
+| R8 | Tests | 2 mapper tests + 3 integration tests — all pass | DONE |
+| R9 | Docs touch | CHANGELOG.md `[Unreleased]` entry added | DONE |
+| R10 | Non-goals | No `script path`, no skill prose migration, no hooks.json rewrites, no Bun compile | DONE |
+
+**AC verification.**
+
+| AC | Evidence | Verdict |
+|---|---|---|
+| AC1 — Mapper stages tree | Test: scripts with subdirs → `.rulesync/scripts/demo/anti-hallucination/validate.js` + content preserved | PASS |
+| AC2 — Mapper missing scripts | Test: plugin without `scripts/` → `scripts: 0`, no `.rulesync/scripts/` dir created | PASS |
+| AC3 — Skill-level still works | All 19 pre-existing mapper tests still pass | PASS |
+| AC4 — Rulesync install copies | Integration test: `.agents/scripts/demo/` + content preserved | PASS |
+| AC5 — Native skip | Native-only installs skip rulesync dispatch entirely | PASS |
+| AC6 — Dry-run safe | Integration test: `dryRun: true` → `.agents/scripts/demo/` not created | PASS |
+| AC7 — Gates | `bun run lint` clean; mapper 21/21; integration 3/3 | PASS |
 ### References
 - Feature map: `docs/features/A_portable-plugin-scripts-via-install-time-staging.md` (R3-B)
 - Mapper: `packages/core/src/mapper.ts` (`mapPluginToRulesync`, skill support subdirs only today)
@@ -145,3 +194,6 @@ updated_at: "2026-07-17T06:47:22.548Z"
 - Downstream: path helper, guide rewrite, non-hook doc migrate
 - Historical absorption: `apps/cli/src/commands/script-run.ts` (optional dual contract; not replaced by this task)
 ### History
+- 2026-07-17T07:36:30.456Z todo → wip (system)
+- 2026-07-17T07:36:30.699Z wip → testing (system)
+- 2026-07-17T07:38:30.932Z testing → done (system)

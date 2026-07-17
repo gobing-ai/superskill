@@ -328,4 +328,41 @@ describe('mapPluginToRulesync', () => {
         const script = readFileSync(join(outDir, 'skills', 'cc-my-skill', 'scripts', 'nested', 'helper.ts'), 'utf-8');
         expect(script).toContain('cc-cc-hooks');
     });
+
+    // ── Plugin-level scripts staging (task 0090) ──
+
+    it('stages plugin-level scripts/ into .rulesync/scripts/<plugin>/', () => {
+        tmpDir = mkdtempSync('superskill-mapper-');
+        const pluginDir = join(tmpDir, 'plugin');
+        const scriptsDir = join(pluginDir, 'scripts', 'anti-hallucination');
+        mkdirSync(scriptsDir, { recursive: true });
+        writeFileSync(join(scriptsDir, 'validate.ts'), '// validation logic');
+        writeFileSync(join(scriptsDir, 'check.sh'), '#!/usr/bin/env bash\necho ok');
+
+        const outDir = join(tmpDir, '.rulesync');
+        const result = mapPluginToRulesync(pluginDir, 'cc', outDir);
+
+        expect(result.scripts).toBe(2);
+        const staged = join(outDir, 'scripts', 'cc', 'anti-hallucination');
+        expect(readFileSync(join(staged, 'validate.ts'), 'utf-8')).toBe('// validation logic');
+        expect(readFileSync(join(staged, 'check.sh'), 'utf-8')).toBe('#!/usr/bin/env bash\necho ok');
+        // Tree shape preserved — not flattened into skill dirs
+        expect(existsSync(join(outDir, 'scripts', 'cc', 'anti-hallucination', 'validate.ts'))).toBe(true);
+        // No per-skill duplication
+        expect(existsSync(join(outDir, 'skills', 'cc-anti-hallucination'))).toBe(false);
+    });
+
+    it('returns scripts: 0 when plugin has no scripts/ directory', () => {
+        tmpDir = mkdtempSync('superskill-mapper-');
+        const pluginDir = join(tmpDir, 'plugin');
+        mkdirSync(join(pluginDir, 'skills', 'a'), { recursive: true });
+        writeFileSync(join(pluginDir, 'skills', 'a', 'SKILL.md'), '---\nname: a\n---\nok');
+
+        const outDir = join(tmpDir, '.rulesync');
+        const result = mapPluginToRulesync(pluginDir, 'cc', outDir);
+
+        expect(result.scripts).toBe(0);
+        // No scripts/ dir created in output
+        expect(existsSync(join(outDir, 'scripts'))).toBe(false);
+    });
 });

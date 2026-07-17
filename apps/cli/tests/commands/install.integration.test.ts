@@ -913,4 +913,93 @@ describe('executeInstall', () => {
         expect(out).toMatch(/Magents: 3 staged \(3 plugin-owned\); pass --magent/);
         expect(existsSync(join(outRoot, 'AGENTS.md'))).toBe(false);
     });
+
+    // ── Plugin-level scripts staging (task 0090) ──
+
+    /** Minimal GenerateResult stub for tests that don't exercise rulesync output. */
+    function mockEmptyRulesyncResult() {
+        return {
+            rulesCount: 0,
+            rulesPaths: [] as string[],
+            ignoreCount: 0,
+            ignorePaths: [] as string[],
+            mcpCount: 0,
+            mcpPaths: [] as string[],
+            commandsCount: 0,
+            commandsPaths: [] as string[],
+            subagentsCount: 0,
+            subagentsPaths: [] as string[],
+            skillsCount: 0,
+            skillsPaths: [] as string[],
+            hooksCount: 0,
+            hooksPaths: [] as string[],
+            permissionsCount: 0,
+            permissionsPaths: [] as string[],
+            skills: [],
+            hasDiff: false,
+        };
+    }
+    it('stages plugin-level scripts/ to .agents/scripts/<plugin>/ on rulesync targets', async () => {
+        const { marketplacePath, pluginDir } = setupPluginDir();
+        // Add a scripts/ directory to the fixture
+        const scriptsDir = join(pluginDir, 'scripts', 'anti-hallucination');
+        mkdirSync(scriptsDir, { recursive: true });
+        writeFileSync(join(scriptsDir, 'validate.js'), '#!/usr/bin/env node\nconsole.log("validating");');
+        writeFileSync(join(scriptsDir, 'check.sh'), '#!/usr/bin/env bash\necho "checking"');
+
+        const outRoot = join(tmpDir, 'out');
+        mkdirSync(outRoot, { recursive: true });
+
+        await executeInstall(
+            'demo',
+            ['codex'],
+            { marketplacePath, global: false, dryRun: false, verbose: false, outputRoot: outRoot },
+            { runRulesync: async () => mockEmptyRulesyncResult() },
+        );
+
+        // Scripts staged at the shared agents root
+        const scriptsDest = join(outRoot, '.agents', 'scripts', 'demo');
+        expect(existsSync(join(scriptsDest, 'anti-hallucination', 'validate.js'))).toBe(true);
+        expect(existsSync(join(scriptsDest, 'anti-hallucination', 'check.sh'))).toBe(true);
+        // Content preserved
+        expect(readFileSync(join(scriptsDest, 'anti-hallucination', 'check.sh'), 'utf-8')).toContain(
+            '#!/usr/bin/env bash',
+        );
+    });
+
+    it('skips scripts staging when plugin has no scripts/ directory', async () => {
+        const { marketplacePath } = setupPluginDir();
+        const outRoot = join(tmpDir, 'out');
+        mkdirSync(outRoot, { recursive: true });
+
+        await executeInstall(
+            'demo',
+            ['codex'],
+            { marketplacePath, global: false, dryRun: false, verbose: false, outputRoot: outRoot },
+            { runRulesync: async () => mockEmptyRulesyncResult() },
+        );
+
+        // No scripts root created when plugin has no scripts/
+        expect(existsSync(join(outRoot, '.agents', 'scripts', 'demo'))).toBe(false);
+    });
+
+    it('dry-run does not write scripts to disk', async () => {
+        const { marketplacePath, pluginDir } = setupPluginDir();
+        const scriptsDir = join(pluginDir, 'scripts', 'util');
+        mkdirSync(scriptsDir, { recursive: true });
+        writeFileSync(join(scriptsDir, 'helper.js'), '// dry-run test');
+
+        const outRoot = join(tmpDir, 'out');
+        mkdirSync(outRoot, { recursive: true });
+
+        await executeInstall(
+            'demo',
+            ['codex'],
+            { marketplacePath, global: false, dryRun: true, verbose: false, outputRoot: outRoot },
+            { runRulesync: async () => mockEmptyRulesyncResult() },
+        );
+
+        // dry-run: scripts are NOT written
+        expect(existsSync(join(outRoot, '.agents', 'scripts', 'demo'))).toBe(false);
+    });
 });

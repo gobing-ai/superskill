@@ -17,6 +17,8 @@ export interface MapResult {
     magents: number;
     hooks: boolean;
     mcp: boolean;
+    /** Number of files staged from the plugin-level scripts/ tree. */
+    scripts: number;
 }
 
 /**
@@ -115,8 +117,15 @@ export function mapPluginToRulesync(pluginPath: string, pluginName: string, outp
         rmSync(outputDir, { recursive: true, force: true });
     }
     mkdirSync(outputDir, { recursive: true });
-
-    const result: MapResult = { skills: 0, commands: 0, subagents: 0, magents: 0, hooks: false, mcp: false };
+    const result: MapResult = {
+        skills: 0,
+        commands: 0,
+        subagents: 0,
+        magents: 0,
+        hooks: false,
+        mcp: false,
+        scripts: 0,
+    };
 
     // Skills: two layouts are supported — flat (`skills/<name>.md`) and the
     // Claude Code standard directory layout (`skills/<name>/SKILL.md`).
@@ -222,6 +231,17 @@ export function mapPluginToRulesync(pluginPath: string, pluginName: string, outp
     if (existsSync(mcpPath)) {
         deepMergeJsonFile(mcpPath, join(outputDir, 'mcp.json'));
         result.mcp = true;
+    }
+
+    // Plugin-level scripts — staged into .rulesync/scripts/<plugin>/ for rulesync +
+    // hermes target classes. Native targets (claude/omp/grok) receive the full plugin
+    // tree including scripts/ through their own plugin install CLIs — no staging needed.
+    // See task 0090 + Entrypoint Contract v1 (task 0089).
+    const pluginScriptsDir = join(pluginPath, 'scripts');
+    if (existsSync(pluginScriptsDir)) {
+        const scriptsOut = join(outputDir, 'scripts', pluginName);
+        copyAndRewriteDirectory(pluginScriptsDir, scriptsOut, pluginName);
+        result.scripts = countFilesInDir(scriptsOut);
     }
 
     return result;
@@ -377,4 +397,25 @@ function isTextFile(filename: string, bytes: Buffer): boolean {
     // so only claim text when that round-trip is lossless. A NUL-free binary (no early NUL,
     // no known extension) would otherwise be silently corrupted by the rewrite.
     return Buffer.from(bytes.toString('utf-8'), 'utf-8').equals(bytes);
+}
+
+/** Recursively count regular files in a directory. */
+function countFilesInDir(root: string): number {
+    let count = 0;
+    const stack = [root];
+    while (stack.length > 0) {
+        const dir = stack.pop();
+        if (!dir) continue;
+        for (const entry of readdirSync(dir)) {
+            const fullPath = join(dir, entry);
+            const stat = lstatSync(fullPath);
+            if (stat.isSymbolicLink()) continue;
+            if (stat.isDirectory()) {
+                stack.push(fullPath);
+            } else {
+                count++;
+            }
+        }
+    }
+    return count;
 }
