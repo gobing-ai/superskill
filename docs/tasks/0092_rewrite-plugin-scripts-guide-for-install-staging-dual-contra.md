@@ -12,7 +12,7 @@ priority: P2
 tags: []
 dependencies: ["0089", "0091"]
 created_at: "2026-07-17T06:13:59.316Z"
-updated_at: "2026-07-17T17:39:46.875Z"
+updated_at: "2026-07-17T18:00:49.057Z"
 ---
 
 ## 0092. Rewrite plugin-scripts guide for install-staging dual contract
@@ -50,22 +50,22 @@ updated_at: "2026-07-17T17:39:46.875Z"
 
 **Done when.** Guide accurately describes dual contract with examples; anti-patterns match new truth; Status table reflects shipped surfaces; index blurb consistent; feature A decisions log gets a gist line.
 ### Requirements
-- [ ] R1. **Lead summary rewritten.** Opening “short version” no longer claims install targets never receive script files or that execution *always* goes only through binary absorption. New lead states dual contract in one paragraph.
-- [ ] R2. **Layout convention kept.** Retain plugin-level `plugins/<plugin>/scripts/<feature>/` and prose-only skill folders (ADR-015); do not revive per-skill executable `scripts/`.
-- [ ] R3. **Standard path: staging + path helper.** Document:
+- [x] R1. **Lead summary rewritten.** Opening “short version” no longer claims install targets never receive script files or that execution *always* goes only through binary absorption. New lead states dual contract in one paragraph.
+- [x] R2. **Layout convention kept.** Retain plugin-level `plugins/<plugin>/scripts/<feature>/` and prose-only skill folders (ADR-015); do not revive per-skill executable `scripts/`.
+- [x] R3. **Standard path: staging + path helper.** Document:
   - `superskill install` stages plugin-level scripts (native full tree for Claude/OMP/Grok; agents scripts root for rulesync/hermes per staging Solution).
   - Skill docs invoke via `superskill script path <plugin> <rel>` then the portable runner from entrypoint contract (cite concrete command forms from path-helper + entrypoint Solutions).
   - Path miss fails closed (exit semantics from path-helper Solution).
-- [ ] R4. **Optional absorption: script run / hook run.** Document when to register a `ScriptRunner` / `HookRunner` (needs CLI release, pure engine, no FS path). Keep examples for `script run` and current `hook run` as valid optional/current hook form.
-- [ ] R5. **Two-class model updated.** Hook vs non-hook remains; each class lists **standard** and **optional** runtime surfaces. Remove “there is no third class / only dispatchers” wording that forbids staged files.
-- [ ] R6. **Decision tree updated.** Author path: host hook → (current) hook run until hook-design lands; agent CLI → prefer path helper + staged entrypoint; optional registry if absorption justified; repo-root scripts/ for build tooling.
-- [ ] R7. **Anti-patterns table rewritten.** At minimum:
+- [x] R4. **Optional absorption: script run / hook run.** Document when to register a `ScriptRunner` / `HookRunner` (needs CLI release, pure engine, no FS path). Keep examples for `script run` and current `hook run` as valid optional/current hook form.
+- [x] R5. **Two-class model updated.** Hook vs non-hook remains; each class lists **standard** and **optional** runtime surfaces. Remove “there is no third class / only dispatchers” wording that forbids staged files.
+- [x] R6. **Decision tree updated.** Author path: host hook → (current) hook run until hook-design lands; agent CLI → prefer path helper + staged entrypoint; optional registry if absorption justified; repo-root scripts/ for build tooling.
+- [x] R7. **Anti-patterns table rewritten.** At minimum:
   - Still ban: `bun plugins/...` in skill docs; per-skill executable scripts; wiring validation CLI as hook block.
   - **Revise** former “never copy scripts” row: copying via install staging is now intended; ad-hoc copies and repo-relative paths remain wrong.
   - Add: hard-coded cache paths; assuming Bun on targets for standard contract.
-- [ ] R8. **Status table.** Rows for: install staging of plugin scripts; `script path`; `script run` (optional); `hook run` (current hooks). States match reality at ship time of this doc task (done vs planned — no false “shipped” for unfinished work).
-- [ ] R9. **Index / cross-links.** `docs/help/index.md` description for this guide matches dual contract. Fix any one-liner in bundled_plugin that contradicts (minimal).
-- [ ] R10. **Non-goals.** No production code; no full ADR rewrite (ADR task); no mass skill-doc migration (migrate task).
+- [x] R8. **Status table.** Rows for: install staging of plugin scripts; `script path`; `script run` (optional); `hook run` (current hooks). States match reality at ship time of this doc task (done vs planned — no false “shipped” for unfinished work).
+- [x] R9. **Index / cross-links.** `docs/help/index.md` description for this guide matches dual contract. Fix any one-liner in bundled_plugin that contradicts (minimal).
+- [x] R10. **Non-goals.** No production code; no full ADR rewrite (ADR task); no mass skill-doc migration (migrate task).
 ### Acceptance Criteria
 **AC1 — No absorption-only lead.** Grep of the guide does not claim that install targets never receive plugin-level scripts, or that the only portable surface is binary absorption.
 
@@ -131,8 +131,8 @@ updated_at: "2026-07-17T17:39:46.875Z"
 **Dual contract explicit (AC2).** New top section "The two contracts" is a 2-row table: Standard (staged path via `$(superskill script path <plugin> <rel>)` + portable runner) vs Optional (`script run` / `hook run` binary registry). Each row carries an example invocation later in the doc.
 
 **Standard contract cites real surfaces (AC4):**
-- Staging roots: native targets (claude/omp/grok) receive `scripts/` via host plugin install (`apps/cli/src/commands/install.ts:450` — `needsSharedScriptsRoot` gate); rulesync+hermes get `~/.agents/scripts/<plugin>/` once per install (`apps/cli/src/commands/install.ts:921-946` `stagePluginScripts`; mapper staging at `packages/core/src/mapper.ts:240-245`).
-- `script path` resolution + exit codes: `apps/cli/src/commands/script-path.ts:65-107` (project-first then global; regular-file check), exit 0/2/1 fail-closed.
+- Staging roots: native targets (claude/omp/grok) receive `scripts/` via host plugin install (`apps/cli/src/commands/install.ts:450-455` — `needsSharedScriptsRoot` gate); rulesync+hermes get `~/.agents/scripts/<plugin>/` once per install (`apps/cli/src/commands/install.ts:921-960` `stagePluginScripts`; mapper staging at `packages/core/src/mapper.ts:236-245`).
+- `script path` resolution + exit codes: `apps/cli/src/commands/script-path.ts:80-120` (project-first then global; regular-file check), exit 0/2/1 fail-closed.
 - Entrypoint Contract v1: Node `.js`/`.mjs` + POSIX `.sh`; exit 0/1 validation / exit 2 hook block.
 
 **Optional contract kept (R5-B):** `script run` (non-hook, exit 0/1 validation semantics, fail-open on unknown id — `apps/cli/src/commands/script-run.ts:66-85`) and `hook run` (current hook form, portable PATH, `minCliVersion` gate).
@@ -152,28 +152,55 @@ updated_at: "2026-07-17T17:39:46.875Z"
 **No production code touched** (R10). No ADR rewrite (ADR task owns supersession — 0095). No mass skill-doc migration (0093 owns that).
 
 **Verification.** `bun run lint` clean (Biome + typecheck across both workspaces). Guide grep confirms no absorption-only phrasing remains.
-### Testing
-Docs-only task — no production code, so no unit/integration coverage delta.
 
-**Commands run.**
+**Residual verify fix (2026-07-17).** Standard-contract table no longer lists Bun as a portable target runner (`node`/`sh` only). Guide file:line citations refreshed after 0090/0091 residual code moves. Requirements checkboxes flipped to `[x]`.
+### Testing
+**Verify date:** 2026-07-17 (`--force --focus all --fix all`)
+
+**Coverage:** N/A (documentation-only change; no runtime code path added).
+
+**Commands run (this pass):**
 
 | Command | Outcome |
 |---|---|
-| `bun run lint` (Biome + turbo typecheck) | Clean — 175 files checked; both workspaces (`@gobing-ai/superskill-core`, `@gobing-ai/superskill`) typecheck exit 0 |
-| `grep -nE "never receive\|only.*absorption\|there is no third class\|only dispatchers" docs/help/how_to_organize_scripts_for_plugin_development.md` | No matches (AC1 satisfied) |
-| Manual AC checklist pass | AC1–AC7 all satisfied (see Solution) |
+| `bun run lint` | Clean — Biome 175 files; typecheck both workspaces exit 0 |
+| Banned-phrase greps on guide (`never receive`, `there is no third class`, `only dispatchers`, `Install targets never`, `execution always goes`) | No matches (AC1) |
+| Manual section scan dual contract / decision tree / anti-patterns / Status / index / CHANGELOG | AC2–AC7 MET |
+| `spur task check 0092 --strict-core --json` | `pass: true` (unchecked Requirements boxes flipped this pass) |
 
-**AC evidence.**
+**Residual fixes (`--fix all`):**
+1. Standard-contract table listed `bun` as a portable target runner — contradicted Entrypoint Contract / anti-pattern “Assuming Bun”. Removed; now `node` or `sh` only.
+2. Refreshed `file:line` citations after 0090/0091 residual code moves.
+3. Flipped R1–R10 Requirements checklist boxes to `[x]` (strict-core L3 warning cleared).
 
-- AC1 (no absorption-only lead): grep clean above.
-- AC2 (dual contract explicit): `docs/help/how_to_organize_scripts_for_plugin_development.md:7-12` two-row contract table.
-- AC3 (anti-patterns consistent): revised "copying scripts" callout at line ~148.
-- AC4 (cites real surfaces): file:line citations throughout (`install.ts:450,921-946`, `script-path.ts:65-107`, `script-run.ts:66-85`, `mapper.ts:240-245`).
-- AC5 (status honesty): Status table marks hook-path unification as **Planned**, not Shipped.
-- AC6 (index aligned): `docs/help/index.md:39` blurb updated.
-- AC7 (CHANGELOG): `CHANGELOG.md:36-38` Documentation entry added.
+**Per-Requirement Traceability**
 
-**No tests skipped, no `.skip`, no suppressions.** Coverage gate unaffected (docs-only change).
+| Req | Status | Evidence |
+|-----|--------|----------|
+| R1 Lead dual contract | MET | Guide L1–3 short version; no absorption-only claims (AC1 greps) |
+| R2 Layout ADR-015 | MET | “Physical layout” section L16–20 |
+| R3 Staging + path helper | MET | “How install delivers” + “Standard contract” L22–63; cites install/mapper/script-path |
+| R4 Optional script/hook run | MET | “Optional contract” L87–112 |
+| R5 Two-class model | MET | Two contracts table + hook vs non-hook L4–14 |
+| R6 Decision tree | MET | L114–134 |
+| R7 Anti-patterns | MET | L136–148; staging callout clarifies install copy is intended |
+| R8 Status table | MET | L157–167; hook-path **Planned** not Shipped |
+| R9 Index / cross-links | MET | `docs/help/index.md:39`; `bundled_plugin.md:40` |
+| R10 Non-goals | MET | Docs-only commit `eec0fc9` (+ residual guide fix this pass) |
+
+**Acceptance Criteria Verification**
+
+| AC | Status | Evidence Type | Evidence |
+|----|--------|---------------|----------|
+| AC1 No absorption-only lead | MET | command | banned-phrase greps empty this pass |
+| AC2 Dual contract explicit | MET | static-ref | `## The two contracts` table L5–12 + examples L52–59, L93–95 |
+| AC3 Anti-patterns consistent | MET | static-ref | table L136–146 + callout L148 (staging intended) |
+| AC4 Cites real surfaces | MET | static-ref | install.ts:450-455,921-960; mapper.ts:236-245; script-path.ts:57-63,80-120,163-172 |
+| AC5 Status honesty | MET | static-ref | Status L167 Planned for hook-path R6-B |
+| AC6 Index aligned | MET | static-ref | index.md:39 dual contract blurb |
+| AC7 CHANGELOG | MET | static-ref | CHANGELOG.md:36-38 Documentation entry #0092 |
+
+**Design conformance:** all outline claims DONE. **SECUA:** residual usability/correctness fix (bun-as-portable-runner) applied; no remaining major findings.
 ### Review
 Self-review against AC1–AC7 + R3-B/R4-B/R5-B/R6-B locked inputs. Docs-only task; review is content accuracy + drift check, not code risk.
 

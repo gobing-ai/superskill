@@ -8,7 +8,7 @@ Every script ships under exactly one **contract**, chosen per script:
 
 | Contract | How it ships to targets | How skills invoke it | When to choose |
 |---|---|---|---|
-| **Standard — staged path** | `superskill install` copies `scripts/<feature>/` into each target's scripts root (or lands the whole tree via the host plugin install for native targets). | `$(superskill script path <plugin> <rel>)` then the portable runner (`node`, `bun`, `sh` — see Entrypoint Contract). | Default. Script must be runnable from a real path on the target host. |
+| **Standard — staged path** | `superskill install` copies `scripts/<feature>/` into each target's scripts root (or lands the whole tree via the host plugin install for native targets). | `$(superskill script path <plugin> <rel>)` then the portable runner (`node` or `sh` — see Entrypoint Contract; do **not** assume Bun on targets). | Default. Script must be runnable from a real path on the target host. |
 | **Optional — binary registry** | CLI deep-imports the module at build time and `bun build --compile` bundles it into `superskill`; nothing is staged to disk. | `superskill script run <plugin> <id>` (non-hook) or `superskill hook run <plugin> <id>` (hook). | Pure engines with no FS needs; you accept that a fix requires a CLI release. |
 
 Within each contract, a script is still either a **hook script** (triggered by host hook events declared in `hooks.json`) or a **non-hook script** (triggered by an agent or host workflow, referenced from skill docs). Hook vs non-hook decides trigger source and exit-code semantics; staged path vs registry decides shipping + invocation.
@@ -21,10 +21,10 @@ Within each contract, a script is still either a **hook script** (triggered by h
 
 ## How install delivers scripts
 
-`superskill install` runs the mapper (`packages/core/src/mapper.ts:240-245`), which copies `plugins/<plugin>/scripts/` into `.rulesync/scripts/<plugin>/` preserving tree shape. The install command then dispatches per target class:
+`superskill install` runs the mapper (`packages/core/src/mapper.ts:236-245`), which copies `plugins/<plugin>/scripts/` into `.rulesync/scripts/<plugin>/` preserving tree shape. The install command then dispatches per target class:
 
-- **Native targets** (`claude`, `omp`, `grok`) — each installs via its own plugin CLI (`claude plugin install`, `omp plugin install`, `grok plugin install`) and receives the full plugin tree **including `scripts/`**. No shared-root staging is performed for native-only installs (`apps/cli/src/commands/install.ts:450`).
-- **Rulesync + hermes targets** (`codex`, `pi`, `opencode`, `antigravity-cli`, `antigravity-ide`, `hermes`) — `stagePluginScripts` writes the staged tree to `~/.agents/scripts/<plugin>/` (global) or `<project>/.agents/scripts/<plugin>/` (project mode) once per install, regardless of how many targets are present (`apps/cli/src/commands/install.ts:921-946`). Re-install replaces only the `<plugin>/` subdir — sibling plugins are never touched.
+- **Native targets** (`claude`, `omp`, `grok`) — each installs via its own plugin CLI (`claude plugin install`, `omp plugin install`, `grok plugin install`) and receives the full plugin tree **including `scripts/`**. No shared-root staging is performed for native-only installs (`apps/cli/src/commands/install.ts:450-455`).
+- **Rulesync + hermes targets** (`codex`, `pi`, `opencode`, `antigravity-cli`, `antigravity-ide`, `hermes`) — `stagePluginScripts` writes the staged tree to `~/.agents/scripts/<plugin>/` (global) or `<project>/.agents/scripts/<plugin>/` (project mode) once per install, regardless of how many targets are present (`apps/cli/src/commands/install.ts:921-960`). Re-install replaces only the `<plugin>/` subdir — sibling plugins are never touched.
 
 Only **portable runtimes** are useful on targets: Node `.js`/`.mjs` and POSIX `.sh` (see Entrypoint Contract). A TypeScript-only entrypoint under `scripts/` is fine in-repo but MUST have a runnable twin (or be compiled) to be useful after staging — staged files are run as-is.
 
@@ -32,7 +32,7 @@ Only **portable runtimes** are useful on targets: Node `.js`/`.mjs` and POSIX `.
 
 ### Resolve the staged entrypoint
 
-`superskill script path <plugin> <rel>` resolves a staged entrypoint by search order (`apps/cli/src/commands/script-path.ts:65-107`):
+`superskill script path <plugin> <rel>` resolves a staged entrypoint by search order (`apps/cli/src/commands/script-path.ts:80-120`):
 
 1. **Project agents root:** `<project>/.agents/scripts/<plugin>/<rel>`
 2. **Global agents root:** `~/.agents/scripts/<plugin>/<rel>`
@@ -44,7 +44,7 @@ Exit codes:
 | Outcome | Exit | Notes |
 |---|---|---|
 | Found | `0` | Prints the absolute path (or JSON with `--json`). |
-| Not found | `2` | **Fail-closed.** A missing staged script is a deployment/setup error, not a graceful-degradation case (`script-path.ts:148-158`). |
+| Not found | `2` | **Fail-closed.** A missing staged script is a deployment/setup error, not a graceful-degradation case (`script-path.ts:163-172`). |
 | Invalid args | `1` | Unknown flag, missing plugin/rel, or `rel` with `..` / absolute / Windows-drive segments (`isUnsafeRel`, `script-path.ts:57-63`). |
 
 ### Invoke from a skill doc
