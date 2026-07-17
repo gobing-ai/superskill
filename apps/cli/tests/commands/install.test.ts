@@ -65,6 +65,8 @@ describe('registerInstall', () => {
         expect(optionNames).toContain('--no-global');
         expect(optionNames).toContain('--dry-run');
         expect(optionNames).toContain('--verbose');
+        expect(optionNames).toContain('--magent');
+        expect(optionNames).toContain('--marketplace-source');
     });
 
     it('install command option --no-global allows project-level install', () => {
@@ -251,8 +253,8 @@ describe('executeInstall', () => {
                         hasDiff: false,
                     };
                 },
-                runOmpInstall: async (marketplaceRoot, marketplaceName, plugin, _global) => {
-                    ompInstallArgs = [marketplaceRoot, marketplaceName, plugin, String(_global)];
+                runOmpInstall: async (registration, marketplaceName, plugin, _global) => {
+                    ompInstallArgs = [registration.source, marketplaceName, plugin, String(_global)];
                 },
             },
         );
@@ -354,7 +356,7 @@ describe('executeInstall', () => {
         // volCapturedArgs is mutated in the runClaudeInstall callback, so
         // TypeScript can't narrow its type through control flow. Use a
         // volatile wrapper that the callback mutates, then unwrap for checks.
-        const volArg: { args: { root: string; name: string; plugin: string } | null } = { args: null };
+        const volArg: { args: { source: string; name: string; plugin: string } | null } = { args: null };
         process.chdir(workspace);
 
         const stdout = spyOn(process.stdout, 'write').mockImplementation(() => true);
@@ -364,8 +366,8 @@ describe('executeInstall', () => {
             ['claude'],
             { marketplacePath: join(workspace, '.claude-plugin'), global: false, dryRun: false, verbose: false },
             {
-                runClaudeInstall: async (root, name, plugin) => {
-                    volArg.args = { root, name, plugin };
+                runClaudeInstall: async (registration, name, plugin) => {
+                    volArg.args = { source: registration.source, name, plugin };
                 },
             },
         );
@@ -377,8 +379,58 @@ describe('executeInstall', () => {
         const output = stdout.mock.calls.map((call) => String(call[0])).join('');
         expect(args.plugin).toBe('market');
         expect(args.name).toBe('test-marketplace');
-        expect(args.root).toBe(workspace);
+        expect(args.source).toBe(workspace);
         expect(output).toContain("Installed 'market' to 1 target(s).");
+    });
+
+    it('passes gobing-ai slug to runClaudeInstall when --marketplace-source github and name is known', async () => {
+        // R8/AC3: github mode must register owner/repo, not the local marketplaceRoot.
+        const workspace = createTempWorkspace();
+        createPlugin(workspace, 'cc');
+        mkdirSync(join(workspace, '.claude-plugin'), { recursive: true });
+        writeFileSync(
+            join(workspace, '.claude-plugin', 'marketplace.json'),
+            JSON.stringify({
+                name: 'superskill',
+                plugins: [{ name: 'cc', source: './plugins/cc' }],
+            }),
+        );
+
+        const volArg: { args: { source: string; mode: string; name: string; plugin: string } | null } = {
+            args: null,
+        };
+        process.chdir(workspace);
+        spyOn(process.stdout, 'write').mockImplementation(() => true);
+
+        await executeInstall(
+            'cc',
+            ['claude'],
+            {
+                marketplacePath: join(workspace, '.claude-plugin'),
+                global: false,
+                dryRun: false,
+                verbose: false,
+                marketplaceSource: 'github',
+            },
+            {
+                runClaudeInstall: async (registration, name, plugin) => {
+                    volArg.args = {
+                        source: registration.source,
+                        mode: registration.mode,
+                        name,
+                        plugin,
+                    };
+                },
+            },
+        );
+
+        const args = volArg.args;
+        expect(args).not.toBeNull();
+        if (!args) throw new Error('expected captured args to be non-null');
+        expect(args.plugin).toBe('cc');
+        expect(args.name).toBe('superskill');
+        expect(args.mode).toBe('github');
+        expect(args.source).toBe('gobing-ai/superskill');
     });
 
     it('spawns claude marketplace add and install when using default runClaudeInstall', async () => {
@@ -464,8 +516,8 @@ describe('executeInstall', () => {
                         hasDiff: false,
                     };
                 },
-                runGrokInstall: async (marketplaceRoot, marketplaceName, plugin, pluginRoot) => {
-                    grokInstallArgs = [marketplaceRoot, marketplaceName, plugin, pluginRoot];
+                runGrokInstall: async (registration, marketplaceName, plugin, pluginRoot) => {
+                    grokInstallArgs = [registration.source, marketplaceName, plugin, pluginRoot];
                 },
             },
         );

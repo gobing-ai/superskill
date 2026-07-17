@@ -186,7 +186,7 @@ describe('defaultRunGrokInstall', () => {
     it('adds marketplace then installs from pluginRoot with --trust (Grok 0.2.93 path form)', async () => {
         stubSpawn([0, 0, 0]); // add, uninstall, install
 
-        await defaultRunGrokInstall('/mkp', 'superskill', 'demo', '/mkp/plugins/demo');
+        await defaultRunGrokInstall({ source: '/mkp', mode: 'directory' }, 'superskill', 'demo', '/mkp/plugins/demo');
 
         expect(spawnCalls).toHaveLength(3);
         expect(spawnCalls[0]).toEqual(['grok', 'plugin', 'marketplace', 'add', '/mkp']);
@@ -198,12 +198,27 @@ describe('defaultRunGrokInstall', () => {
         }
     });
 
+    it('passes github owner/repo slug to marketplace add when registration mode is github', async () => {
+        // R3/R8: github mode uses registration.source (slug), not a local path.
+        stubSpawn([0, 0, 0]);
+
+        await defaultRunGrokInstall(
+            { source: 'gobing-ai/superskill', mode: 'github' },
+            'superskill',
+            'demo',
+            '/mkp/plugins/demo',
+        );
+
+        expect(spawnCalls[0]).toEqual(['grok', 'plugin', 'marketplace', 'add', 'gobing-ai/superskill']);
+        expect(spawnCalls[2]).toEqual(['grok', 'plugin', 'install', '/mkp/plugins/demo', '--trust']);
+    });
+
     it('tolerates marketplace already-configured (idempotent re-add)', async () => {
         stubSpawn([1, 0, 0], {
             0: 'Error: Marketplace source already configured: /mkp\n',
         });
 
-        await defaultRunGrokInstall('/mkp', 'superskill', 'demo', '/mkp/plugins/demo');
+        await defaultRunGrokInstall({ source: '/mkp', mode: 'directory' }, 'superskill', 'demo', '/mkp/plugins/demo');
 
         expect(spawnCalls[2]).toEqual(['grok', 'plugin', 'install', '/mkp/plugins/demo', '--trust']);
     });
@@ -211,15 +226,15 @@ describe('defaultRunGrokInstall', () => {
     it('fails loudly when marketplace add fails for a reason other than already-configured', async () => {
         stubSpawn([1], { 0: 'Error: permission denied\n' });
 
-        await expect(defaultRunGrokInstall('/mkp', 'superskill', 'demo', '/mkp/plugins/demo')).rejects.toThrow(
-            /marketplace add failed/,
-        );
+        await expect(
+            defaultRunGrokInstall({ source: '/mkp', mode: 'directory' }, 'superskill', 'demo', '/mkp/plugins/demo'),
+        ).rejects.toThrow(/marketplace add failed/);
     });
 
     it('continues when uninstall fails (first install) then installs', async () => {
         stubSpawn([0, 1, 0]); // add ok, uninstall miss, install ok
 
-        await defaultRunGrokInstall('/mkp', 'superskill', 'demo', '/mkp/plugins/demo');
+        await defaultRunGrokInstall({ source: '/mkp', mode: 'directory' }, 'superskill', 'demo', '/mkp/plugins/demo');
 
         expect(spawnCalls[2]?.[0]).toBe('grok');
         expect(spawnCalls[2]?.[2]).toBe('install');
@@ -227,13 +242,17 @@ describe('defaultRunGrokInstall', () => {
 
     it('rejects unsafe marketplace names before spawning', async () => {
         stubSpawn([0, 0, 0]);
-        await expect(defaultRunGrokInstall('/mkp', '../evil', 'demo', '/mkp/plugins/demo')).rejects.toThrow();
+        await expect(
+            defaultRunGrokInstall({ source: '/mkp', mode: 'directory' }, '../evil', 'demo', '/mkp/plugins/demo'),
+        ).rejects.toThrow();
         expect(spawnCalls).toHaveLength(0);
     });
 
     it('rejects unsafe plugin names before spawning', async () => {
         stubSpawn([0, 0, 0]);
-        await expect(defaultRunGrokInstall('/mkp', 'superskill', 'a/b', '/mkp/plugins/demo')).rejects.toThrow();
+        await expect(
+            defaultRunGrokInstall({ source: '/mkp', mode: 'directory' }, 'superskill', 'a/b', '/mkp/plugins/demo'),
+        ).rejects.toThrow();
         expect(spawnCalls).toHaveLength(0);
     });
 });

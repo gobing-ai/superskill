@@ -19,6 +19,7 @@ superskill install [options] <plugin>
 | `--targets <list>` | Comma-separated target agents, or `all`. | all configured |
 | `--no-global` | Install to project-level instead of user-level global directories. | `false` (global) |
 | `--magent <name>` | Select which main-agent package under `magents/` to emit. Required when the plugin ships more than one; auto-selects when exactly one exists. | auto when unique |
+| `--marketplace-source <mode>` | Marketplace registration source for host CLIs (Claude/Grok/OMP): `directory` (local path, default) or `github` (`owner/repo` slug from known remotes; unknown names fall back to path). | `directory` |
 | `--dry-run` | Preview the install without writing files. | `false` |
 | `--verbose` | Print each pipeline step and file copy. | `false` |
 
@@ -39,6 +40,9 @@ superskill install cc --magent team-stark-children --no-global --targets claude,
 
 # Preview what would be written, no filesystem changes
 superskill install cc --targets all --dry-run --verbose
+
+# GitHub-backed marketplace (recommended for operators):
+superskill install cc --marketplace-source github --verbose
 ```
 
 ### Supported targets
@@ -291,3 +295,40 @@ sequenceDiagram
 - **Hooks are never silently dropped** — every `EmitHooksResult.message` is echoed, even in non-verbose mode, so the user knows what hook shims were installed.
 - **`--dry-run`** propagates through rulesync (`dryRun: true`) and skips all filesystem copies and the `claude plugin install` spawn.
 - **Two-pass hook routing (task 0151)** — Hooks ride in a separate rulesync pass through `TARGET_TO_RULESYNC_HOOKS`. The skills map collapses Antigravity onto `codexcli` (so all `~/.agents/skills/` readers share one copy), but reusing that routing for hooks would make rulesync emit codex-style hook files at the wrong path instead of the native `.agents/hooks.json` (Antigravity CLI, project) / `.gemini/config/hooks.json` (Antigravity IDE, global). The hooks-only pass runs only when the plugin produced a canonical `hooks.json`; a hookless plugin makes a single skills-only pass.
+
+## Migration runbook: directory → github marketplace
+
+Operators who registered `spur`/`superskill` as directory marketplaces before
+`--marketplace-source github` existed can migrate with these steps:
+
+```bash
+# 1) Add GitHub-backed marketplaces (Claude)
+claude plugin marketplace add gobing-ai/spur
+claude plugin marketplace add gobing-ai/superskill
+
+# 2) Verify clones materialized
+ls ~/.claude/plugins/marketplaces/spur
+ls ~/.claude/plugins/marketplaces/superskill
+claude plugin marketplace list
+
+# 3) Reinstall plugins so cache tracks the github checkout
+claude plugin install sp@spur
+claude plugin install cc@superskill
+
+# 4) Remove directory registration if still present as a separate entry
+#    Prefer `claude plugin marketplace remove` over hand-editing JSON.
+claude plugin marketplace remove <old-directory-name>
+#    If names collided and `add` converted in-place, `list` should show github source.
+
+# 5) Align `~/.claude/settings.json` → `extraKnownMarketplaces` to github form
+#    (or delete the directory keys and rely on `known_marketplaces.json`).
+
+# 6) Grok: re-add marketplace per its live CLI contract,
+#    then run `superskill install --marketplace-source github --targets grok`.
+
+# 7) Restart agents; spot-check `/` commands and `plugin list`.
+```
+
+**Do not** hand-delete `known_marketplaces.json` keys without steps 1–3 above.
+Removing directory entries before adding github sources breaks cache resolution
+and `plugin@marketplace` IDs (see task 0086 R1).

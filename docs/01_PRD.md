@@ -101,7 +101,7 @@ Each command supports five operations:
 
 | Item | Condition to reactivate |
 |------|------------------------|
-| Remote marketplace sources (`github`, `url`, `git-subdir`, `npm`) | After local relative-path resolution ships; needs fetch + cache layer. Phase 1 supports local relative-path `source` only |
+| Remote in-manifest plugin `source` objects (Layer B: `github`, `url`, `git-subdir`, `npm`) | After local relative-path resolution ships; needs fetch + cache layer. Phase 1 supports local relative `source` only. Not to be confused with Layer A: host CLI marketplace **registration** source (`directory` vs `github`) — `--marketplace-source github` is implemented in task 0086. |
 | Import from non-Claude formats (Codex, Pi) | After Phase 1 install is stable; needs custom import mapper |
 | `rulesync` upstream contribution (Hermes, omp) | When Hermes/omp adoption warrants it; local targets sufficient initially |
 | Cross-platform adaptation (adapt command) | After Phase 2 authoring commands stabilize; generate Codex/Pi/etc. variants from a single abstract definition |

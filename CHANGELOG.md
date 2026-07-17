@@ -28,7 +28,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ### New Features
 
-_None yet._
+- **Marketplace registration source: `--marketplace-source github`.** `superskill install` now supports registering marketplaces as GitHub repos (e.g. `claude plugin marketplace add gobing-ai/superskill`) instead of only local directory paths. Local directory mode remains the default for authoring/dogfood. Grok and OMP install helpers mirror the source-mode choice. Includes a migration runbook for operators moving from directory to github-backed registrations. (#0086)
 
 ## [0.3.2] - 2026-07-14
 

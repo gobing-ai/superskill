@@ -20,10 +20,13 @@ import {
     isClaudeImportStyle,
     listResolvablePlugins,
     listRuleMarkdownFiles,
+    type MarketplaceRegistration,
+    type MarketplaceSource,
     magentGlobalDir,
     magentOutputFilename,
     magentRulesRelDir,
     mapPluginToRulesync,
+    resolveMarketplaceRegistration,
     resolvePlugin,
     rewriteSkillReferences,
     runRulesync,
@@ -58,6 +61,7 @@ export function registerInstall(program: Command): void {
             '--magent <name>',
             'Select a specific magent (main-agent config) to install; auto-selects when exactly one exists',
         )
+        .option('--marketplace-source <mode>', 'Marketplace registration source: directory (default) or github')
         .option('--dry-run', 'Preview without writing files', false)
         .option('--verbose', 'Print each step and file copy', false)
         .action(async (plugin, options) => {
@@ -65,6 +69,7 @@ export function registerInstall(program: Command): void {
             const global = options.global !== false;
             const dryRun = options.dryRun === true;
             const verbose = options.verbose === true;
+            const marketplaceSource = options.marketplaceSource as MarketplaceSource | undefined;
 
             try {
                 await executeInstall(plugin, targets, {
@@ -73,6 +78,7 @@ export function registerInstall(program: Command): void {
                     dryRun,
                     verbose,
                     magent: options.magent as string | undefined,
+                    marketplaceSource,
                 });
             } catch (err) {
                 echo(`Error: ${err instanceof Error ? err.message : String(err)}`);
@@ -89,15 +95,21 @@ interface InstallOptions {
     outputRoot?: string;
     /** Select a specific magent by directory name; undefined auto-selects when exactly one magent exists. */
     magent?: string;
+    /** Marketplace registration source: directory (local path, default) or github (owner/repo slug). */
+    marketplaceSource?: MarketplaceSource;
 }
 
 interface InstallDependencies {
     runRulesync?: typeof runRulesync;
     /** Spawn `claude plugin marketplace add` + `claude plugin install`. Mockable for tests. */
-    runClaudeInstall?: (marketplaceRoot: string, marketplaceName: string, plugin: string) => Promise<void>;
+    runClaudeInstall?: (
+        registration: MarketplaceRegistration,
+        marketplaceName: string,
+        plugin: string,
+    ) => Promise<void>;
     /** Spawn `omp plugin marketplace add` + `omp plugin install`. Mockable for tests. */
     runOmpInstall?: (
-        marketplaceRoot: string,
+        registration: MarketplaceRegistration,
         marketplaceName: string,
         plugin: string,
         global: boolean,
@@ -108,7 +120,7 @@ interface InstallDependencies {
      * `plugin@marketplace`. Mockable for tests.
      */
     runGrokInstall?: (
-        marketplaceRoot: string,
+        registration: MarketplaceRegistration,
         marketplaceName: string,
         plugin: string,
         pluginRoot: string,
@@ -298,19 +310,24 @@ export async function executeInstall(
     }
     // Step 4: Dispatch non-rulesync targets + emit hooks for uncovered targets
     const outputRoot = options.outputRoot ?? (options.global ? resolveHomeDir() : process.cwd());
+    const marketplaceName = resolution.marketplaceName ?? 'superskill';
+    const marketplaceRoot = resolution.marketplaceRoot ?? process.cwd();
+    const registration = resolveMarketplaceRegistration(
+        marketplaceRoot,
+        marketplaceName,
+        options.marketplaceSource ?? 'directory',
+    );
     const hookEmitResults: EmitHooksResult[] = [];
     for (const target of targets) {
         if (target === 'claude') {
             if (options.verbose) echo('Claude Code: registering marketplace and installing plugin...');
             if (!options.dryRun) {
-                const marketplaceName = resolution.marketplaceName ?? 'superskill';
-                const marketplaceRoot = resolution.marketplaceRoot ?? process.cwd();
                 // Clear the plugin cache keyed on the resolved marketplace name (Refinement #5).
                 // marketplace add is idempotent, so this is defensive — but bound it to the
                 // correct name so we never rm -rf the wrong directory.
                 const cacheDir = join(resolveHomeDir(), '.claude', 'plugins', 'cache', marketplaceName);
                 if (existsSync(cacheDir)) rmSync(cacheDir, { recursive: true, force: true });
-                await runClaudeInstallImpl(marketplaceRoot, marketplaceName, plugin);
+                await runClaudeInstallImpl(registration, marketplaceName, plugin);
             }
         }
 
@@ -343,9 +360,7 @@ export async function executeInstall(
             // commands to OMP dialect. See task 0073.
             if (options.verbose) echo('OMP: registering marketplace and installing plugin...');
             if (!options.dryRun) {
-                const marketplaceName = resolution.marketplaceName ?? 'superskill';
-                const marketplaceRoot = resolution.marketplaceRoot ?? process.cwd();
-                await runOmpInstallImpl(marketplaceRoot, marketplaceName, plugin, options.global);
+                await runOmpInstallImpl(registration, marketplaceName, plugin, options.global);
                 const installPath = resolveOmpInstallPath(marketplaceName, plugin, options.global);
                 if (installPath) {
                     const hookResult = postInstallOmp(pluginRoot, installPath, outputDir, plugin, {
@@ -366,9 +381,7 @@ export async function executeInstall(
             // Grok consumes hooks/hooks.json and /plugin:command natively.
             if (options.verbose) echo('Grok: registering marketplace and installing plugin...');
             if (!options.dryRun) {
-                const marketplaceName = resolution.marketplaceName ?? 'superskill';
-                const marketplaceRoot = resolution.marketplaceRoot ?? process.cwd();
-                await runGrokInstallImpl(marketplaceRoot, marketplaceName, plugin, pluginRoot);
+                await runGrokInstallImpl(registration, marketplaceName, plugin, pluginRoot);
                 if (options.verbose) {
                     const installPath = await resolveGrokInstallPath(plugin);
                     if (installPath) {
@@ -465,18 +478,21 @@ export async function runCheckedCommand(argv: [string, ...string[]], label: stri
 }
 
 /**
- * Default Claude Code installer — registers the local marketplace then installs
- * the plugin. Exposed as a dependency so tests can mock the spawn calls.
+ * Default Claude Code installer — registers the marketplace then installs
+ * the plugin. Uses `registration.source` so `--marketplace-source github`
+ * spawns `claude plugin marketplace add gobing-ai/superskill` instead of
+ * a local absolute path. Exposed as a dependency so tests can mock spawns.
  */
 async function defaultRunClaudeInstall(
-    marketplaceRoot: string,
+    registration: MarketplaceRegistration,
     marketplaceName: string,
     plugin: string,
 ): Promise<void> {
-    // Register the local marketplace (idempotent — if already registered,
-    // claude CLI exits 0 with a notice).
+    // marketplace add is idempotent — if already registered, claude CLI exits 0
+    // with a notice. source is either an absolute path (directory mode) or an
+    // `owner/repo` slug (github mode).
     await runCheckedCommand(
-        ['claude', 'plugin', 'marketplace', 'add', marketplaceRoot],
+        ['claude', 'plugin', 'marketplace', 'add', registration.source],
         'claude plugin marketplace add',
     );
 
@@ -590,7 +606,7 @@ export async function resolveGrokInstallPath(plugin: string): Promise<string | u
  * plugins natively. `pluginRoot` is the install source (path), not a rulesync staging dir.
  */
 export async function defaultRunGrokInstall(
-    marketplaceRoot: string,
+    registration: MarketplaceRegistration,
     marketplaceName: string,
     plugin: string,
     pluginRoot: string,
@@ -598,8 +614,7 @@ export async function defaultRunGrokInstall(
     assertSafePathSegment(marketplaceName, 'marketplace name');
     assertSafePathSegment(plugin, 'plugin name');
 
-    // Marketplace add: tolerate "already configured" (exit 1) for re-runs.
-    const add = Bun.spawn(['grok', 'plugin', 'marketplace', 'add', marketplaceRoot], {
+    const add = Bun.spawn(['grok', 'plugin', 'marketplace', 'add', registration.source], {
         stdout: 'pipe',
         stderr: 'pipe',
     });
@@ -610,7 +625,7 @@ export async function defaultRunGrokInstall(
         const combined = `${stdout}\n${stderr}`;
         if (!/already configured/i.test(combined)) {
             throw new Error(
-                `grok plugin marketplace add failed with exit code ${addCode}: grok plugin marketplace add ${marketplaceRoot}\n${combined.trim()}`,
+                `grok plugin marketplace add failed with exit code ${addCode}: grok plugin marketplace add ${registration.source}\n${combined.trim()}`,
             );
         }
     }
@@ -629,12 +644,13 @@ export async function defaultRunGrokInstall(
 }
 
 /**
- * Default OMP installer — clears the marketplace cache (idempotency), registers the local
- * marketplace, then installs the plugin. Exposed as a dependency so tests can mock the spawn
- * calls. Mirrors {@link defaultRunClaudeInstall} but adds the `global` flag for scope selection.
+ * Default OMP installer — registers the marketplace then installs the plugin.
+ * Uses `registration.source` for github/directory mode parity with Claude.
+ * Exposed as a dependency so tests can mock the spawn calls. Mirrors
+ * {@link defaultRunClaudeInstall} but adds the `global` flag for scope selection.
  */
 export async function defaultRunOmpInstall(
-    marketplaceRoot: string,
+    registration: MarketplaceRegistration,
     marketplaceName: string,
     plugin: string,
     global: boolean,
@@ -653,7 +669,7 @@ export async function defaultRunOmpInstall(
     });
     await remove.exited;
 
-    await runCheckedCommand(['omp', 'plugin', 'marketplace', 'add', marketplaceRoot], 'omp plugin marketplace add');
+    await runCheckedCommand(['omp', 'plugin', 'marketplace', 'add', registration.source], 'omp plugin marketplace add');
 
     // --force: reinstall over an existing registry entry AND refresh the cached plugin dir
     // (verified against omp 16.4.2: a plain install exits 1 with "already installed" and
