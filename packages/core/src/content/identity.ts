@@ -40,6 +40,15 @@ export function resolveContentName(path: string): string {
     return name;
 }
 
+/** Prefer AGENTS.md then CLAUDE.md inside a multi-file magent package directory. */
+function resolveMagentPackageEntry(dir: string): string | null {
+    for (const entry of ['AGENTS.md', 'CLAUDE.md'] as const) {
+        const p = join(dir, entry);
+        if (existsSync(p) && statSync(p).isFile()) return p;
+    }
+    return null;
+}
+
 /**
  * Convert a content name and type to a file path.
  *
@@ -53,15 +62,6 @@ export function resolveContentName(path: string): string {
  * @param opts  Resolution options.
  * @returns     Resolved absolute file path, or `null` if not found.
  */
-/** Prefer AGENTS.md then CLAUDE.md inside a multi-file magent package directory. */
-function resolveMagentPackageEntry(dir: string): string | null {
-    for (const entry of ['AGENTS.md', 'CLAUDE.md'] as const) {
-        const p = join(dir, entry);
-        if (existsSync(p) && statSync(p).isFile()) return p;
-    }
-    return null;
-}
-
 export function resolveContentPath(type: ContentType, name: string, opts?: ResolvePathOptions): string | null {
     // If name is already a path to an existing file or package directory, resolve it.
     if (name.includes('/') || name.includes('\\')) {
