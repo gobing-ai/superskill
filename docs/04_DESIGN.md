@@ -48,7 +48,12 @@ is constructed and evolve behavior remains unchanged. If the configured model-ca
 
 ## Plugin-level scripts directory
 
-Executable logic a skill invokes at the user's install site lives in `plugins/<plugin>/scripts/<skill>/` (shared across the plugin's skills, copied on install, deduped). NOT per-skill `scripts/` (reintroduces duplication); NOT `packages/*` (not part of the plugin install payload).
+Executable logic a skill invokes at the user's install site lives in `plugins/<plugin>/scripts/<skill>/` (shared across the plugin's skills). NOT per-skill `scripts/` (reintroduces duplication); NOT `packages/*` (not part of the plugin install payload). Per ADR-023, delivery follows a **dual contract**:
+
+- **Native marketplace installs** (Claude/OMP/Grok): full plugin tree ships in the cache, including `scripts/`.
+- **Rulesync/Hermes class**: install stages scripts to `~/.agents/scripts/<plugin>/<feature>/` (tree shape preserved; fail-closed if absent). Staging entrypoint: `stagePluginScripts` in `apps/cli/src/commands/install.ts`; native-class skip gate: `needsSharedScriptsRoot`.
+
+**Invocation standard** for skill docs and other non-hook callers is the Entrypoint Contract v1 form `node "$(superskill script path <plugin> <feature>/<file>.js)" [args]` (portable Node `.js`/`.mjs` + POSIX `.sh`, no Bun-on-target). **Optional invocation** for engines the CLI deep-imports: `superskill script run <plugin> <id>` / `superskill hook run <plugin> <id>` (ADR-022, amended by ADR-024). See the [plugin-scripts author guide](help/how_to_organize_scripts_for_plugin_development.md) for the dual contract.
 
 | Surface | Path | Purpose |
 |---------|------|---------|

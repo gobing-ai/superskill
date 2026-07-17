@@ -132,7 +132,7 @@ CLI binary: `apps/cli` exposes `bin: { cli: "./src/index.ts" }`. The `.ts` entry
 ## Conventions & boundaries
 
 - Conventional Commits required (`feat:`, `fix:`, `docs:`, `chore:`, ...). Breaking changes go in a `BREAKING CHANGE:` footer.
-- Cross-workspace imports use `@<scope>/<pkg>` (workspace aliases), never `../../../packages/...`. One blessed exception (ADR-022): `apps/cli`'s hook dispatcher deep-imports the cc plugin's guard engine from `plugins/cc/scripts/` — plugin-owned code with the CLI as a second compile-time consumer.
+- Cross-workspace imports use `@<scope>/<pkg>` (workspace aliases), never `../../../packages/...`. One blessed exception (ADR-022, amended by ADR-024): `apps/cli`'s **script dispatcher family** (`hook-run.ts`, `script-run.ts`) deep-imports the cc plugin's guard engine from `plugins/cc/scripts/` — plugin-owned code with the CLI as a second compile-time consumer.
 - `vendors/` is reference-only — **never modify** files there.
 - Never commit secrets, `.env*`, or credentials. Never edit `.github/workflows/` without approval.
 - Surgical changes only: touch what the task needs; no drive-by refactors, no speculative abstractions, no comments that restate what the code already says.

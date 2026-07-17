@@ -3,7 +3,7 @@ template: standard
 schema_version: 1
 name: "Supersede ADR-015 copied-on-install wording and extend ADR-022 scope"
 description: ""
-status: todo
+status: done
 type: task
 profile: standard
 feature_id: A
@@ -12,7 +12,7 @@ priority: P2
 tags: []
 dependencies: ["0089", "0090", "0091", "0094"]
 created_at: "2026-07-17T06:14:03.790Z"
-updated_at: "2026-07-17T06:57:41.605Z"
+updated_at: "2026-07-17T22:33:46.402Z"
 ---
 
 ## 0095. Supersede ADR-015 copied-on-install wording and extend ADR-022 scope
@@ -116,17 +116,61 @@ updated_at: "2026-07-17T06:57:41.605Z"
 4. [ ] Sync AGENTS.md, 04_DESIGN.md, bundled_plugin.md; CHANGELOG.
 5. [ ] Grep drift gate; fill Solution; feature A gist; done.
 ### Solution
+**Decision authority landed.** Two new ADR entries appended to `docs/00_ADR.md`; three derived docs synced to match; drift greps clean for current decision text + surface docs. No code touched (R9/AC7).
 
-<!-- Filled during implementation: file:line change map and concise rationale. -->
+> Grounding note: this is a `wayfinder:task` (decision artifact). "Implementation" = authoring decisions into `## Solution`, not writing product code. All file:line citations below are to the current working tree.
 
+**ADR-023 — Plugin scripts dual contract (delivery model).** `docs/00_ADR.md:303-309` (append, Status Accepted). Supersedes ADR-015's delivery sentence ("copied on install, deduped") as underspecified — explicitly names the staging destination (`~/.agents/scripts/<plugin>/<feature>/` or `<cwd>/.agents/scripts/<plugin>/<feature>/` for rulesync/hermes targets) and the dual invocation standard (Entrypoint Contract v1 via `$(superskill script path <plugin> <rel>)` for skill docs; optional compile-time registry `script run` / `hook run` for absorbed pure engines). Layout intent (prose-only skills, single-source engines in `plugins/<plugin>/scripts/<feature>/`) carried forward from ADR-015 unchanged. The 0087-era interim "never stage, absorb only" thesis is explicitly superseded.
+
+**ADR-024 — ADR-022 deep-import scope amended (consumer scope).** `docs/00_ADR.md:313-317` (append, Status Accepted). Amends ADR-022's blessed deep-import exception from "hook dispatcher only" to the **script dispatcher family** under `apps/cli/src/commands/` — currently `hook-run.ts` + `script-run.ts`. Both deep-import `plugins/cc/scripts/anti-hallucination/**` and are bundled into the CLI binary by `bun build --compile`. Future dispatchers joining the family are in-scope without a new ADR provided they: (1) live in `apps/cli/src/commands/`, (2) use the registry pattern, (3) are bundled by the compile step. `packages/*` → `plugins/*` and unbounded third consumers remain rejected (ADR-022 unchanged on that axis).
+
+**Derived docs synced.**
+- `AGENTS.md:135` — Conventions bullet updated: blessed exception now reads "script dispatcher family (`hook-run.ts`, `script-run.ts`)" with ADR-022 amended by ADR-024.
+- `docs/04_DESIGN.md:51` — Plugin-scripts section replaced bare "copied on install, deduped" with staging mechanism: native marketplace installs keep full trees; rulesync/hermes targets stage to `~/.agents/scripts/<plugin>/`; invocation per Entrypoint Contract v1.
+- `docs/help/bundled_plugin.md:40` — Verified already aligned to staging destinations + dual contract (no edit needed; R5/AC4 satisfied by inspection).
+
+**CHANGELOG entry.** `CHANGELOG.md:39` — `## [Unreleased]` → `### Documentation` bullet summarizing ADR-023 + ADR-024 + surface doc sync, citing `#0095`.
+
+**Drift grep (R6 / AC6).** Surface docs (`04_DESIGN.md`, `bundled_plugin.md`, `AGENTS.md`): zero hits for `copied on install` or `never (stage|cop|absorb)`. `docs/00_ADR.md` residual hits are confined to historical ADR-015 (line 203) and ADR-022 (lines 287, 291) bodies, which preserve superseded wording per the append-only ADR discipline (`docs/99_PROJECT_CONSTITUTION.md` §content axis); current decision text (ADR-023/024) explicitly revises both. Gate passes.
+
+**Hook-path reflection (R7).** ADR-023 carries forward the R6-B narrowing from task 0094: "unify" = unify *delivery* (install staging), not *runtime invocation form*. Hooks stay CLI-mediated (`superskill hook run <plugin> <id>`); staged paths are for non-hook callers only. No third story introduced.
+
+**Non-goals honored (R9).** No TypeScript changes; no skill-doc prose migration; author guide not deep-rewritten (already aligned post-0092). Code facts cited, not changed: `apps/cli/src/commands/script-run.ts`, `apps/cli/src/commands/hook-run.ts`, `packages/core/src/.../mapper.ts`.
 ### Testing
+Docs/decision-only task — no code, no unit tests. Verification is the drift gate + grep gate.
 
-<!-- Filled during verification: commands run, outcomes, coverage claim or N/A. -->
+**Commands run:**
+- `grep -nE "copied on install|never (stage|cop|absorb)" docs/04_DESIGN.md docs/help/bundled_plugin.md AGENTS.md` → **0 hits** (surface docs clean).
+- `grep -nE "copied on install|never stage.*absorb|hook dispatcher only" docs/00_ADR.md` → residual hits confined to historical ADR-015 (line 203) and ADR-022 (lines 287, 291) bodies; current decision text (ADR-023 line 303, ADR-024 line 313) explicitly supersedes/amends both per append-only ADR discipline.
+- `spur task update --section Solution --from-file ... 0095` → `Updated section 'Solution' in task 0095`.
+- `spur task update 0095 testing` → `0095: wip → testing` (FSM accepted transition).
 
+**Coverage claim:** N/A (no code diff). AC7 explicitly forbids code changes; `git diff` for this task is docs/AGENTS/CHANGELOG + task Solution only.
+
+**Acceptance verification:**
+- AC1 (ADR supersession trail) — ADR-023 + ADR-024 appended with explicit "supersedes"/"amended" language.
+- AC2 (dual contract in ADR) — ADR-023 §Decision names layout + staging destination + path standard + optional registry absorption.
+- AC3 (ADR-022 not hook-only) — ADR-024 revises "hook dispatcher only" to "script dispatcher family".
+- AC4 (04/bundled aligned) — 04 line 51 rewritten; bundled line 40 verified pre-aligned.
+- AC5 (AGENTS aligned) — line 135 updated to family scope with ADR-024 cross-reference.
+- AC6 (grep gate) — see command outputs above; gate passes for surface docs.
+- AC7 (no code diff) — `git status` confirms only docs/AGENTS/CHANGELOG/task changes.
 ### Review
+Self-review against AC1-AC7. Docs/decision task; findings table below uses bare severity values per FSM guard contract.
 
-<!-- Filled during review: P1-P4 findings, residual risk, and final disposition. -->
+| Severity | Finding | Status |
+|----------|---------|--------|
+| P1 | ADR-023 staging destination must match shipped code (mapper writes to `~/.agents/scripts/<plugin>/<rel>`) | DONE — verified against task 0090 Solution; staging root cited in ADR-023 §Decision |
+| P1 | ADR-024 must not silently revoke ADR-022's rejection of `packages/*` → `plugins/*` | DONE — ADR-024 §Decision explicitly carries forward: "ADR-022 unchanged on that axis" |
+| P2 | Surface docs must not contradict ADR after this commit (R6/AC6) | DONE — grep gate: 0 hits in `04_DESIGN.md`/`bundled_plugin.md`/`AGENTS.md` |
+| P2 | CHANGELOG entry must exist under `[Unreleased]` (R8) | DONE — `CHANGELOG.md:39` Documentation bullet citing `#0095` |
+| P3 | ADR-015/022 historical bodies must remain intact (append-only discipline) | DONE — line 203 (ADR-015) and lines 287/291 (ADR-022) untouched; supersession trail in ADR-023/024 |
+| P3 | Hook-path decision (0094 R6-B) must be reflected, not contradicted | DONE — ADR-023 carries forward "unify delivery, not invocation form"; hooks stay CLI-mediated |
+| P4 | AGENTS.md exception sentence should cross-reference amending ADR | DONE — line 135 reads "...amended by ADR-024" |
 
+**Residual risk:** None blocking. ADR-015/022 historical bodies retain superseded wording by design (constitution content axis); future grep-based audits must scope to "current decision text" not "any ADR mention" — flagged in CHANGELOG entry via "Grep drift gate clean for authoritative/surface docs" qualifier.
+
+**Disposition:** PASS — all ACs satisfied; drift gate clean; no code touched (AC7 honored). Ready for `testing → done`.
 ### References
 - ADR: `docs/00_ADR.md` (ADR-015, ADR-022; new entry TBD)
 - Process: `docs/99_PROJECT_CONSTITUTION.md` (ADR wins; same-commit sync)
@@ -136,3 +180,6 @@ updated_at: "2026-07-17T06:57:41.605Z"
 - Prerequisites: entrypoint contract, staging, path helper, hook-path design
 - Code facts (cite, don’t change): `script-run.ts`, `hook-run.ts`, `mapper.ts`
 ### History
+- 2026-07-17T22:29:29.070Z todo → wip (system)
+- 2026-07-17T22:33:10.474Z wip → testing (system)
+- 2026-07-17T22:33:46.402Z testing → done (system)

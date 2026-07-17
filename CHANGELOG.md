@@ -36,6 +36,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 ### Documentation
 
 - **Plugin-scripts guide rewritten for the dual contract.** `docs/help/how_to_organize_scripts_for_plugin_development.md` was rewritten to match the shipped install-staging + `script path` redesign (feature A): standard contract (staged path via `$(superskill script path <p> <rel>)` + portable Node/sh runner per Entrypoint Contract v1) vs optional contract (`script run` / `hook run` binary registry, ADR-022). Documents the install staging roots (native plugin tree for Claude/OMP/Grok; `~/.agents/scripts/<plugin>/` for rulesync/hermes), path-helper exit codes (0 found / 2 not-found fail-closed / 1 invalid), updated decision tree and anti-patterns (revised former "never copy scripts" row; bans hard-coded cache paths and assuming Bun on targets). Help index blurb and `bundled_plugin.md` one-liner aligned. (#0092)
+- **ADR chain syncs the plugin-scripts dual contract.** Added ADR-023 (plugin scripts dual contract — install staging + path invocation; optional CLI absorption; supersedes ADR-015's underspecified "copied on install" wording) and ADR-024 (amends ADR-022 to cover the **script dispatcher family** `hook-run.ts` + `script-run.ts` rather than the hook dispatcher alone). Surface docs aligned: `docs/04_DESIGN.md` plugin-scripts section, `AGENTS.md` ADR-022 exception note, `docs/help/bundled_plugin.md`. Grep drift gate clean for authoritative/surface docs. (#0095)
 
 ## [0.3.2] - 2026-07-14
 

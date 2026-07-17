@@ -289,3 +289,31 @@ Reversals = new entries naming what they supersede. Burned numbers get a `Skippe
 **Why.** Ownership runs plugin→CLI, not CLI→plugin: the guard engine is plugin content that ships verbatim into every target's plugin cache (Claude, omp, hermes), and the plugin must stay self-contained for distribution. A workspace package would invert that ownership and require package-time machinery to copy the library back INTO the plugin — more moving parts to solve a compile-time-only coupling (Bun bundles the import into the binary; there is no runtime path dependency). Single source of truth stays in the plugin; the CLI's dispatcher is just its second compile-time consumer.
 
 **Detail.** See task 0077 R2. Constraint: the exception covers `apps/cli/src/commands/hook-run.ts` → `plugins/cc/scripts/**` only; any third consumer or any `packages/*` → `plugins/*` import re-opens the packaging decision. `AGENTS.md` § Conventions notes the exception inline.
+
+---
+
+## ADR-023: Plugin scripts dual contract — install staging + path invocation; optional CLI absorption
+
+**Status:** Accepted · **Date:** 2026-07-17
+
+**Decision.** Plugin-level source layout remains `plugins/<plugin>/scripts/<feature>/` (prose-only skills, per ADR-015's layout intent). **Delivery** is install-time **staging** for the rulesync/hermes class (target root: `~/.agents/scripts/<plugin>/<feature>/`, tree shape preserved, fail-closed if absent) and native tree delivery for Claude/OMP/Grok (the full `scripts/` ships in the plugin cache). **Invocation standard** for skill docs and other non-hook callers is the **Entrypoint Contract v1** form `node "$(superskill script path <plugin> <feature>/<file>.js)" [args]` — portable Node `.js`/`.mjs` + POSIX `.sh`, no Bun-on-target assumption. **Optional invocation** is compile-time registry absorption via `superskill script run <plugin> <id>` / `superskill hook run <plugin> <id>` for engines the CLI deep-imports — CLI release coupling is intentional (ADR-021 floor guarantees registry id resolution).
+
+This **supersedes the underspecified "copied on install, deduped" wording in ADR-015** with an explicit delivery destination and contract. ADR-015's layout rationale (`plugins/<plugin>/scripts/`, not per-skill, not `packages/*`) is unchanged.
+
+**Why.** ADR-015 said scripts are "copied on install" without naming where or how; the 0087-era guide briefly claimed "never stage, absorb only." Both cannot stay. The dual contract reflects shipped code (tasks 0089–0093): staging lands at a discoverable agents scripts root for non-hook callers; the registry path remains for engines the CLI already deep-imports (ADR-022). Skill docs need a portable, host-shell-independent command — the Entrypoint Contract v1 form via `script path` is that command. Fail-closed on a missing staged path (`script path` exits 2) is intentional: silently inventing a path would mask skew.
+
+**Detail.** See tasks 0089 (entrypoint contract), 0090 (install mapper staging), 0091 (`superskill script path`), 0092 (guide rewrite), 0093 (skill-doc migration), 0094 (hook-path design — R6-B narrowed to "unify delivery, not runtime form"). Hooks keep `superskill hook run <plugin> <id>` (Option 1 of the hook-path design); they do **not** rewrite to staged FS paths. Staging implementation: `stagePluginScripts` in `apps/cli/src/commands/install.ts`; native-class skip gate: `needsSharedScriptsRoot` (`targets.some((t) => t !== 'claude' && t !== 'omp' && t !== 'grok')`). Path helper: `apps/cli/src/commands/script-path.ts`.
+
+---
+
+## ADR-024: Deep-import consumer scope — script dispatcher family (amends ADR-022)
+
+**Status:** Accepted · **Date:** 2026-07-17
+
+**Decision.** ADR-022's blessed deep-import exception is **amended** to cover the **script dispatcher family** under `apps/cli/src/commands/`, not the hook dispatcher alone. As of this date the family is `hook-run.ts` and `script-run.ts`, both deep-importing `plugins/cc/scripts/anti-hallucination/**` (and any future engine added under the same `plugins/<plugin>/scripts/**` layout via the registry pattern). The prior "hook dispatcher only" wording in ADR-022's Constraint is **revised**; the original Decision and Why still hold (plugin→CLI ownership, Bun bundling, single source of truth in the plugin).
+
+This **does not expand** the exception to `packages/*` → `plugins/*` imports (still rejected) or to unbounded third-party consumers (still require a new ADR).
+
+**Why.** `script-run.ts` was added as a sibling dispatcher to `hook-run.ts` under task 0090 to expose the same compiled engines as a registry subcommand (`superskill script run <plugin> <id>`) for skill-doc callers that prefer the registry form over the staged-path form. It deep-imports the same `plugins/cc/scripts/**` tree. Treating it as a second compile-time consumer of the same blessed tree is consistent with ADR-022's rationale — there is no new packaging concern; both are compiled into the CLI binary by Bun and resolved by the same registry pattern. Forbidding it would force either a workspace-package promotion (already rejected in ADR-022) or a duplicate engine (the anti-pattern ADR-015 closed).
+
+**Detail.** See tasks 0090 (script-run dispatcher), 0094 (consumer-scope analysis). Constraint (revised from ADR-022): the exception covers the **script dispatcher family** in `apps/cli/src/commands/` deep-importing `plugins/<plugin>/scripts/**`. A new dispatcher joining the family is in-scope without a new ADR as long as it (a) lives in `apps/cli/src/commands/`, (b) resolves engines through the registry pattern, and (c) is bundled into the CLI by `bun build --compile`. Any consumer outside `apps/cli` (e.g. `packages/*`) or any engine outside `plugins/<plugin>/scripts/**` re-opens the packaging decision. `AGENTS.md` § Conventions notes the family scope.
