@@ -3,7 +3,7 @@ template: brainstorm
 schema_version: 1
 name: "Design hook-path unification without CLAUDE_PLUGIN_ROOT regression"
 description: ""
-status: todo
+status: done
 type: brainstorm
 profile: standard
 feature_id: A
@@ -12,7 +12,7 @@ priority: P2
 tags: []
 dependencies: ["0088", "0089"]
 created_at: "2026-07-17T06:14:02.191Z"
-updated_at: "2026-07-17T06:54:16.547Z"
+updated_at: "2026-07-17T22:28:31.405Z"
 ---
 
 ## 0094. Design hook-path unification without CLAUDE_PLUGIN_ROOT regression
@@ -53,19 +53,15 @@ superskill hook run cc anti-hallucination
 
 **Done when.** Solution holds a recommended direction with tradeoffs, a per-target feasibility note, non-regression checklist, and either (a) green-light implementation tasks or (b) a documented partial rollback/narrowing of R6-B; feature A decisions log gets a gist line.
 ### Requirements
-- [ ] R1. **Options analysis.** Evaluate at least three directions with pros/cons:
-  1. **Keep `hook run` as the only hooks.json form** (R6-B satisfied by “staged files exist for inspection/debug only”).
-  2. **Install-time command rewrite:** emitters rewrite each hook command to a target-local absolute path (or host-native relative) under staged/native scripts roots.
-  3. **PATH wrapper that resolves then execs:** e.g. `superskill hook exec <plugin> <rel>` or `superskill script path` + shell — still PATH-portable, may still need minCliVersion.
-  4. (Optional fourth) Hybrid: registry hooks stay on `hook run`; simple shell hooks may use staged paths where host guarantees root.
-- [ ] R2. **No Claude-only roots.** Recommended form MUST NOT require `${CLAUDE_PLUGIN_ROOT}`, `$CLAUDE_PLUGIN_ROOT`, or rulesync `$PLUGIN_ROOT` as the sole portable mechanism for multi-target plugins.
-- [ ] R3. **minCliVersion policy.** State what happens when hooks stop calling `hook run`: is minCliVersion still required, repurposed, or only for residual registry hooks? Document skew failure mode (fail-open vs broken Stop).
-- [ ] R4. **Emitter impact matrix.** For pi, hermes, omp, rulesync (codex/opencode/antigravity), grok, claude: state whether recommended form works with **existing** emitters unchanged, needs rewrite, or is unsupported.
-- [ ] R5. **Exit-code / block semantics.** Hook block remains exit 2 (or host equivalent). Staged entrypoints that are validation-CLI (exit 0/1) MUST NOT be recommended as Stop blockers without an adapter. Preserve ADR-020 intent for unknown registry ids if `hook run` remains.
-- [ ] R6. **Multi-plugin merge.** Pi/hermes merge into shared hooks.json must still allow multiple plugins’ hooks without path collisions or last-writer-wins on unrelated entries.
-- [ ] R7. **Recommendation + decision.** Pick one primary direction; if R6-B full unify is high-risk, recommend phased approach (e.g. keep hook run for Stop guards; stage files for non-hook only) and explicitly amend feature A fog/R6-B interpretation.
-- [ ] R8. **Follow-ups.** List concrete implementation tasks (or “none — design only closes R6-B as keep hook run”) with suggested dependency order.
-- [ ] R9. **Deliverable placement.** Write full analysis in Solution; gist on feature A; no production code.
+- [x] R1. **Options analysis.** Evaluated four directions (Options 1-4) with portability/minCliVersion/emitter-churn/skew pros/cons in Solution options table.
+- [x] R2. **No Claude-only roots.** Recommended form is PATH-resolved `superskill` binary — no `${CLAUDE_PLUGIN_ROOT}` dependency.
+- [x] R3. **minCliVersion policy.** Stays unchanged; guarantees registry id resolution. Skew failure mode (stale-path crash) documented as the cost of rejected alternatives.
+- [x] R4. **Emitter impact matrix.** All six classes (pi, hermes, omp, codex, opencode, antigravity-*, grok, claude) addressed — zero require changes.
+- [x] R5. **Exit-code / block semantics.** Stop guard exit 2 preserved; validation-CLI entrypoints never wired as Stop blockers without `hook run` adapter.
+- [x] R6. **Multi-plugin merge.** Pi/hermes dedup keys cited (`hooks.ts:174`, `hooks.ts:274`); both rely on command-string stability Option 1 preserves.
+- [x] R7. **Recommendation + decision.** Option 1 primary; R6-B narrowed to "unify delivery, not runtime form" with explicit feature A amendment.
+- [x] R8. **Follow-ups.** Proposed 0096 (`.js` twin); 0095 existing; no emitter changes.
+- [x] R9. **Deliverable placement.** Full analysis in Solution; gist on feature A; no production code (AC6).
 ### Acceptance Criteria
 **AC1 — Multi-option design.** Solution compares ≥3 options with explicit tradeoffs (portability, minCliVersion, emitter churn, skew).
 
@@ -112,17 +108,109 @@ superskill hook run cc anti-hallucination
 4. [ ] Write Solution; propose follow-up tasks or R6-B narrowing; feature A gist; done.
 5. [ ] Stop — no emitter implementation in this session.
 ### Solution
+**Grounding (facts observed in this session):**
 
-<!-- Final synthesized recommendation or output from the brainstorm. -->
+- Canonical hooks form is `superskill hook run cc anti-hallucination` (`plugins/cc/hooks/hooks.json:10`) under `minCliVersion: "0.2.19"` (`hooks.json:2`).
+- Install gate (`apps/cli/src/commands/install.ts:178-184`) sets `hooksBlockedByCliVersion = true` when installed CLI < `minCliVersion`; every emitter branch (rulesync hooks pass at `install.ts:287`, hermes at `install.ts:342`, omp via `skipHooks` at `install.ts:368,744-746`, pi at `install.ts:399`) honors it. OMP comment at `install.ts:740-742` states the rationale verbatim: "modules would call `superskill hook run <id>` the old CLI doesn't know."
+- All emitters carry **command strings**, not resolved FS paths: pi/hermes write merged JSON (`hooks.ts:160-192`, `hooks.ts:261-297`); OMP generates JS that `spawnSync('superskill', [...])` (`omp-hooks.ts:128-141`); rulesync pass writes native-format hooks.json; grok/claude consume the canonical file verbatim. Dedup is by command-string signature (`hooks.ts:174-192` pi, `hooks.ts:274-296` hermes) — multi-plugin merge relies on the command being a stable, comparable string.
+- Fail-open for unknown hook ids (`hook-run.ts:339-347`): warns loudly, exits 0. Comment is explicit that this is the version-skew safety valve, not a policy gap.
+- Staging (task 0090) lands plugin scripts at `~/.agents/scripts/<plugin>/` (global) or `.agents/scripts/<plugin>/` (project) — `install.ts:921-946`. `needsSharedScriptsRoot` gate (`install.ts:450`) skips staging for the native class (claude/omp/grok) because their plugin install CLIs already deliver `scripts/`.
+- Script-path helper (task 0091) resolves staged entrypoints: project first, then global; **exit 2 fail-closed on not-found**, exit 0 found, exit 1 invalid args. This is the crucial skew-safety lever — it does NOT silently invent a path.
+
+**Recommendation: Option 1 (keep `hook run` for hooks.json) as primary; reject absolute-path rewrite for hooks; narrow R6-B.**
+
+
+| Option | Portability | minCliVersion churn | Emitter churn | Skew safety | Verdict |
+|--------|-------------|---------------------|---------------|-------------|---------|
+| **1. Keep `hook run` as the only hooks.json form** | ✅ PATH-resolved `superskill` binary is the one portable assumption; works on every target today | ✅ unchanged — floor stays, gate unchanged | ✅ none | ✅ ADR-020 fail-open preserved; old CLIs warn, new CLIs enforce | **PRIMARY** |
+| 2. Install-time command rewrite (emitters emit `node <abs>` / `<abs>.sh` per target) | ⚠️ host-shell-dependent; absolute paths break on home move or reinstall without rewrite | ⚠️ minCliVersion loses meaning for hook layer; gate must be repurposed or dropped | ❌ high — every emitter (pi merge, hermes merge, omp JS gen, rulesync pass, grok, claude) gains a path-rewrite step; merge dedup keys change from command-string to (plugin, path) pair | ❌ stale path after partial reinstall → hard failure (no fail-open valve); minCliVersion can no longer protect against missing hook semantics | REJECTED |
+| 3. PATH wrapper `superskill hook exec <plugin> <rel>` that resolves staged path then execs | ✅ still PATH-portable | ⚠️ needs new subcommand on every CLI that should enforce — raises floor | ⚠️ emitters swap `hook run <id>` → `hook exec <rel>`, but command-string shape preserved so merge dedup still works | ⚠️ loses the registry/fail-open story unless `hook exec` also implements unknown-path fail-open | DEFERRED — net complexity over Option 1 with no real win until staged files carry semantics `hook run` cannot reach |
+| 4. Hybrid (registry hooks on `hook run`; simple shell hooks on staged paths where host guarantees root) | ⚠️ two mental models; "simple" is ill-defined across emitters | ⚠️ per-hook policy needs declaration in canonical hooks.json | ❌ emitters must classify each hook and pick a branch; classification surface is new | ❌ mixed fail modes per hook — operator cannot reason about a single Stop pipeline | REJECTED |
+
+
+R6-B's literal text — "Hooks also invoke staged script paths (unify; largest risk)" — names **unify** as the goal. But the *intent* of unification, read against the discovery notes in feature A, is "hooks should not require a special second delivery system distinct from the rest of the plugin." Option 1 already satisfies that intent:
+
+- **Delivery is unified at install.** `superskill install` is the single delivery mechanism for *everything* — skills, commands, agents, hooks registry, AND now staged scripts (tasks 0090/0091). Hooks no longer need a special path; they share the install pipeline with every other artifact.
+- **What hooks reference at runtime is the CLI, not a path.** That is a feature, not a regression: it is what makes `minCliVersion` meaningful (the floor guarantees the registry id resolves), what makes multi-plugin merge deterministic (command strings are comparable across plugins), and what makes skew fail-open (unknown id → warn + exit 0, not a stale-path crash).
+- **Staged files still exist for the non-hook path** and are inspectable/debuggable at `~/.agents/scripts/<plugin>/`. Hooks *could* be rewritten to call them — but doing so discards the three properties above for a literal reading of "unify" that the intent does not require.
+
+**R6-B is therefore narrowed:** "unify" = unify *delivery* (install staging), not *runtime invocation form*. Hooks keep `superskill hook run <plugin> <id>`; staged paths are the standard surface for non-hook callers (skill docs, `validate-response` direct invocation, future third-party tooling) per tasks 0092/0093.
+
+
+| Target | Emitter | Recommended form works unchanged? | Notes |
+|--------|---------|-----------------------------------|-------|
+| **pi** | `emitPiStyleHooks` (`hooks.ts:205`) → `@vahor/pi-hooks` config | ✅ works | Command string `superskill hook run …` is what pi's shim execs; no path rewrite needed. Multi-plugin merge (`mergePiHooks` `hooks.ts:160`) keyed on command string — preserved. |
+| **hermes** | `emitHermesHooks` (`hooks.ts:307`) → `.hermes/hooks.json` (opencode surrogate) | ✅ works | Canonical format; merge keyed on `(matcher, command)` signature (`hooks.ts:274`). Absolute paths would force a new signature dimension. |
+| **omp** | `generateOmpHookModules` (`omp-hooks.ts:156`) → `hooks/pre\|post/*.js` | ✅ works | Generated JS shells out to `superskill hook run` via `spawnSync` (`omp-hooks.ts:128-141`); the CLI is already a runtime dep. Rewrite to FS path would duplicate the spawn logic per hook. |
+| **codex** (rulesync) | `runRulesyncImpl` hooks pass at `install.ts:287` | ✅ works | Writes native-format hooks referencing the PATH binary. |
+| **opencode** (rulesync) | same | ✅ works | Same. |
+| **antigravity-\*** (rulesync) | same | ✅ works | Same. |
+| **grok** | native Claude-format package install | ✅ works | Consumes canonical `hooks.json` verbatim — no emitter transform. |
+| **claude** | native plugin install (cache) | ✅ works | Reads canonical `hooks.json` from plugin cache; `${CLAUDE_PLUGIN_ROOT}` was already retired for cross-target hooks and stays retired (R2 honored). |
+
+**Zero emitters require changes.** That is the decisive portability argument.
+
+
+**Stays as-is, unchanged in role.** When hooks keep `hook run`:
+
+- `minCliVersion` (e.g. `0.2.19` in `hooks.json:2`) guarantees the installed CLI recognizes the hook id (`anti-hallucination`) and enforces it. An older CLI skips ALL hook emission (`install.ts:178-184`) so the user gets skills/commands without a broken Stop pipeline.
+- If hooks moved to staged FS paths (Options 2/3/4), `minCliVersion` could not enforce hook *semantics* — only file presence. A stale path after partial reinstall would crash with no version-skew safety valve. That is the decisive skew argument for keeping Option 1.
+- **Skew failure mode (documented):** unknown hook id → `hook-run.ts:339-347` warns loudly + exits 0 (fail-open, ADR-020). This is intentional: version skew must not wedge agent Stops. Hooks on FS paths would replace this with hard `ENOENT` failures.
+
+
+Preserved unchanged. The Stop guard returns exit 2 to block (`hook-run.ts:62`); validation-CLI entrypoints (exit 0/1) are NEVER wired as Stop blockers without the registry adapter that `hook run` provides. Entrypoint Contract v1 (task 0089) explicitly reserves exit 2 for hook blocks and exit 0/1 for validation CLIs — that contract is honored precisely *because* hooks route through `hook run` (the adapter), not through raw staged-path invocation.
+
+
+Preserved unchanged. Pi dedups by command string (`hooks.ts:174-192`); hermes by `(matcher, command)` signature (`hooks.ts:274-296`). Both rely on the command being a stable comparable string — which `superskill hook run <plugin> <id>` is. Absolute-path rewrite (Options 2/4) would change the dedup key to `(plugin, abs_path)`, breaking last-installed-wins semantics for unrelated entries and requiring a per-plugin namespacing pass.
+
+
+- [x] **No `${CLAUDE_PLUGIN_ROOT}` / `$CLAUDE_PLUGIN_ROOT` / rulesync `$PLUGIN_ROOT`** as the sole portable mechanism. Recommended form is PATH-resolved `superskill` binary — a single assumption shared by every emitter today.
+- [x] **No `minCliVersion` regression** — floor stays, gate stays, role unchanged.
+- [x] **No emitter rewrite** — all six emitter classes work unchanged.
+- [x] **Multi-plugin merge preserved** — dedup keys unchanged.
+- [x] **Fail-open preserved** — ADR-020 unknown-id behavior intact.
+- [x] **No new host-shell assumptions** — PATH binary + `spawnSync` already assumed by omp; no shell-required invocation introduced.
+- [x] **R6-B intent satisfied** — delivery unified at install (staging lands for non-hook; hooks share the install pipeline); only the runtime invocation form stays CLI-mediated, by design.
+
+
+**Primary: Option 1 — keep `superskill hook run` as the sole hooks.json command form.**
+
+**R6-B amendment (feature A Decisions so far):** reinterpret "unify" as unify *delivery* (install staging for scripts; hooks already share the install pipeline), NOT unify *runtime invocation form*. Hooks stay PATH-based CLI invocations; staged script paths are the standard surface for non-hook callers only. This closes R6-B at the intent level without the high-regression absolute-path rewrite.
+
+
+| WBS (proposed) | Title | Dependency |
+|----------------|-------|------------|
+| **0095** (existing) | Supersede ADR-015 "copied on install" wording + extend ADR-022 scope to cover staging | 0094 (this) |
+| **0096 (new, proposed)** | Author `.js` twin for `validate_response.ts` + `ah_guard.ts` — replace `Bun.env` with `process.env`, `import.meta.main` with `process.argv[1]` check; bring cc plugin into Entrypoint Contract v1 compliance for the non-hook path | 0093 (done), 0094 (this) |
+| (none — design only) | No emitter changes follow from this recommendation | — |
+
+The `.js` twin (proposed 0096) was flagged as a P2 finding in task 0093's review. It is the natural follow-up to 0093/0094: it closes the interim-honesty gap documented in commit `9ca2d13` and brings the cc plugin's own scripts into contract compliance. It does NOT touch hooks — hooks stay on `hook run`.
+
+**No deprecation of `hook run` is recommended.** `hook run` remains the canonical, portable, fail-open-safe hooks.json form for the foreseeable future.
 
 ### Testing
+N/A — design artifact only (AC6). All citations are `file:line` references read in this session against the current working tree (`b669837` + `9ca2d13`); no code was executed.
 
-<!-- Validation performed for claims, links, or feasibility. Use N/A when not applicable. -->
+Verification of non-regression claims was by code inspection:
+- `hooks.ts:174-192` — pi dedup by command string (confirmed).
+- `hooks.ts:274-296` — hermes dedup by `(matcher, command)` signature (confirmed).
+- `omp-hooks.ts:128-141` — generated module shells out to `superskill` binary (confirmed).
+- `install.ts:178-184,287,342,368,399,744-746` — `hooksBlockedByCliVersion` honored across every emitter branch (confirmed).
+- `hook-run.ts:339-347` — unknown id fail-open with loud warning (confirmed).
+- `install.ts:921-946` — `stagePluginScripts` lands at `~/.agents/scripts/<plugin>/` (confirmed, task 0090).
+- `install.ts:450` — `needsSharedScriptsRoot` native-class skip gate (confirmed).
 
 ### Review
+| Severity | Finding | Status |
+|----------|---------|--------|
+| P1 | Recommendation keeps `hook run` — does this leave R6-B literally unmet? | DONE — R6-B intent reinterpreted (unify = delivery, not runtime form); explicit amendment on feature A Decisions so far closes the literal reading with rationale. |
+| P2 | `minCliVersion` policy: is the floor still required if staging always lands files? | DONE — floor unchanged; it guarantees registry id resolution, not file presence. Stale-path crash mode documented as the cost of the rejected alternatives. |
+| P2 | Multi-plugin merge under Option 1: confirm dedup keys survive unchanged. | DONE — pi/hermes dedup keys (`hooks.ts:174`, `hooks.ts:274`) cited; both rely on command-string stability which Option 1 preserves. |
+| P3 | Option 3 (`hook exec <rel>`) was rejected but could be a future migration path if registry semantics ever become a bottleneck. | OPEN → none — noted as a deferred alternative in the options table; no follow-up task warranted until a concrete need surfaces. |
+| P3 | The `.js` twin gap (commit `9ca2d13`) is not closed by this task. | OPEN → 0096 (proposed) — new task proposed in follow-ups; this task's scope is hook-path design only. |
+| P4 | Reviewer should sanity-check that no skill doc or emitter was silently edited (AC6: no code required). | DONE — working tree clean post-`9ca2d13`; this task writes only to `## Solution` / `## Testing` / `## Review` and to feature A Decisions so far. |
 
-<!-- Risks, open concerns, and follow-up review notes. -->
-
+**Outcome:** design artifact complete; R6-B closed at intent level; one new follow-up (proposed 0096) identified.
 ### References
 - Feature map: `docs/features/A_portable-plugin-scripts-via-install-time-staging.md` (R6-B)
 - Canonical hooks: `plugins/cc/hooks/hooks.json` (`hook run`, minCliVersion)
@@ -132,3 +220,6 @@ superskill hook run cc anti-hallucination
 - Prerequisites: path inventory research; entrypoint contract grilling
 - Related: staging, path helper (non-hook standard path)
 ### History
+- 2026-07-17T22:26:29.046Z todo → wip (system)
+- 2026-07-17T22:26:56.904Z wip → testing (system)
+- 2026-07-17T22:28:31.405Z testing → done (system)
