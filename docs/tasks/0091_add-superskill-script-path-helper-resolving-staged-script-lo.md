@@ -12,7 +12,7 @@ priority: P2
 tags: []
 dependencies: ["0090"]
 created_at: "2026-07-17T06:13:58.016Z"
-updated_at: "2026-07-17T07:52:11.397Z"
+updated_at: "2026-07-17T17:25:34.749Z"
 ---
 
 ## 0091. Add superskill script path helper resolving staged script locations
@@ -132,21 +132,61 @@ updated_at: "2026-07-17T07:52:11.397Z"
 ### Solution
 | File | Lines | What / Why |
 |---|---|---|
-| `apps/cli/src/commands/script-path.ts` | 1-143 | New module: pure `resolveScriptPath()` + `registerScriptPath()`. Resolution searches project `.agents/scripts/<p>/<rel>` then global `~/.agents/scripts/<p>/<rel>`, returns `ResolvedScriptPath` (path + source) or null. Fail-closed: null → exit 2; traversal → UsageError exit 1. `registerScriptPath` finds or creates the `script` group and adds `path <plugin> <rel>` with `--json`, `--global`, `--project` flags. |
-| `apps/cli/src/cli.ts` | 8,27 | Import + call `registerScriptPath(program)` after `registerScriptRun` — alongside existing `script run` in the CLI surface |
-| `apps/cli/tests/commands/script-path.test.ts` | 1-149 | 12 tests: project-first, global-fallback, nested paths, null-on-miss, force-global skips project, force-project skips global, `..` rejection, absolute-path rejection, CLI registration (subcommand exists, options present, args present, existing-group compat) |
-| `CHANGELOG.md` | 34 | Unreleased entry for `script path` |
+| `apps/cli/src/commands/script-path.ts` | full module | Pure `resolveScriptPath()` + `runScriptPathAction()` + `registerScriptPath()`. Project then global agents roots; fail-closed exit 2; usage exit 1. |
+| `apps/cli/src/commands/script-path.ts` | `isUnsafeRel` | Segment-wise `..` / empty / absolute / Windows-drive rejection (avoids false positive on `file..ts`) |
+| `apps/cli/src/commands/script-path.ts` | candidate loop | Only regular files win (`statSync().isFile()`) — directories are misses |
+| `apps/cli/src/cli.ts` | 7, 27 | Wire `registerScriptPath(program)` after `registerScriptRun` |
+| `apps/cli/tests/commands/script-path.test.ts` | full suite | 22 tests: resolve order, force flags, traversal, JSON success/error, CLI registration, dir-not-file, substring-`..` allow |
+| `CHANGELOG.md` | 34 | Unreleased `script path` entry |
 
 **Design decisions:**
-- **Fail-closed (exit 2).** Unlike `script run`'s fail-open-on-unknown-id (exit 0 — version skew is not a policy violation), a missing staged path means the caller's next step breaks. Exit 2 signals a hard failure; the agent cannot proceed.
-- **Separate module.** `script-path.ts` is a sibling to `script-run.ts`, not an extension — the resolution logic is pure and testable without Commander or process.exit. The CLI layer is thin formatting.
-- **`existing group` lookup.** `registerScriptPath` finds the `script` group if `registerScriptRun` already created it, or creates it otherwise — no hard coupling on registration order.
-- **Project-first.** Default resolution prefers the project `.agents/scripts/` root; `--global` forces the home root. This matches the Entrypoint Contract v1 (0089) and the install dispatch behavior (0090).
-- **No native roots.** Phase 1 resolves only from the shared agents scripts root (project + global). Native plugin cache roots (Claude/OMP/Grok) are documented as "not probed" — the portable agents root is the standard path after staging.
+- **Fail-closed (exit 2).** Missing staged path breaks the caller's next step — not version-skew fail-open.
+- **Separate module.** Pure resolver testable without Commander; CLI layer formats + exits.
+- **Existing group lookup.** Attaches to `script` group created by `registerScriptRun`, or creates it.
+- **Project-first.** Matches install staging (0090); `--global` / `--project` force one root.
+- **No native roots (phase 1).** Agents scripts root is the portable post-staging path; native cache probe deferred.
+- **Residual verify fix (2026-07-17).** isFile-only hits; segment-safe rel validation.
 ### Testing
+**Verify date:** 2026-07-17 (`--force --focus all --fix all`)
 
-<!-- Filled during verification: commands run, outcomes, coverage claim or N/A. -->
+**Commands run (this pass):**
+- `bun test apps/cli/tests/commands/script-path.test.ts apps/cli/tests/commands/script-run.test.ts` → **39 pass, 0 fail** (22 script-path + 17 script-run regression)
+- `bun run lint` → Biome clean + typecheck exit 0
+- `spur task check 0091 --strict-core --json` → `pass: true`
 
+**Coverage:** `apps/cli/src/commands/script-path.ts` **100% lines / 100% funcs** under the script-path suite. Residual fix: isFile gate + segment-wise `..` rejection (+2 unit tests).
+
+**Per-Requirement Traceability**
+
+| Req | Status | Evidence |
+|-----|--------|----------|
+| R1 | MET | `cli.ts:7,27` registers `registerScriptPath`; `script-path.ts:172-189` adds `path` under `script` group; registration tests |
+| R2 | MET | Commander `path <plugin> <rel>`; relative path universal form (no id registry); arg registration test |
+| R3 | MET | `resolveScriptPath` project then global; native not probed (Design §5 deferred); monorepo `plugins/` never searched |
+| R4 | MET | success non-json: `echo(result.path)` single absolute path (`runScriptPathAction`); test exits 0 + path line |
+| R5 | MET | success JSON `{plugin,rel,path,source}`; failure JSON `{error,...}` on stdout + stderr message (R5 allows either channel) |
+| R6 | MET | exit 0 found file / 2 not found / 1 usage; isFile gate (dirs do not count); action tests for 0/1/2 |
+| R7 | MET | project-first; `--global` / `--project` force; unit tests forceGlobal/forceProject |
+| R8 | MET | `assertSafePathSegment(plugin)`; segment-wise `..` + absolute/drive rejection (`isUnsafeRel`) |
+| R9 | MET | 22 unit tests: project/global/miss/traversal/json/force/dir-not-file/substring-`..`/CLI |
+| R10 | MET | CHANGELOG.md:34; Commander description on command |
+| R11 | MET | no spawn/exec of resolved path; script-run suite still 17/17 green |
+
+**Acceptance Criteria Verification**
+
+| AC | Status | Evidence Type | Evidence |
+|----|--------|---------------|----------|
+| AC1 — Resolve from agents root | MET | test | global-only fixture → absolute path under `~/.agents/scripts/cc/...` |
+| AC2 — Project wins over global | MET | test | both present → `source: 'project'`; forceGlobal overrides |
+| AC3 — Not found fails closed | MET | test | exit 2 + stderr message naming plugin/rel/searched |
+| AC4 — Path traversal rejected | MET | test | `../escape` → UsageError / exit 1 |
+| AC5 — JSON success | MET | test | `--json` parses `{plugin, rel, path, source}` |
+| AC6 — Does not run the script | MET | static-ref | `resolveScriptPath` / `runScriptPathAction` only `existsSync`/`statSync`/`echo` — no spawn |
+| AC7 — Gates | MET | command | lint exit 0; 39 pass (path + run) |
+
+**Design conformance:** all claims DONE. Native probe deferred as Design §5 stretch (documented). Residual SECUA fix: R6 isFile + segment-safe `..` check.
+
+**SECUA (focus=all):** no blocker/major after fix. `--fix all` applied: isFile gate, segment-wise traversal reject, tests for both.
 ### Review
 **Verdict:** PASS — all 11 requirements and 7 acceptance criteria satisfied.
 

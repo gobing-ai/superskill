@@ -37,7 +37,7 @@ This ensures every target receives a uniform skill-based distribution, regardles
 
 ## Plugin-level scripts
 
-Executable logic a skill invokes at the user's install site lives in `plugins/<plugin>/scripts/<skill>/` (shared across the plugin's skills, copied on install, deduped).
+Executable logic a skill invokes at the user's install site lives in `plugins/<plugin>/scripts/<skill>/` (shared across the plugin's skills, staged to `~/.agents/scripts/<plugin>/` on install for rulesync/hermes targets, or delivered natively in the full plugin tree for Claude/OMP/Grok). See [Plugin script organization](how_to_organize_scripts_for_plugin_development.md) for the dual contract.
 
 | Surface | Path | Purpose |
 |---------|------|---------|
