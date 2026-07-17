@@ -29,7 +29,14 @@ beforeEach(() => {
 
 afterEach(() => {
     process.chdir(originalCwd);
-    process.env = { ...originalEnv };
+    // Restore by MUTATION, never `process.env = {...}` — reassignment replaces the global
+    // binding while `Bun.env` keeps pointing at the ORIGINAL object, splitting the alias for
+    // every test file that runs after this one (order-dependent pollution, bug class from
+    // the cerebrum: passes in isolation, fails in the full suite).
+    for (const key of Object.keys(process.env)) {
+        if (!(key in originalEnv)) delete process.env[key];
+    }
+    Object.assign(process.env, originalEnv);
     if (tempHome) rmSync(tempHome, { recursive: true, force: true });
     if (tempWorkspace) rmSync(tempWorkspace, { recursive: true, force: true });
     tempHome = undefined;
