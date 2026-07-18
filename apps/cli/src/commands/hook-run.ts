@@ -3,7 +3,7 @@ import { appendFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileS
 import { join } from 'node:path';
 import { echo, echoError } from '@gobing-ai/ts-utils';
 import type { Command } from 'commander';
-import { runStopGuard } from '../../../../plugins/cc/scripts/anti-hallucination/ah_guard';
+import { runStopGuard, type StopProfile } from '../../../../plugins/cc/scripts/anti-hallucination/ah_guard';
 import { cliVersion } from '../version';
 
 /**
@@ -18,10 +18,14 @@ import { cliVersion } from '../version';
  * here turns version skew into blocked Stops and agent loops. Known guards keep their own exit
  * codes regardless.
  *
- * Runners signal via exit codes (cross-agent): allow → exit 0 (PreToolUse with empty stdout, Stop
- * with its canonical JSON); deny → exit 2 + reason on stderr (the universal block signal — Claude
- * Code treats exit 1 as a non-blocking error, so 1 never blocks). Agents that cannot parse a
- * runner's JSON shape fail open (treat as allow), which is the intended cross-agent default.
+ * Runners signal: allow → exit 0 (PreToolUse with empty stdout, Stop with its canonical JSON). A
+ * deny takes the channel each host renders cleanly: Stop → `decision:"block"` JSON at exit 0 (clean
+ * feedback; the cc/anti-hallucination hook is Claude-Code-only); PreToolUse → `permissionDecision:
+ * "deny"` JSON at exit 0 when Claude Code is the host (`CLAUDE_PROJECT_DIR` set), else exit 2 + stderr
+ * for cross-agent hosts (Codex/omp) that don't parse that JSON. Claude Code treats exit 1 as a
+ * non-blocking error, so 1 never blocks; and it honors stdout JSON only at exit 0, so a deny that
+ * wants its JSON read must NOT use exit 2. Agents that cannot parse a runner's JSON shape fail open
+ * (treat as allow), which is the intended cross-agent default.
  */
 
 interface HookRunResult {
@@ -30,16 +34,17 @@ interface HookRunResult {
     /** Optional reason written to stderr (used by deny via exit 2; ignored on allow). */
     stderr?: string;
     /**
-     * Process exit code. Cross-agent convention: allow → 0 (PreToolUse with empty stdout — both
-     * Claude Code and Codex treat empty-output exit-0 as "continue normally"; Stop with canonical
-     * JSON); deny → 2 with the reason on stderr (the universal block signal; Claude Code treats
-     * exit 1 as a non-blocking error, so 1 never blocks).
+     * Process exit code. Allow → 0 (PreToolUse with empty stdout — both Claude Code and Codex treat
+     * empty-output exit-0 as "continue normally"; Stop with canonical JSON). Deny → 0 with the
+     * decision JSON on stdout when Claude Code is the host (it honors stdout JSON only at exit 0), or
+     * → 2 with the reason on stderr for cross-agent hosts (Codex/omp) that key off the exit code.
+     * Claude Code treats exit 1 as a non-blocking error, so 1 never blocks.
      */
     exitCode: number;
 }
 
 interface HookRunner {
-    run(env: NodeJS.ProcessEnv, stdinText: string): HookRunResult;
+    run(env: NodeJS.ProcessEnv, stdinText: string, profile?: StopProfile): HookRunResult;
 }
 
 // ── sp/task-write-guard ─────────────────────────────────────────────────────
@@ -52,14 +57,30 @@ interface ToolPayload {
 type TaskOwnership = 'owned' | 'unowned' | 'unknown';
 type ResolveTaskOwnership = (filePath: string, cwd: string) => TaskOwnership;
 /**
- * Build a PreToolUse decision. Cross-agent signal: allow → empty stdout + exit 0 (both Claude Code
- * and Codex treat empty-output exit-0 as "continue normally"); deny → exit 2 + reason on stderr
- * (exit 2 is the universal block signal, avoiding the JSON field divergence where Codex rejects
- * `permissionDecision: "allow"` and uses `permissionDecisionReason` instead of `systemMessage`).
+ * Build a PreToolUse decision. Allow → empty stdout + exit 0 (both Claude Code and Codex treat
+ * empty-output exit-0 as "continue normally"; Codex rejects `permissionDecision:"allow"` JSON, so
+ * allow emits nothing). Deny takes the channel each host renders cleanly: when Claude Code is the
+ * host (`CLAUDE_PROJECT_DIR` set) emit `permissionDecision:"deny"` JSON at exit 0 (a clean deny,
+ * not a "blocking error"); otherwise fall back to exit 2 + stderr — the universal block signal that
+ * Codex/omp honor without parsing JSON. The host check keeps Codex off the JSON path that 418894e
+ * broke (`unsupported permissionDecision`).
  */
-function preToolUseDecision(decision: 'allow' | 'deny', reason?: string): HookRunResult {
+function preToolUseDecision(decision: 'allow' | 'deny', reason?: string, env?: NodeJS.ProcessEnv): HookRunResult {
     if (decision === 'allow') return { output: '', exitCode: 0 };
-    return { output: '', exitCode: 2, stderr: reason ?? 'blocked by PreToolUse hook' };
+    const blockReason = reason ?? 'blocked by PreToolUse hook';
+    if (env?.CLAUDE_PROJECT_DIR) {
+        return {
+            output: JSON.stringify({
+                hookSpecificOutput: {
+                    hookEventName: 'PreToolUse',
+                    permissionDecision: 'deny',
+                    permissionDecisionReason: blockReason,
+                },
+            }),
+            exitCode: 0,
+        };
+    }
+    return { output: '', exitCode: 2, stderr: blockReason };
 }
 
 /**
@@ -152,13 +173,16 @@ export function runSpTaskWriteGuard(
             `${filePath} is a task file owned by the spur corpus. Edit it through the spur CLI ` +
                 '(e.g. `spur task update <wbs> --section <name> --from-file <file>`), not a raw ' +
                 'Write/Edit. Set SPUR_WRITE_GUARD=off to bypass.',
+            env,
         );
     }
     return preToolUseDecision('allow');
 }
 
 const spTaskWriteGuard: HookRunner = {
-    run: runSpTaskWriteGuard,
+    // `profile` is irrelevant to this PreToolUse guard. Ignore it so the dispatcher's profile arg
+    // is never mistaken for runSpTaskWriteGuard's test-injectable resolver (its 3rd parameter).
+    run: (env, stdinText) => runSpTaskWriteGuard(env, stdinText),
 };
 
 // ── cc/anti-hallucination ───────────────────────────────────────────────────
@@ -167,16 +191,21 @@ const spTaskWriteGuard: HookRunner = {
  * anti-hallucination protocol (source citations / confidence level / verification-tool evidence).
  * A thin adapter over {@link runStopGuard}: the Stop branch table (payload resolution → allow on
  * loop guard / unreadable input → verify → allow / block) lives there, single-sourced; this runner
- * only maps its {@link StopGuardResult} to a {@link HookRunResult} (`output` to stdout, `stderr`
- * to the exit-2 reason channel, `exitCode` as the cross-agent allow/block signal). Payload channels
+ * only maps its {@link StopGuardResult} to a {@link HookRunResult} (`output` to stdout at exit 0 —
+ * the `decision` field in that JSON is the allow/block signal; no stderr, no exit 2: this hook is
+ * Claude-Code-only, and Claude Code discards stdout JSON at exit 2). Payload channels
  * (Claude Code `transcript_path` + `stop_hook_active` loop guard; omp `agent_end` `messages`; the
  * `ARGUMENTS` legacy/test channel) are resolved inside `runStopGuard` via `resolveStopContext`.
  * Fails open (allow stop) on empty/invalid payloads or missing content.
  */
 const ccAntiHallucination: HookRunner = {
-    run(env, stdinText) {
-        const result = runStopGuard(env.ARGUMENTS, stdinText);
-        return { output: result.output, exitCode: result.exitCode, stderr: result.stderr };
+    run(env, stdinText, profile) {
+        const result = runStopGuard(env.ARGUMENTS, stdinText, profile);
+        // The guard blocks via the profiled `decision` JSON in `output` at exit 0 — the clean
+        // feedback channel for every profiled host (block: Claude/Codex/Hermes; deny:
+        // Gemini/Antigravity). No stderr: at exit 2 hosts discard that JSON and surface stderr as a
+        // "blocking error" instead of feeding the reason back as feedback.
+        return { output: result.output, exitCode: result.exitCode };
     },
 };
 
@@ -382,7 +411,13 @@ const HOOK_RUNNERS: Record<string, HookRunner> = {
 };
 
 /** Resolve and run a hook runner, writing its output to stdout and returning the exit code. */
-export function hookRun(plugin: string, hookId: string, env: NodeJS.ProcessEnv, stdinText: string): number {
+export function hookRun(
+    plugin: string,
+    hookId: string,
+    env: NodeJS.ProcessEnv,
+    stdinText: string,
+    profile?: StopProfile,
+): number {
     const runner = HOOK_RUNNERS[`${plugin}/${hookId}`];
     if (!runner) {
         // Fail open: an unknown hook id signals plugin/CLI version skew (the installed plugin
@@ -395,7 +430,7 @@ export function hookRun(plugin: string, hookId: string, env: NodeJS.ProcessEnv, 
         );
         return 0;
     }
-    const result = runner.run(env, stdinText);
+    const result = runner.run(env, stdinText, profile);
     // WHY conditional: echo('') writes '\n' (writeLine always appends a newline). A bare newline
     // on stdout makes Codex try to parse it as JSON and fail open noisily. Only emit when non-empty.
     if (result.output) echo(result.output);
@@ -407,7 +442,12 @@ export function hookRun(plugin: string, hookId: string, env: NodeJS.ProcessEnv, 
 export function registerHookRun(cmd: Command, readInput?: () => string): void {
     cmd.command('run <plugin> <hook-id>')
         .description('Run a registered plugin hook runner (the runtime command installed hook configs call)')
-        .action((plugin: string, hookId: string) => {
+        .option(
+            '--profile <block|deny>',
+            'prevent-stop output profile (block: Claude/Codex/Hermes; deny: Gemini/Antigravity)',
+            'block',
+        )
+        .action((plugin: string, hookId: string, options: { profile: string }) => {
             let stdinText = '';
             if (readInput) {
                 stdinText = readInput();
@@ -418,7 +458,8 @@ export function registerHookRun(cmd: Command, readInput?: () => string): void {
                     stdinText = '';
                 }
             }
-            const code = hookRun(plugin, hookId, process.env, stdinText);
+            const profile: StopProfile = options.profile === 'deny' ? 'deny' : 'block';
+            const code = hookRun(plugin, hookId, process.env, stdinText, profile);
             process.exit(code);
         });
 }

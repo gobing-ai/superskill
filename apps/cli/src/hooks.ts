@@ -1,5 +1,6 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import type { StopProfile } from '../../../plugins/cc/scripts/anti-hallucination/ah_guard';
 
 /**
  * Canonical hook event names (camelCase) that map to Pi lifecycle events.
@@ -131,6 +132,96 @@ export function readCanonicalHooks(rulesyncDir: string): CanonicalHooksConfig | 
     }
 }
 
+// ── Per-target hook gating (which targets a hook enforces on) ─────────────────
+/**
+ * Per-target emit policy for hooks that cannot run on every target. Keyed by `<plugin>/<hookId>`,
+ * parsed from the canonical command `superskill hook run <plugin> <hookId> …`. A hook listed here
+ * emits ONLY to the named targets (each with its prevent-stop {@link StopProfile}); a target not
+ * listed for a policyed hook is dropped. A hook with NO policy entry emits everywhere (the
+ * backward-compatible default). Kept here — not in `hooks.json` — so native consumers (Claude/Grok)
+ * that read `hooks/hooks.json` verbatim never see an unknown field.
+ */
+export const HOOK_TARGET_POLICY: Record<string, Record<string, { profile: StopProfile }>> = {
+    // cc/anti-hallucination (Stop): only targets that can prevent stop. OpenCode/omp/pi/Grok
+    // cannot (architectural), so they are absent and emit nothing. Antigravity/Gemini use
+    // `decision:"deny"` (AfterAgent); Claude/Codex/Hermes use `decision:"block"`.
+    'cc/anti-hallucination': {
+        claude: { profile: 'block' },
+        codex: { profile: 'block' },
+        'antigravity-cli': { profile: 'deny' },
+        'antigravity-ide': { profile: 'deny' },
+        hermes: { profile: 'block' },
+    },
+};
+
+const HOOK_RUN_PREFIX = ['superskill', 'hook', 'run'] as const;
+
+/** Derive `<plugin>/<hookId>` from a `superskill hook run <plugin> <hookId> …` command, else ''. */
+function hookRunKey(command: unknown): string {
+    if (typeof command !== 'string') return '';
+    const tokens = command.trim().split(/\s+/);
+    if (
+        tokens.length < 5 ||
+        tokens[0] !== HOOK_RUN_PREFIX[0] ||
+        tokens[1] !== HOOK_RUN_PREFIX[1] ||
+        tokens[2] !== HOOK_RUN_PREFIX[2]
+    )
+        return '';
+    return `${tokens[3]}/${tokens[4]}`;
+}
+
+/**
+ * Filter + transform canonical hooks for `target` per {@link HOOK_TARGET_POLICY}. Drops hooks whose
+ * policy excludes the target; appends `--profile <p>` when the target's profile isn't the default
+ * `block`. Hooks with no policy entry pass through unchanged. Returns a NEW config; both the
+ * matcher-wrapped (`{ matcher, hooks: [...] }`) and flat entry shapes are preserved.
+ */
+export function applyHookTargetPolicy(config: CanonicalHooksConfig, target: string): CanonicalHooksConfig {
+    if (!config.hooks) return config;
+    const out: Record<string, CanonicalHookDefinition[]> = {};
+    for (const [event, defs] of Object.entries(config.hooks)) {
+        const keptDefs: CanonicalHookDefinition[] = [];
+        for (const def of defs) {
+            const wrapped = def.hooks !== undefined && def.hooks.length > 0;
+            const entries: CanonicalHookEntry[] = def.hooks && def.hooks.length > 0 ? def.hooks : [def];
+            const keptEntries: CanonicalHookEntry[] = [];
+            for (const entry of entries) {
+                const policy = HOOK_TARGET_POLICY[hookRunKey(entry.command)];
+                if (!policy) {
+                    keptEntries.push(entry); // no policy → emit everywhere
+                    continue;
+                }
+                const t = policy[target];
+                if (!t) continue; // target not allowed → drop
+                if (t.profile !== 'block' && typeof entry.command === 'string') {
+                    keptEntries.push({ ...entry, command: `${entry.command} --profile ${t.profile}` });
+                } else {
+                    keptEntries.push(entry);
+                }
+            }
+            if (keptEntries.length > 0) {
+                keptDefs.push(
+                    wrapped
+                        ? ({ ...def, hooks: keptEntries } as CanonicalHookDefinition)
+                        : (keptEntries[0] as CanonicalHookDefinition),
+                );
+            }
+        }
+        if (keptDefs.length > 0) out[event] = keptDefs;
+    }
+    return { ...config, hooks: out };
+}
+
+/** Read `<rulesyncDir>/hooks.json`, apply {@link applyHookTargetPolicy} for `target`, write it back. */
+export function writeHooksForTarget(rulesyncDir: string, target: string): void {
+    const config = readCanonicalHooks(rulesyncDir);
+    if (!config?.hooks) return;
+    writeFileSync(
+        join(rulesyncDir, 'hooks.json'),
+        `${JSON.stringify(applyHookTargetPolicy(config, target), null, 4)}\n`,
+    );
+}
+
 /** Options controlling how {@link emitPiStyleHooks} and {@link emitHermesHooks} write hooks. */
 export interface EmitHooksOptions {
     dryRun: boolean;
@@ -219,7 +310,7 @@ export function emitPiStyleHooks(
         };
     }
 
-    const piHooks = convertCanonicalToPiHooks(config);
+    const piHooks = convertCanonicalToPiHooks(applyHookTargetPolicy(config, targetName));
     const hookCount = Object.values(piHooks).reduce((sum, cmds) => sum + cmds.length, 0);
 
     if (hookCount === 0) {
@@ -315,7 +406,8 @@ export function emitHermesHooks(rulesyncDir: string, outputRoot: string, options
         };
     }
 
-    const hookCount = Object.values(config.hooks).reduce((sum, defs) => sum + defs.length, 0);
+    const applicable = applyHookTargetPolicy(config, 'hermes');
+    const hookCount = Object.values(applicable.hooks ?? {}).reduce((sum, defs) => sum + defs.length, 0);
     if (hookCount === 0) {
         return {
             target: 'hermes',
@@ -330,7 +422,7 @@ export function emitHermesHooks(rulesyncDir: string, outputRoot: string, options
 
     if (!options.dryRun) {
         mkdirSync(hooksDir, { recursive: true });
-        const merged = mergeCanonicalHooks(hooksPath, config);
+        const merged = mergeCanonicalHooks(hooksPath, applicable);
         writeFileSync(hooksPath, `${JSON.stringify(merged, null, 2)}\n`);
     }
 

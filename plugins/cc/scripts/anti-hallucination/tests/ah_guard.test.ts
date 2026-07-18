@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
 import {
+    buildStopOutput,
     extractLastAssistantFromTranscript,
     extractLastAssistantMessage,
     hasConfidenceLevel,
@@ -320,6 +321,41 @@ This uses the requests library, which supports automatic connection pooling.
     });
 });
 
+describe('buildStopOutput — prevent-stop profiles', () => {
+    const fail = { ok: false, reason: 'Add verification for: x' };
+
+    it('block profile: block → decision:block + hookEventName:Stop', () => {
+        const parsed = JSON.parse(buildStopOutput(fail, 'block'));
+        expect(parsed.decision).toBe('block');
+        expect(parsed.reason).toBe('Add verification for: x');
+        expect(parsed.hookSpecificOutput.hookEventName).toBe('Stop');
+    });
+
+    it('block profile: allow → bare Stop envelope, no decision', () => {
+        const parsed = JSON.parse(buildStopOutput({ ok: true, reason: 'Task is complete' }, 'block'));
+        expect(parsed.decision).toBeUndefined();
+        expect(parsed.hookSpecificOutput.hookEventName).toBe('Stop');
+    });
+
+    it('deny profile: block → decision:deny + hookEventName:AfterAgent (Gemini/Antigravity)', () => {
+        const parsed = JSON.parse(buildStopOutput(fail, 'deny'));
+        expect(parsed.decision).toBe('deny');
+        expect(parsed.reason).toBe('Add verification for: x');
+        expect(parsed.hookSpecificOutput.hookEventName).toBe('AfterAgent');
+    });
+
+    it('deny profile: allow → bare AfterAgent envelope, no decision', () => {
+        const parsed = JSON.parse(buildStopOutput({ ok: true, reason: 'ok' }, 'deny'));
+        expect(parsed.decision).toBeUndefined();
+        expect(parsed.hookSpecificOutput.hookEventName).toBe('AfterAgent');
+    });
+
+    it('defaults to the block profile', () => {
+        expect(JSON.parse(buildStopOutput(fail)).decision).toBe('block');
+        expect(JSON.parse(buildStopOutput(fail)).hookSpecificOutput.hookEventName).toBe('Stop');
+    });
+});
+
 describe('main', () => {
     let previousSilentState = false;
 
@@ -379,9 +415,11 @@ describe('main', () => {
         }
     });
 
-    it('returns 2 for non-compliant externally sourced claims (universal block signal)', () => {
-        // WHY 2: Claude Code treats exit 1 as a non-blocking error — only exit 2 (stderr fed to
-        // the model) or exit 0 + decision JSON can block a Stop. Exit 1 could never block.
+    it('returns 0 with a decision:"block" JSON for non-compliant externally sourced claims', () => {
+        // WHY 0: Claude Code honors stdout JSON only at exit 0 — the block rides on the
+        // `decision:"block"` + `reason` JSON that main() writes, not on exit 2 (which would
+        // discard that JSON and surface stderr as a "blocking error"). Exit 1 is a non-blocking
+        // error and could never block a Stop.
         const originalArguments = Bun.env.ARGUMENTS;
         Bun.env.ARGUMENTS = JSON.stringify({
             messages: [
@@ -394,7 +432,7 @@ describe('main', () => {
         });
 
         try {
-            expect(main()).toBe(2);
+            expect(main()).toBe(0);
         } finally {
             if (originalArguments === undefined) {
                 Bun.env.ARGUMENTS = undefined;

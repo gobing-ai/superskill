@@ -40,7 +40,13 @@ import {
 } from '@gobing-ai/superskill-core';
 import { echo } from '@gobing-ai/ts-utils';
 import type { Command } from 'commander';
-import { type EmitHooksResult, emitHermesHooks, emitPiStyleHooks, readCanonicalHooks } from '../hooks';
+import {
+    type EmitHooksResult,
+    emitHermesHooks,
+    emitPiStyleHooks,
+    readCanonicalHooks,
+    writeHooksForTarget,
+} from '../hooks';
 import { generateOmpHookModules, type OmpHookResult } from '../omp-hooks';
 import { cliVersion } from '../version';
 
@@ -287,6 +293,10 @@ export async function executeInstall(
         if (mapResult.hooks && !hooksBlockedByCliVersion) {
             for (const target of rulesyncTargets) {
                 if (!TARGET_TO_RULESYNC_HOOKS[target]) continue; // pi handled via surrogate shim below
+                // Per-target gate: drop hooks this target can't enforce (e.g. the cc/anti-hallucination
+                // Stop hook on opencode) and append `--profile <p>` for non-default profiles
+                // (antigravity-cli/ide → deny). Hooks with no target policy pass through unchanged.
+                writeHooksForTarget(rulesyncSourceRoot(targetInputRoots.get(target), outputDir), target);
                 const hookResult = await runRulesyncImpl(
                     [target],
                     ['hooks'],

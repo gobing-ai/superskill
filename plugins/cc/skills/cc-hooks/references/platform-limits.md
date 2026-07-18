@@ -23,7 +23,7 @@ What's NOT portable and why. Workarounds for limited platforms.
 | `if` conditions | ❌ | ❌ | ❌ | ✅ | ❌ |
 | Tool input modification (`updatedInput`) | ✅ | ❌ | ❌ | ✅ | ❌ |
 | `additionalContext` injection | ✅ | ❌ | ❌ | ✅ | ❌ |
-| Stop continuation (block stopping) | ✅ | ❌ | ❌ | ✅ | ❌ |
+| Stop continuation (block stopping) | ✅ | ✅ | ❌ | ✅ | ✅ |
 | SubagentStop | ✅ | ❌ | ❌ | ❌ | ❌ |
 | Compact hooks | ✅ | ❌ | ❌ | ✅ | ❌ |
 | Notification hooks | ✅ | ❌ | ❌ | ❌ | ❌ |
@@ -54,7 +54,7 @@ What's NOT portable and why. Workarounds for limited platforms.
 
 **Limitations:**
 - Only 3 events: `session_start`, `pre_tool_use`, `post_tool_use`
-- No Stop/SessionEnd hooks
+- Stop hook supported (`decision:"block"` at exit 0, same shape as Claude Code); no SessionEnd hook
 - No prompt hooks (command only)
 - Exact string matching only (no regex matchers)
 - Focused on Bash tools initially; expanding to other tools
@@ -168,9 +168,11 @@ pi install npm:@hsingjui/pi-hooks
 |------|-------------|----------------|-----|--------|
 | Prompt-style validation | Native `type: "prompt"` | Command hook + LLM CLI | Command hook + LLM CLI | Command hook + stdin/stdout |
 | Regex matchers | Native | Pipe-separated exact names | Native regex | Exact match only |
-| Stop continuation | Native | N/A | Native (pi-hooks) | N/A |
+| Stop continuation | Native (`decision:"block"`) | Codex `decision:"block"` · OpenCode N/A | `@hsingjui/pi-hooks` only ¹ | `decision:"deny"` (AfterAgent) |
 | Tool input modification | Native `updatedInput` | N/A | Native (pi-hooks) | N/A |
 | Context injection | Native `additionalContext` | N/A | Native (pi-hooks) | N/A |
+
+> ¹ **Stop continuation on Pi:** `@hsingjui/pi-hooks` is a separate block-capable adapter. superskill's pi emitter generates `@vahor/pi-hooks` (fire-and-forget — no block), so superskill does **not** wire prevent-stop hooks to pi. The `cc/anti-hallucination` Stop hook is gated to Claude, Codex, Antigravity (CLI/IDE), and Hermes only — OpenCode/omp/pi/Grok cannot prevent stop, so it is not emitted there (no false-security no-op).
 
 ## Recommendations
 

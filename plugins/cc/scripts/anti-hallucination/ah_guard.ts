@@ -14,13 +14,16 @@
  *                       `stop_hook_active: true` allows immediately to prevent block loops)
  *                     - omp agent_end event: `{type: "agent_end", messages: [...]}`
  *
- * Exit Codes:
- *     0 - Allow stop (protocol followed)
- *     2 - Deny stop (universal cross-agent block signal; reason also on stderr)
+ * Exit Code:
+ *     0 - Always. Claude Code processes stdout JSON only at exit 0; exit 2 would discard the JSON
+ *         below and surface stderr as a "blocking error" (the misrendering this guard must not
+ *         regress to). The `decision` field in the output JSON is the sole block/allow signal.
+ *         This hook is wired only in plugins/cc (Claude-Code-only), so no cross-agent exit-2
+ *         fallback is needed here.
  *
  * Output Format (stdout) — Claude Code canonical Stop-hook JSON:
  *     {"hookSpecificOutput":{"hookEventName":"Stop"}}                          # Allow stop (no feedback)
- *     {"decision":"block","reason":"…","hookSpecificOutput":{"hookEventName":"Stop"}}  # Block stop
+ *     {"decision":"block","reason":"…","hookSpecificOutput":{"hookEventName":"Stop"}}  # Block stop (clean feedback)
  */
 
 import { readFileSync } from 'node:fs';
@@ -96,25 +99,37 @@ interface VerificationResult {
 }
 
 /**
- * Build the Claude Code canonical Stop-hook JSON for a verification result. Claude's Stop schema
- * requires `hookSpecificOutput.hookEventName: "Stop"`. An allow emits only that bare envelope — it
- * carries no `additionalContext`, since a permitted stop has nothing the model needs to act on, and
- * surfacing the allow reason ("Task is complete", "No content to verify") just adds per-turn chat
- * noise. A block rides on the top-level `decision: "block"` + `reason` channel — that feedback is the
- * point of blocking (Stop has no `allowStop`/`feedback` fields — that shape fails Claude's
- * hook-output validation). The exit code stays the allow/deny signal (0 = allow, 2 = deny) for
- * agents that key off it.
+ * Output profiles for the prevent-stop hook across hosts (cross-agent Stop contract).
+ *
+ * - `block` — Claude Code `Stop`, Codex `Stop`, and Hermes `pre_verify`. Emits
+ *   `{"decision":"block","reason":…}` at exit 0. Hermes `pre_verify` explicitly accepts the
+ *   Claude-Code Stop shape (blocking the stop = keep going).
+ * - `deny` — Gemini CLI / Antigravity `AfterAgent`. Emits `{"decision":"deny","reason":…}` at
+ *   exit 0; `decision:"deny"` rejects the response and feeds `reason` back as a new prompt (exit 2
+ *   also forces a retry). Allow omits `decision` so the turn completes.
+ *
+ * OpenCode / omp / pi / Grok cannot prevent stop — install gates them out, so they have no profile.
  */
-export function buildStopOutput(result: VerificationResult): string {
+export type StopProfile = 'block' | 'deny';
+
+/**
+ * Build the host-canonical prevent-stop JSON for a verification result under the given profile.
+ * `block` uses `decision:"block"` + `hookEventName:"Stop"`; `deny` uses `decision:"deny"` +
+ * `hookEventName:"AfterAgent"` (Gemini/Antigravity). An allow omits `decision` (the turn completes)
+ * and carries only the bare `hookSpecificOutput` envelope for the host's event. The exit code stays
+ * 0 — the `decision` field is the block/allow signal (Claude Code honors stdout JSON only at exit 0;
+ * Codex/Gemini/Antigravity/Hermes likewise read the JSON at exit 0).
+ */
+export function buildStopOutput(result: VerificationResult, profile: StopProfile = 'block'): string {
+    const hookEventName = profile === 'deny' ? 'AfterAgent' : 'Stop';
     if (result.ok) {
-        return JSON.stringify({
-            hookSpecificOutput: { hookEventName: 'Stop' },
-        });
+        return JSON.stringify({ hookSpecificOutput: { hookEventName } });
     }
+    const decision = profile === 'deny' ? 'deny' : 'block';
     return JSON.stringify({
-        decision: 'block',
+        decision,
         reason: result.reason,
-        hookSpecificOutput: { hookEventName: 'Stop' },
+        hookSpecificOutput: { hookEventName },
     });
 }
 
@@ -402,38 +417,47 @@ export function verifyAntiHallucinationProtocol(text: string): VerificationResul
 // STOP GUARD — single orchestration owner
 // =============================================================================
 
-/** Result of running the Stop guard end-to-end: canonical Stop JSON + exit code, stderr on block. */
+/** Result of running the Stop guard end-to-end: canonical Stop JSON (decision is the signal). */
 export interface StopGuardResult {
     /** Canonical Claude Code Stop-hook JSON (built by {@link buildStopOutput}). */
     output: string;
-    /** Allow → 0; block → 2 (the universal cross-agent block signal; exit 1 is a non-blocking error). */
-    exitCode: 0 | 2;
-    /** Block reason; present only when the protocol denies the stop. */
-    stderr?: string;
+    /**
+     * Always 0. Claude Code processes stdout JSON only at exit 0; exit 2 would discard `output` and
+     * surface stderr as a "blocking error" instead of clean feedback. The `decision` field in
+     * `output` is the sole block/allow signal.
+     */
+    exitCode: 0;
 }
 
 /**
  * Run the Stop guard end-to-end. The single owner of the Stop branch table: resolve the payload
  * ({@link resolveStopContext}) → allow on loop guard / unreadable input → allow when no content
  * was extracted → verify via {@link verifyAntiHallucinationProtocol} → allow on ok / block on deny
- * (canonical Stop JSON + stderr reason + exit 2). Adapters ({@link main} CLI, `ccAntiHallucination`
- * HookRunner) call this and only translate the result to their I/O shape — they never re-implement
- * the branches. Fails open (allow) on empty/invalid/`stop_hook_active` payloads by construction of
- * `resolveStopContext`.
+ * (canonical Stop JSON `decision:"block"` + `reason`, always at exit 0). Adapters ({@link main} CLI,
+ * `ccAntiHallucination` HookRunner) call this and only translate the result to their I/O shape — they
+ * never re-implement the branches. Fails open (allow) on empty/invalid/`stop_hook_active` payloads by
+ * construction of `resolveStopContext`.
  */
-export function runStopGuard(argumentsEnv: string | undefined, stdinText: string): StopGuardResult {
+export function runStopGuard(
+    argumentsEnv: string | undefined,
+    stdinText: string,
+    profile: StopProfile = 'block',
+): StopGuardResult {
     const resolved = resolveStopContext(argumentsEnv, stdinText);
     if (resolved.allowReason) {
-        return { output: buildStopOutput({ ok: true, reason: resolved.allowReason }), exitCode: 0 };
+        return { output: buildStopOutput({ ok: true, reason: resolved.allowReason }, profile), exitCode: 0 };
     }
     if (resolved.content === undefined) {
-        return { output: buildStopOutput({ ok: true, reason: 'No content to verify' }), exitCode: 0 };
+        return { output: buildStopOutput({ ok: true, reason: 'No content to verify' }, profile), exitCode: 0 };
     }
     const result = verifyAntiHallucinationProtocol(resolved.content);
     if (result.ok) {
-        return { output: buildStopOutput(result), exitCode: 0 };
+        return { output: buildStopOutput(result, profile), exitCode: 0 };
     }
-    return { output: buildStopOutput(result), exitCode: 2, stderr: result.reason };
+    // Block rides on the `decision` + `reason` JSON in `output` at exit 0 — the clean feedback
+    // channel for every profiled host (block/deny). Exit 2 would discard that JSON and surface
+    // stderr as a "blocking error" (the misrendering this guard must not regress to).
+    return { output: buildStopOutput(result, profile), exitCode: 0 };
 }
 
 // =============================================================================
@@ -442,14 +466,13 @@ export function runStopGuard(argumentsEnv: string | undefined, stdinText: string
 
 /**
  * Direct CLI entry: a thin adapter over {@link runStopGuard}. Writes the canonical Stop JSON via
- * `logger.log`, the block reason to `logger.error` (Claude Code feeds exit-2 stderr back to the
- * model; exit 1 is a non-blocking error so it could never block a Stop), and returns the exit code.
- * The branch table lives in `runStopGuard` — this surface only translates I/O.
+ * `logger.log` and returns the exit code (always 0 — the `decision` field in the JSON is the
+ * block/allow signal; this hook is Claude-Code-only). The branch table lives in `runStopGuard` —
+ * this surface only translates I/O.
  */
 export function main(stdinText = ''): number {
     const result = runStopGuard(Bun.env.ARGUMENTS, stdinText);
     logger.log(result.output);
-    if (result.stderr !== undefined) logger.error(result.stderr);
     return result.exitCode;
 }
 

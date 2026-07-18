@@ -10,12 +10,21 @@ import { cliVersion } from '../../src/version';
  * `superskill hook run <plugin> <hook-id>` — the cross-agent hook runtime trigger (task 0151).
  * Tests assert the dispatcher contract (resolve runner, emit the right exit code + output) and
  * each runner's decision + fail-open behavior. Allow → exit 0 (PreToolUse with empty stdout, Stop
- * with canonical JSON); deny → exit 2 + reason on stderr (Claude Code treats exit 1 as a
- * non-blocking error, so 1 never blocks). `hookRun` returns the exit code and writes to
- * stdout/stderr; tests capture both streams to inspect the payload.
+ * with canonical JSON). Deny takes the clean channel per host: Stop → `decision:"block"` JSON at
+ * exit 0 (cc/anti-hallucination is Claude-Code-only); PreToolUse → `permissionDecision:"deny"` JSON
+ * at exit 0 when Claude Code is the host (CLAUDE_PROJECT_DIR set), else exit 2 + stderr for
+ * Codex/omp. Claude Code treats exit 1 as a non-blocking error, so 1 never blocks; it honors stdout
+ * JSON only at exit 0. `hookRun` returns the exit code and writes to stdout/stderr; tests capture
+ * both streams to inspect the payload.
  */
 
-function capture(plugin: string, hookId: string, env: NodeJS.ProcessEnv, stdinText: string) {
+function capture(
+    plugin: string,
+    hookId: string,
+    env: NodeJS.ProcessEnv,
+    stdinText: string,
+    profile?: 'block' | 'deny',
+) {
     const chunks: string[] = [];
     const errChunks: string[] = [];
     const original = process.stdout.write.bind(process.stdout);
@@ -31,7 +40,7 @@ function capture(plugin: string, hookId: string, env: NodeJS.ProcessEnv, stdinTe
         return true;
     };
     try {
-        const code = hookRun(plugin, hookId, env, stdinText);
+        const code = hookRun(plugin, hookId, env, stdinText, profile);
         return { code, out: chunks.join(''), err: errChunks.join('') };
     } finally {
         process.stdout.write = original;
@@ -164,15 +173,26 @@ describe('hook run — sp/task-write-guard', () => {
         expect(result.output).toBe('');
     });
 
-    it('denies Write/Edit when the resolver reports an owned task file', () => {
+    it('denies Write/Edit via permissionDecision:"deny" JSON (exit 0) when Claude Code is the host', () => {
         const result = runSpTaskWriteGuard(
             { CLAUDE_PROJECT_DIR: process.cwd() },
             payload('Write', '/repo/docs/tasks/0001_example.md'),
             () => 'owned',
         );
-        // WHY: deny = exit 2 + reason on stderr (universal block signal). Empty stdout avoids
-        // the Codex-incompatible `permissionDecision` JSON. Both Claude Code and Codex honor
-        // exit 2 as a block.
+        // WHY: Claude Code honors stdout JSON only at exit 0, so a clean deny emits
+        // `permissionDecision:"deny"` + reason at exit 0 (not the exit-2 "blocking error" path).
+        const parsed = JSON.parse(result.output);
+        expect(parsed.hookSpecificOutput.hookEventName).toBe('PreToolUse');
+        expect(parsed.hookSpecificOutput.permissionDecision).toBe('deny');
+        expect(parsed.hookSpecificOutput.permissionDecisionReason).toContain('owned by the spur corpus');
+        expect(result.exitCode).toBe(0);
+        expect(result.stderr).toBeUndefined();
+    });
+
+    it('denies Write/Edit via exit 2 + stderr when a non-Claude-Code host has no CLAUDE_PROJECT_DIR', () => {
+        const result = runSpTaskWriteGuard({}, payload('Write', '/repo/docs/tasks/0001_example.md'), () => 'owned');
+        // WHY: Codex/omp don't set CLAUDE_PROJECT_DIR and reject `permissionDecision` JSON (418894e),
+        // so the cross-agent fallback is exit 2 + stderr — the universal block signal.
         expect(result.exitCode).toBe(2);
         expect(result.output).toBe('');
         expect(result.stderr).toContain('owned by the spur corpus');
@@ -198,7 +218,7 @@ describe('hook run — cc/anti-hallucination (Stop, canonical output contract)',
         expect(code).toBe(0);
     });
 
-    it('blocks the stop via decision:"block" + reason (exit 2, reason on stderr) when the protocol fails', () => {
+    it('blocks the stop via decision:"block" + reason at exit 0 (clean feedback, no error) when the protocol fails', () => {
         const args = JSON.stringify({
             messages: [
                 {
@@ -211,14 +231,35 @@ describe('hook run — cc/anti-hallucination (Stop, canonical output contract)',
         const { code, out, err } = capture('cc', 'anti-hallucination', { ARGUMENTS: args }, '');
         const parsed = JSON.parse(out);
         // WHY: a Stop hook blocks via the top-level `decision: "block"` + `reason` channel, not via
-        // a non-schema `allowStop:false`. `hookEventName` is still required on the block payload.
-        // Exit MUST be 2 with the reason on stderr: Claude Code treats exit 1 as a non-blocking
-        // error (stdout JSON is only honored at exit 0), so a 1 here would never block anything.
+        // a non-schema `allowStop:false`. Claude Code honors stdout JSON ONLY at exit 0, so the block
+        // emits its JSON there; exit 2 would discard that JSON and surface stderr as a "blocking
+        // error" (the misrendering this test pins as fixed). stderr stays empty.
         expect(parsed.decision).toBe('block');
         expect(parsed.reason).toContain('Add verification');
         expect(parsed.hookSpecificOutput.hookEventName).toBe('Stop');
-        expect(code).toBe(2);
-        expect(err).toContain('Add verification');
+        expect(code).toBe(0);
+        expect(err).toBe('');
+    });
+
+    it('emits decision:"deny" (AfterAgent) under --profile deny for Gemini/Antigravity hosts', () => {
+        const args = JSON.stringify({
+            messages: [
+                {
+                    role: 'assistant',
+                    content:
+                        'The library version 2.3.1 API uses the new documentation method for the framework function. I think this should work probably.',
+                },
+            ],
+        });
+        const { code, out, err } = capture('cc', 'anti-hallucination', { ARGUMENTS: args }, '', 'deny');
+        const parsed = JSON.parse(out);
+        // WHY: Gemini/Antigravity AfterAgent rejects via decision:"deny" (not "block"); reason feeds
+        // back as a new prompt. Allow omits decision. Same engine, profile-selected output shape.
+        expect(parsed.decision).toBe('deny');
+        expect(parsed.reason).toContain('Add verification');
+        expect(parsed.hookSpecificOutput.hookEventName).toBe('AfterAgent');
+        expect(code).toBe(0);
+        expect(err).toBe('');
     });
 
     it('fails open with a valid allow shape on empty/invalid ARGUMENTS', () => {
@@ -248,9 +289,12 @@ describe('hook run — cc/anti-hallucination (Stop, canonical output contract)',
                 },
             ],
         });
-        const { code, err } = capture('cc', 'anti-hallucination', {}, event);
-        expect(code).toBe(2);
-        expect(err).toContain('Add verification');
+        const { code, out, err } = capture('cc', 'anti-hallucination', {}, event);
+        const parsed = JSON.parse(out);
+        expect(parsed.decision).toBe('block');
+        expect(parsed.reason).toContain('Add verification');
+        expect(code).toBe(0);
+        expect(err).toBe('');
     });
 
     it('verifies the Claude Stop payload by reading the transcript JSONL from stdin transcript_path', () => {
@@ -279,9 +323,12 @@ describe('hook run — cc/anti-hallucination (Stop, canonical output contract)',
         writeFileSync(transcriptPath, `${lines.join('\n')}\n`);
 
         const payload = JSON.stringify({ transcript_path: transcriptPath, stop_hook_active: false });
-        const { code, err } = capture('cc', 'anti-hallucination', {}, payload);
-        expect(code).toBe(2);
-        expect(err).toContain('Add verification');
+        const { code, out, err } = capture('cc', 'anti-hallucination', {}, payload);
+        const parsed = JSON.parse(out);
+        expect(parsed.decision).toBe('block');
+        expect(parsed.reason).toContain('Add verification');
+        expect(code).toBe(0);
+        expect(err).toBe('');
     });
 
     it('allows immediately when stop_hook_active is true (block-loop guard)', () => {

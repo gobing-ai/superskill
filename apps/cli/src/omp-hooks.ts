@@ -21,6 +21,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import {
+    applyHookTargetPolicy,
     BLOCKABLE_OMP_EVENTS,
     CANONICAL_HOOK_EVENTS,
     CANONICAL_PRE_TOOL_EVENTS,
@@ -153,7 +154,7 @@ ${blockLogic}  });
  * @param installPath    - OMP plugin cache directory where `hooks/pre/` + `hooks/post/` are written
  * @returns {@link OmpHookResult} with count, file paths, and message.
  */
-export function generateOmpHookModules(hooksSourceDir: string, installPath: string): OmpHookResult {
+export function generateOmpHookModules(hooksSourceDir: string, installPath: string, target = 'omp'): OmpHookResult {
     const hooksJsonPath = join(hooksSourceDir, 'hooks.json');
     if (!existsSync(hooksJsonPath)) {
         return { count: 0, files: [], message: 'omp hooks: no hooks.json in plugin' };
@@ -166,7 +167,7 @@ export function generateOmpHookModules(hooksSourceDir: string, installPath: stri
         return { count: 0, files: [], message: 'omp hooks: failed to parse hooks.json' };
     }
 
-    const parsed = parseCanonicalHooks(config);
+    const parsed = parseCanonicalHooks(applyHookTargetPolicy(config, target));
     if (parsed.length === 0) {
         return { count: 0, files: [], message: 'omp hooks: no mappable hooks' };
     }
