@@ -7,6 +7,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
+## [0.3.5] - 2026-07-18
+
+### New Features
+
+- **Per-target prevent-stop profiles (`StopProfile: block | deny`).** A single `cc/anti-hallucination` engine now drives every host that can prevent a stop — Claude Code, Codex, and Hermes (`decision:"block"` via `Stop`), Gemini CLI / Antigravity (`decision:"deny"` via `AfterAgent`) — and `superskill install` emits the hook only to those targets. OpenCode / omp / pi / Grok cannot prevent stop and are gated out (no false-security no-op + no per-stop spawn). Antigravity targets automatically append `--profile deny` to the emitted hook command. A new `HOOK_TARGET_POLICY` / `applyHookTargetPolicy` filter in `apps/cli/src/hooks.ts` is wired into the Pi, Hermes, omp, and rulesync emit paths.
+- **`superskill script convert <plugin> <rel>` — build portable `.mjs` twins.** Bundles a plugin-script `.ts` into a single Node-runnable ESM `.mjs` (Bun.build `target:node`), then post-processes Bun's output: forces `#!/usr/bin/env node` (replacing, not prepending — a `#!` on line 2 is a `SyntaxError` under Node) and strips the `import.meta.main` guard that Bun rewrites into a `__require` shape undefined under Node. The twin runs under bare Node on any install target — no Bun, no `type:module`. Reusable across plugins; superskill dogfoods it for its own `cc` plugin.
+
+### Improvements
+
+- **Block signal moved off exit 2 onto the stdout JSON `decision` field at exit 0.** Claude Code honors stdout JSON only at exit 0; exit 2 discards that JSON and surfaces stderr as a "blocking error" instead of clean feedback. The `cc/anti-hallucination` Stop hook and the `sp/task-write-guard` PreToolUse deny path (when Claude Code is the host) now emit `decision:"block"` / `permissionDecision:"deny"` JSON at exit 0. PreToolUse keeps the exit-2 + stderr fallback for non-Claude-Code hosts (no `CLAUDE_PROJECT_DIR`) that key off the exit code.
+- **Repo dogfoods the public `script convert` CLI in `build:scripts`.** `package.json`'s `build:scripts` now runs `bun run apps/cli/src/index.ts script convert cc anti-hallucination/validate_response.ts` directly, and the private `scripts/build-plugin-scripts.ts` wrapper is deleted. The generated `validate_response.mjs` twin is committed and covered by a node-execution test that spawns it under bare `node`; `validate_response.ts` reads `process.env.RESPONSE_TEXT` (not `Bun.env`) so it runs under Node.
+
+### Documentation
+
+- **Scripts-and-install contract rewritten.** New `plugins/cc/skills/cc-skills/references/scripts-and-install.md` is the canonical reference for where skill executables live (`plugins/<plugin>/scripts/<feature>/`, never inside the skill folder) and how they reach install targets (dual contract: staged `.mjs` path vs. `script run` / `hook run` binary registry). The `cc-skills` family (SKILL.md + best-practices, platform-compatibility, quick-reference, security, skill-categories, skill-creation, skill-patterns, troubleshooting, workflows) is rewritten to make skill folders prose-only — `extensions/` is retired. The anti-hallucination docs and `plugins/cc/README.md` promote `superskill script run cc validate-response` to the primary non-hook form, with the portable `.mjs` twin as the secondary staged-path form. `cc-hooks/platform-limits.md` marks Codex and Antigravity Stop continuation as supported and documents the pi gating rationale.
+- **`docs/help/how_to_organize_scripts_for_plugin_development.md`** documents the `script convert` workflow and the entrypoint-contract notes.
 ## [0.3.4] - 2026-07-17
 
 ### New Features
