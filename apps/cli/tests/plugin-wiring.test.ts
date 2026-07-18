@@ -130,7 +130,7 @@ describe('task 0032 — cc personas wiring and hide validate', () => {
     // R8 — No invented CLI verbs. The 5 type commands (agent/skill/command/hook/magent)
     // are the only CLI verbs; SKILL.md files must not reference new top-level verbs.
     it('does not invent new CLI verbs in SKILL.md files', () => {
-        const VALID_VERBS = ['agent', 'skill', 'command', 'hook', 'magent', 'install', 'superskill'];
+        const VALID_VERBS = ['agent', 'skill', 'command', 'hook', 'magent', 'install', 'script', 'superskill'];
         for (const type of SKILL_TYPES) {
             const content = readFileSync(join(SKILLS_DIR, type, 'SKILL.md'), 'utf-8');
             // Same-line only: `[ \t]+` (not `\s+`) so YAML frontmatter like

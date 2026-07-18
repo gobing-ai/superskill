@@ -49,7 +49,7 @@ export function readStdinText(
 }
 
 export function main(): number {
-    const responseText = Bun.env.RESPONSE_TEXT ?? readStdinText();
+    const responseText = process.env.RESPONSE_TEXT ?? readStdinText();
     const result = validateResponseText(responseText);
 
     logger.log(JSON.stringify(result));

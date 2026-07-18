@@ -4,6 +4,7 @@ import { registerCommand } from './commands/command';
 import { registerHook } from './commands/hook';
 import { registerInstall } from './commands/install';
 import { registerMagent } from './commands/magent';
+import { registerScriptConvert } from './commands/script-convert';
 import { registerScriptPath } from './commands/script-path';
 import { registerScriptRun } from './commands/script-run';
 import { registerSkill } from './commands/skill';
@@ -25,6 +26,7 @@ export function createProgram(): Command {
     registerMagent(program);
     registerScriptRun(program);
     registerScriptPath(program);
+    registerScriptConvert(program);
 
     return program;
 }
