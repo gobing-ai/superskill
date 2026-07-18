@@ -93,10 +93,11 @@ metadata:
 
 | Resource | Claude Code | Codex | OpenClaw | OpenCode | Antigravity |
 |----------|-------------|-------|----------|----------|-------------|
-| `extensions/` | Execute/Read | Execute/Read | Execute/Read | Execute/Read | Execute/Read |
 | `references/` | Load on demand | Load on demand | Load on demand | Load on demand | Load on demand |
 | `assets/` | Use in output | Use in output | Use in output | Use in output | Use in output |
 | `agents/` | Ignored | Read openai.yaml | Ignored | Ignored | Ignored |
+
+> Superskill plugin skills carry no in-folder `scripts/` — executable engines live at `plugins/<plugin>/scripts/<feature>/` and are invoked via the dual contract. See [scripts-and-install.md](scripts-and-install.md).
 
 ## Migration Patterns
 

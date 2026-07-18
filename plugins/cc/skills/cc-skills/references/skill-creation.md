@@ -115,9 +115,10 @@ For each concrete example, consider:
 
 | Type | When to Include | Example |
 |------|----------------|---------|
-| **extensions/** | Code rewritten repeatedly, deterministic reliability needed | `extensions/rotate_pdf.ts` for PDF rotation |
 | **references/** | Info re-discovered each time: schemas, APIs, domain knowledge | `references/schema.md` for table schemas |
 | **assets/** | Boilerplate needed each time: templates, sample files | `assets/hello-world/` for template |
+
+> Executable scripts (code rewritten repeatedly, deterministic reliability needed) do **not** live in the skill folder — they centralize at `plugins/<plugin>/scripts/<feature>/`.
 
 ### Example: PDF Editor Skill
 
@@ -125,9 +126,9 @@ For each concrete example, consider:
 
 **Analysis:**
 1. Rotating a PDF requires re-writing the same code each time
-2. A `extensions/rotate_pdf.ts` script would be helpful
+2. A plugin-level script (e.g. `plugins/<plugin>/scripts/pdf-editor/rotate_pdf.ts`) would be helpful
 
-**Result:** Include `extensions/rotate_pdf.ts`
+**Result:** Ship `rotate_pdf.ts` at the plugin level (`plugins/<plugin>/scripts/pdf-editor/`), not inside the skill folder.
 
 ---
 
@@ -148,11 +149,11 @@ superskill skill scaffold <skill-name> --output <output-directory>
 ```
 skill-name/
 ├── SKILL.md          # Template with frontmatter and TODO sections
-├── extensions/
-│   └── .gitkeep     # Placeholder for scripts
 └── references/
     └── .gitkeep     # Placeholder for references
 ```
+
+> For superskill plugin skills, executable logic lives at `plugins/<plugin>/scripts/<feature>/` — see [scripts-and-install.md](scripts-and-install.md).
 
 ### After Scaffolding
 
@@ -172,7 +173,7 @@ Create the resources and write SKILL.md content.
 
 Start with the reusable resources identified in Step 2:
 
-1. **extensions/** - Write and test executable code
+1. **Plugin-level scripts** - Write and test executable code at `plugins/<plugin>/scripts/<skill>/` (not inside the skill folder)
 2. **references/** - Document schemas, APIs, workflows
 3. **assets/** - Gather templates and sample files
 

@@ -50,17 +50,21 @@ Exit codes:
 ### Invoke from a skill doc
 
 ```bash
-# Validation/utility CLI: capture the path, run with a portable runtime
-node "$(superskill script path cc anti-hallucination/validate_response.js)"
-# stdin or RESPONSE_TEXT → JSON result on stdout; exit 0 pass / 1 violation
+# Node CLI: capture the staged .mjs path, run with a portable runtime
+# (the .mjs twin is built from the .ts by `superskill script convert`)
+node "$(superskill script path myplugin myfeat/tool.mjs)"
 
 # Shell twin example
 "$(superskill script path myplugin myfeat/run.sh)"
 ```
 
+> When the engine is a pure CLI-deep-imported one (like `cc/validate-response`), prefer the
+> **optional** registry form (`superskill script run <plugin> <id>`) — no staged path, no separate
+> runtime. Use the `script path` form above when you need a real filesystem entrypoint.
+
 - Use command substitution `$(superskill script path …)` — never hardcode cache/repo/install paths; a skill doc that hardcodes any path is a bug.
 - Resolve at runtime, not at author time. The path depends on the user's install mode (project vs global) and target class.
-- Path traversal is rejected server-side (`isUnsafeRel`), so `<rel>` MUST be a plain relative path under the plugin's scripts tree (e.g. `anti-hallucination/validate_response.js`, not `../sibling` or `/etc/passwd`).
+- Path traversal is rejected server-side (`isUnsafeRel`), so `<rel>` MUST be a plain relative path under the plugin's scripts tree (e.g. `anti-hallucination/validate_response.mjs`, not `../sibling` or `/etc/passwd`).
 
 ### Entrypoint Contract (portable runtimes)
 
@@ -83,6 +87,20 @@ Exit-code classes by role:
   - `${CLAUDE_PLUGIN_ROOT}/scripts/foo.ts` — variable exists only inside Claude Code; retired for hooks in v0.3.3.
   - Any hard-coded absolute path (cache dir, repo clone, `~/.agents/scripts/...` literal).
 - **Canonical doc form:** `$(superskill script path <plugin> <rel>)` plus the runtime the entrypoint requires.
+
+### Build the portable twin — `script convert`
+
+A TypeScript entrypoint (`#!/usr/bin/env bun`) is dev-only — byte-for-byte staging lands a `.ts` that a Bun-less target can't run. `superskill script convert` builds the portable `.mjs` twin from it:
+
+```bash
+superskill script convert <plugin> <rel>          # e.g. cc anti-hallucination/validate_response.ts
+superskill script convert cc anti-hallucination/validate_response.ts --dry-run
+```
+
+- Bundles the `.ts` (+ its imports) into a single Node-runnable ESM **`.mjs`** beside the source (`--out` overrides), with a `#!/usr/bin/env node` shebang. ESM `.mjs` runs under bare Node on any target — no `type:module` package.json needed.
+- `<rel>` is **required**: whether a `.ts` is a `script path` entrypoint is a policy call, not detectable from the file (e.g. `ah_guard.ts` carries a shebang but is the hook engine, invoked via `hook run`).
+- Commit the generated `.mjs` — it is the staged artifact. Regenerate whenever the source or its engine deps change. In-repo, `bun run build:scripts` (wired into `build`) regenerates the plugin's twins via the same engine.
+- Reusable across plugins — resolves `plugins/<plugin>/scripts/<rel>` under the project root, so any plugin author (not just superskill's own `cc`) ships the standard-form entrypoint.
 
 ## Optional contract — binary registry
 
@@ -161,6 +179,7 @@ Is it triggered by a host hook event (Stop/PreToolUse/…)?
 | Plugin-level `scripts/<feature>/` layout + prose-only skills (ADR-015) | Shipped |
 | `superskill install` staging of plugin scripts → `~/.agents/scripts/<plugin>/` (rulesync + hermes); native tree for Claude/OMP/Grok | Shipped (task 0090) |
 | `superskill script path <plugin> <rel>` — fail-closed path resolution (exit 0 found / 2 not-found / 1 invalid) | Shipped (task 0091) |
+| `superskill script convert <plugin> <rel>` — build a portable `.mjs` twin from a plugin script `.ts` (Node-runnable on any target; reusable across plugins) | Shipped; `cc anti-hallucination/validate_response.mjs` built via `build:scripts` |
 | Entrypoint Contract v1 (Node `.js`/`.mjs`, POSIX `.sh`; exit-code classes) | Defined (task 0089) |
 | `superskill script run <plugin> <id>` + `ScriptRunner` registry (optional contract, non-hook) | Shipped (task 0087); `cc/validate-response` registered |
 | `superskill hook run <plugin> <id>` + `HookRunner` registry (current hook form) | Shipped (v0.2.19+); `cc/anti-hallucination` registered |

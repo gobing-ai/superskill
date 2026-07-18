@@ -277,10 +277,12 @@ Copy this checklist and check off items as you complete them:
 
 ```markdown
 1. Make your edits
-2. Validate immediately: `python3 extensions/validate.py`
+2. Validate immediately: run the plugin-level validator (e.g. `node "$(superskill script path <plugin> <feature>/validate.js)"`)
 3. If validation fails, fix and repeat
 4. Only proceed when validation passes
 ```
+
+> Validators are plugin-level scripts, not skill-folder scripts. See [scripts-and-install.md](scripts-and-install.md).
 
 ### Conditional Workflows
 
@@ -436,8 +438,8 @@ Include schema creation in the skill's setup step.
 
 Always use forward slashes:
 
-- ✓ `extensions/helper.py`, `reference/guide.md`
-- ✗ `scripts\helper.py`
+- ✓ `plugins/<plugin>/scripts/<feature>/helper.py`, `references/guide.md`
+- ✗ `plugins\<plugin>\scripts\<feature>\helper.py`
 
 ### Avoid Offering Too Many Options
 
@@ -488,6 +490,6 @@ Always use forward slashes:
 ### Structure
 
 - [ ] No extraneous documentation files
-- [ ] Resources organized by type (extensions/, references/, assets/)
+- [ ] Resources organized by type (references/, assets/)
 - [ ] Files named descriptively
 - [ ] Longer reference files have table of contents

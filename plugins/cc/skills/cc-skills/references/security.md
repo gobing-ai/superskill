@@ -217,7 +217,9 @@ Skills run with these security limitations:
 - ✓ Read/write files within project directory
 - ✓ Execute Python/JavaScript for data processing
 - ✓ Use built-in libraries (pandas, numpy, etc.)
-- ✓ Run approved scripts in `extensions/` directory
+- ✓ Run approved scripts via the dual contract (plugin-level `plugins/<plugin>/scripts/<feature>/`)
+
+> Superskill plugin skills carry no in-folder `scripts/` — executable engines live at the plugin level and are invoked via the dual contract. See [scripts-and-install.md](scripts-and-install.md).
 
 ### What Skills CANNOT Do
 
@@ -291,7 +293,7 @@ def set_limits():
 | Writing project files | ✓ | Within project directory only |
 | Network requests | ✗ | Not allowed |
 | Runtime package install | ✗ | Not allowed |
-| Executing approved scripts | ✓ | In `extensions/` only |
+| Executing approved scripts | ✓ | Plugin-level scripts via dual contract |
 | Arbitrary shell commands | ✗ | Not allowed |
 | Path traversal | ✗ | Blocked by sandbox |
 

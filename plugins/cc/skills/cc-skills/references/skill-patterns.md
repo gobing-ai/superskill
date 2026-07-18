@@ -325,10 +325,12 @@ IF file is document:
 
 ### Characteristics
 
-- Pre-built helper functions in `extensions/`
+- Pre-built helper functions at the plugin level (`plugins/<plugin>/scripts/<feature>/`)
 - Claude generates new scripts that import and compose these helpers
 - Claude spends turns on composition, not reconstructing boilerplate
 - Helpers handle complexity; Claude handles orchestration
+
+> For superskill plugin skills, executable logic lives at `plugins/<plugin>/scripts/<feature>/` — see [scripts-and-install.md](scripts-and-install.md).
 
 ### Example Structure
 
@@ -337,7 +339,7 @@ IF file is document:
 
 ### Available Helpers
 
-The following functions are in `extensions/helpers/`:
+The following functions are in `plugins/<plugin>/scripts/<feature>/helpers/`:
 
 - `fetch_events(source, date_range)` — Pull events from your event source
 - `join_users(events, user_table)` — Join events with canonical user_id

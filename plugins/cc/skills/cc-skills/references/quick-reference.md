@@ -29,13 +29,13 @@ skill-name/
 ```
 skill-name/
 ├── SKILL.md
-├── references/
-│   └── detailed-guide.md
-└── extensions/
-    └── utility.ts
+└── references/
+    └── detailed-guide.md
 ```
 
 **When to use:** Most skills with detailed documentation
+
+> For superskill plugin skills, executable logic lives at `plugins/<plugin>/scripts/<feature>/` — see [scripts-and-install.md](scripts-and-install.md).
 
 ### Complete Skill
 
@@ -46,9 +46,6 @@ skill-name/
 │   ├── patterns.md
 │   ├── best-practices.md
 │   └── troubleshooting.md
-├── extensions/
-│   ├── scaffold.ts
-│   └── validate.ts
 └── agents/
     └── openai.yaml
 ```

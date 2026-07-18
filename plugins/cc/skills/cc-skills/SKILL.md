@@ -207,19 +207,42 @@ See [references/skill-patterns-adk.md](references/skill-patterns-adk.md) for the
 
 ## Directory Structure
 
+A skill folder shipped inside a superskill-managed plugin is **prose-only** — no executable code inside it:
+
 ```
-skill-name/
+plugins/<plugin>/skills/<name>/
 ├── SKILL.md                    # SINGLE SOURCE OF TRUTH (required)
 │   ├── YAML frontmatter (name, description required)
 │   └── Markdown instructions
-│
 ├── agents/
 │   └── openai.yaml             # Codex UI metadata (auto-generated)
-│
-├── extensions/                 # Optional executable helpers
 ├── references/                 # Documentation
 └── assets/                     # Output files (templates, images)
+# NO scripts/ or extensions/ here — executable code is forbidden inside the skill folder.
 ```
+
+> **Scripts centralize at the plugin level.** A `scripts/` (or retired `extensions/`) directory
+> inside `plugins/<plugin>/skills/<name>/` is **not supported** — a hard rule, not a preference.
+> ALL executable logic lives at `plugins/<plugin>/scripts/<skill>/`, invoked via the dual contract,
+> so prompts and scripts split cleanly and engines dedupe across the plugin's skills. Adding a
+> per-skill scripts directory requires **explicit permission**. See
+> [references/scripts-and-install.md](references/scripts-and-install.md).
+
+## Scripts and the Dual Install Contract
+
+Skills are prose-only; executable engines live at the plugin level (`plugins/<plugin>/scripts/<feature>/`)
+and reach install targets through the dual contract:
+
+- **Standard** — `node "$(superskill script path <plugin> <feature>/<file>.js)" [args]` (portable;
+  default for skill docs and non-hook callers).
+- **Optional** — `superskill script run <plugin> <id>` (non-hook) / `superskill hook run <plugin> <id>` (hook).
+
+Hard rules: no executables inside the skill folder; no `extensions/` (retired — use `scripts/` for
+standalone skills, plugin-level `scripts/` for plugin skills); no `bun plugins/<plugin>/scripts/<file>.ts` or
+`${CLAUDE_PLUGIN_ROOT}/...` in docs or `hooks.json`. **See
+[references/scripts-and-install.md](references/scripts-and-install.md)** for the placement rule,
+Entrypoint Contract v1, `superskill script path` exit codes, tests placement, install staging, the
+`.ts`→`.js` twin gap, and the worked anti-hallucination example.
 
 ## Platform Adapters
 
@@ -345,3 +368,4 @@ information hierarchy, and the router-skill cure are in
 - **Output Patterns**: [references/output-patterns.md](references/output-patterns.md) - Output formatting guidance
 - **Quick Reference**: [references/quick-reference.md](references/quick-reference.md) - CLI commands and checklists
 - **Skill Creation**: [references/skill-creation.md](references/skill-creation.md) - Step-by-step creation guide
+- **Scripts & Install Contract**: [references/scripts-and-install.md](references/scripts-and-install.md) - Where skill executables live (`plugins/<plugin>/scripts/<feature>/`), the dual install contract, entrypoint rules, and `superskill script path`

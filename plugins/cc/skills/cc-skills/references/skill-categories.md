@@ -56,8 +56,10 @@ Skills that describe how to test or verify that code is working. Often paired wi
 **Tips**:
 - Have Claude record a video of its output so you can see what it tested
 - Enforce programmatic assertions on state at each step
-- Include verification scripts in `extensions/` directory
+- Verification scripts live at the plugin level (`plugins/<plugin>/scripts/<skill>/`), not in the skill folder
 - Worth spending significant engineering time making these excellent
+
+> For superskill plugin skills, executable logic lives at `plugins/<plugin>/scripts/<feature>/` — see [scripts-and-install.md](scripts-and-install.md).
 
 ---
 
@@ -75,7 +77,7 @@ Skills that connect to data and monitoring stacks. Include libraries, credential
 **Best type**: Technique (analysis workflow) or Reference (schema/dashboard lookup)
 
 **Tips**:
-- Include helper functions in `extensions/` that Claude can compose for complex analysis
+- Helper functions live at the plugin level (`plugins/<plugin>/scripts/<skill>/`) for Claude to compose for complex analysis
 - Store credentials patterns (not actual credentials) and connection configs
 - Provide common query patterns as composable building blocks
 

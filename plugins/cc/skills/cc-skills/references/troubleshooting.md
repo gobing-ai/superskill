@@ -40,10 +40,11 @@ my-skill/SKILL.md
 # CORRECT structure
 my-skill/
 ├── SKILL.md           # Required
-├── extensions/           # Optional
 ├── references/        # Optional
 └── assets/            # Optional
 ```
+
+> For superskill plugin skills, executable logic lives at `plugins/<plugin>/scripts/<feature>/` — see [scripts-and-install.md](scripts-and-install.md).
 
 **Invalid YAML frontmatter:**
 ```yaml
@@ -185,7 +186,6 @@ find my-skill -type f
 # Ensure no nested skill directories
 my-skill/
 ├── SKILL.md           # ← Root level, not in subfolder
-├── extensions/
 └── references/
 ```
 

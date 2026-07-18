@@ -58,7 +58,7 @@ engine. Targets without `superskill` on PATH fail open (the hook is treated as a
 gates install so an older CLI cannot register a hook whose runtime contract (stdin payload
 resolution + exit-2 block signal) it does not implement.
 
-For platforms without hooks, validate a captured answer via the dual contract — standard path form `"$(superskill script path cc anti-hallucination/validate_response.js)"` (portable `.js` twin; see interim note in `non-hook-enforcement.md`); working today / optional: `superskill script run cc validate-response`.
+For platforms without hooks (OpenCode, omp, pi, Grok — no prevent-stop hook), validate a captured answer with `superskill script run cc validate-response` (the primary form — compiled into the CLI, no FS path; see `non-hook-enforcement.md`). A staged `node "$(superskill script path cc anti-hallucination/validate_response.mjs)"` twin is also available as the secondary form.
 
 ## Input Channels
 

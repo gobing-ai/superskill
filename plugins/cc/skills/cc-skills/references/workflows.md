@@ -93,10 +93,10 @@ superskill skill scaffold <skill-name> --output ./skills
 **What script does:**
 - Creates skill directory
 - Generates SKILL.md from template
-- Creates directories: extensions/, references/, assets/
+- Creates directories: references/, assets/ (executable scripts live at plugin level)
 - Initializes platform adapter files
 
-**Output:** Skill directory with basic structure
+**Output:** Skill directory with basic structure (prose-only — no `scripts/` inside the skill folder; see [scripts-and-install.md](scripts-and-install.md))
 
 #### Step 2: Validate Structure (Script)
 ```bash
@@ -352,7 +352,7 @@ Organized by category for comprehensive validation:
 | # | Item | Check | Script/LLM |
 |---|------|-------|------------|
 | 1 | SKILL.md in root | File check | Script |
-| 2 | extensions/, references/, assets/ exist | Directory check | Script |
+| 2 | references/, assets/ exist | Directory check | Script |
 | 3 | Progressive disclosure | Reference links | Script |
 
 #### Circular Reference Prevention
@@ -943,7 +943,7 @@ superskill skill validate <skill-path>
 **What script does:**
 - Creates output directory
 - Copies SKILL.md
-- Copies references/, assets/, extensions/
+- Copies references/, assets/
 
 #### Step 3: Generate Companions
 
@@ -1032,7 +1032,7 @@ Multi-source skill migration combining deterministic script phases with LLM cont
 **What script does:**
 - Resolves all `--from` paths (supports `rd2:`, `cc:`, bare name, `path:`, relative including `vendors/` paths)
 - Resolves `--to` path as a filesystem destination (always absolute/relative, never a skill name lookup)
-- Recursively scans each source for SKILL.md, extensions/, tests/, references/
+- Recursively scans each source for SKILL.md, tests/, references/
 - Reports file counts and capabilities per source
 
 **Output:** Source inventories with file metadata
