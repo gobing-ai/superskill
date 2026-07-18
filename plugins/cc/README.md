@@ -4,10 +4,9 @@
 
 The `cc` plugin is the canonical Claude Code plugin for the superskill ecosystem. It provides a full lifecycle toolkit (scaffold → validate → evaluate → refine → evolve) for every entity type superskill manages — skills, slash commands, subagents, hooks, and main-agent configs — and ships an anti-hallucination guard that enforces verification-before-generation at the `Stop` hook.
 
-- **Marketplace entry:** `name: "cc"`, `version: "0.3.0"`, `source: "./plugins/cc"` (`.claude-plugin/marketplace.json`)
+- **Marketplace entry:** `name: "cc"`, `version: "0.3.3"`, `source: "./plugins/cc"` (`.claude-plugin/marketplace.json`)
 - **CLI floor:** hooks run via `superskill hook run cc anti-hallucination`; the canonical `hooks.json` declares `minCliVersion: "0.2.19"`. Older CLIs fail open (skip hook emission rather than install broken guards).
 - **Owner:** Robin Min
-</input>
 
 ## Directory Layout
 
@@ -100,7 +99,6 @@ Each command file contains:
 | `expert-hook` | `cc:cc-hooks` | crimson | "create hooks", "cross-platform hooks" |
 | `expert-magent` | `cc:cc-magents` | teal | "create AGENTS.md", "score my main agent" |
 | `expert-skill` | `cc:cc-skills` | teal | "create a skill", "scaffold a skill" |
-</input>
 
 Each agent has:
 - `tools: [Read, Glob]` — minimal, read-only tool access
@@ -157,6 +155,27 @@ The guard checks for:
 - Unverified factual claims
 
 **Design principle:** Scripts are **deterministic enforcement**. Unlike skills (which are advisory knowledge consumed by the LLM), scripts run as code and make binary allow/deny decisions. They are the hard gate that the soft skill cannot enforce on its own.
+
+### 6. Rules (`rules/`)
+
+**Purpose:** Always-on instruction modules that apply regardless of which `--magent` is selected — harness-first discipline, safety boundaries, and verification gates. Unlike skills (advisory, model-invoked), rules are injected into the target's auto-loading rules directory so they bind on session start.
+
+| Rule | Intent |
+|------|-------|
+| `01-discipline.md` | Think / simple / surgical / fail-loud |
+| `02-harness-first.md` | Prefer `spur` + `superskill`; CLI-gated corpus work |
+| `03-safety.md` | CRITICAL safety boundaries |
+| `04-verification.md` | Done = gates green; no silent skips |
+
+**Install destinations** (emitted by `superskill install cc` via `emitPluginRules`, independent of `--magent`):
+
+| Target | Directory |
+|--------|-----------|
+| claude | `.claude/rules/` (global: `~/.claude/rules/`) |
+| antigravity-cli / -ide | `.agents/rules/` |
+| codex, pi, opencode, hermes, omp, grok | skipped (no modular rules folder) |
+
+**Design principle:** Rules are **harness constraints, not persona content**. They live outside the magent tree so they apply on every install, even with `--magent <name>`. Targets without a modular rules folder (codex, pi, omp, grok, …) silently skip — rules never block an install.
 
 ## Relationship Diagram
 
@@ -274,15 +293,22 @@ Tier 3 — Execution Layer (superskill CLI + Scripts)
 
 ## Platform Compatibility
 
-The `cc` plugin is the Claude Code native format. On other platforms (Codex, Gemini, Pi, OpenCode, Antigravity, Hermes, omp), the `superskill install` command maps plugin entities to platform-native locations via the rulesync mapper. OpenClaw is implicitly supported — it reads skills from `~/.agents/skills/`, the same root codex/opencode use in global mode.
+The `cc` plugin ships as the Claude Code native format. Install targets split into two classes:
 
-| Plugin Entity | Claude Code | Other Platforms |
-|--------------|-------------|-----------------|
-| `skills/*.md` | `~/.claude/skills/` | Adapted as Skills 2.0 skill directories — all platforms receive skills uniformly |
-| `commands/*.md` | `~/.claude/commands/` | Adapted as Skills 2.0 skill entries (`disable-model-invocation: true`) via `pipeline/adapt-command.ts` |
-| `agents/*.md` | `~/.claude/agents/` | Adapted as Skills 2.0 skill entries (model-invocable) via `pipeline/adapt-subagent.ts`; Pi additionally gets native agent format via `pipeline/pi-subagent.ts` |
-| `hooks/hooks.json` | `~/.claude/hooks/` | Routed in a separate `hooks`-only pass through `TARGET_TO_RULESYNC_HOOKS` so Antigravity reaches its native generator (`.agents/hooks.json` project / `.gemini/config/hooks.json` global). Pi/omp get the pi-hooks shim; Hermes gets `hooks.json` copied verbatim. Hook commands resolve to `superskill hook run …` (PATH), not plugin-root scripts |
-| `scripts/` | `${CLAUDE_PLUGIN_ROOT}/scripts/` | Invoked via the `superskill hook run` dispatcher at runtime — scripts are no longer referenced by installed hook configs directly |
+- **Native plugin install** (claude, omp, grok): the host CLI owns the plugin tree (`claude plugin install`, `omp plugin install`, `grok plugin install … --trust`). `scripts/` travels inside the native plugin tree; hook configs invoke `superskill hook run …` on PATH. No rulesync mapping for these targets.
+- **Rulesync mapping** (codex, gemini, pi, opencode, antigravity, hermes, openclaw): `superskill install` maps plugin entities to platform-native locations via the rulesync mapper, writing Skills 2.0 skill directories + adapted hooks/agents/commands.
+
+OpenClaw is implicitly supported — it reads skills from `~/.agents/skills/`, the same root codex/opencode use in global mode.
+
+| Plugin Entity | Claude Code | Native (omp, grok) | Rulesync targets (codex, gemini, pi, opencode, antigravity, hermes, openclaw) |
+|--------------|-------------|--------------------|------------------------------------------------------------------------------------------------------------------|
+| `skills/*.md` | `~/.claude/skills/` | In the native plugin tree | Adapted as Skills 2.0 skill directories — all platforms receive skills uniformly |
+| `commands/*.md` | `~/.claude/commands/` | In the native plugin tree | Adapted as Skills 2.0 skill entries (`disable-model-invocation: true`) via `pipeline/adapt-command.ts` |
+| `agents/*.md` | `~/.claude/agents/` | In the native plugin tree | Adapted as Skills 2.0 skill entries (model-invocable) via `pipeline/adapt-subagent.ts`; Pi additionally gets native agent format via `pipeline/pi-subagent.ts` |
+| `hooks/hooks.json` | `~/.claude/hooks/` | In the native plugin tree | Routed in a separate `hooks`-only pass through `TARGET_TO_RULESYNC_HOOKS` so Antigravity reaches its native generator (`.agents/hooks.json` project / `.gemini/config/hooks.json` global). Pi/omp get the pi-hooks shim; Hermes gets `hooks.json` copied verbatim. Hook commands resolve to `superskill hook run …` (PATH), not plugin-root scripts |
+| `scripts/` | `${CLAUDE_PLUGIN_ROOT}/scripts/` (in the native plugin tree) | In the native plugin tree | Staged to `.agents/scripts/cc/` (project) or `~/.agents/scripts/cc/` (global) for rulesync+hermes via `stagePluginScripts`; resolved at runtime via `$(superskill script path cc <rel>)` (fail-closed, exit 2 if missing) or invoked directly via `superskill script run cc <id>` (fail-open on version skew). See ADR-023 |
+| `rules/*.md` | `.claude/rules/` (or `~/.claude/rules/`) | skipped | `.agents/rules/` for antigravity-cli/-ide; skipped on codex/pi/opencode/hermes/omp/grok (no modular rules folder). Emitted via `emitPluginRules`, independent of `--magent` |
+
 Each skill declares its own platform support in `metadata.platforms` frontmatter — not all skills support all platforms. See the per-skill table above.
 
 ## Lifecycle Operations
@@ -356,4 +382,3 @@ Registered runners:
 | `cc/anti-hallucination` | `Stop` | Blocks stop when the last assistant message claims external facts without source citations / confidence / verification-tool evidence. Reuses `resolveStopContext` + `verifyAntiHallucinationProtocol` from `ah_guard.ts`; honors Claude's `stop_hook_active` block-loop guard. Fails open (allow stop) on empty/invalid payloads. |
 
 This is the cross-agent default for non-trivial command hooks: author the hook as a registered runner and invoke the PATH command, never a `${CLAUDE_PLUGIN_ROOT}/<script>` reference (the latter resolves on Claude Code only and silently fails everywhere else). See the `cc-hooks` skill for the full authoring guidance.
-</input>
