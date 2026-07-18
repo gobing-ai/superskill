@@ -99,7 +99,7 @@ superskill script convert cc anti-hallucination/validate_response.ts --dry-run
 
 - Bundles the `.ts` (+ its imports) into a single Node-runnable ESM **`.mjs`** beside the source (`--out` overrides), with a `#!/usr/bin/env node` shebang. ESM `.mjs` runs under bare Node on any target — no `type:module` package.json needed.
 - `<rel>` is **required**: whether a `.ts` is a `script path` entrypoint is a policy call, not detectable from the file (e.g. `ah_guard.ts` carries a shebang but is the hook engine, invoked via `hook run`).
-- Commit the generated `.mjs` — it is the staged artifact. Regenerate whenever the source or its engine deps change. In-repo, `bun run build:scripts` (wired into `build`) regenerates the plugin's twins via the same engine.
+- Commit the generated `.mjs` — it is the staged artifact. Regenerate whenever the source or its engine deps change. In-repo, `bun run build:scripts` (wired into `build`) just runs this `script convert` command for the plugin's twins.
 - Reusable across plugins — resolves `plugins/<plugin>/scripts/<rel>` under the project root, so any plugin author (not just superskill's own `cc`) ships the standard-form entrypoint.
 
 ## Optional contract — binary registry

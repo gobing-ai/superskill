@@ -19,7 +19,7 @@
         "bump-ver": "bun scripts/builder.ts bump-ver",
         "drop-tags": "bun scripts/builder.ts drop-tags",
         "clean": "rm -rf dist",
-        "build:scripts": "bun scripts/build-plugin-scripts.ts",
+        "build:scripts": "bun run apps/cli/src/index.ts script convert cc anti-hallucination/validate_response.ts",
         "build": "bun run clean && bun run build:scripts && bun run --filter '@gobing-ai/superskill' build",
         "dev": "bun run --filter './apps/*' --filter './packages/*' dev",
         "test": "NODE_ENV=test bun test --coverage --coverage-dir=.coverage --reporter=dots",

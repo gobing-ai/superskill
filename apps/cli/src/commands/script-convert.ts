@@ -69,7 +69,7 @@ export function registerScriptConvert(program: Command, ci?: { exit(code: number
         .command('convert <plugin> <rel>')
         .description(
             'Build a portable .mjs twin from a plugin script .ts (Node-runnable on any install target). ' +
-                'Reusable across plugins — superskill dogfoods it for its own cc plugin via build:scripts.',
+                "Reusable across plugins — superskill's own `build:scripts` runs this command for its cc plugin.",
         )
         .option('--out <path>', 'output path (default: <src>.mjs beside the source)')
         .option('--dry-run', 'report what would be written; write nothing')
