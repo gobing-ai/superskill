@@ -19,7 +19,17 @@ export function rewriteSkillReferences(content: string, pluginPrefix: string): s
     // first; prose/frontmatter colon refs are rewritten here.
     return content
         .split('\n')
-        .map((line) => (SLASH_COMMAND_LINE_RE.test(line) ? line : line.replace(re, '$1-$2')))
+        .map((line) =>
+            SLASH_COMMAND_LINE_RE.test(line)
+                ? line
+                : line.replace(re, (m, p1, p2, offset: number, s: string) =>
+                      // Exempt version-pinned identifiers: a `<prefix>:<name>` token
+                      // immediately followed by `@` (e.g. `sp:dogfood-testing@1.2`)
+                      // is a protocol constant, not a skill reference - leave it
+                      // untouched. Plain `sp:<name>` refs (no `@`) still flatten.
+                      s[offset + m.length] === '@' ? m : `${p1}-${p2}`,
+                  ),
+        )
         .join('\n');
 }
 

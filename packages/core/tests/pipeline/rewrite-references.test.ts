@@ -68,4 +68,22 @@ describe('rewriteSkillReferences', () => {
         expect(result).toContain('cc-cc-agents');
         expect(result).toContain('cc-cc-skills');
     });
+
+    // R1 (task 0296): version-pinned protocol strings must survive the rewrite.
+    it('preserves version-pinned sp:dogfood-testing@1.2 verbatim (R1)', () => {
+        const content = 'protocol: sp:dogfood-testing@1.2';
+        expect(rewriteSkillReferences(content, 'sp')).toBe(content);
+    });
+
+    it('still flattens sp:dogfood-testing without a version suffix in the same document (R1)', () => {
+        const content = 'See sp:dogfood-testing for details.\nprotocol: sp:dogfood-testing@1.2';
+        const result = rewriteSkillReferences(content, 'sp');
+        expect(result).toContain('sp-dogfood-testing for details');
+        expect(result).toContain('protocol: sp:dogfood-testing@1.2');
+    });
+
+    it('preserves a version-pinned sp:foo@1.0 token inside prose (R1)', () => {
+        const content = 'The contract is sp:foo@1.0 compliant.';
+        expect(rewriteSkillReferences(content, 'sp')).toBe(content);
+    });
 });
