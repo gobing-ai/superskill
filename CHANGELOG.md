@@ -7,6 +7,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
+## [0.3.8] - 2026-07-22
+
+### Changed
+
+- **Upgrade the `@gobing-ai/ts-*` dependency family from 0.4.9 to 0.4.11.** Direct dependencies
+  (`ts-ai-runner`, `ts-db`, and `ts-utils`) and transitive `ts-infra`/`ts-runtime` now resolve to
+  0.4.11. The upstream 0.4.10 process registry and 0.4.11 workflow-persistence observability
+  argument are additive optional seams; superskill does not implement either seam, and its used
+  agent, database, slash-command, and output APIs are unchanged.
+
+### Bug Fixes
+
+- **Pi & OMP plugin hook reconciliation on install (`mergePiHooks`, `generateOmpHookModules`).** Reinstalling a plugin for Pi or OMP now reconciles generated hook artifacts by plugin ownership instead of appending or skipping. Previously, an event move (e.g. `sp/context-session-stop` moving from `Stop` to `SessionEnd`) or target policy exclusion (e.g. `cc/anti-hallucination` excluded on Pi/OMP) left stale generated hook entries/files active forever. Ownership is proven via the `superskill hook run <plugin> <hookId>` command grammar (`hookRunKey`). Stale owned entries under all events in Pi's `.pi/hooks.json` and generated module `.js` files under OMP's `hooks/pre/` and `hooks/post/` are pruned prior to merging current policy results, while foreign plugin artifacts and user scripts are preserved. Upstream `sp` plugin update: re-installing `sp` moves `context-session-stop` to `session_shutdown`. (#0096)
+
+
 ## [0.3.5] - 2026-07-18
 
 ### New Features

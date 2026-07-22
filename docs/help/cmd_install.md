@@ -229,8 +229,8 @@ Two generation paths:
 For targets rulesync does not cover, superskill either installs natively (omp, grok) or copies the surrogate's generated output and emits hooks:
 
 - **`hermes`** — copies `opencode` rulesync skills to `~/.hermes/skills/`, then `emitHermesHooks()` copies the canonical `hooks.json` to `~/.hermes/hooks.json`.
-- **`omp`** — installs natively via `omp plugin install` (full plugin tree at `~/.omp/plugins/cache/`); `emitPiStyleHooks()` converts canonical hooks to `@vahor/pi-hooks` format at `~/.omp/agent/hooks.json`.
-- **`pi`** — rulesync emits skills (to `~/.agents/skills/`) but not hooks; `emitPiStyleHooks()` fills the gap with the `@vahor/pi-hooks` shim.
+- **`omp`** — installs natively via `omp plugin install` (full plugin tree at `~/.omp/plugins/cache/`); `generateOmpHookModules()` reconciles plugin-owned native modules under `hooks/pre/` and `hooks/post/`. The separate `hook emit` operation uses Pi-style `@vahor/pi-hooks` config at `~/.omp/agent/hooks.json`.
+- **`pi`** — rulesync emits skills (to `~/.agents/skills/`) but not hooks; `emitPiStyleHooks()` fills the gap with the `@vahor/pi-hooks` shim and replaces the installing plugin's previous projection while preserving user and foreign-plugin entries.
 - **`grok`** — installs natively via `grok plugin install <path> --trust` (full plugin tree at `~/.grok/installed-plugins/<plugin>-<hash>/`); no hook shim, direct Claude-format plugin.
 
 Hook emission results are always surfaced (no silent drop) — each `EmitHooksResult.message` is printed to stdout.
@@ -266,7 +266,7 @@ sequenceDiagram
     RS->>FS: write skills/commands/subagents to ~/.agents, Pi dirs
     RS-->>CLI: GenerateResult counts
 
-    CLI->>H: emitPiStyleHooks(pi rulesync dir, ~, ".pi", "pi")
+    CLI->>H: emitPiStyleHooks(pi rulesync dir, ~, ".pi", "pi", options, plugin)
     H->>FS: write ~/.pi/hooks.json (pi-hooks format)
     H-->>CLI: EmitHooksResult
 

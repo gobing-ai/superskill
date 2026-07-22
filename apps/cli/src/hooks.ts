@@ -157,7 +157,7 @@ export const HOOK_TARGET_POLICY: Record<string, Record<string, { profile: StopPr
 const HOOK_RUN_PREFIX = ['superskill', 'hook', 'run'] as const;
 
 /** Derive `<plugin>/<hookId>` from a `superskill hook run <plugin> <hookId> …` command, else ''. */
-function hookRunKey(command: unknown): string {
+export function hookRunKey(command: unknown): string {
     if (typeof command !== 'string') return '';
     const tokens = command.trim().split(/\s+/);
     if (
@@ -239,16 +239,20 @@ export interface EmitHooksResult {
 }
 
 /**
- * Merge new Pi-style hooks into an existing hooks.json.
+ * Merge new Pi-style hooks into an existing hooks.json with plugin ownership reconciliation.
  *
- * Installing multiple plugins must accumulate hooks per event, not overwrite.
- * Entries are deduplicated by command string so re-installing the same plugin
- * is idempotent (no duplicate entries). Existing entries are preserved; new
- * entries with a novel command are appended to each event array.
+ * Reconciles the installing plugin's generated state: entries previously generated for `plugin`
+ * are removed across all events before new hooks are merged. Events that become empty are removed.
+ * Deduplicated by command string so re-installing the same plugin is idempotent.
+ * Unowned/user entries and other plugins' entries are preserved.
  *
  * Returns the merged `{ event: PiHookEntry[] }` map ready to write back.
  */
-function mergePiHooks(hooksPath: string, newHooks: Record<string, PiHookEntry[]>): Record<string, PiHookEntry[]> {
+function mergePiHooks(
+    hooksPath: string,
+    newHooks: Record<string, PiHookEntry[]>,
+    plugin: string,
+): Record<string, PiHookEntry[]> {
     let existing: Record<string, PiHookEntry[]> = {};
     if (existsSync(hooksPath)) {
         try {
@@ -264,14 +268,27 @@ function mergePiHooks(hooksPath: string, newHooks: Record<string, PiHookEntry[]>
 
     const commandOf = (entry: PiHookEntry): string => (typeof entry === 'string' ? entry : entry.command);
 
-    const merged: Record<string, PiHookEntry[]> = {};
-    const allEvents = new Set([...Object.keys(existing), ...Object.keys(newHooks)]);
-    for (const event of allEvents) {
-        const ex = existing[event] ?? [];
-        const nx = newHooks[event] ?? [];
+    // Prune existing entries owned by `plugin` across all events
+    const pruned: Record<string, PiHookEntry[]> = {};
+    for (const [event, entries] of Object.entries(existing)) {
+        if (!Array.isArray(entries)) continue;
+        const kept = entries.filter((entry) => {
+            const cmd = commandOf(entry);
+            const key = hookRunKey(cmd);
+            return !key.startsWith(`${plugin}/`);
+        });
+        if (kept.length > 0) {
+            pruned[event] = kept;
+        }
+    }
+
+    const merged: Record<string, PiHookEntry[]> = { ...pruned };
+    for (const [event, entries] of Object.entries(newHooks)) {
+        if (!Array.isArray(entries)) continue;
+        const ex = merged[event] ?? [];
         const seen = new Set<string>();
         const acc: PiHookEntry[] = [];
-        for (const entry of [...ex, ...nx]) {
+        for (const entry of [...ex, ...entries]) {
             const cmd = commandOf(entry);
             if (seen.has(cmd)) continue;
             seen.add(cmd);
@@ -292,6 +309,8 @@ function mergePiHooks(hooksPath: string, newHooks: Record<string, PiHookEntry[]>
  * @param outputRoot - The output root (project dir or homedir)
  * @param targetDir  - The target's config directory (`.pi` or `.omp`)
  * @param targetName - Human-readable target name for messages
+ * @param options    - Dry-run and global installation options
+ * @param plugin     - Installing plugin identifier for ownership reconciliation
  */
 export function emitPiStyleHooks(
     rulesyncDir: string,
@@ -299,6 +318,7 @@ export function emitPiStyleHooks(
     targetDir: string,
     targetName: string,
     options: EmitHooksOptions,
+    plugin: string,
 ): EmitHooksResult {
     const config = readCanonicalHooks(rulesyncDir);
     if (!config?.hooks) {
@@ -313,15 +333,6 @@ export function emitPiStyleHooks(
     const piHooks = convertCanonicalToPiHooks(applyHookTargetPolicy(config, targetName));
     const hookCount = Object.values(piHooks).reduce((sum, cmds) => sum + cmds.length, 0);
 
-    if (hookCount === 0) {
-        return {
-            target: targetName,
-            emitted: false,
-            count: 0,
-            message: `${targetName}: no mappable hooks (events not supported by Pi lifecycle)`,
-        };
-    }
-
     // Project: <outputRoot>/<targetDir>/hooks.json
     // Global:  <outputRoot>/<targetDir>/agent/hooks.json (matches Pi's layout)
     const hooksDir = options.global ? join(outputRoot, targetDir, 'agent') : join(outputRoot, targetDir);
@@ -329,8 +340,18 @@ export function emitPiStyleHooks(
 
     if (!options.dryRun) {
         mkdirSync(hooksDir, { recursive: true });
-        const merged = mergePiHooks(hooksPath, piHooks);
+        const merged = mergePiHooks(hooksPath, piHooks, plugin);
         writeFileSync(hooksPath, `${JSON.stringify({ hooks: merged }, null, 2)}\n`);
+    }
+
+    if (hookCount === 0) {
+        return {
+            target: targetName,
+            emitted: false,
+            count: 0,
+            path: hooksPath,
+            message: `${targetName}: 0 hooks emitted after reconciliation`,
+        };
     }
 
     return {

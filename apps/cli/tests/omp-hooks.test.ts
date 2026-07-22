@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test';
-import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { generateOmpHookModules } from '../src/omp-hooks';
@@ -63,7 +63,7 @@ describe('generateOmpHookModules', () => {
         const sourceDir = makeTempDir();
         const installPath = makeTempDir();
         try {
-            const result = generateOmpHookModules(sourceDir, installPath);
+            const result = generateOmpHookModules(sourceDir, installPath, 'sp');
             expect(result.count).toBe(0);
             expect(result.files).toEqual([]);
             expect(result.message).toBe('omp hooks: no hooks.json in plugin');
@@ -79,7 +79,7 @@ describe('generateOmpHookModules', () => {
         try {
             const { writeFileSync } = require('node:fs');
             writeFileSync(join(sourceDir, 'hooks.json'), '{ not valid json');
-            const result = generateOmpHookModules(sourceDir, installPath);
+            const result = generateOmpHookModules(sourceDir, installPath, 'sp');
             expect(result.count).toBe(0);
             expect(result.message).toBe('omp hooks: failed to parse hooks.json');
         } finally {
@@ -98,7 +98,7 @@ describe('generateOmpHookModules', () => {
                     unknownEvent: [{ type: 'command', command: 'echo hi' }],
                 },
             });
-            const result = generateOmpHookModules(sourceDir, installPath);
+            const result = generateOmpHookModules(sourceDir, installPath, 'sp');
             expect(result.count).toBe(0);
             expect(result.message).toBe('omp hooks: no mappable hooks');
         } finally {
@@ -121,7 +121,7 @@ describe('generateOmpHookModules', () => {
                     ],
                 },
             });
-            const result = generateOmpHookModules(sourceDir, installPath);
+            const result = generateOmpHookModules(sourceDir, installPath, 'sp');
             expect(result.count).toBe(1);
             expect(result.files).toHaveLength(1);
 
@@ -157,7 +157,7 @@ describe('generateOmpHookModules', () => {
                     ],
                 },
             });
-            const result = generateOmpHookModules(sourceDir, installPath);
+            const result = generateOmpHookModules(sourceDir, installPath, 'sp');
             expect(result.count).toBe(1);
             const file = requireString(result.files[0], 'result.files[0]');
             expect(file).toContain(join('hooks', 'post'));
@@ -184,7 +184,7 @@ describe('generateOmpHookModules', () => {
                     sessionEnd: [{ hooks: [{ type: 'command', command: 'superskill hook run demo on-end' }] }],
                 },
             });
-            const result = generateOmpHookModules(sourceDir, installPath);
+            const result = generateOmpHookModules(sourceDir, installPath, 'sp');
             expect(result.count).toBe(2);
 
             const preFiles = result.files.filter((f) => f.includes(join('hooks', 'pre')));
@@ -213,7 +213,7 @@ describe('generateOmpHookModules', () => {
                     preCompact: [{ hooks: [{ type: 'command', command: 'superskill hook run demo on-compact' }] }],
                 },
             });
-            const result = generateOmpHookModules(sourceDir, installPath);
+            const result = generateOmpHookModules(sourceDir, installPath, 'sp');
             expect(result.count).toBe(2);
 
             const stopFile = result.files.find((f) => f.includes(join('hooks', 'post')));
@@ -243,7 +243,7 @@ describe('generateOmpHookModules', () => {
                     ],
                 },
             });
-            const result = generateOmpHookModules(sourceDir, installPath);
+            const result = generateOmpHookModules(sourceDir, installPath, 'sp');
             expect(result.files[0]).toEndWith('anti-hallucination.js');
         } finally {
             rmSync(sourceDir, { recursive: true, force: true });
@@ -262,7 +262,7 @@ describe('generateOmpHookModules', () => {
                     preToolUse: [{ matcher: 'Bash', hooks: [{ type: 'command', command: 'run-checks *' }] }],
                 },
             });
-            const result = generateOmpHookModules(sourceDir, installPath);
+            const result = generateOmpHookModules(sourceDir, installPath, 'sp');
             const written = requireString(result.files[0], 'generated hook path');
             expect(written).toEndWith('hook.js');
             expect(written).not.toEndWith('/.js');
@@ -281,7 +281,7 @@ describe('generateOmpHookModules', () => {
                     preToolUse: [{ matcher: '*', hooks: [{ type: 'command', command: 'echo test' }] }],
                 },
             });
-            const result = generateOmpHookModules(sourceDir, installPath);
+            const result = generateOmpHookModules(sourceDir, installPath, 'sp');
             const content = readFileSync(requireString(result.files[0], 'result.files[0]'), 'utf-8');
 
             // omp's extension loader accepts only a function module or a `default`
@@ -308,7 +308,7 @@ describe('generateOmpHookModules', () => {
                     stop: [{ hooks: [{ type: 'command', command: 'echo hook-ran' }] }],
                 },
             });
-            const result = generateOmpHookModules(sourceDir, installPath);
+            const result = generateOmpHookModules(sourceDir, installPath, 'sp');
             const modulePath = requireString(result.files[0], 'module path');
 
             const run = runGeneratedModule(modulePath, [{ hook_event_name: 'Stop' }]);
@@ -336,7 +336,7 @@ describe('generateOmpHookModules', () => {
                     preToolUse: [{ matcher: '*', hooks: [{ type: 'command', command: script }] }],
                 },
             });
-            const result = generateOmpHookModules(sourceDir, installPath);
+            const result = generateOmpHookModules(sourceDir, installPath, 'sp');
             const modulePath = requireString(result.files[0], 'module path');
 
             const run = runGeneratedModule(modulePath, [{ toolName: 'write' }]);
@@ -362,7 +362,7 @@ describe('generateOmpHookModules', () => {
                     ],
                 },
             });
-            const result = generateOmpHookModules(sourceDir, installPath);
+            const result = generateOmpHookModules(sourceDir, installPath, 'sp');
             expect(result.count).toBe(1);
             const content = readFileSync(requireString(result.files[0], 'result.files[0]'), 'utf-8');
             expect(content).toContain('new RegExp("Write", \'i\').test(event.toolName)');
@@ -389,7 +389,7 @@ describe('generateOmpHookModules', () => {
                     ],
                 },
             });
-            const result = generateOmpHookModules(sourceDir, installPath);
+            const result = generateOmpHookModules(sourceDir, installPath, 'sp');
             expect(result.count).toBe(1);
             expect(result.files[0]).toEndWith('real.js');
         } finally {
@@ -411,7 +411,7 @@ describe('generateOmpHookModules', () => {
                     ],
                 },
             });
-            const result = generateOmpHookModules(sourceDir, installPath);
+            const result = generateOmpHookModules(sourceDir, installPath, 'sp');
             expect(result.count).toBe(2);
             // One file is guard.js, the other gets a random suffix
             const names = result.files.map((f) => f.split('/').pop());
@@ -442,7 +442,7 @@ describe('generateOmpHookModules', () => {
                     ],
                 },
             });
-            const result = generateOmpHookModules(sourceDir, installPath);
+            const result = generateOmpHookModules(sourceDir, installPath, 'sp');
             expect(result.count).toBe(1);
             const content = readFileSync(requireString(result.files[0], 'result.files[0]'), 'utf-8');
 
@@ -480,7 +480,7 @@ describe('generateOmpHookModules', () => {
                     ],
                 },
             });
-            const result = generateOmpHookModules(sourceDir, installPath);
+            const result = generateOmpHookModules(sourceDir, installPath, 'sp');
             expect(result.count).toBe(1);
             const modulePath = requireString(result.files[0], 'module path');
             const content = readFileSync(modulePath, 'utf-8');
@@ -509,7 +509,7 @@ describe('generateOmpHookModules', () => {
                     stop: [{ hooks: [{ type: 'command', command: 'echo done\nconsole.log("escaped")' }] }],
                 },
             });
-            const result = generateOmpHookModules(sourceDir, installPath);
+            const result = generateOmpHookModules(sourceDir, installPath, 'sp');
             expect(result.count).toBe(1);
             const modulePath = requireString(result.files[0], 'module path');
             const content = readFileSync(modulePath, 'utf-8');
@@ -519,6 +519,142 @@ describe('generateOmpHookModules', () => {
             // The raw newline must not escape the `//` comment into a live statement.
             expect(content).toContain('// Command: echo done console.log("escaped")');
             expect(content).not.toContain('\nconsole.log("escaped")');
+        } finally {
+            rmSync(sourceDir, { recursive: true, force: true });
+            rmSync(installPath, { recursive: true, force: true });
+        }
+    });
+
+    it('prunes owned orphan modules even when policy filters desired output to zero (AC5)', () => {
+        const sourceDir = makeTempDir();
+        const installPath = makeTempDir();
+        try {
+            const { writeFileSync, mkdirSync } = require('node:fs');
+            const postDir = join(installPath, 'hooks', 'post');
+            mkdirSync(postDir, { recursive: true });
+            const orphanPath = join(postDir, 'anti-hallucination.js');
+            writeFileSync(
+                orphanPath,
+                '// Generated by superskill install — do not edit manually.\n// Event: agent_end\n// Command: superskill hook run cc anti-hallucination\nexport default () => {};\n',
+            );
+
+            writeHooksJson(sourceDir, {
+                hooks: {
+                    stop: [{ type: 'command', command: 'superskill hook run cc anti-hallucination' }],
+                },
+            });
+
+            // Target policy excludes cc/anti-hallucination for OMP → 0 hooks generated
+            const result = generateOmpHookModules(sourceDir, installPath, 'cc');
+            expect(result.count).toBe(0);
+            expect(existsSync(orphanPath)).toBe(false); // Orphan was pruned!
+        } finally {
+            rmSync(sourceDir, { recursive: true, force: true });
+            rmSync(installPath, { recursive: true, force: true });
+        }
+    });
+
+    it('prunes only owned generated modules and preserves foreign & user files (AC6)', () => {
+        const sourceDir = makeTempDir();
+        const installPath = makeTempDir();
+        try {
+            const { writeFileSync, mkdirSync } = require('node:fs');
+            const preDir = join(installPath, 'hooks', 'pre');
+            mkdirSync(preDir, { recursive: true });
+
+            // 1. Owned generated module (sp/task-write-guard)
+            const ownedPath = join(preDir, 'task-write-guard.js');
+            writeFileSync(
+                ownedPath,
+                '// Generated by superskill install — do not edit manually.\n// Event: tool_call\n// Command: superskill hook run sp task-write-guard\nexport default () => {};\n',
+            );
+
+            // 2. Foreign generated module (other/some-hook)
+            const foreignPath = join(preDir, 'other-hook.js');
+            writeFileSync(
+                foreignPath,
+                '// Generated by superskill install — do not edit manually.\n// Event: tool_call\n// Command: superskill hook run other some-hook\nexport default () => {};\n',
+            );
+
+            // 3. User authored JS file (no banner)
+            const userJsPath = join(preDir, 'user-custom.js');
+            writeFileSync(userJsPath, '// User custom script\nexport default () => {};\n');
+
+            // 4. User authored TS file (.ts)
+            const userTsPath = join(preDir, 'user-custom.ts');
+            writeFileSync(userTsPath, '// User custom TS\nexport default () => {};\n');
+
+            // Now reconcile plugin 'sp' with a new hook
+            writeHooksJson(sourceDir, {
+                hooks: {
+                    sessionStart: [{ type: 'command', command: 'superskill hook run sp session-init' }],
+                },
+            });
+
+            const result = generateOmpHookModules(sourceDir, installPath, 'sp');
+            expect(result.count).toBe(1);
+
+            expect(existsSync(ownedPath)).toBe(false); // Old owned module removed
+            expect(existsSync(foreignPath)).toBe(true); // Foreign module preserved
+            expect(existsSync(userJsPath)).toBe(true); // User JS preserved
+            expect(existsSync(userTsPath)).toBe(true); // User TS preserved
+        } finally {
+            rmSync(sourceDir, { recursive: true, force: true });
+            rmSync(installPath, { recursive: true, force: true });
+        }
+    });
+
+    it('reconciles both hook directories and is byte-idempotent on reinstall (R10 & R11)', () => {
+        const sourceDir = makeTempDir();
+        const installPath = makeTempDir();
+        try {
+            const preDir = join(installPath, 'hooks', 'pre');
+            const postDir = join(installPath, 'hooks', 'post');
+            mkdirSync(preDir, { recursive: true });
+            mkdirSync(postDir, { recursive: true });
+
+            const oldPre = join(preDir, 'old-pre.js');
+            const oldPost = join(postDir, 'old-post.js');
+            writeFileSync(
+                oldPre,
+                '// Generated by superskill install — do not edit manually.\n' +
+                    '// Command: superskill hook run sp old-pre\nexport default () => {};\n',
+            );
+            writeFileSync(
+                oldPost,
+                '// Generated by superskill install — do not edit manually.\n' +
+                    '// Command: superskill hook run sp old-post\nexport default () => {};\n',
+            );
+
+            const foreignPath = join(postDir, 'foreign.js');
+            const foreignContent =
+                '// Generated by superskill install — do not edit manually.\n' +
+                '// Command: superskill hook run other keep\nexport default () => {};\n';
+            writeFileSync(foreignPath, foreignContent);
+
+            writeHooksJson(sourceDir, {
+                hooks: {
+                    sessionStart: [
+                        { type: 'command', command: 'superskill hook run sp context-session-start', timeout: 15 },
+                    ],
+                    sessionEnd: [
+                        { type: 'command', command: 'superskill hook run sp context-session-stop', timeout: 15 },
+                    ],
+                },
+            });
+
+            const first = generateOmpHookModules(sourceDir, installPath, 'sp');
+            expect(first.count).toBe(2);
+            expect(existsSync(oldPre)).toBe(false);
+            expect(existsSync(oldPost)).toBe(false);
+            expect(readFileSync(foreignPath, 'utf-8')).toBe(foreignContent);
+
+            const snapshot = new Map(first.files.map((file) => [file, readFileSync(file, 'utf-8')]));
+            const second = generateOmpHookModules(sourceDir, installPath, 'sp');
+
+            expect(second.files).toEqual(first.files);
+            expect(new Map(second.files.map((file) => [file, readFileSync(file, 'utf-8')]))).toEqual(snapshot);
+            expect(readFileSync(foreignPath, 'utf-8')).toBe(foreignContent);
         } finally {
             rmSync(sourceDir, { recursive: true, force: true });
             rmSync(installPath, { recursive: true, force: true });

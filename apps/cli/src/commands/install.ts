@@ -413,6 +413,7 @@ export async function executeInstall(
                     '.pi',
                     'pi',
                     { dryRun: options.dryRun, global: options.global },
+                    plugin,
                 );
                 hookEmitResults.push(hookResult);
                 if (options.verbose) echo(`  ${hookResult.message}`);
@@ -762,7 +763,7 @@ export function postInstallOmp(
         if (options.verbose) echo('  OMP hooks: skipped (CLI below plugin minCliVersion)');
         hookResult = { count: 0, files: [], message: 'OMP hooks skipped (CLI below plugin minCliVersion)' };
     } else {
-        hookResult = generateOmpHookModules(hooksSourceDir, installPath);
+        hookResult = generateOmpHookModules(hooksSourceDir, installPath, plugin);
     }
 
     // R4: slash command dialect translation on installed commands/
@@ -1069,12 +1070,13 @@ export function emitHooksForSurrogateTarget(
     rulesyncSourceDir: string,
     outputRoot: string,
     options: { dryRun: boolean; global: boolean },
+    plugin: string,
 ): EmitHooksResult | null {
     if (target === 'pi') {
-        return emitPiStyleHooks(rulesyncSourceDir, outputRoot, '.pi', 'pi', options);
+        return emitPiStyleHooks(rulesyncSourceDir, outputRoot, '.pi', 'pi', options, plugin);
     }
     if (target === 'omp') {
-        return emitPiStyleHooks(rulesyncSourceDir, outputRoot, '.omp', 'omp', options);
+        return emitPiStyleHooks(rulesyncSourceDir, outputRoot, '.omp', 'omp', options, plugin);
     }
     if (target === 'hermes') {
         return emitHermesHooks(rulesyncSourceDir, outputRoot, options);

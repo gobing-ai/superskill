@@ -112,7 +112,7 @@ async function emitHook(
     const surrogateSourceTarget: Target = target === 'hermes' ? 'opencode' : 'pi';
     const surrogateInputRoot = prepareTargetRulesyncInput(outputDir, surrogateSourceTarget, name);
     const surrogateSourceDir = join(surrogateInputRoot, '.rulesync');
-    const hookResult = emitHooksForSurrogateTarget(target, surrogateSourceDir, outputRoot, { dryRun, global });
+    const hookResult = emitHooksForSurrogateTarget(target, surrogateSourceDir, outputRoot, { dryRun, global }, name);
     if (!hookResult) {
         return { count: 0, message: `Target '${target}' does not use the hook emit path.` };
     }

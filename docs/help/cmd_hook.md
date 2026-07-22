@@ -152,7 +152,7 @@ sequenceDiagram
     else surrogate target (pi/omp/hermes)
         Cmd->>Cmd: surrogate = hermes→opencode, else pi
         Cmd->>Cmd: prepareTargetRulesyncInput(".rulesync", surrogate)
-        Cmd->>H: emitHooksForSurrogateTarget(target, surrogateDir, outputRoot)
+        Cmd->>H: emitHooksForSurrogateTarget(target, surrogateDir, outputRoot, options, plugin)
         H->>H: emitPiStyleHooks or emitHermesHooks
         H->>FS: write ~/.pi/hooks.json or ~/.hermes/hooks.json
         H-->>Cmd: {count, message}
@@ -163,7 +163,7 @@ sequenceDiagram
 
 ### Hook conversion (canonical → Pi format)
 
-For `pi` and `omp`, canonical hook event names (camelCase) map to Pi lifecycle events via `CANONICAL_TO_PI_EVENT` in `hooks.ts`. `emitPiStyleHooks` converts the canonical `hooks.json` into the `@vahor/pi-hooks` format. For `hermes`, `emitHermesHooks` copies the canonical `hooks.json` verbatim.
+For `pi` and `omp`, canonical hook event names (camelCase) map to Pi lifecycle events via `CANONICAL_HOOK_EVENTS` in `hooks.ts`. `emitPiStyleHooks` converts the canonical `hooks.json` into the `@vahor/pi-hooks` format and reconciles entries owned by the emitted plugin before adding its current target-policy result. This removes stale event mappings and policy-excluded hooks without touching user hooks or other plugins. For `hermes`, `emitHermesHooks` copies the canonical `hooks.json` verbatim.
 
 ### Key source files
 
