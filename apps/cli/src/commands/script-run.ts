@@ -1,7 +1,7 @@
-import { readFileSync } from 'node:fs';
 import { echo, echoError } from '@gobing-ai/ts-utils';
 import type { Command } from 'commander';
 import { validateResponseText } from '../../../../plugins/cc/scripts/anti-hallucination/validate_response';
+import { readStdinNonBlocking } from '../stdin';
 import { cliVersion } from '../version';
 
 /**
@@ -84,17 +84,6 @@ export function scriptRun(plugin: string, scriptId: string, input: ScriptRunInpu
     return result.exitCode;
 }
 
-/** TTY-guarded default stdin reader — returns undefined on interactive terminals so the CLI never blocks waiting for EOF. */
-function readStdinGuarded(): string | undefined {
-    if (process.stdin.isTTY) return undefined;
-    try {
-        const input = readFileSync(0, 'utf-8') as string;
-        return input.trim().length > 0 ? input : undefined;
-    } catch {
-        return undefined;
-    }
-}
-
 /**
  * Register `superskill script run <plugin> <script-id>` on the program.
  * Creates the `script` parent group (mirroring how `hook.ts` creates the `hook`
@@ -111,8 +100,8 @@ export function registerScriptRun(program: Command, readInput?: () => string | u
     group
         .command('run <plugin> <script-id>')
         .description('Run a registered plugin script (the runtime command skill docs reference)')
-        .action((plugin: string, scriptId: string) => {
-            const stdinText = readInput ? readInput() : readStdinGuarded();
+        .action(async (plugin: string, scriptId: string) => {
+            const stdinText = readInput ? readInput() : await readStdinNonBlocking();
             const code = scriptRun(plugin, scriptId, { stdinText, env: process.env });
             process.exit(code);
         });

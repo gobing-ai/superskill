@@ -1,0 +1,34 @@
+# Ban synchronous fd-0 reads in dispatchers and plugin scripts.
+#
+# WHY (task 0104): `readFileSync(0, ...)` blocks forever when a spawning host opens the
+# stdin pipe but never writes and never closes it — observed with Antigravity, and it hangs
+# the agent mid-run. A TTY check does not help: the pipe is not a TTY, it is just silent.
+#
+# Remedy, not suppression: read stdin through stream events under an **idle** budget that is
+# re-armed on every chunk — `readStdinNonBlocking` (`apps/cli/src/stdin.ts`) for the CLI, or
+# `readPipedStdin` (`plugins/cc/scripts/anti-hallucination/ah_guard.ts`) for a staged script
+# that may not import from `apps/cli` (ADR-024). A fixed deadline is NOT an acceptable
+# substitute: it truncates any payload streamed in more than one write, and every runner
+# fails open on an unparseable payload, so truncation silently turns a guard `deny` into an
+# `allow`. Only idleness may end the read.
+rules:
+  - id: no-blocking-stdin-read
+    description: >
+      Do not read stdin synchronously via fd 0 (readFileSync(0), readFileSync('/dev/stdin'),
+      readSync(0)). A host that holds the pipe open without writing blocks the process
+      forever. Use the non-blocking idle-budget reader instead (apps/cli/src/stdin.ts
+      readStdinNonBlocking, or ah_guard.ts readPipedStdin for staged scripts).
+    severity: error
+    evaluator:
+      type: rg
+      config:
+        pattern: "read(File)?Sync\\(\\s*(0\\s*[,)]|['\"]/dev/stdin['\"])"
+    include:
+      - "apps/**/src/**/*.ts"
+      - "packages/**/src/**/*.ts"
+      - "plugins/**/scripts/**/*.ts"
+    exclude:
+      - "**/node_modules/**"
+      - "**/vendors/**"
+      - "**/dist/**"
+      - "**/tests/**"

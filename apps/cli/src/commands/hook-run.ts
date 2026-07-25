@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { echo, echoError } from '@gobing-ai/ts-utils';
 import type { Command } from 'commander';
 import { runStopGuard, type StopProfile } from '../../../../plugins/cc/scripts/anti-hallucination/ah_guard';
+import { readStdinNonBlocking } from '../stdin';
 import { cliVersion } from '../version';
 
 /**
@@ -447,16 +448,12 @@ export function registerHookRun(cmd: Command, readInput?: () => string): void {
             'prevent-stop output profile (block: Claude/Codex/Hermes; deny: Gemini/Antigravity)',
             'block',
         )
-        .action((plugin: string, hookId: string, options: { profile: string }) => {
+        .action(async (plugin: string, hookId: string, options: { profile: string }) => {
             let stdinText = '';
             if (readInput) {
                 stdinText = readInput();
             } else {
-                try {
-                    stdinText = readFileSync(0, 'utf-8') as string;
-                } catch {
-                    stdinText = '';
-                }
+                stdinText = (await readStdinNonBlocking()) ?? '';
             }
             const profile: StopProfile = options.profile === 'deny' ? 'deny' : 'block';
             const code = hookRun(plugin, hookId, process.env, stdinText, profile);
