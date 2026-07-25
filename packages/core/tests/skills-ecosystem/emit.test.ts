@@ -3,7 +3,7 @@ import { existsSync, lstatSync, writeFileSync } from 'node:fs';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { emitSkillForTargets, removeSkillFromTargets } from '../../src/skills-ecosystem/emit';
+import { emitSkillForTargets, removeSkillFromTargets, resolveSkillsToRemove } from '../../src/skills-ecosystem/emit';
 import type { BlobSkill } from '../../src/skills-ecosystem/fetch';
 import { cleanAndCreateDir } from '../../src/skills-ecosystem/installer';
 
@@ -208,6 +208,70 @@ describe('emit.ts - Three-tier per-target emission and removal matrix', () => {
 
         expect(result.skillName).toBe('passwd');
         expect(result.canonicalPath).toContain('.agents/skills/passwd');
+
+        await rm(testHome, { recursive: true, force: true });
+    });
+
+    it('translate tier rewrites plugin-scoped refs using the skill name as prefix (R2 pipeline parity)', async () => {
+        // Regression for the empty-prefix no-op: rewriteSkillReferences('') silently returns
+        // content unchanged, bypassing the install pipeline's residual-refs safety net.
+        const testHome = await mkdtemp(join(tmpdir(), 'emit-prefix-test-'));
+        const sourceDir = join(testHome, 'my-skill');
+        await cleanAndCreateDir(sourceDir);
+        writeFileSync(
+            join(sourceDir, 'SKILL.md'),
+            '---\nname: My Skill\ndescription: Prefix test\n---\n# My Skill\n\nSee `my-skill:helper` for the helper flow.',
+        );
+
+        const result = await emitSkillForTargets(sourceDir, ['hermes'], {
+            global: true,
+            homeDir: testHome,
+            env: { HERMES_HOME: join(testHome, '.hermes') },
+        });
+
+        expect(result.success).toBe(true);
+        const translated = await Bun.file(join(testHome, '.hermes/skills/my-skill/SKILL.md')).text();
+        expect(translated).toContain('my-skill-helper');
+        expect(translated).not.toContain('my-skill:helper');
+
+        await rm(testHome, { recursive: true, force: true });
+    });
+
+    it('resolveSkillsToRemove prefers lock keys over folder names (vendor parity, R4)', () => {
+        // Vendor case (remove.test.ts): lock key keeps the original name with characters
+        // sanitizeName rewrites — 'ce:review' → folder 'ce-review'; the exact key must win.
+        expect(resolveSkillsToRemove(['ce-review'], ['ce-review'], ['ce:review'])).toEqual(['ce:review']);
+        // Folder-only resolution still works.
+        expect(resolveSkillsToRemove(['foo'], ['foo'])).toEqual(['foo']);
+        // Unknown names resolve to nothing.
+        expect(resolveSkillsToRemove(['nope'], ['foo'], ['bar'])).toEqual([]);
+    });
+
+    it('removeSkillFromTargets returns the exact lock key while sweeping the sanitized folder (R4)', async () => {
+        const testHome = await mkdtemp(join(tmpdir(), 'emit-lockkey-test-'));
+        const sourceDir = join(testHome, 'ce-review');
+        await cleanAndCreateDir(sourceDir);
+        writeFileSync(join(sourceDir, 'SKILL.md'), '---\nname: ce:review\ndescription: Lock key test\n---\n# Review');
+
+        const emitRes = await emitSkillForTargets(sourceDir, ['hermes'], {
+            global: true,
+            homeDir: testHome,
+            env: { HERMES_HOME: join(testHome, '.hermes') },
+        });
+        expect(emitRes.success).toBe(true);
+
+        const removeRes = await removeSkillFromTargets('ce-review', ['hermes'], {
+            global: true,
+            homeDir: testHome,
+            env: { HERMES_HOME: join(testHome, '.hermes') },
+            lockKeys: ['ce:review'],
+        });
+
+        // Exact lock key is reported for the CLI child's lock removal…
+        expect(removeRes.skillName).toBe('ce:review');
+        // …while the disk sweep sanitized to the real folder.
+        expect(existsSync(join(testHome, '.agents/skills/ce-review'))).toBe(false);
+        expect(existsSync(join(testHome, '.hermes/skills/ce-review'))).toBe(false);
 
         await rm(testHome, { recursive: true, force: true });
     });

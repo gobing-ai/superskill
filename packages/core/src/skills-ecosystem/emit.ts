@@ -23,6 +23,12 @@ export interface EmitOptions {
     homeDir?: string;
     mode?: 'symlink' | 'copy';
     env?: Record<string, string | undefined>;
+    /**
+     * Lock-file keys consulted for lock-key-wins name resolution on removal (R4).
+     * Supplied by the CLI child, which owns lock reads; a key that sanitizes to the
+     * requested name wins over the folder name so the exact lock key is returned.
+     */
+    lockKeys?: string[];
 }
 
 /** Result for emitting a skill to a specific target agent. */
@@ -159,7 +165,7 @@ export async function emitSkillForTargets(
             try {
                 await cleanAndCreateDir(targetDir);
                 await copyDir(canonicalPath, targetDir);
-                await translateMarkdownFilesInDir(targetDir, target);
+                await translateMarkdownFilesInDir(targetDir, target, skillName);
                 emitResults[target] = {
                     target,
                     tier: 'translate',
@@ -188,18 +194,22 @@ export async function emitSkillForTargets(
 }
 
 /**
- * Translate markdown files in a directory using translateSlashCommands and rewriteSkillReferences.
+ * Translate markdown files in a directory using the install emission pipeline's primitives
+ * (`translateSlashCommands` then `rewriteSkillReferences`, same order as
+ * `transformMarkdownDirectory` in the install pipeline). The plugin prefix is the skill's
+ * own name — the discovered skill dir is a minimal one-skill plugin input (R2); an empty
+ * prefix would silently no-op the rewrite (the install pipeline's residual-refs safety net).
  */
-async function translateMarkdownFilesInDir(dir: string, target: Target): Promise<void> {
+async function translateMarkdownFilesInDir(dir: string, target: Target, pluginPrefix: string): Promise<void> {
     const entries = await readdir(dir, { withFileTypes: true });
     for (const entry of entries) {
         const fullPath = join(dir, entry.name);
         if (entry.isDirectory()) {
-            await translateMarkdownFilesInDir(fullPath, target);
+            await translateMarkdownFilesInDir(fullPath, target, pluginPrefix);
         } else if (extname(entry.name).toLowerCase() === '.md') {
             const rawContent = await readFile(fullPath, 'utf-8');
             const translatedCommands = translateSlashCommands(rawContent, target);
-            const rewritten = rewriteSkillReferences(translatedCommands, '');
+            const rewritten = rewriteSkillReferences(translatedCommands, pluginPrefix);
             await writeFile(fullPath, rewritten, 'utf-8');
         }
     }
@@ -237,6 +247,15 @@ export async function removeSkillFromTargets(
     const sanitized = sanitizeName(skillName);
     const canonicalBase = getCanonicalSkillsDir(global, cwd, homeDir);
     const canonicalPath = join(canonicalBase, sanitized);
+
+    // R4 lock-key-wins name resolution (vendor remove.ts resolveSkillsToRemove): lock-file
+    // keys keep the original name, which may contain characters sanitizeName() rewrites
+    // ('ce:review' → folder 'ce-review'). Folder identity is resolved first, then any lock
+    // key sanitizing to the same folder name wins, so the caller can remove the lock entry
+    // by its exact key while the disk sweep below re-sanitizes to the right folder.
+    const identity =
+        resolveSkillsToRemove([skillName], [skillName, ...(options.lockKeys ?? [])], options.lockKeys ?? [])[0] ??
+        skillName;
 
     if (existsSync(canonicalPath)) {
         await rm(canonicalPath, { recursive: true, force: true }).catch(() => {});
@@ -285,10 +304,34 @@ export async function removeSkillFromTargets(
     const allSuccessful = Object.values(removeResults).every((r) => r.success);
     return {
         success: allSuccessful,
-        skillName: sanitized,
+        skillName: identity,
         canonicalPath,
         results: removeResults,
     };
+}
+
+/**
+ * Resolve requested skill names to canonical identities, preferring lock keys over folder
+ * names (vendor-verbatim port of vercel-labs/skills `remove.ts` `resolveSkillsToRemove`).
+ * Lock-file keys carry the exact key needed for lock removal; matching purely on folder
+ * names misses name-mismatched skills (e.g. lock key `ce:review` → folder `ce-review`).
+ */
+export function resolveSkillsToRemove(requested: string[], folderNames: string[], lockKeys: string[] = []): string[] {
+    const identityBySanitized = new Map<string, string>();
+    for (const folder of folderNames) {
+        identityBySanitized.set(sanitizeName(folder), folder);
+    }
+    // Lock keys win: they carry the exact key needed for lock removal.
+    for (const key of lockKeys) {
+        identityBySanitized.set(sanitizeName(key), key);
+    }
+
+    const matched = new Set<string>();
+    for (const name of requested) {
+        const hit = identityBySanitized.get(sanitizeName(name));
+        if (hit) matched.add(hit);
+    }
+    return Array.from(matched);
 }
 
 async function isSymlink(path: string): Promise<boolean> {
