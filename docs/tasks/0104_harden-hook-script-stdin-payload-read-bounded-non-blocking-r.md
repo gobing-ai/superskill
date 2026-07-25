@@ -3,7 +3,7 @@ template: issue
 schema_version: 1
 name: "harden hook/script stdin payload read: bounded non-blocking reader replacing blocking readFileSync(0)"
 description: ""
-status: testing
+status: done
 type: issue
 profile: standard
 feature_id: A
@@ -12,7 +12,7 @@ priority: P2
 tags: ["bug"]
 dependencies: []
 created_at: "2026-07-25T04:48:53.609Z"
-updated_at: "2026-07-25T05:48:13.525Z"
+updated_at: "2026-07-25T06:15:48.966Z"
 ---
 
 ## 0104. harden hook/script stdin payload read: bounded non-blocking reader replacing blocking readFileSync(0)
@@ -162,48 +162,59 @@ mandatory, so the fallback is unreachable and behavior is unchanged. `bun run li
 warning-free instead of warning-tolerant.
 
 ### Testing
-**Per-Requirement Traceability** (verify run 2026-07-24; every `file:line` re-read this run)
+**Per-Requirement Traceability** (verify run 2026-07-24, second pass; every `file:line` re-read this run)
 
 | Req | Status | Evidence |
 | --- | --- | --- |
-| R1 non-blocking on silent pipe | MET | test `gives up within the budget when a host holds stdin open without writing` (`apps/cli/tests/stdin.test.ts:85`); e2e `hook run sp task-write-guard` with an 8 s silent pipe exits 0 in 2 s |
-| R2 multi-write payload read whole | MET | test `accumulates a payload streamed in chunks whose total span exceeds the budget` (`apps/cli/tests/stdin.test.ts:96`); idle re-arm at `apps/cli/src/stdin.ts:43` |
-| R3 shared reader | MET | `apps/cli/src/commands/script-run.ts:4` and `apps/cli/src/commands/hook-run.ts:7` both `import { readStdinNonBlocking } from '../stdin'`; no command↔command import remains |
-| R4 tunable bound | MET | `apps/cli/src/stdin.ts:26` `resolveStdinTimeoutMs`; `apps/cli/src/stdin.ts:27` reads `SUPERSKILL_STDIN_TIMEOUT_MS`; 3 env tests in `apps/cli/tests/stdin.test.ts` |
-| R5 staged path, no apps/cli import | MET | `plugins/cc/scripts/anti-hallucination/ah_guard.ts:497` `readPipedStdin`; `rg readFileSync\(0` over that file returns no match; 4 `readPipedStdin` tests |
-| R6 contract documented | MET | `docs/04_DESIGN.md:67` section; `:83` idle-vs-deadline invariant; `:86` env override; `:89` residual |
-| R7 codified ban | MET | `.spur/rules/typescript/no-blocking-stdin-read.yaml`; `spur rule run --rule no-blocking-stdin-read` → "All 1 rule passed"; picked up by `recommended-pre-check` (30 → 31) |
+| R1 non-blocking on silent pipe | MET | test `gives up within the budget when a host holds stdin open without writing` (`apps/cli/tests/stdin.test.ts:92`, 9/9 pass); e2e fifo held open 30 s with no write → `hook run cc anti-hallucination` exit 0 in 472 ms |
+| R2 multi-write payload read whole | MET | test `accumulates a payload streamed in chunks whose total span exceeds the budget` (`apps/cli/tests/stdin.test.ts:103`, asserts `JSON.parse` succeeds); idle re-arm in `onData` → `arm(idleMs)` (`apps/cli/src/stdin.ts:43`) |
+| R3 shared reader | MET | `apps/cli/src/commands/script-run.ts:4` and `apps/cli/src/commands/hook-run.ts:7` both `import { readStdinNonBlocking } from '../stdin'`; diff 4b9d5fe deletes script-run's local `readStdinGuarded` and hook-run's inline `readFileSync(0)` |
+| R4 tunable bound | MET | `apps/cli/src/stdin.ts:26` `resolveStdinTimeoutMs`, `:27` reads `SUPERSKILL_STDIN_TIMEOUT_MS`; 3 env tests (unset → 250, `'1500'` → 1500, `'soon'`/`'0'`/`'-5'` → 250) |
+| R5 staged path, no apps/cli import | MET | `plugins/cc/scripts/anti-hallucination/ah_guard.ts:497` `readPipedStdin` with idle re-arm; `:531` `import.meta.main` → `main(await readPipedStdin())`; repo-wide `rg 'readFileSync(0|/dev/stdin|readSync(0'` over `apps/cli/src packages plugins/cc/scripts` → 0 matches; 4 `readPipedStdin` tests (81/81 pass) |
+| R6 contract documented | MET | `docs/04_DESIGN.md:67` section `Stdin payload contract`; `:73-81` condition→result table; `:83` idle-vs-deadline invariant; `:86` env override; `:89` first-byte residual |
+| R7 codified ban | MET | `.spur/rules/typescript/no-blocking-stdin-read.yaml`; `spur rule run --rule no-blocking-stdin-read` → "All 1 rule passed"; `recommended-pre-check` 31/31 (was 30) in this run's spur-check |
 
 **Acceptance Criteria Verification**
 
 | AC | Status | Evidence Type | Evidence |
 | --- | --- | --- | --- |
-| AC1 hang bounded | MET | test + command | `apps/cli/tests/stdin.test.ts:85`; e2e 8 s silent pipe → exit 0 in 2 s |
-| AC2 no truncation, both readers | MET | test | `apps/cli/tests/stdin.test.ts:96`; `plugins/cc/scripts/anti-hallucination/tests/ah_guard.test.ts` `accumulates chunks whose total span exceeds the idle budget` |
-| AC3 e2e deny, immediate + chunked | MET | command | `hook run sp task-write-guard` on an owned task path → `permissionDecision:"deny"` for both deliveries |
-| AC4 shared import | MET | static | `script-run.ts:4`, `hook-run.ts:7` |
-| AC5 env override + fallback | MET | test | 3 cases: unset → 250, `"1500"` → 1500, `"soon"`/`"0"`/`"-5"` → 250 |
-| AC6 no fd-0 read in ah_guard | MET | static + test | no `readFileSync(0` match; `readPipedStdin` covered by 4 tests |
-| AC7 design doc complete | MET | static | `docs/04_DESIGN.md:67,83,86,89` |
-| AC8 full gate green | MET | command | `bun run autofix && bun run spur-check` EXIT_CODE=0; 31/31 pre-check, 1757 pass / 0 fail, 3/3 post-check, Biome 0 warnings; `bun run build` exit 0 |
-| AC9 rule both directions | MET | command | 4 hits on `should-fire.ts`, 0 on `should-pass.ts`; `spur rule run` passes; rule count 31 |
+| AC1 hang bounded | MET | test + command | `apps/cli/tests/stdin.test.ts:92`; fifo probe: open-never-written pipe → exit 0 in 472 ms (budget 250 ms + boot) |
+| AC2 no truncation, both readers | MET | test | `apps/cli/tests/stdin.test.ts:103`; `plugins/cc/scripts/anti-hallucination/tests/ah_guard.test.ts:726` `accumulates chunks whose total span exceeds the idle budget`; suites run in both file orders: 90/90 and 90/90 |
+| AC3 e2e deny, immediate + chunked | MET | command | `hook run sp task-write-guard` on this task's owned path → guard message + exit 2 for immediate delivery AND for 3-chunk delivery (150 ms gaps, ~300 ms+ total span > 250 ms budget) |
+| AC4 shared import | MET | static-ref | `script-run.ts:4`, `hook-run.ts:7` re-read this run; no command↔command import |
+| AC5 env override + fallback | MET | test | 3 cases in `apps/cli/tests/stdin.test.ts` (`describe resolveStdinTimeoutMs`): unset → 250, `'1500'` → 1500, `'soon'`/`'0'`/`'-5'` → 250 |
+| AC6 no fd-0 read in ah_guard | MET | static-ref + test | repo-wide scan 0 matches; `readPipedStdin` covered by 4 tests (`ah_guard.test.ts:695` describe) |
+| AC7 design doc complete | MET | static-ref | `docs/04_DESIGN.md:67,73-81,83,86,89` |
+| AC8 full gate green | MET | command | `bun run spur-check` EXIT=0: Biome 195 files clean, pre-check 31/31, 1757 pass / 0 fail, coverage 99.86% functions / 99.00% lines (gate ≥90%), post-check 3/3; `bun run build` EXIT=0 |
+| AC9 rule both directions | MET | command | rule pattern 4 hits on `should-fire.ts`, 0 on `should-pass.ts`; `spur rule run --rule no-blocking-stdin-read` passes; pre-check count 31 |
 
-**Defect found and fixed by this verify run.** Running `apps/cli/tests/stdin.test.ts` together with
-the ah_guard suite failed: `readPipedStdin > accumulates chunks whose total span exceeds the idle
-budget` received `…"stop_hook_active":false}too late`. A test scheduled
-`setTimeout(() => process.stdin.emit('data', 'too late'), 300)` that outlived its own test and
-injected a stray chunk into the next suite's reader on the shared `process.stdin`. Order-dependent,
-so the full-suite run was green and hid it. Removed the leaking case; its branch (first-byte timer
-fires with no data) is identical to the retained hang test, which now documents the bounded-drop
-residual and why no late emit is scheduled. Re-verified in both file orders and standalone: 90/90,
-90/90, 9/9.
+**Design conformance** — `### Design` is a bare placeholder (standard-profile bug fix); classified against the `### Solution` change map instead: 8/9 claims DONE. One PARTIAL: the keep-in-sync comment claimed "on both sides" exists only at `ah_guard.ts:491`; `apps/cli/src/stdin.ts` carries no back-reference. Solution line anchors drifted with sibling commits (`ah_guard` :490→:497, `04_DESIGN` :57→:67) — content verified at the fresh anchors above.
 
-Coverage: `apps/cli/src/stdin.ts` 100% functions / 100% lines; `ah_guard.ts` 100% / 98.42%;
-suite aggregate 99.86% functions / 99.00% lines (gate >=90%).
+**Findings (SECUA, --focus all)** — no blockers, no majors. Minor/advisory:
+
+- (minor, distribution) The PATH-installed `superskill` 0.3.8 binary (`~/node_modules/@gobing-ai/superskill/dist/index.js`) contains 0 occurrences of `readStdinNonBlocking` — hosts running the installed bundle still hang until the next release/install. Source-side fix is complete; distribution is out of this task's scope.
+- (advisory) Commit bd85c5c mixes this task's `ah_guard`/`04_DESIGN`/`index.ts` hunks with sibling-task work (lifecycle-verb task file, skills-ecosystem re-exports in `packages/core/src/index.ts`). All 0104-relevant hunks map to R/AC items; no unmapped production-code drift in this task's surface.
+- (advisory) `readStdinNonBlocking` mutates global `process.stdin` (`setEncoding`, `resume`) — correct for single-shot CLI dispatch; tests restore state via `afterEach` pause.
+
+**Prior-run defect holds fixed.** The cross-suite stdin leak found by the 2026-07-24 verify run stays fixed: both file orders 90/90, standalone 9/9 and 81/81.
+
+Coverage: `apps/cli/src/stdin.ts` 100% functions / 100% lines; `ah_guard.ts` 100% / 98.42%; suite aggregate 99.86% functions / 99.00% lines (gate ≥90%).
 ### Review
+**Review Findings** (review pass 2026-07-24, SECUA all dimensions, diff surface 4b9d5fe + 0104-relevant hunks of bd85c5c)
 
-<!-- Filled during review: P1-P4 findings, residual risk, and final disposition. -->
+| Priority | Dimension | Location | Finding | Disposition |
+| --- | --- | --- | --- | --- |
+| P1 | Security | — | None — the change closes the truncation→fail-open guard-bypass; the ban is codified as `no-blocking-stdin-read` | Clean |
+| P2 | Correctness | — | None — `settle()` idempotent, listeners/timer cleaned on all exits, whitespace-only contract preserved, idle re-arm verified by labelled regression tests on both readers | Clean |
+| P3 | Efficiency | — | None — event-driven read, no polling; pending timer cleared before every re-arm | Clean |
+| P4 | Usability | `apps/cli/src/stdin.ts` vs `plugins/cc/scripts/anti-hallucination/ah_guard.ts:491` | Keep-in-sync comment claimed "on both sides" exists only on the ah_guard side; stdin.ts has no back-reference to its deliberate duplicate | Advisory / Accepted (doc drift, semantics verified identical) |
+| P4 | Architecture | `~/node_modules/@gobing-ai/superskill/dist/index.js` | PATH-installed superskill 0.3.8 binary predates the fix — hosts on the installed bundle still hang until next release/install | Advisory / Out of scope (distribution, not source) |
+| P4 | Architecture | `apps/cli/src/stdin.ts:43` | Reader mutates global `process.stdin` (`setEncoding`, `resume`) | Advisory / Accepted (single-shot CLI dispatch; tests restore via afterEach pause) |
 
+No blocker or major SECUA findings. Functional traceability: R1–R7 MET, AC1–AC9 MET with
+executable evidence on every behavior-bearing row (see `## Testing`, verdict artifact
+`.spur/run/0104-verdict.json` → PASS). Scope note: bd85c5c mixes sibling-task hunks
+(lifecycle-verb task, skills-ecosystem re-exports); all 0104-relevant hunks map to R/AC items.
 ### References
 
 <!-- Links to failing logs, related issues, tasks, docs, or external references. -->
@@ -212,3 +223,4 @@ suite aggregate 99.86% functions / 99.00% lines (gate >=90%).
 - 2026-07-25T04:52:56.227Z backlog → todo (system)
 - 2026-07-25T04:52:57.472Z todo → wip (system)
 - 2026-07-25T04:52:58.852Z wip → testing (system)
+- 2026-07-25T06:15:48.966Z testing → done (system)
