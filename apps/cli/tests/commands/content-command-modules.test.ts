@@ -224,6 +224,10 @@ describe('skill command module', () => {
         const program = new Command();
         registerSkill(program);
         expect(program.commands.find((cmd) => cmd.name() === 'skill')?.commands.map((cmd) => cmd.name())).toEqual([
+            'add',
+            'list',
+            'remove',
+            'update',
             'scaffold',
             'validate',
             'evaluate',

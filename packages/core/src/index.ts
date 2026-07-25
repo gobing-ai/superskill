@@ -73,6 +73,7 @@ export {
     writeBlobSkill,
 } from './skills-ecosystem/installer';
 export * from './skills-ecosystem/locks';
+export * from './skills-ecosystem/operations';
 export * from './skills-ecosystem/sanitize';
 export * from './skills-ecosystem/source-parser';
 export * from './skills-ecosystem/types';

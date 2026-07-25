@@ -23,6 +23,8 @@ export interface EmitOptions {
     homeDir?: string;
     mode?: 'symlink' | 'copy';
     env?: Record<string, string | undefined>;
+    /** Declared skill name override for the canonical directory (defaults to source basename). */
+    name?: string;
     /**
      * Lock-file keys consulted for lock-key-wins name resolution on removal (R4).
      * Supplied by the CLI child, which owns lock reads; a key that sanitizes to the
@@ -66,7 +68,7 @@ export async function emitSkillForTargets(
     const cwd = options.cwd || process.cwd();
     const homeDir = options.homeDir;
 
-    const canonicalResult = await installSkillCanonical(source, { global, cwd, homeDir });
+    const canonicalResult = await installSkillCanonical(source, { global, cwd, homeDir, name: options.name });
     if (!canonicalResult.success) {
         return {
             success: false,

@@ -1,3 +1,4 @@
+import { addSkills, listSkills, removeSkills, type Target, updateSkills } from '@gobing-ai/superskill-core';
 import { echo, echoError } from '@gobing-ai/ts-utils';
 import type { Command } from 'commander';
 import { evaluate, formatEvaluationReport } from '../operations/evaluate';
@@ -246,9 +247,178 @@ export async function handleSkillMigrate(sourcesAndDest: string[], opts: SkillMi
     });
 }
 
+/** Run skill add as a CLI action. */
+export async function handleSkillAdd(
+    source: string,
+    opts: {
+        skill?: string[];
+        agent?: string[];
+        global?: boolean;
+        copy?: boolean;
+        yes?: boolean;
+        list?: boolean;
+        dryRun?: boolean;
+        json?: boolean;
+        homeDir?: string;
+    },
+): Promise<void> {
+    await runOperation(async () => {
+        let targets: Target[] | undefined;
+        if (opts.agent && opts.agent.length > 0) {
+            targets = opts.agent.flatMap((a) => a.split(',')).map((t) => t.trim() as Target);
+        }
+
+        const res = await addSkills(source, {
+            skills: opts.skill,
+            targets,
+            global: opts.global,
+            mode: opts.copy ? 'copy' : 'symlink',
+            listOnly: opts.list,
+            dryRun: opts.dryRun,
+            homeDir: opts.homeDir,
+        });
+
+        if (opts.json) {
+            echo(JSON.stringify(res, null, 2));
+            return res.success ? undefined : 1;
+        }
+
+        if (!res.success) {
+            echoError(res.error || 'Failed to add skills');
+            return 1;
+        }
+
+        if (res.listOnly && res.discovered) {
+            echo(`Discovered ${res.discovered.length} skill(s) in ${source}:`);
+            for (const item of res.discovered) {
+                echo(`  - ${item.name} (${item.path}): ${item.description}`);
+            }
+            return undefined;
+        }
+
+        if (res.installed) {
+            const prefix = res.dryRun ? '[dry-run] Would install' : 'Installed';
+            echo(`${prefix} ${res.installed.length} skill(s):`);
+            for (const item of res.installed) {
+                echo(`  - ${item.name} -> ${item.canonicalPath}`);
+            }
+        }
+        return undefined;
+    });
+}
+
+/** Run skill list as a CLI action. */
+export async function handleSkillList(opts: { global?: boolean; json?: boolean; homeDir?: string }): Promise<void> {
+    await runOperation(async () => {
+        const res = await listSkills({ global: opts.global, homeDir: opts.homeDir });
+        if (opts.json) {
+            echo(JSON.stringify(res, null, 2));
+            return undefined;
+        }
+
+        if (res.skills.length === 0) {
+            echo(`No ${res.scope} skills installed.`);
+            return undefined;
+        }
+
+        echo(`Installed ${res.scope} skills (${res.skills.length}):`);
+        for (const item of res.skills) {
+            echo(`  - ${item.name} [${item.source}] (${item.hash.substring(0, 12)})`);
+        }
+        return undefined;
+    });
+}
+
+/** Run skill remove as a CLI action. */
+export async function handleSkillRemove(
+    names: string[],
+    opts: { global?: boolean; yes?: boolean; json?: boolean; homeDir?: string },
+): Promise<void> {
+    await runOperation(async () => {
+        const res = await removeSkills(names, { global: opts.global, homeDir: opts.homeDir });
+        if (opts.json) {
+            echo(JSON.stringify(res, null, 2));
+            return res.success ? undefined : 1;
+        }
+
+        if (!res.success) {
+            echoError('Failed to remove skills');
+            return 1;
+        }
+
+        echo(`Removed ${res.removed.length} skill(s):`);
+        for (const name of res.removed) {
+            echo(`  - ${name}`);
+        }
+        return undefined;
+    });
+}
+
+/** Run skill update as a CLI action. */
+export async function handleSkillUpdate(
+    names: string[],
+    opts: { global?: boolean; yes?: boolean; json?: boolean; homeDir?: string },
+): Promise<void> {
+    await runOperation(async () => {
+        const res = await updateSkills(names.length > 0 ? names : undefined, {
+            global: opts.global,
+            homeDir: opts.homeDir,
+        });
+        if (opts.json) {
+            echo(JSON.stringify(res, null, 2));
+            return res.success ? undefined : 1;
+        }
+
+        if (!res.success) {
+            echoError('Failed to update skills');
+            return 1;
+        }
+
+        echo(`Updated ${res.updated.length} skill(s):`);
+        for (const item of res.updated) {
+            const status = item.updated ? 'Updated' : 'Up to date';
+            echo(`  - ${item.name}: ${status} (${item.reason})`);
+        }
+        return undefined;
+    });
+}
+
 /** Register the skill command group. */
 export function registerSkill(program: Command): void {
     const cmd = program.command('skill').description('Manage skill definitions');
+
+    cmd.command('add <source>')
+        .description('Install skills from a local directory or GitHub repository slug/URL')
+        .option('-s, --skill <name...>', 'Specific skill name(s) to install')
+        .option('-a, --agent <targets...>', 'Target agent(s) to emit to (comma-separated or multiple)')
+        .option('-g, --global', 'Install to user-level global directory instead of project-level')
+        .option('--copy', 'Force copy mode instead of relative symlinking')
+        .option('-y, --yes', 'Non-interactive auto-confirm (default: true)', true)
+        .option('--list', 'List discovered skills without installing')
+        .option('--dry-run', 'Preview installation without writing files')
+        .option('--json', 'Output structured JSON envelope')
+        .action(handleSkillAdd);
+
+    cmd.command('list')
+        .description('List installed skills')
+        .option('-g, --global', 'List user-level global skills instead of project-level')
+        .option('--json', 'Output structured JSON envelope')
+        .action(handleSkillList);
+
+    cmd.command('remove <names...>')
+        .alias('rm')
+        .description('Remove installed skill(s) across all targets and lock files')
+        .option('-g, --global', 'Remove from user-level global directories')
+        .option('-y, --yes', 'Non-interactive auto-confirm (default: true)', true)
+        .option('--json', 'Output structured JSON envelope')
+        .action(handleSkillRemove);
+
+    cmd.command('update [names...]')
+        .description('Update installed skill(s) from their source repositories')
+        .option('-g, --global', 'Update user-level global skills')
+        .option('-y, --yes', 'Non-interactive auto-confirm (default: true)', true)
+        .option('--json', 'Output structured JSON envelope')
+        .action(handleSkillUpdate);
 
     addScaffoldOptions(cmd.command('scaffold <name>').description('Create a new skill from template')).action(
         handleSkillScaffold,

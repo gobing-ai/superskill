@@ -83,13 +83,13 @@ export function getLocalLockPath(cwd?: string): string {
 /**
  * Path to global skills lock file ($XDG_STATE_HOME/skills/.skill-lock.json or ~/.agents/.skill-lock.json).
  */
-export function getGlobalLockPath(env?: Record<string, string | undefined>): string {
+export function getGlobalLockPath(env?: Record<string, string | undefined>, homeDir?: string): string {
     const environ = env ?? process.env;
     const xdgStateHome = environ.XDG_STATE_HOME?.trim();
     if (xdgStateHome) {
         return join(xdgStateHome, 'skills', GLOBAL_LOCK_FILE_NAME);
     }
-    return join(homedir(), '.agents', GLOBAL_LOCK_FILE_NAME);
+    return join(homeDir ?? homedir(), '.agents', GLOBAL_LOCK_FILE_NAME);
 }
 
 /** Alias function for vendor compatibility pointing to getGlobalLockPath. */
@@ -120,8 +120,13 @@ export function isCanonicalSkillPath(path: string): boolean {
 /**
  * Compute SHA-256 content hash of all files in a CANONICAL skill directory.
  * Enforces the hash invariant: throws if provided a translated skill path.
+ * Optional exclusion sets mirror copyDir semantics so a source directory can be
+ * hashed comparably to the canonical copy produced from it (update no-op check).
  */
-export async function computeCanonicalSkillFolderHash(canonicalSkillDir: string): Promise<string> {
+export async function computeCanonicalSkillFolderHash(
+    canonicalSkillDir: string,
+    opts?: { excludeFiles?: ReadonlySet<string>; excludeDirs?: ReadonlySet<string> },
+): Promise<string> {
     if (!isCanonicalSkillPath(canonicalSkillDir)) {
         throw new Error(
             `Lock operations accept only canonical skill folder paths; received translated path: ${canonicalSkillDir}`,
@@ -129,7 +134,7 @@ export async function computeCanonicalSkillFolderHash(canonicalSkillDir: string)
     }
 
     const files: Array<{ relativePath: string; content: Buffer }> = [];
-    await collectFiles(canonicalSkillDir, canonicalSkillDir, files);
+    await collectFiles(canonicalSkillDir, canonicalSkillDir, files, opts);
 
     files.sort((a, b) => a.relativePath.localeCompare(b.relativePath));
 
@@ -149,6 +154,7 @@ async function collectFiles(
     baseDir: string,
     currentDir: string,
     results: Array<{ relativePath: string; content: Buffer }>,
+    opts?: { excludeFiles?: ReadonlySet<string>; excludeDirs?: ReadonlySet<string> },
 ): Promise<void> {
     const entries = await readdir(currentDir, { withFileTypes: true });
 
@@ -156,9 +162,11 @@ async function collectFiles(
         entries.map(async (entry) => {
             const fullPath = join(currentDir, entry.name);
             if (entry.isDirectory()) {
-                if (entry.name === '.git' || entry.name === 'node_modules') return;
-                await collectFiles(baseDir, fullPath, results);
+                if (entry.name === '.git' || entry.name === 'node_modules' || opts?.excludeDirs?.has(entry.name))
+                    return;
+                await collectFiles(baseDir, fullPath, results, opts);
             } else if (entry.isFile()) {
+                if (opts?.excludeFiles?.has(entry.name)) return;
                 const content = await readFile(fullPath);
                 const relativePath = relative(baseDir, fullPath).split('\\').join('/');
                 results.push({ relativePath, content });
@@ -305,8 +313,11 @@ export async function removeSkillFromLocalLock(skillName: string, cwd?: string):
  * Read global skill lock file.
  * Preserves newer lock files untouched with a warning flag (R3).
  */
-export async function readGlobalLock(env?: Record<string, string | undefined>): Promise<GlobalSkillLockFile> {
-    const lockPath = getGlobalLockPath(env);
+export async function readGlobalLock(
+    env?: Record<string, string | undefined>,
+    homeDir?: string,
+): Promise<GlobalSkillLockFile> {
+    const lockPath = getGlobalLockPath(env, homeDir);
     try {
         const content = await readFile(lockPath, 'utf-8');
         const parsed = JSON.parse(content) as GlobalSkillLockFile;
@@ -347,6 +358,7 @@ export const readSkillLock = readGlobalLock;
 export async function writeGlobalLock(
     lock: GlobalSkillLockFile,
     env?: Record<string, string | undefined>,
+    homeDir?: string,
 ): Promise<void> {
     if (lock.version > GLOBAL_LOCK_VERSION || lock.warning) {
         throw new Error(
@@ -354,7 +366,7 @@ export async function writeGlobalLock(
         );
     }
 
-    const lockPath = getGlobalLockPath(env);
+    const lockPath = getGlobalLockPath(env, homeDir);
     await assertOnDiskVersionMatches(lockPath, GLOBAL_LOCK_VERSION, 'global');
     await mkdir(dirname(lockPath), { recursive: true });
 
@@ -385,7 +397,7 @@ export const writeSkillLock = writeGlobalLock;
 export async function addSkillToGlobalLock(
     skillName: string,
     entry: Omit<GlobalSkillLockEntry, 'installedAt' | 'updatedAt'>,
-    opts?: { canonicalSkillDir?: string; env?: Record<string, string | undefined> },
+    opts?: { canonicalSkillDir?: string; env?: Record<string, string | undefined>; homeDir?: string },
 ): Promise<void> {
     if (opts?.canonicalSkillDir && !isCanonicalSkillPath(opts.canonicalSkillDir)) {
         throw new Error(
@@ -393,7 +405,7 @@ export async function addSkillToGlobalLock(
         );
     }
 
-    const lock = await readGlobalLock(opts?.env);
+    const lock = await readGlobalLock(opts?.env, opts?.homeDir);
     const now = new Date().toISOString();
     const existing = lock.skills[skillName];
 
@@ -403,7 +415,7 @@ export async function addSkillToGlobalLock(
         updatedAt: now,
     };
 
-    await writeGlobalLock(lock, opts?.env);
+    await writeGlobalLock(lock, opts?.env, opts?.homeDir);
 }
 
 /** Alias for addSkillToGlobalLock for vendor compatibility. */
@@ -415,13 +427,14 @@ export const addSkillToLock = addSkillToGlobalLock;
 export async function removeSkillFromGlobalLock(
     skillName: string,
     env?: Record<string, string | undefined>,
+    homeDir?: string,
 ): Promise<boolean> {
-    const lock = await readGlobalLock(env);
+    const lock = await readGlobalLock(env, homeDir);
     if (!(skillName in lock.skills)) {
         return false;
     }
     delete lock.skills[skillName];
-    await writeGlobalLock(lock, env);
+    await writeGlobalLock(lock, env, homeDir);
     return true;
 }
 

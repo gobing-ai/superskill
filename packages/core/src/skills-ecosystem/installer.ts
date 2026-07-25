@@ -15,8 +15,10 @@ import { homedir, platform } from 'node:os';
 import { basename, dirname, join, normalize, relative, resolve, sep } from 'node:path';
 import type { BlobSkill } from './fetch';
 
-const EXCLUDE_FILES = new Set(['metadata.json']);
-const EXCLUDE_DIRS = new Set(['.git', '__pycache__', '__pypackages__', 'node_modules', 'dist', 'build']);
+/** File names excluded when copying a skill directory into the canonical store. */
+export const EXCLUDE_FILES = new Set(['metadata.json']);
+/** Directory names excluded when copying a skill directory into the canonical store. */
+export const EXCLUDE_DIRS = new Set(['.git', '__pycache__', '__pypackages__', 'node_modules', 'dist', 'build']);
 
 /**
  * Sanitize a skill or directory name to prevent path traversal attacks
@@ -204,11 +206,14 @@ export interface CanonicalInstallResult {
  */
 export async function installSkillCanonical(
     source: string | BlobSkill,
-    options: { global?: boolean; cwd?: string; homeDir?: string } = {},
+    options: { global?: boolean; cwd?: string; homeDir?: string; name?: string } = {},
 ): Promise<CanonicalInstallResult> {
     const global = options.global ?? false;
     const cwd = options.cwd || process.cwd();
-    const rawName = typeof source === 'string' ? basename(resolve(source)) : source.name;
+    // Directory sources default to the source basename; callers that already resolved the
+    // skill's declared (frontmatter) name pass it explicitly so the canonical dir, the lock
+    // key, and the emission tiers all agree on one identity.
+    const rawName = options.name ?? (typeof source === 'string' ? basename(resolve(source)) : source.name);
     const skillName = sanitizeName(rawName);
 
     const canonicalBase = getCanonicalSkillsDir(global, cwd, options.homeDir);
