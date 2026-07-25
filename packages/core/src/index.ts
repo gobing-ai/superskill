@@ -51,6 +51,7 @@ export * from './rulesync';
 // ── Skills ecosystem (ported from vercel-labs/skills, MIT — see vendors/skills/LICENSE) ──
 export * from './skills-ecosystem/agents';
 export * from './skills-ecosystem/discovery';
+export * from './skills-ecosystem/emit';
 export * from './skills-ecosystem/fetch';
 // `parseFrontmatter` collides with content/frontmatter's export, so the
 // skills-ecosystem frontmatter module is re-exported with explicit names.
@@ -60,6 +61,17 @@ export {
     parseSkillFrontmatter,
 } from './skills-ecosystem/frontmatter';
 export * from './skills-ecosystem/github-host';
+export {
+    type CanonicalInstallResult,
+    cleanAndCreateDir,
+    copyDir,
+    createSymlink,
+    getCanonicalSkillsDir,
+    installSkillCanonical,
+    isPathSafe,
+    pathsOverlap,
+    writeBlobSkill,
+} from './skills-ecosystem/installer';
 export * from './skills-ecosystem/locks';
 export * from './skills-ecosystem/sanitize';
 export * from './skills-ecosystem/source-parser';

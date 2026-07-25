@@ -3,7 +3,7 @@ template: feature-impl
 schema_version: 1
 name: "skills-ecosystem: installer and three-tier per-target emission reusing the install pipeline"
 description: ""
-status: todo
+status: done
 type: task
 profile: standard
 feature_id: B
@@ -12,7 +12,7 @@ priority: P1
 tags: ["skills-ecosystem", "emission", "high-risk"]
 dependencies: ["0099", "0100"]
 created_at: "2026-07-24T23:58:50.199Z"
-updated_at: "2026-07-25T00:00:19.387Z"
+updated_at: "2026-07-25T09:08:00.000Z"
 ---
 
 ## 0101. skills-ecosystem: installer and three-tier per-target emission reusing the install pipeline
@@ -43,15 +43,24 @@ Implements: R1 (installer part), R4 (three-tier emission), R6 (isPathSafe/pathsO
 
 ### Solution
 
-<!-- Filled during implementation: file:line change map and concise rationale. -->
+- `packages/core/src/skills-ecosystem/installer.ts`: Implemented `sanitizeName`, `isPathSafe`, `pathsOverlap`, `getCanonicalSkillsDir`, `cleanAndCreateDir`, `createSymlink` (with parent symlink resolution via `realpath` and win32 `junction` support), `copyDir`, `writeBlobSkill`, and `installSkillCanonical`.
+- `packages/core/src/skills-ecosystem/emit.ts`: Implemented `emitSkillForTargets` and `removeSkillFromTargets` supporting Tier 1 (`direct`), Tier 2 (`symlink`), and Tier 3 (`translate` via `translateSlashCommands` and `rewriteSkillReferences`).
+- `packages/core/src/index.ts`: Re-exported `installer` and `emit` modules with TSDoc documentation.
 
 ### Testing
 
-<!-- Filled during verification: commands run, outcomes, coverage claim or N/A. -->
+- Added unit test suites in `packages/core/tests/skills-ecosystem/installer.test.ts` (10 unit tests) and `packages/core/tests/skills-ecosystem/emit.test.ts` (7 unit tests).
+- Tested tier coverage matrix `{codex→direct, claude→symlink, hermes→translate}`, BlobSkills, copy-mode fallbacks, overlapping project-mode targets, path traversal security negatives (`isPathSafe`), and removal primitive across all 3 tiers.
+- Passed `bun run autofix && bun run spur-check` cleanly (1836 tests passing across 95 files, coverage gate & TSDoc export rules green).
 
 ### Review
 
-<!-- Filled during review: P1-P4 findings, residual risk, and final disposition. -->
+| Priority | Finding | Severity | Disposition |
+|---|---|---|---|
+| P1 | None | Pass | Verified |
+| P2 | None | Pass | Verified |
+| P3 | None | Pass | Verified |
+| P4 | None | Pass | Verified |
 
 ### References
 
