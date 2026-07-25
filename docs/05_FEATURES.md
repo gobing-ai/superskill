@@ -337,3 +337,18 @@ F032 (adapt gap + phase closing gate) ── independent
 | AH5 | Single-source seam + full governance | 💤 | Blocked by AH4 |
 
 See ADR-015 for the decision and the Phase 4 blocker. Spur companion task: spur-new#0087 (Done, but acceptance claim unverified by executable test).
+
+---
+
+## Phase 6: Skills-ecosystem interop (`vercel-labs/skills` port)
+
+Design: [04_DESIGN.md § Skills-ecosystem module surface](04_DESIGN.md#skills-ecosystem-module-surface-packagescoresrcskills-ecosystem)
+
+### Feature list
+
+| ID | Feature | Deps | Size | Status | Files |
+|----|---------|------|------|--------|-------|
+| FEAT-B | [Skills-ecosystem interop: `npx skills` parity](04_DESIGN.md#skills-ecosystem-module-surface-packagescoresrcskills-ecosystem) | — | L | ✅ | `packages/core/src/skills-ecosystem/*` (11 modules), `apps/cli/src/commands/skill.ts`, `packages/core/tests/skills-ecosystem/*` |
+
+Tasks: 0097 (scaffold), 0098 (source-parser/sanitize/frontmatter), 0099 (agents/locks), 0100 (fetch/discovery), 0101 (installer/emit), 0102 (cli verbs), 0103 (round-trip interop verification & docs sync).
+

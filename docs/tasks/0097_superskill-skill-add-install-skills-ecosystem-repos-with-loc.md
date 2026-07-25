@@ -3,7 +3,7 @@ template: feature-impl
 schema_version: 1
 name: "superskill skill add: install skills-ecosystem repos with lock-file interop"
 description: ""
-status: wip
+status: done
 type: task
 profile: standard
 feature_id: B
@@ -12,7 +12,7 @@ priority: P1
 tags: []
 dependencies: []
 created_at: "2026-07-24T22:54:47.271Z"
-updated_at: "2026-07-25T00:02:13.718Z"
+updated_at: "2026-07-25T21:47:24.320Z"
 ---
 
 ## 0097. superskill skill add: install skills-ecosystem repos with lock-file interop
@@ -150,17 +150,35 @@ Reference material (all in-repo): `vendors/skills/src/{source-parser,skills,inst
 | 0103 | skills-ecosystem: npx skills interop round-trip verification and docs sync | todo |
 <!-- END AUTO-GENERATED -->
 ### Solution
+Umbrella task delivered via children 0098–0103 (decomposition per rubric E2 D1 L1 C1 R1 = 6). Change map by child:
 
-<!-- Filled during implementation: file:line change map and concise rationale. -->
-
+- 0098: `packages/core/src/skills-ecosystem/source-parser.ts`, `sanitize.ts`, `frontmatter.ts`, `github-host.ts` — vendor-verbatim parity fixtures.
+- 0099: `packages/core/src/skills-ecosystem/agents.ts:46` (9-target registry), `locks.ts:86` (dual lock read/writers, version-mismatch preservation).
+- 0100: `packages/core/src/skills-ecosystem/fetch.ts` (Trees/Blob fast path + hardened clone), `discovery.ts` (SKILL.md scan).
+- 0101: `packages/core/src/skills-ecosystem/installer.ts:207` (canonical install), `emit.ts:62` (three-tier emission + lock-key-wins removal).
+- 0102: `packages/core/src/skills-ecosystem/operations.ts:62` (add/list/remove/update domain ops), `apps/cli/src/commands/skill.ts:390` (verb registration).
+- 0103: `packages/core/tests/skills-ecosystem/npx-interop.test.ts` (round-trip interop), `docs/00_ADR.md` ADR-028, `docs/04_DESIGN.md` + `docs/05_FEATURES.md` surface sync.
 ### Testing
+Umbrella verification by child roll-up (each child verified and re-audited individually; evidence in the child task files and `.spur/run/*-verdict.json`):
 
-<!-- Filled during verification: commands run, outcomes, coverage claim or N/A. -->
+| Req | Status | Evidence |
+|-----|--------|----------|
+| R1 (core modules) | MET | 0098/0099/0100/0101 done + re-audited; modules under `packages/core/src/skills-ecosystem/` (11 modules) |
+| R2 (fetch) | MET | 0100; `fetch.ts` Trees/Blob fast path + hardened clone; fetch.test.ts 100% func coverage |
+| R3 (CLI verbs) | MET | 0102 re-audit PASS (`.spur/run/0102-verdict.json`); verbs at `apps/cli/src/commands/skill.ts:390-420` |
+| R4 (three-tier emission) | MET | 0101 re-audit; `emit.ts:62` tier matrix tests in `emit.test.ts` |
+| R5 (hash invariant) | MET | `locks.ts` canonical-only hash + `isCanonicalSkillPath` guard; vendor-sample round-trips in `locks.test.ts`; ADR-028 §5 |
+| R6 (security parity) | MET | sanitize/subpath/terminal-escape vendor-verbatim fixtures (0098); `isPathSafe`/`pathsOverlap` on all write targets (0101) |
+| R7 (defer list) | N/A | Explicit deferrals: `skill use`, `skill find`, well-known providers, `experimental_sync`, Eve subagents, telemetry, interactive prompts |
 
+Gate evidence (2026-07-25, task 0103 verify run): `bun run test` full suite green; `bun run spur-check` green (lint + pre-check rules + tests + post-check rules). Round-trip interop proven both directions in `packages/core/tests/skills-ecosystem/npx-interop.test.ts` (4 tests: layout + Local v1/Global v3 schema parity, vendor-fixture vice-versa consumption, byte-shape writer parity).
 ### Review
-
-<!-- Filled during review: P1-P4 findings, residual risk, and final disposition. -->
-
+| Priority | Finding | Severity | Disposition |
+|---|---|---|---|
+| P1 | None — umbrella roll-up; per-child reviews recorded in tasks 0098–0103 | Pass | Verified |
+| P2 | None — child re-audit findings (0102: lock homeDir, update no-op, list scan, canonical naming, CLI test isolation) were all remediated in their fix passes | Pass | Verified |
+| P3 | removeSkills/empty --skill filter succeed silently on unknown names (vendor errors instead) | Minor | Accepted — documented advisory in 0102 Testing §8; output-contract compatible |
+| P4 | None | Pass | Verified |
 ### References
 - Vendor source (reference-only, MIT): `vendors/skills/src/source-parser.ts` (source grammar), `skills.ts` (discovery), `installer.ts` (canonical copy + symlink modes + `sanitizeName`), `skill-lock.ts` (global lock v3), `local-lock.ts` (project lock v1), `agents.ts` (~74-agent path/detection table), `git.ts` (transport hardening), `sanitize.ts` (terminal escapes), `frontmatter.ts` (YAML-only parser), `blob.ts` (GitHub Trees fast path), `add.ts`/`remove.ts`/`update.ts` (lock write sites, hash-based update).
 - Vendor tests to port as parity fixtures: `vendors/skills/tests/source-parser.test.ts`, `sanitize-name.test.ts`, `subpath-traversal.test.ts`, `sanitize-terminal.test.ts`, `skill-matching.test.ts`, `root-level-disk-install.test.ts`, `root-level-lock-hash.test.ts`.
@@ -169,3 +187,5 @@ Reference material (all in-repo): `vendors/skills/src/{source-parser,skills,inst
 - Brainstorm research report with file:line citations: session 2026-07-24 (`SkillsVendorResearch` scout over `vendors/skills` v1.5.20).
 ### History
 - 2026-07-24T23:58:50.251Z todo → wip (system)
+- 2026-07-25T21:47:24.044Z wip → testing (system)
+- 2026-07-25T21:47:24.320Z testing → done (system)

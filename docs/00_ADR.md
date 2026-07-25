@@ -317,3 +317,41 @@ This **does not expand** the exception to `packages/*` → `plugins/*` imports (
 **Why.** `script-run.ts` was added as a sibling dispatcher to `hook-run.ts` under task 0090 to expose the same compiled engines as a registry subcommand (`superskill script run <plugin> <id>`) for skill-doc callers that prefer the registry form over the staged-path form. It deep-imports the same `plugins/cc/scripts/**` tree. Treating it as a second compile-time consumer of the same blessed tree is consistent with ADR-022's rationale — there is no new packaging concern; both are compiled into the CLI binary by Bun and resolved by the same registry pattern. Forbidding it would force either a workspace-package promotion (already rejected in ADR-022) or a duplicate engine (the anti-pattern ADR-015 closed).
 
 **Detail.** See tasks 0090 (script-run dispatcher), 0094 (consumer-scope analysis). Constraint (revised from ADR-022): the exception covers the **script dispatcher family** in `apps/cli/src/commands/` deep-importing `plugins/<plugin>/scripts/**`. A new dispatcher joining the family is in-scope without a new ADR as long as it (a) lives in `apps/cli/src/commands/`, (b) resolves engines through the registry pattern, and (c) is bundled into the CLI by `bun build --compile`. Any consumer outside `apps/cli` (e.g. `packages/*`) or any engine outside `plugins/<plugin>/scripts/**` re-opens the packaging decision. `AGENTS.md` § Conventions notes the family scope.
+
+---
+
+## ADR-025: Skipped
+
+**Status:** Skipped · **Date:** 2026-07-25
+
+Number burned — the skills-ecosystem entry was drafted off-sequence as ADR-028 before the gap was caught. Never assigned a decision; stubbed per the append-only rule (§15).
+
+## ADR-026: Skipped
+
+**Status:** Skipped · **Date:** 2026-07-25
+
+Number burned — same off-sequence jump as ADR-025. Never assigned a decision; stubbed per the append-only rule (§15).
+
+## ADR-027: Skipped
+
+**Status:** Skipped · **Date:** 2026-07-25
+
+Number burned — same off-sequence jump as ADR-025. Never assigned a decision; stubbed per the append-only rule (§15).
+
+---
+
+## ADR-028: Skills-ecosystem architecture — core port, lock-schema parity, noun-group CLI verbs, three-tier emission, and canonical hash invariant
+
+**Status:** Accepted · **Date:** 2026-07-25
+
+**Decision.** Standalone, zero-dependency port of `vercel-labs/skills` into `packages/core/src/skills-ecosystem/` to enable `superskill skill add/list/remove/update` with full `npx skills` lock and layout compatibility:
+1. **Port vs depend:** Native TypeScript port in core rather than an npm runtime dependency, keeping `superskill` self-contained and auditable.
+2. **Lock-schema parity:** Dual-schema lock system maintaining project-scoped `./skills-lock.json` (Local v1) and user-scoped `~/.agents/.skill-lock.json` (Global v3). Version-mismatch reads preserve and warn; silent overwrites/wipes are strictly prohibited.
+3. **Noun-group verb placement:** Subcommands registered under the existing `superskill skill` group (`add`, `list`, `remove`, `update`), keeping `superskill install` untouched.
+4. **Three-tier emission:** Skill emission dispatches across Tier 1 (`direct`), Tier 2 (`symlink`), and Tier 3 (`translate` reusing the existing install emission pipeline's `translateSlashCommands` and `rewriteSkillReferences` primitives).
+5. **Canonical hash invariant:** SHA-256 folder hashes (`computedHash` / `skillFolderHash`) are computed strictly over the sorted relative paths and contents of the **canonical** skill directory (`.agents/skills/<name>`), never over translated target directories.
+
+**Why.** `npx skills` is an emerging cross-agent ecosystem standard for skill installation and lock tracking. Porting its discovery, fetch, lock, and installer logic into `packages/core` provides native multi-agent compatibility for superskill users while maintaining superskill's security, emission, and verification invariants.
+
+**Detail.** See tasks 0097–0103; implementation at `packages/core/src/skills-ecosystem/` (`source-parser.ts`, `github-host.ts`, `sanitize.ts`, `frontmatter.ts`, `agents.ts`, `locks.ts`, `fetch.ts`, `discovery.ts`, `installer.ts`, `emit.ts`, `operations.ts`) and `apps/cli/src/commands/skill.ts`.
+
