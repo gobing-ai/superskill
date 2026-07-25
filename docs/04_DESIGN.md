@@ -97,6 +97,25 @@ Skill folders are prose-only: `plugins/cc/skills/anti-hallucination/` holds `SKI
 
 Phase 4 (pending): cross-agent enforcement re-developed as `spur workflow run anti-hallucination.yaml --vars '{"agent":"codex"}'`, replacing the 6 former per-agent launcher scripts. Blocked on Spur-side data-threading gap (see ADR-015).
 
+## Skills-ecosystem module surface (`packages/core/src/skills-ecosystem/`)
+
+Ports of vercel-labs/skills (MIT) for `npx skills` interop (feature B, tasks 0098/0099). All modules re-exported from `packages/core/src/index.ts`; the ecosystem `parseFrontmatter` is exported as `parseSkillMdFrontmatter` to avoid the ambiguous-`export *` collision with `content/frontmatter`.
+
+| Module | Surface | Purpose |
+|--------|---------|---------|
+| `source-parser.ts` | `parseSource`, `getOwnerRepo`, `sanitizeSubpath`, `isSubpathSafe`, `ParsedSource` | Full source grammar: `owner/repo[/subpath][@skill][#ref]`, `github:`/`gitlab:` prefixes, `/tree/` + `/-/tree/` URLs, git@/ssh/http(s), local paths, `SOURCE_ALIASES`, `..` rejection |
+| `github-host.ts` | `getGitHubHost`, `isGitHubHost` | GHE host resolution; **`GH_HOST`** read per-call, never at module load |
+| `sanitize.ts` | `sanitizeName`, `stripTerminalEscapes`, `sanitizeMetadata` | CWE-150 terminal-escape stripping; control bytes built via `String.fromCharCode` (no lint suppression) |
+| `frontmatter.ts` | `parseFrontmatter` (as `parseSkillMdFrontmatter`), `parseSkillFrontmatter` | YAML-only SKILL.md frontmatter (no `---js` engine); name+description required strings |
+| `agents.ts` | `TARGET_TIERS`, `TARGET_AGENTS`, `getTargetAgentConfig`, `detectInstalledTargetAgents`, `InstallTier` | 9-target registry with install tiers (`direct`/`symlink`/`translate`); env overrides **`CODEX_HOME`**, **`CLAUDE_CONFIG_DIR`**, **`HERMES_HOME`**, **`GROK_HOME`**, **`XDG_CONFIG_HOME`**; per-agent dirs vendor-faithful (interop data, not superskill's landing paths) |
+| `locks.ts` | lock read/writers + `isCanonicalSkillPath`, `computeCanonicalSkillFolderHash`, `computeContentHash` | Dual lock schemas below; version-mismatch preservation (never auto-wipe); canonical-only hash invariant |
+
+**Local lock — `./skills-lock.json` (v1, `LOCAL_LOCK_VERSION = 1`).** Sorted keys, timestamp-free. Entry: `source`, `sourceType`, `computedHash` (SHA-256 over sorted relpath+content of the CANONICAL skill folder), optional `sourceUrl`, `ref`, `skillPath`, `subagents`.
+
+**Global lock — `~/.agents/.skill-lock.json` (v3, `GLOBAL_LOCK_VERSION = 3`; `$XDG_STATE_HOME/skills/` when set).** Entry: `source`, `sourceType`, `sourceUrl`, `skillFolderHash` (GitHub tree SHA), `installedAt`, `updatedAt`, optional `ref`, `skillPath`, `pluginName`; file also carries optional `dismissed` and `lastSelectedAgents`. Vendor-shaped locks in the wild may omit `sourceUrl`; reads tolerate it (no runtime validation), matching the vendor.
+
+**Version-mismatch contract (R3).** Reads never wipe: newer or older versions return the parsed lock with a `warning` field; the vendor's wipe-on-bump is not ported. Writers refuse warned locks and throw when the on-disk version differs from the supported one — migration is always an explicit caller act.
+
 ## Canonical `hooks.json` config shape
 
 A plugin's `hooks.json` is the canonical (abstract) hook definition consumed by `superskill install` and emitted to per-platform targets (rulesync, hermes, pi, OMP). Top-level shape (`CanonicalHooksConfig` at `apps/cli/src/hooks.ts`):

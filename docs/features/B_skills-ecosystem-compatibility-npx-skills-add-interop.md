@@ -2,11 +2,11 @@
 schema_version: 1
 id: "B"
 name: "Skills ecosystem compatibility (npx skills add interop)"
-status: backlog
+status: active
 priority: P2
 tags: []
 created_at: "2026-07-24T22:54:40.642Z"
-updated_at: "2026-07-24T23:26:52.579Z"
+updated_at: "2026-07-25T07:13:56.620Z"
 ---
 
 # B: Skills ecosystem compatibility (npx skills add interop)
@@ -77,3 +77,4 @@ Feature: Skills ecosystem compatibility (npx skills add interop)
 - Correctness invariant: locks hash the canonical untranslated copy only; translation is emission-layer, never lock-layer.
 - Implementation task: 0097.
 ## History
+- 2026-07-25T07:13:56.620Z backlog → active (system)

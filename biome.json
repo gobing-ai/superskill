@@ -40,6 +40,9 @@
             "suspicious": {
                 "noExplicitAny": "error"
             },
+            "style": {
+                "useNodejsImportProtocol": "error"
+            },
             "complexity": {
                 "noUselessConstructor": "off"
             }
