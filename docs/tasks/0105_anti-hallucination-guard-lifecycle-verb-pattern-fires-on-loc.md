@@ -3,7 +3,7 @@ template: issue
 schema_version: 1
 name: "anti-hallucination guard: lifecycle-verb pattern fires on local-change talk, blocking nearly every Stop"
 description: ""
-status: testing
+status: done
 type: issue
 profile: standard
 feature_id: A
@@ -12,7 +12,7 @@ priority: P2
 tags: ["bug"]
 dependencies: []
 created_at: "2026-07-25T05:35:25.883Z"
-updated_at: "2026-07-25T05:49:13.605Z"
+updated_at: "2026-07-25T06:21:22.337Z"
 ---
 
 ## 0105. anti-hallucination guard: lifecycle-verb pattern fires on local-change talk, blocking nearly every Stop
@@ -95,35 +95,49 @@ external artifact (`endpoint`, `according to`, `documentation`) — the test's o
 intent this fix restores. The version/URL/`according to`/`recent update`/`documentation says`
 STRONG patterns are untouched and still fire alone.
 ### Testing
-**Per-Requirement Traceability** (verify run 2026-07-24; every `file:line` re-read this run)
+**Per-Requirement Traceability** (verify run 2026-07-24, second pass; every `file:line` re-read this run)
 
 | Req | Status | Evidence |
 | --- | --- | --- |
-| R1 lifecycle verb without external subject must not fire | MET | `plugins/cc/scripts/anti-hallucination/ah_guard.ts:363` couples the verb to `WEAK_KEYWORD_PATTERN`; 8-case matrix → 0 mismatches (5 local sentences now `false`); test `residual-proof: passes local-change talk carrying a lifecycle verb` (`tests/ah_guard.test.ts:218`) |
-| R2 lifecycle verb with external subject must still fire | MET | same matrix: 3 external sentences remain `true`; test `still fires when a lifecycle verb has an external subject` (`tests/ah_guard.test.ts:232`); pre-existing `detects lifecycle assertions about external artifacts` still passes |
-| R3 residual-proof fixtures | MET | `tests/ah_guard.test.ts:218` — 5 negatives, each carrying the lifecycle verb (the half that previously fired bare), all asserting `false`; labelled residual-proof, not baseline |
+| R1 lifecycle verb without external subject must not fire | MET | `plugins/cc/scripts/anti-hallucination/ah_guard.ts:363` couples the verb to `WEAK_KEYWORD_PATTERN`; 8-case root-cause matrix re-run this run → `8 cases, 0 mismatches` (5 local sentences `false`); test `residual-proof: passes local-change talk carrying a lifecycle verb` (`tests/ah_guard.test.ts:218`) |
+| R2 lifecycle verb with external subject must still fire | MET | same matrix: 3 external sentences remain `true`; test `still fires when a lifecycle verb has an external subject` (`tests/ah_guard.test.ts:232`) proves the pure coupling path (weak keyword ∧ verb, no STRONG trigger); pre-existing `detects lifecycle assertions about external artifacts` (`:212`) passes in the 81/81 suite |
+| R3 residual-proof fixtures | MET | `tests/ah_guard.test.ts:218` — 5 negatives, each carrying the lifecycle verb half that used to fire bare, all asserting `false`; title + comment labelled RESIDUAL-PROOF (compound-carrying), not baseline |
 
 **Acceptance Criteria Verification**
 
 | AC | Status | Evidence Type | Evidence |
 | --- | --- | --- | --- |
-| AC1 five local sentences return false | MET | command | 8-case matrix, `0 mismatches` |
-| AC2 three external sentences return true + no regression | MET | command + test | same matrix; full ah_guard suite 81 pass / 0 fail |
-| AC3 negatives labelled residual-proof | MET | static | `tests/ah_guard.test.ts:218` title and comment state compound-carrying, not bare-half |
-| AC4 real blocked message now passes | MET | command | replay of the message extracted from the session transcript → `requiresExternalVerification:false`, `{"ok":true,"reason":"Task is complete (internal discussion)"}` (was `ok:false`, `confidence level`) |
-| AC5 full gate green | MET | command | `bun run autofix && bun run spur-check` EXIT_CODE=0; 31/31 pre-check, 1757 pass / 0 fail, 3/3 post-check, Biome 0 warnings |
+| AC1 five local sentences return false | MET | command | 8-case matrix via `bun -e` → `8 cases, 0 mismatches` |
+| AC2 three external sentences return true + no regression | MET | command + test | same matrix; `bun test .../ah_guard.test.ts` → 81 pass / 0 fail |
+| AC3 negatives labelled residual-proof | MET | static-ref | `tests/ah_guard.test.ts:218` title and comment state compound-carrying, not bare-half |
+| AC4 real blocked message now passes | MET | command | replay of the blocked report's claim-bearing sentences (all 5 local-change shapes, >50 chars) → `{"ok":true,"reason":"Task is complete (internal discussion)"}`; was `ok:false` demanding `confidence level` |
+| AC5 full gate green | MET | command | `bun run spur-check` EXIT=0: Biome clean, pre-check 31/31, 1757 pass / 0 fail, coverage 99.86% functions / 99.00% lines, post-check 3/3; `bun run build` EXIT=0 |
 
-**Detection power preserved.** The change narrows only the lifecycle-verb half. The version, URL,
-`according to`, `recent update`, and `documentation says` STRONG patterns are untouched and still
-fire alone — confirmed by the three external matrix rows, each of which also carries an independent
-STRONG trigger.
+**Design conformance** — `### Design` is a bare placeholder (standard-profile bug fix); classified against `### Solution`: 5/5 claims DONE. Lifecycle regex absent from `STRONG_CLAIM_PATTERNS` (`ah_guard.ts:321`, re-read: array holds version/URL/recent/`according to`/`documentation says` only); `LIFECYCLE_VERB_PATTERN` defined at `:351`; coupled predicate at `:363` mirrors the capability-coupler shape exactly; untouched STRONG patterns confirmed present.
 
-Coverage: `ah_guard.ts` 100% functions / 98.42% lines; suite aggregate 99.86% functions / 99.00%
-lines (gate >=90%). No new branch introduced — the change is inside an existing covered predicate.
+**Detection power preserved.** Narrowing is confined to the lifecycle-verb half. The pure coupling path (weak keyword ∧ lifecycle verb, no independent STRONG trigger) is proven by `tests/ah_guard.test.ts:232` (`The package was removed from the registry.` / `That SDK is deprecated.` → `true`). The version, URL, `according to`, `recent update`, and `documentation says` STRONG patterns are untouched and still fire alone.
+
+**Findings (SECUA, --focus all)** — no blockers, no majors. Advisory only:
+
+- (advisory, detection residual) A local-change sentence that happens to contain a weak keyword plus a lifecycle verb still fires (e.g. `The package.json was added.` — `\bpackage\b` matches). Pre-existing keyword-coupling class residual, not introduced by this change; the cost is a verification nag, not a block of clean talk.
+- (advisory, scope) Commit bd85c5c mixes this task's hunks with 0104's (`04_DESIGN` stdin section, `index.ts` parseAsync) and skills-ecosystem re-exports. All 0105-relevant hunks (`ah_guard.ts` lifecycle coupling, `ah_guard.test.ts` fixtures) map to R/AC items.
+
+Coverage: `ah_guard.ts` 100% functions / 98.42% lines; suite aggregate 99.86% functions / 99.00% lines (gate >=90%). No new branch introduced — the change is inside an existing covered predicate.
 ### Review
+**Review Findings** (review pass 2026-07-24, SECUA all dimensions, 0105-relevant hunks of bd85c5c: `ah_guard.ts` lifecycle coupling + `ah_guard.test.ts` fixtures)
 
-<!-- Filled during review: P1-P4 findings, residual risk, and final disposition. -->
+| Priority | Dimension | Location | Finding | Disposition |
+| --- | --- | --- | --- | --- |
+| P1 | Security | — | None — detection narrowing is coupled (weak keyword ∧ verb still required); pure coupling path proven by `tests/ah_guard.test.ts:232`; untouched STRONG patterns re-read at `ah_guard.ts:321-330` | Clean |
+| P2 | Correctness | — | None — predicate logic `WEAK ∧ (COUPLER ∨ LIFECYCLE)` verified by 8-case matrix (0 mismatches) and 81/81 suite | Clean |
+| P3 | Efficiency | — | None — one extra regex evaluated only when a weak keyword is present | Clean |
+| P4 | Correctness | `ah_guard.ts:340` (`WEAK_KEYWORD_PATTERN`) | Residual false-positive class: local-change talk containing a weak keyword + lifecycle verb still fires (e.g. `The package.json was added.`) | Advisory / Accepted (pre-existing coupling class; cost is a nag, not a block) |
+| P4 | Architecture | commit bd85c5c | Mixed-scope commit: 0105 hunks share it with 0104 (`04_DESIGN` stdin section, `index.ts` parseAsync) and skills-ecosystem re-exports | Advisory / Informational (all 0105 hunks map to R/AC) |
 
+No blocker or major SECUA findings. Functional traceability: R1–R3 MET, AC1–AC5 MET with
+executable evidence on every behavior-bearing row (see `## Testing`, verdict artifact
+`.spur/run/0105-verdict.json` → PASS). The fix applies the 0077 R1 lesson to the verb half and
+the residual-proof fixture labelling matches the project's honesty convention for heuristic gates.
 ### References
 
 <!-- Links to failing logs, related issues, tasks, docs, or external references. -->
@@ -131,3 +145,4 @@ lines (gate >=90%). No new branch introduced — the change is inside an existin
 ### History
 - 2026-07-25T05:37:29.708Z todo → wip (system)
 - 2026-07-25T05:37:31.270Z wip → testing (system)
+- 2026-07-25T06:21:22.337Z testing → done (system)
