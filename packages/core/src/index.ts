@@ -50,6 +50,8 @@ export * from './quality/types';
 export * from './rulesync';
 // ── Skills ecosystem (ported from vercel-labs/skills, MIT — see vendors/skills/LICENSE) ──
 export * from './skills-ecosystem/agents';
+export * from './skills-ecosystem/discovery';
+export * from './skills-ecosystem/fetch';
 // `parseFrontmatter` collides with content/frontmatter's export, so the
 // skills-ecosystem frontmatter module is re-exported with explicit names.
 export {
