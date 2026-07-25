@@ -12,7 +12,7 @@ priority: P1
 tags: ["skills-ecosystem", "interop", "port"]
 dependencies: []
 created_at: "2026-07-24T23:58:50.148Z"
-updated_at: "2026-07-25T05:13:50.702Z"
+updated_at: "2026-07-25T06:36:00.564Z"
 ---
 
 ## 0098. skills-ecosystem: source parser, sanitizer, and frontmatter ports with vendor parity tests
@@ -77,32 +77,36 @@ Implements: R1 (source-parser/sanitize/frontmatter part), R6 (subpath traversal 
 - R3 satisfied: no `@clack/prompts`, no telemetry, no `process.cwd()`/`homedir()` at module load (`resolve()` runs per-call; `GH_HOST` read per-call).
 - 8 remaining Biome warnings are the vendor-verbatim `match[n]!` non-null assertions (warning level, kept for parity).
 ### Testing
-- `bun test packages/core/tests/skills-ecosystem/` — 165 pass / 0 fail (6 files); module coverage 100% functions, ≥94% lines per file (source-parser 94.4%, rest 100%).
-- `bun run lint` — Biome clean (8 vendor-parity `noNonNullAssertion` warnings) + `tsc --noEmit` clean in both workspaces.
-- `bun run build` — bundle + compile green.
-- `bun run spur-check` — 30/30 pre-check rules + post-check rules pass, including `no-biome-suppressions`
-  with **no exclusion and no `biome.json` change** (the false positive is handled inside `sanitize.ts`),
-  `require-corresponding-test` via `sanitize.test.ts`, and `every-export-has-tsdoc`.
-- `bun run test` (full suite + coverage) — **1756 pass / 0 fail; aggregate 99.86% functions / 99.00% lines**
-  (gate ≥90%). Superseded the 1742-pass figure recorded when this task was first closed: that run
-  predated the `apps/cli/src/stdin.ts` work now tracked as task 0104, whose tests share this suite.
+**Per-Requirement Traceability** (re-audit 2026-07-24 via `/sp-dev-verify --force`; every `file:line` re-read this run)
+
+| Req | Status | Evidence |
+| --- | --- | --- |
+| R1 full-grammar ports with MIT attribution | MET | `packages/core/src/skills-ecosystem/{types,github-host,source-parser,sanitize,frontmatter}.ts` all present with Vercel MIT attribution headers; grammar features re-verified in `source-parser.ts`: git@ SSH `:26`, ssh:// `:39`, `sanitizeSubpath` `:116`, `isSubpathSafe` `:139`, `SOURCE_ALIASES` `:162`, `github:`/`gitlab:` prefixes `:182,:293`, `/tree/` URLs `:327-339`, `/-/tree/` `:362`; `GH_HOST` per-call in `github-host.ts:19-20`; `frontmatter.ts` YAML-only (header: no `---js` engine) + `parseSkillFrontmatter` validator `:47` |
+| R2 vendor-verbatim parity fixtures | MET | 4 ported suites carry identical case/assertion counts to `vendors/skills/tests/`: source-parser 71 its/155 expects, sanitize-name 22/45, subpath-traversal 15/31, sanitize-terminal 28/52; `bun test packages/core/tests/skills-ecosystem/` → **165 pass / 0 fail** (7 files); security negatives carry full attack shapes (`..` segments, backslash traversal, basePath escape) |
+| R3 no clack/telemetry/cwd-homedir capture | MET | module scan: 0 `@clack/prompts`, 0 `process.cwd()`, 0 `homedir()`; sole `telemetry` hit is a doc comment (`source-parser.ts:17`); `GH_HOST` read per-call, not at module load |
+| R4 lint clean + coverage ≥90% | MET | `bun run spur-check` EXIT=0: Biome 195 files clean (0 warnings), pre-check 31/31, 1757 pass / 0 fail, post-check 3/3; module coverage this run: 100% functions all 5 files, lines 100% except source-parser 94.37% (gate ≥90%); `bun run build` EXIT=0 |
+
+**Acceptance Criteria Verification** — the task's AC section is a bare placeholder comment (never filled); the 4 requirements carried the traceability load. No AC rows to evaluate. Flagged as a process observation in Review.
+
+**Drift noted and corrected by this re-audit.** The Solution rationale and Review P4 row below still read "8 remaining Biome warnings … vendor-verbatim `match[n]!` kept for parity". Stale: task 0104's drive-by (fc791fb) resolved all 8 with `?? ''` — verified: 0 non-null assertions remain in the module, 8 `?? ''` sites (source-parser 6, frontmatter 2), and the current gate is warning-free. Behavior unchanged (fallbacks sit inside `if (match)` guards on mandatory capture groups).
+
+**Historical closure record (2026-07-25, preserved).** Original closure: 165 pass module tests; lint clean with 8 vendor-parity warnings; 30/30 pre-check; full suite 1756 pass / 0 fail, aggregate 99.86% functions / 99.00% lines. Post-close correction (task 0104): the `sanitize.ts` `noControlCharactersInRegex` false positive is handled in-file via the `ch()` = `String.fromCharCode` helper (`sanitize.ts:24-37`) — no suppression, no `.spur` rule exclusion, no `biome.json` change; parity is carried by the ported fixtures, not source identity.
 ### Review
-**Review Findings**
+**Review Findings** (re-audit 2026-07-24 via `/sp-dev-verify --force`, SECUA all dimensions, module `packages/core/src/skills-ecosystem/`)
 
 | Priority | Dimension | Location | Finding | Disposition |
 | --- | --- | --- | --- | --- |
-| P1 | Security | — | None | Clean |
-| P2 | Correctness | — | None | Clean |
-| P3 | Efficiency | — | None | Clean |
-| P4 | Usability | packages/core/src/skills-ecosystem/source-parser.ts | 8 vendor-verbatim non-null assertions kept for parity | Advisory / Kept |
+| P1 | Security | — | None — `..` rejection + `isSubpathSafe`, CWE-150 escape stripping, YAML-only frontmatter (no eval), per-call `GH_HOST`; negatives carry full attack shapes | Clean |
+| P2 | Correctness | — | None — parity fixtures pin vendor behavior including quirks (empty frontmatter block, WHATWG normalization) asserted as vendor-behavior, not "fixed" | Clean |
+| P3 | Efficiency | — | None — regexes precompiled at module load | Clean |
+| P4 | Usability | task file `### Solution` rationale + prior Review row | Stale text: "8 remaining Biome warnings … kept for parity" — resolved by fc791fb (`?? ''` ×8); code verified clean this run (0 non-null assertions) | Advisory / Corrected in Testing (this re-audit) |
+| P4 | Process | task file `### Acceptance Criteria` | AC section is a bare placeholder comment, never filled; requirements carried the traceability load | Advisory / Accepted (verdict evaluated R1–R4 directly) |
 
-No blocker or major SECUA findings. Implementation matches requirements R1-R4 and AC.
-
-Post-close correction (task 0104): the `sanitize.ts` lint false positive was originally handled by
-excluding the file from the `.spur` `no-biome-suppressions` rule, on a rationale about Biome
-hard-erroring on vendored nested configs that retesting disproved. Replaced with a scoped
-in-file `String.fromCharCode` construction; the gate now covers the file again and `biome.json` is
-unchanged. Behavior parity is carried by the ported vendor fixtures, not by source identity.
+No blocker or major SECUA findings. Functional traceability: R1–R4 MET with fresh evidence
+(see `## Testing`, verdict artifact `.spur/run/0098-verdict.json` → PASS). The `ch()`
+control-byte construction in `sanitize.ts:24-37` keeps the lint gate on the file with no
+suppression, no rule exclusion, and no `biome.json` change — the correct resolution of the
+original false positive.
 ### References
 
 B
