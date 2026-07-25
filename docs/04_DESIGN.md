@@ -62,6 +62,36 @@ Executable logic a skill invokes at the user's install site lives in `plugins/<p
 | Shared logger | `plugins/cc/scripts/anti-hallucination/logger.ts` | Single shared copy (dedup'd from per-skill copies) |
 | Stop-hook config | `plugins/cc/hooks/hooks.json` | `Stop` command hook → `superskill hook run cc anti-hallucination` (portable PATH command; the dispatcher `apps/cli/src/commands/hook-run.ts` routes to the guard engine). Declares `minCliVersion` so an older CLI cannot install a contract it does not implement. |
 | Engine tests | `plugins/cc/scripts/anti-hallucination/tests/` | 2 test files (ah_guard, validate_response); counted in coverage gate |
+| Stdin reader | `apps/cli/src/stdin.ts` | `readStdinNonBlocking(firstByteMs, idleMs)` — the payload channel for `script run` / `hook run`. See the stdin contract below. |
+
+### Stdin payload contract (`script run` / `hook run`)
+
+Hook and script runners receive their payload on fd 0 from the spawning host. `readStdinNonBlocking`
+(`apps/cli/src/stdin.ts`) reads it through stream events under a bounded budget, because a plain
+`readFileSync(0)` blocks forever when a host opens the pipe but never writes and never closes it —
+observed with Antigravity, and it hangs the agent mid-run.
+
+| Condition | Result |
+|-----------|--------|
+| Interactive TTY | `undefined` — nothing was piped (manual invocation) |
+| Data arrives, then `end` | full payload |
+| Data streamed in several writes | full payload — the budget is re-armed per chunk, so a multi-write payload is **never** truncated |
+| No byte within `firstByteMs` | `undefined` — bounded give-up, so a silent host cannot hang the process |
+| Whitespace-only input | `undefined` |
+| Stream error | `undefined` |
+
+The budget is an **idle** timeout, never a deadline on the whole read. This is a correctness
+requirement, not a tuning choice: every runner fails open on an unparseable payload
+(`runSpTaskWriteGuard`, `runStopGuard`), so a truncated read silently converts a guard `deny` into an
+`allow`. Default `250` ms, overridable with **`SUPERSKILL_STDIN_TIMEOUT_MS`** (positive integer;
+invalid values fall back to the default).
+
+Residual, by design: a host whose *first* byte arrives later than `firstByteMs` has its payload
+dropped and the runner fails open. Real hosts write at spawn and the payload is already buffered by
+the time the runtime boots, so the budget is generous in practice — raise
+`SUPERSKILL_STDIN_TIMEOUT_MS` for a host that genuinely writes late. `plugins/cc/scripts/anti-hallucination/ah_guard.ts`
+carries a deliberate duplicate (`readPipedStdin`) for its staged direct-invocation path, which may
+not import from `apps/cli`; keep the two in sync.
 
 Skill folders are prose-only: `plugins/cc/skills/anti-hallucination/` holds `SKILL.md`, `references/*.md`, `agents/openai.yaml`, `metadata.openclaw` — no `.ts` runtime.
 

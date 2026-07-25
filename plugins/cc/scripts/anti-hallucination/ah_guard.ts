@@ -326,7 +326,6 @@ const STRONG_CLAIM_PATTERNS = [
     /(?<![\d.])\d+\.\d+\.\d+(?![\d.])(?!\s*%)/, // 3-part semver (d.d.d), not part of a longer number, not a %
     /https?:\/\//, // URLs mentioned
     /recent\s+(?:change|update|release)/i,
-    /\b(?:was|were|is|are)\s+(?:introduced|added|deprecated|removed|renamed|released)\b/i,
     /\baccording to\b/i,
     /\bdocumentation\s+(?:says|states|shows|confirms)\b/i,
 ];
@@ -344,6 +343,13 @@ const WEAK_KEYWORD_PATTERN = /\b(?:api|library|framework|sdk|package|endpoint|do
 const CLAIM_COUPLER_PATTERN =
     /\b(?:returns|accepts|expects|supports|requires|provides|exposes|takes|emits|throws|defaults? to)\b/i;
 
+// Lifecycle verbs ("was removed", "were added") assert an external fact only when the subject is an
+// external artifact. Bare, they are the single most common shape in a coding summary — "a regression
+// test was added", "the exclusion was removed", "the tests fail if the re-arm is removed" — so as a
+// STRONG pattern this fired on nearly every substantive reply and demanded citations for the agent's
+// own edits. Same lesson as 0077 R1, applied to the verb half: couple it to external vocabulary.
+const LIFECYCLE_VERB_PATTERN = /\b(?:was|were|is|are)\s+(?:introduced|added|deprecated|removed|renamed|released)\b/i;
+
 export function requiresExternalVerification(text: string): boolean {
     if (!text) return false;
 
@@ -351,9 +357,10 @@ export function requiresExternalVerification(text: string): boolean {
         if (pattern.test(text)) return true;
     }
 
-    // Weak vocabulary needs an assertion-shaped coupler in the same message; either
+    // Weak vocabulary needs an assertion-shaped coupler in the same message — either a capability
+    // claim ("the API returns…") or a lifecycle claim ("the endpoint was deprecated"). Either half
     // alone is ordinary implementation talk and passes without demanding citations.
-    return WEAK_KEYWORD_PATTERN.test(text) && CLAIM_COUPLER_PATTERN.test(text);
+    return WEAK_KEYWORD_PATTERN.test(text) && (CLAIM_COUPLER_PATTERN.test(text) || LIFECYCLE_VERB_PATTERN.test(text));
 }
 
 export function verifyAntiHallucinationProtocol(text: string): VerificationResult {
@@ -476,15 +483,51 @@ export function main(stdinText = ''): number {
     return result.exitCode;
 }
 
-if (import.meta.main) {
-    let stdinText = '';
-    // A TTY means no host piped a payload (manual invocation) — reading fd 0 would hang.
-    if (!process.stdin.isTTY) {
-        try {
-            stdinText = readFileSync(0, 'utf-8');
-        } catch {
-            stdinText = '';
+/**
+ * Read a piped Stop payload without blocking indefinitely.
+ *
+ * Mirrors `apps/cli/src/stdin.ts` `readStdinNonBlocking`, deliberately duplicated: this
+ * script is staged and invoked by path on non-Claude targets (ADR-024), so it must stay
+ * self-contained — a plugin script may not import from `apps/cli`. Keep the two in sync.
+ *
+ * A TTY means no host piped a payload (manual invocation). Otherwise the read is bounded
+ * by `idleMs` of silence, **re-armed on every chunk**, so a host that holds fd 0 open
+ * without writing cannot hang the agent and a multi-write payload is never truncated.
+ */
+export function readPipedStdin(idleMs = 250): Promise<string> {
+    if (process.stdin.isTTY) return Promise.resolve('');
+    return new Promise((resolve) => {
+        let data = '';
+        let settled = false;
+        let timer: ReturnType<typeof setTimeout> | undefined;
+
+        const settle = () => {
+            if (settled) return;
+            settled = true;
+            if (timer !== undefined) clearTimeout(timer);
+            process.stdin.removeListener('data', onData);
+            process.stdin.removeListener('end', settle);
+            process.stdin.removeListener('error', settle);
+            resolve(data);
+        };
+        const arm = () => {
+            if (timer !== undefined) clearTimeout(timer);
+            timer = setTimeout(settle, idleMs);
+        };
+        function onData(chunk: string | Buffer) {
+            data += chunk.toString();
+            arm();
         }
-    }
-    process.exit(main(stdinText));
+
+        process.stdin.setEncoding('utf-8');
+        process.stdin.on('data', onData);
+        process.stdin.on('end', settle);
+        process.stdin.on('error', settle);
+        process.stdin.resume();
+        arm();
+    });
+}
+
+if (import.meta.main) {
+    process.exit(main(await readPipedStdin()));
 }

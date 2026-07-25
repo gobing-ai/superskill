@@ -85,12 +85,12 @@ var STRONG_CLAIM_PATTERNS = [
   /(?<![\d.])\d+\.\d+\.\d+(?![\d.])(?!\s*%)/,
   /https?:\/\//,
   /recent\s+(?:change|update|release)/i,
-  /\b(?:was|were|is|are)\s+(?:introduced|added|deprecated|removed|renamed|released)\b/i,
   /\baccording to\b/i,
   /\bdocumentation\s+(?:says|states|shows|confirms)\b/i
 ];
 var WEAK_KEYWORD_PATTERN = /\b(?:api|library|framework|sdk|package|endpoint|documentation)\b/i;
 var CLAIM_COUPLER_PATTERN = /\b(?:returns|accepts|expects|supports|requires|provides|exposes|takes|emits|throws|defaults? to)\b/i;
+var LIFECYCLE_VERB_PATTERN = /\b(?:was|were|is|are)\s+(?:introduced|added|deprecated|removed|renamed|released)\b/i;
 function requiresExternalVerification(text) {
   if (!text)
     return false;
@@ -98,7 +98,7 @@ function requiresExternalVerification(text) {
     if (pattern.test(text))
       return true;
   }
-  return WEAK_KEYWORD_PATTERN.test(text) && CLAIM_COUPLER_PATTERN.test(text);
+  return WEAK_KEYWORD_PATTERN.test(text) && (CLAIM_COUPLER_PATTERN.test(text) || LIFECYCLE_VERB_PATTERN.test(text));
 }
 function verifyAntiHallucinationProtocol(text) {
   if (!text || text.trim().length === 0) {

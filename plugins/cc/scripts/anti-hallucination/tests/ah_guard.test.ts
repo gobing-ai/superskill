@@ -8,6 +8,7 @@ import {
     hasSourceCitations,
     hasToolUsageEvidence,
     main,
+    readPipedStdin,
     requiresExternalVerification,
     resolveStopContext,
     verifyAntiHallucinationProtocol,
@@ -212,6 +213,27 @@ describe('requiresExternalVerification', () => {
         expect(requiresExternalVerification('The endpoint was deprecated last year')).toBe(true);
         expect(requiresExternalVerification('According to the maintainers, this is intended')).toBe(true);
         expect(requiresExternalVerification('The documentation states the flag is required')).toBe(true);
+    });
+
+    it('residual-proof: passes local-change talk carrying a lifecycle verb (verb half, no external subject)', () => {
+        // RESIDUAL-PROOF (compound-carrying): each sentence carries a lifecycle verb —
+        // the half that used to fire bare as a STRONG pattern — and still must not fire,
+        // because none names an external artifact. These are the most common sentences in
+        // a coding summary; firing on them demanded citations for the agent's own edits
+        // and blocked nearly every substantive Stop. Regression for the live block observed
+        // on "the tests fail loudly if the re-arm is removed".
+        expect(requiresExternalVerification('A regression test was added for the truncation case.')).toBe(false);
+        expect(requiresExternalVerification('The rule exclusion was removed and the gate covers it.')).toBe(false);
+        expect(requiresExternalVerification('The tests fail loudly if the re-arm is removed.')).toBe(false);
+        expect(requiresExternalVerification('The helper is renamed to readPipedStdin.')).toBe(false);
+        expect(requiresExternalVerification('Two fixtures were added under the rules folder.')).toBe(false);
+    });
+
+    it('still fires when a lifecycle verb has an external subject (both halves present)', () => {
+        // The other side of the same gate: weak keyword ∧ lifecycle verb is a real external
+        // claim and must keep demanding verification.
+        expect(requiresExternalVerification('The package was removed from the registry.')).toBe(true);
+        expect(requiresExternalVerification('That SDK is deprecated.')).toBe(true);
     });
 
     it('detects recent update phrasing', () => {
@@ -661,5 +683,56 @@ describe('extractLastAssistantFromTranscript', () => {
                 JSON.stringify({ type: 'user', message: { role: 'user', content: 'q' } }),
             ),
         ).toBeUndefined();
+    });
+});
+
+/**
+ * The direct-invocation stdin reader. Mirrors `apps/cli/src/stdin.ts` and exists for the
+ * same reason: a host that holds fd 0 open without writing must not hang this script, and
+ * a payload streamed in several writes must never be truncated (a truncated Stop payload
+ * silently degrades the guard to allow).
+ */
+describe('readPipedStdin', () => {
+    const origTty = process.stdin.isTTY;
+    const setTty = (value: boolean) => Object.defineProperty(process.stdin, 'isTTY', { value, configurable: true });
+
+    afterEach(() => {
+        Object.defineProperty(process.stdin, 'isTTY', { value: origTty, configurable: true });
+        process.stdin.pause();
+    });
+
+    it('returns empty string on an interactive TTY (manual invocation, nothing piped)', async () => {
+        setTty(true);
+        expect(await readPipedStdin(10)).toBe('');
+    });
+
+    it('returns the payload on data + end', async () => {
+        setTty(false);
+        const promise = readPipedStdin(500);
+        process.stdin.emit('data', Buffer.from('{"stop_hook_active":false}'));
+        process.stdin.emit('end');
+        expect(await promise).toBe('{"stop_hook_active":false}');
+    });
+
+    // Regression (hang): the blocking readFileSync(0) this replaced never returned here.
+    it('gives up within the budget when a host holds stdin open without writing', async () => {
+        setTty(false);
+        const started = Date.now();
+        expect(await readPipedStdin(40)).toBe('');
+        expect(Date.now() - started).toBeLessThan(2000);
+    });
+
+    // Regression (truncation): per-chunk gaps stay under the budget, total span exceeds it.
+    it('accumulates chunks whose total span exceeds the idle budget', async () => {
+        setTty(false);
+        const chunks = ['{"transcript_path"', ':"/tmp/t.jsonl",', '"stop_hook_active":false}'];
+        const promise = readPipedStdin(120);
+        chunks.forEach((chunk, i) => {
+            setTimeout(() => process.stdin.emit('data', Buffer.from(chunk)), 60 * (i + 1));
+        });
+        setTimeout(() => process.stdin.emit('end'), 60 * (chunks.length + 1));
+        const res = await promise;
+        expect(res).toBe(chunks.join(''));
+        expect(() => JSON.parse(res)).not.toThrow();
     });
 });

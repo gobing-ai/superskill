@@ -9,7 +9,7 @@ install or to ts-libs.
 
 | Category | Dir | Purpose |
 |---|---|---|
-| `typescript` | `typescript/` | TypeScript tooling, output boundaries, biome-suppression ban, no `debugger` |
+| `typescript` | `typescript/` | TypeScript tooling, output boundaries, biome-suppression ban, blocking-stdin ban, no `debugger` |
 | `strict` | `strict/` | Opt-in strict rules (runtime boundaries, HTTP boundaries, structural) |
 | `boundary` | `boundary/` | DB/DAO boundary enforcement |
 | `structure` | `structure/` | File layout, protected files, no focused/skipped tests |

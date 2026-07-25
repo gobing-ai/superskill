@@ -12,7 +12,7 @@ priority: P2
 tags: []
 dependencies: []
 created_at: "2026-07-17T06:13:55.464Z"
-updated_at: "2026-07-17T07:24:20.634Z"
+updated_at: "2026-07-25T04:52:04.858Z"
 ---
 
 ## 0089. Define portable entrypoint contract for staged plugin scripts
@@ -253,7 +253,7 @@ Path is the **standard** surface. `script run` is kept for backward compatibilit
 | ADR/doc supersession | 0095 (ADR) | ADR-015 "copied on install" wording; extend ADR-022 scope for path helper |
 | Input-channel normalization across entrypoints | Future | Pattern for env → args → stdin precedence; `scripts-map.json` declares per-script |
 | Build step tooling for TS → JS compilation | Future | Plugin authors own their build; superskill MAY offer `bun build` conventions |
-| Interactive stdin (`--non-tty-input` semantics) | Future | Currently `readStdinGuarded()` returns undefined on TTY; staged entrypoints inherit OS TTY behavior |
+| Interactive stdin (`--non-tty-input` semantics) | Future | `readStdinNonBlocking()` (`apps/cli/src/stdin.ts`, task 0104) returns undefined on TTY and bounds a piped read by an idle budget (`SUPERSKILL_STDIN_TIMEOUT_MS`, default 250 ms); staged entrypoints inherit OS TTY behavior |
 ### Testing
 **Task type:** `wayfinder:grilling` — decision artifact only; no production code (R8). Coverage: N/A (documentation/design-only; no runtime code path added).
 

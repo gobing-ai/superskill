@@ -48,5 +48,17 @@ export * from './quality/rubric';
 export * from './quality/skill';
 export * from './quality/types';
 export * from './rulesync';
+// `parseFrontmatter` collides with content/frontmatter's export, so the
+// skills-ecosystem frontmatter module is re-exported with explicit names.
+export {
+    type ParsedSkillFrontmatter,
+    parseFrontmatter as parseSkillMdFrontmatter,
+    parseSkillFrontmatter,
+} from './skills-ecosystem/frontmatter';
+// ── Skills ecosystem (ported from vercel-labs/skills, MIT — see vendors/skills/LICENSE) ──
+export * from './skills-ecosystem/github-host';
+export * from './skills-ecosystem/sanitize';
+export * from './skills-ecosystem/source-parser';
+export * from './skills-ecosystem/types';
 // ── Targets / marketplace / mapper / rulesync ────────────────────────────────
 export * from './targets';

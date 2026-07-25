@@ -1,0 +1,133 @@
+---
+template: issue
+schema_version: 1
+name: "anti-hallucination guard: lifecycle-verb pattern fires on local-change talk, blocking nearly every Stop"
+description: ""
+status: testing
+type: issue
+profile: standard
+feature_id: A
+parent_wbs: null
+priority: P2
+tags: ["bug"]
+dependencies: []
+created_at: "2026-07-25T05:35:25.883Z"
+updated_at: "2026-07-25T05:49:13.605Z"
+---
+
+## 0105. anti-hallucination guard: lifecycle-verb pattern fires on local-change talk, blocking nearly every Stop
+
+### Background
+The `cc/anti-hallucination` Stop hook blocked a completed work report with
+`Add verification for: confidence level (HIGH/MEDIUM/LOW)`. The report contained no external claim —
+it summarized commands run in-session and their output.
+
+Diagnosed against the live transcript rather than a reconstruction: extracting the blocked assistant
+message from the session JSONL and replaying it through `verifyAntiHallucinationProtocol` reproduced
+the block exactly, and pattern-level instrumentation named the trigger.
+### Requirements
+- R1 — A lifecycle verb with no external subject must not require verification.
+- R2 — A lifecycle verb with an external subject must still require verification (no regression in
+  detection power).
+- R3 — Regression fixtures must be residual-proof: each negative carries the verb half that used to
+  fire bare, and still asserts "does not fire".
+### Acceptance Criteria
+- AC1 (R1) — the 5 local-change sentences in the root-cause table return `false`.
+- AC2 (R2) — the 3 external sentences in that table return `true`, and every pre-existing
+  positive assertion in `ah_guard.test.ts` still passes.
+- AC3 (R3) — the new negative fixtures each carry a lifecycle verb and are labelled residual-proof.
+- AC4 — replaying the real blocked transcript message yields `ok:true`.
+- AC5 — full gate green (`bun run autofix && bun run spur-check`, EXIT_CODE=0).
+### Q&A
+
+<!-- Clarifications and triage decisions. Keep empty if none. -->
+
+### Design
+
+<!-- Fix approach and tradeoffs. Keep this short unless the issue changes architecture. -->
+
+### Plan
+
+<!-- Ordered debugging/fix checklist. Fill before moving to todo/wip. -->
+
+### Root Cause
+`STRONG_CLAIM_PATTERNS` carried a bare lifecycle-verb regex:
+
+    /\b(?:was|were|is|are)\s+(?:introduced|added|deprecated|removed|renamed|released)\b/i
+
+STRONG patterns fire alone — no coupler, no external subject required. The blocked sentence was
+"…the truncation regression tests, which fail loudly if the re-arm **is removed**." That is a
+statement about local test behavior, and it demanded citations for the agent's own edits.
+
+The class is not rare, which is what makes it severe: `was added` / `were removed` / `is renamed` is
+the most common sentence shape in a coding summary. Measured before the fix — 5 of 5 ordinary
+local-change sentences falsely required verification:
+
+| Sentence | Before | After |
+| --- | --- | --- |
+| A regression test was added for the truncation case. | fires | passes |
+| The rule exclusion was removed and the gate covers it. | fires | passes |
+| The tests fail loudly if the re-arm is removed. | fires | passes |
+| The helper is renamed to readPipedStdin. | fires | passes |
+| Two fixtures were added under the rules folder. | fires | passes |
+| The API was deprecated in v2 and removed in v3. | fires | fires |
+| This library was introduced in release 4.1. | fires | fires |
+| According to the changelog the endpoint was renamed. | fires | fires |
+
+This is the same lesson as 0077 R1 ("bare vocabulary must not trigger"), which was applied to the
+weak *noun* half while the *verb* half kept its bare STRONG form.
+### Solution
+`plugins/cc/scripts/anti-hallucination/ah_guard.ts:321` — removed the lifecycle-verb regex from
+`STRONG_CLAIM_PATTERNS`; `plugins/cc/scripts/anti-hallucination/ah_guard.ts:351` defines it as
+`LIFECYCLE_VERB_PATTERN` and `plugins/cc/scripts/anti-hallucination/ah_guard.ts:363` couples it to external vocabulary,
+mirroring the existing capability-coupler design:
+
+    return WEAK_KEYWORD_PATTERN.test(text) &&
+        (CLAIM_COUPLER_PATTERN.test(text) || LIFECYCLE_VERB_PATTERN.test(text));
+
+A weak keyword (`api|library|framework|sdk|package|endpoint|documentation`) now needs either a
+capability coupler ("the API **returns**…") or a lifecycle verb ("the endpoint **was deprecated**").
+Neither half alone fires.
+
+Detection power is preserved: every pre-existing positive assertion still holds. The three cases in
+the existing `detects lifecycle assertions about external artifacts` test each already carry an
+external artifact (`endpoint`, `according to`, `documentation`) — the test's own title states the
+intent this fix restores. The version/URL/`according to`/`recent update`/`documentation says`
+STRONG patterns are untouched and still fire alone.
+### Testing
+**Per-Requirement Traceability** (verify run 2026-07-24; every `file:line` re-read this run)
+
+| Req | Status | Evidence |
+| --- | --- | --- |
+| R1 lifecycle verb without external subject must not fire | MET | `plugins/cc/scripts/anti-hallucination/ah_guard.ts:363` couples the verb to `WEAK_KEYWORD_PATTERN`; 8-case matrix → 0 mismatches (5 local sentences now `false`); test `residual-proof: passes local-change talk carrying a lifecycle verb` (`tests/ah_guard.test.ts:218`) |
+| R2 lifecycle verb with external subject must still fire | MET | same matrix: 3 external sentences remain `true`; test `still fires when a lifecycle verb has an external subject` (`tests/ah_guard.test.ts:232`); pre-existing `detects lifecycle assertions about external artifacts` still passes |
+| R3 residual-proof fixtures | MET | `tests/ah_guard.test.ts:218` — 5 negatives, each carrying the lifecycle verb (the half that previously fired bare), all asserting `false`; labelled residual-proof, not baseline |
+
+**Acceptance Criteria Verification**
+
+| AC | Status | Evidence Type | Evidence |
+| --- | --- | --- | --- |
+| AC1 five local sentences return false | MET | command | 8-case matrix, `0 mismatches` |
+| AC2 three external sentences return true + no regression | MET | command + test | same matrix; full ah_guard suite 81 pass / 0 fail |
+| AC3 negatives labelled residual-proof | MET | static | `tests/ah_guard.test.ts:218` title and comment state compound-carrying, not bare-half |
+| AC4 real blocked message now passes | MET | command | replay of the message extracted from the session transcript → `requiresExternalVerification:false`, `{"ok":true,"reason":"Task is complete (internal discussion)"}` (was `ok:false`, `confidence level`) |
+| AC5 full gate green | MET | command | `bun run autofix && bun run spur-check` EXIT_CODE=0; 31/31 pre-check, 1757 pass / 0 fail, 3/3 post-check, Biome 0 warnings |
+
+**Detection power preserved.** The change narrows only the lifecycle-verb half. The version, URL,
+`according to`, `recent update`, and `documentation says` STRONG patterns are untouched and still
+fire alone — confirmed by the three external matrix rows, each of which also carries an independent
+STRONG trigger.
+
+Coverage: `ah_guard.ts` 100% functions / 98.42% lines; suite aggregate 99.86% functions / 99.00%
+lines (gate >=90%). No new branch introduced — the change is inside an existing covered predicate.
+### Review
+
+<!-- Filled during review: P1-P4 findings, residual risk, and final disposition. -->
+
+### References
+
+<!-- Links to failing logs, related issues, tasks, docs, or external references. -->
+
+### History
+- 2026-07-25T05:37:29.708Z todo → wip (system)
+- 2026-07-25T05:37:31.270Z wip → testing (system)
