@@ -89,7 +89,7 @@ var WEAK_KEYWORD_PATTERN = /\b(?:api|library|framework|sdk|package|endpoint|docu
 var CLAIM_COUPLER_PATTERN = /\b(?:returns|accepts|expects|supports|requires|provides|exposes|takes|emits|throws|defaults? to)\b/i;
 var LIFECYCLE_VERB_PATTERN = /\b(?:was|were|is|are)\s+(?:introduced|added|deprecated|removed|renamed|released)\b/i;
 function hasWeakExternalClaim(text) {
-  const sentences = text.split(/(?<=[.!?])\s+/);
+  const sentences = text.split(/(?<=[.!?])\s+|\n+/);
   return sentences.some((sentence) => WEAK_KEYWORD_PATTERN.test(sentence) && (CLAIM_COUPLER_PATTERN.test(sentence) || LIFECYCLE_VERB_PATTERN.test(sentence)));
 }
 function requiresExternalVerification(text) {

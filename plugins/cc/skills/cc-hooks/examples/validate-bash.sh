@@ -7,9 +7,6 @@ set -euo pipefail
 # Read input from stdin
 input=$(cat)
 
-# Extract command
-command=$(echo "$input" | jq -r '.tool_input.command // empty')
-
 emit_decision() {
   local decision=$1
   local reason=$2
@@ -26,9 +23,10 @@ emit_decision() {
   exit 0
 }
 
-# Validate command exists
-if [ -z "$command" ]; then
-  exit 0
+# Missing or malformed hook input must not silently approve a command.
+if ! command=$(printf '%s' "$input" | jq -er '.tool_input.command | select(type == "string")' 2>/dev/null) ||
+  [ -z "$command" ]; then
+  emit_decision "ask" "Missing or invalid Bash command"
 fi
 
 # Check for destructive operations
@@ -52,7 +50,7 @@ fi
 
 # Only a deliberately narrow grammar can pass without review. Shell substitutions,
 # redirections, chaining, quoting, and unknown executables all route to human approval.
-safe_pattern='^(pwd|date|whoami)[[:space:]]*$|^(ls|echo)([[:space:]]+[-[:alnum:]_./]+)*[[:space:]]*$'
+safe_pattern='^(pwd|date|whoami)[[:blank:]]*$|^(ls|echo)([[:blank:]]+[-[:alnum:]_./]+)*[[:blank:]]*$'
 if [[ "$command" =~ $safe_pattern ]]; then
   exit 0
 fi

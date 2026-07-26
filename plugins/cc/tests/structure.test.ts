@@ -165,11 +165,14 @@ describe('cc plugin structure', () => {
             const content = readFileSync(join(PLUGIN_ROOT, 'commands', file), 'utf-8');
             const hint = content.match(/^argument-hint:\s*["'](.+)["']\s*$/m)?.[1] ?? '';
             const documented = [...new Set(hint.match(/--[a-z][a-z-]*/g) ?? [])].sort();
+            const argumentsSection = content.match(/## Arguments\n([\s\S]*?)(?=\n## )/)?.[1] ?? '';
+            const tableOptions = [...new Set(argumentsSection.match(/--[a-z][a-z-]*/g) ?? [])].sort();
             const registered = [...new Set(help.match(/--[a-z][a-z-]*/g) ?? [])]
                 .filter((option) => option !== '--help')
                 .sort();
 
             expect(`${file}:${documented.join(',')}`).toBe(`${file}:${registered.join(',')}`);
+            expect(`${file}:table:${tableOptions.join(',')}`).toBe(`${file}:table:${registered.join(',')}`);
             expect(`${file}:required-arguments:${hint.startsWith('<')}`).toBe(
                 `${file}:required-arguments:${/^Usage: .+ <[^>]+>/m.test(help)}`,
             );

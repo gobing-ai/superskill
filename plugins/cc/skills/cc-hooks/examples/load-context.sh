@@ -7,9 +7,24 @@ set -euo pipefail
 set_context_env() {
   local key=$1
   local value=$2
+  local prefix="export $key="
   local export_line="export $key=$value"
-  if ! grep -qxF -- "$export_line" "$CLAUDE_ENV_FILE" 2>/dev/null; then
-    printf '%s\n' "$export_line" >> "$CLAUDE_ENV_FILE"
+  local temp_file
+  if grep -q "^export ${key}=" "$CLAUDE_ENV_FILE" 2>/dev/null; then
+    temp_file=$(mktemp "${CLAUDE_ENV_FILE}.tmp.XXXXXX")
+    awk -v prefix="$prefix" -v replacement="$export_line" '
+      index($0, prefix) == 1 {
+        if (!replaced) {
+          print replacement
+          replaced = 1
+        }
+        next
+      }
+      { print }
+    ' "$CLAUDE_ENV_FILE" > "$temp_file"
+    mv "$temp_file" "$CLAUDE_ENV_FILE"
+  else
+    printf '%s\n' "$export_line" >>"$CLAUDE_ENV_FILE"
   fi
 }
 
