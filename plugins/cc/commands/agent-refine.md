@@ -1,6 +1,6 @@
 ---
 description: Evaluate and fix agent issues in one step
-argument-hint: "<agent-path> [--auto] [--save] [--dry-run] [--target <platform>]"
+argument-hint: "<nameOrPath> [--auto] [--save] [--dry-run] [--target <platform>]"
 allowed-tools: ["Read", "Write", "Glob", "Bash", "Skill"]
 ---
 
@@ -19,7 +19,7 @@ Run evaluation, apply deterministic structural fixes (missing fields, type coerc
 
 | Argument | Description | Default |
 |----------|-------------|---------|
-| `agent-path` | Path to the agent .md file | (required) |
+| `<nameOrPath>` | Agent name or path to its .md file | (required) |
 | `--auto` | Skip interactive prompts (auto-apply fixes) | false |
 | `--save` | Persist the evaluation to the evaluation store | false |
 | `--dry-run` | Preview classified fixes and projected delta without writing | false |

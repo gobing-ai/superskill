@@ -1,6 +1,6 @@
 ---
 description: Score command quality across 10 dimensions
-argument-hint: "<command-path> [--json] [--target <platform>] [--save] [--rubric <file>] [--ingest <file>]"
+argument-hint: "<nameOrPath> [--json] [--target <platform>] [--save] [--rubric <file>] [--ingest <file>]"
 allowed-tools: ["Read", "Write", "Glob", "Bash", "Skill"]
 ---
 
@@ -19,7 +19,7 @@ Score slash command quality across 10 dimensions. **Evaluate only — make NO ch
 
 | Argument | Description | Default |
 |----------|-------------|---------|
-| `command-path` | Path to the command .md file | (required) |
+| `<nameOrPath>` | Command name or path to its .md file | (required) |
 | `--json` | Output machine-readable JSON; with `--rubric`, emit a scoring work order | false |
 | `--target` | Target platform | claude |
 | `--save` | Persist the evaluation to the evaluation store (enables evolve trend analysis) | false |

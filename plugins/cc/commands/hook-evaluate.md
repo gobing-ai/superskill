@@ -1,6 +1,6 @@
 ---
 description: Score hook quality across 4 dimensions (safety, correctness, event-coverage, pattern-match)
-argument-hint: "<hooks-path> [--json] [--target <platform>] [--save] [--rubric <file>] [--ingest <file>]"
+argument-hint: "<nameOrPath> [--json] [--target <platform>] [--save] [--rubric <file>] [--ingest <file>]"
 allowed-tools: ["Read", "Write", "Glob", "Bash", "Skill"]
 ---
 
@@ -20,7 +20,7 @@ Score hook quality across 4 dimensions. Evaluates `hooks.json` directly — scan
 
 | Argument | Description | Default |
 |----------|-------------|---------|
-| `hooks-path` | Path to the hooks.json file | (required) |
+| `<nameOrPath>` | Hook name or path to hooks.json | (required) |
 | `--json` | Output machine-readable JSON; with `--rubric`, emit a scoring work order | false |
 | `--target` | Target platform | claude |
 | `--save` | Persist the evaluation to the evaluation store (enables evolve trend analysis) | false |

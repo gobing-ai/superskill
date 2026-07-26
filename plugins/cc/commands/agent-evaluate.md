@@ -1,6 +1,6 @@
 ---
 description: Check agent quality score and identify weaknesses
-argument-hint: "<agent-path> [--json] [--target <platform>] [--save] [--rubric <file>] [--ingest <file>]"
+argument-hint: "<nameOrPath> [--json] [--target <platform>] [--save] [--rubric <file>] [--ingest <file>]"
 allowed-tools: ["Read", "Write", "Glob", "Bash", "Skill"]
 ---
 
@@ -20,7 +20,7 @@ Score agent quality across 10 dimensions. **Evaluate only — make NO changes.**
 
 | Argument | Description | Default |
 |----------|-------------|---------|
-| `agent-path` | Path to the agent .md file | (required) |
+| `<nameOrPath>` | Agent name or path to its .md file | (required) |
 | `--json` | Output machine-readable JSON; with `--rubric`, emit a scoring work order | false |
 | `--target` | Target platform | claude |
 | `--save` | Persist the evaluation to the evaluation store (enables evolve trend analysis) | false |

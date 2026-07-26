@@ -1,6 +1,6 @@
 ---
 description: Check skill quality score and identify weaknesses
-argument-hint: "<skill-dir> [--history] [--json] [--target <platform>] [--save] [--rubric <file>] [--ingest <file>]"
+argument-hint: "<nameOrPath> [--history] [--json] [--target <platform>] [--save] [--rubric <file>] [--ingest <file>]"
 allowed-tools: ["Read", "Write", "Glob", "Bash", "Skill"]
 ---
 
@@ -19,7 +19,7 @@ Score skill quality across multiple dimensions. **Evaluate only — make NO chan
 
 | Argument | Description | Default |
 |----------|-------------|---------|
-| `skill-dir` | Path to the skill directory | (required) |
+| `<nameOrPath>` | Skill name or path to its directory | (required) |
 | `--history` | Show prior evaluation rows from the store | false |
 | `--json` | Output machine-readable JSON; with `--rubric`, emit a scoring work order | false |
 | `--target` | Target platform | claude |

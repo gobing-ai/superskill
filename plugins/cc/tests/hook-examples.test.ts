@@ -99,6 +99,7 @@ describe('validate-write example', () => {
         for (const filePath of [
             '//etc/passwd',
             '/.//etc/passwd',
+            '/sys/kernel/security',
             '/System/Library/example',
             String.raw`C:\Windows\System32\drivers\etc\hosts`,
         ]) {

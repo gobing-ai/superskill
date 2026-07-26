@@ -3,7 +3,7 @@ template: issue
 schema_version: 1
 name: "Fix cc plugin security, contract drift, and structural review findings"
 description: ""
-status: testing
+status: done
 type: issue
 profile: standard
 feature_id: C
@@ -12,7 +12,7 @@ priority: P2
 tags: ["bug"]
 dependencies: []
 created_at: "2026-07-26T18:12:58.484Z"
-updated_at: "2026-07-26T19:05:12.665Z"
+updated_at: "2026-07-26T20:49:17.119Z"
 ---
 
 ## 0108. Fix cc plugin security, contract drift, and structural review findings
@@ -145,49 +145,116 @@ while command/help and hook-contract prose drifted without a generic test that c
 actual CLI/runtime. In the guard engine, a message-wide weak-keyword conjunction ignored sentence
 locality, and the secondary validator bypassed the engine's already-correct bounded stdin reader.
 ### Solution
-1. `plugins/cc/skills/cc-hooks/examples/validate-bash.sh:13` and
-   `plugins/cc/skills/cc-hooks/examples/validate-write.sh:13` use fail-safe command classification
-   and `jq`-encoded canonical decisions. `load-context.sh:7` atomically upserts and deduplicates
-   exports. `plugins/cc/tests/hook-examples.test.ts:33` executes adversarial and idempotency fixtures.
-2. `plugins/cc/scripts/anti-hallucination/ah_guard.ts:352` makes weak coupling sentence/line-local,
-   and `plugins/cc/scripts/anti-hallucination/validate_response.ts:34` reuses the bounded
-   idle-rearming stdin reader. The generated portable `validate_response.mjs` twin was rebuilt.
-3. Plugin command wrappers, Stop-contract references, task lifecycle guidance, links, and fences
-   match their runtime contracts. `plugins/cc/tests/structure.test.ts:108` enforces fence balance,
-   live-link resolution, and exact argument-hint/option-table/Commander-help parity.
-4. `apps/cli/src/commands/helpers.ts:20` registers `--invocation-mode` only for skill scaffolding;
-   `docs/04_DESIGN.md:47` and `docs/design/design-doc-phase2.md:44` own the synchronized surface.
-5. The residual audit closed fail-open edge cases: `validate-bash.sh:26` asks on malformed input and
-   excludes command-separating newlines; `validate-write.sh:26` asks on malformed, network, drive,
-   variable-data, and symlink paths while denying normalized POSIX/macOS/Windows system aliases.
-### Testing
-- `bun test plugins/cc`: PASS — 126 tests, 0 failures; 98.41% functions / 98.10% lines.
-- Direct open-stdin regression: PASS at
-  `plugins/cc/scripts/anti-hallucination/tests/validate_response.test.ts:63`.
-- Adversarial malformed JSON, newline command, path-alias, network/drive, and symlink probes: PASS.
-- `shellcheck` on all three changed hook examples: PASS.
-- `bun run lint`: PASS — Biome checked 214 files; both workspace typechecks passed.
-- `bun run test`: PASS — 1912 tests, 0 failures; 99.64% functions / 98.91% lines.
-- `bun run build`: PASS — portable validator twin regenerated and standalone CLI compiled.
-- `bun run spur-check`: PASS — 31/31 enabled pre-check rules, full suite, and 3/3 post-check rules.
-- `git diff --check`: PASS.
-### Review
-Final disposition: PASS after residual audit.
+The original remediation remains intact, and the forced verification pass closed five residual
+findings without adding a dependency or changing a package boundary.
 
-- P1/P2: The residual pass found and fixed newline-as-whitespace command injection, lexical and
-  platform-specific system-path aliases, malformed-payload fail-open behavior, and symlink path
-  redirection. All have executable regression evidence.
-- P3/P4: Wrapper option tables are now covered by the same live Commander parity invariant as
-  argument hints. Context exports are key-level atomic upserts, so stale or duplicated values
-  cannot accumulate.
-- C1: Generic plugin asset invariants cover every distributed Markdown file and lifecycle wrapper,
-  including both argument hints and option tables.
-- C2: The ignored cross-family `--invocation-mode` option remains restricted to the sole consuming
-  skill scaffold surface.
-- Residual risk: The Bash scripts intentionally implement a narrow approval policy, not a general
-  shell parser. Unknown input always routes to approval; no unresolved actionable finding remains.
-- Lifecycle note: task 0108 remains `testing` because the standalone review has no task-pipeline
-  provenance record.
+1. `plugins/cc/skills/cc-hooks/examples/validate-bash.sh:26` keeps malformed and non-allowlisted
+   commands on `ask`/`deny`; `plugins/cc/tests/hook-examples.test.ts:41` executes the adversarial
+   shell cases.
+2. `plugins/cc/skills/cc-hooks/examples/validate-write.sh:26` emits canonical JSON and normalizes
+   path segments; the forced pass restored `/sys` and `/sys/*` protection at line 57.
+   `plugins/cc/tests/hook-examples.test.ts:88` covers JSON escaping, traversal, platform aliases,
+   `/sys`, malformed payloads, and symlink redirection.
+3. `plugins/cc/scripts/anti-hallucination/validate_response.ts:34` reuses the bounded reader;
+   `plugins/cc/scripts/anti-hallucination/tests/validate_response.test.ts:65` executes the silent
+   open-stdin case. `plugins/cc/scripts/anti-hallucination/validate_response.mjs:91` is the
+   regenerated portable twin.
+4. `plugins/cc/scripts/anti-hallucination/ah_guard.ts:352` couples weak vocabulary sentence-locally,
+   including punctuation without following whitespace; the residual-proof negatives are at
+   `plugins/cc/scripts/anti-hallucination/tests/ah_guard.test.ts:206`.
+5. `plugins/cc/skills/anti-hallucination/references/guard-implementation.md:14` now describes the
+   actual exit-zero JSON Stop contract. `plugins/cc/tests/structure.test.ts:227` prevents exit-code
+   drift.
+6. `plugins/cc/tests/structure.test.ts:29` now parses CommonMark fence marker/length state and shares
+   it with live-link scanning. It exposed and fixed the nested-fence defect at
+   `plugins/cc/skills/cc-agents/references/agent-anatomy.md:295`.
+7. `plugins/cc/tests/structure.test.ts:187` compares option hints, option tables, ordered required
+   positionals, and live Commander help. Exact `<name>` / `<nameOrPath>` contracts are recorded at
+   line 3 and in the Arguments table of:
+   `plugins/cc/commands/agent-add.md`, `agent-evaluate.md`, `agent-evolve.md`, `agent-refine.md`,
+   `command-add.md`, `command-evaluate.md`, `command-evolve.md`, `command-refine.md`,
+   `hook-evaluate.md`, `magent-add.md`, `magent-evaluate.md`, `magent-evolve.md`,
+   `magent-refine.md`, `skill-add.md`, `skill-evaluate.md`, `skill-evolve.md`, and
+   `skill-refine.md`.
+8. `plugins/cc/skills/cc-hooks/examples/load-context.sh:7` retains atomic key-level environment
+   upserts, and `plugins/cc/tests/hook-examples.test.ts:159` executes repeated runs.
+9. `apps/cli/src/commands/helpers.ts:20` still restricts `--invocation-mode` registration to the
+   skill call at `apps/cli/src/commands/skill.ts:424`; agent, command, and magent calls at
+   `apps/cli/src/commands/agent.ts:203`, `apps/cli/src/commands/command.ts:202`, and
+   `apps/cli/src/commands/magent.ts:203` omit it.
+### Testing
+Forced verification completed 2026-07-26T20:47:08Z.
+
+**Requirement Traceability**
+
+| Req | Status | Evidence |
+|---|---|---|
+| R1 | MET | Narrow allow grammar and fail-safe decisions at `plugins/cc/skills/cc-hooks/examples/validate-bash.sh:26`; executable shell-safety cases at `plugins/cc/tests/hook-examples.test.ts:41`. |
+| R2 | MET | Canonical JSON and segment/path normalization at `plugins/cc/skills/cc-hooks/examples/validate-write.sh:26`; escaping, benign-dot, traversal, `/sys`, malformed-input, and symlink cases at `plugins/cc/tests/hook-examples.test.ts:88`. |
+| R3 | MET | Bounded-reader adapter at `plugins/cc/scripts/anti-hallucination/validate_response.ts:34`; direct open-stdin process regression at `plugins/cc/scripts/anti-hallucination/tests/validate_response.test.ts:65`. |
+| R4 | MET | Punctuation/newline sentence-local coupling at `plugins/cc/scripts/anti-hallucination/ah_guard.ts:352`; residual-proof negatives and intended positives at `plugins/cc/scripts/anti-hallucination/tests/ah_guard.test.ts:206`. |
+| R5 | MET | Exit-zero `decision:"block"` documentation at `plugins/cc/skills/anti-hallucination/references/guard-implementation.md:14`; invariant at `plugins/cc/tests/structure.test.ts:227`. |
+| R6 | MET | Marker/length-aware fences and live-link resolution at `plugins/cc/tests/structure.test.ts:29`; repaired nested asset at `plugins/cc/skills/cc-agents/references/agent-anatomy.md:295`. |
+| R7 | MET | Live Commander option and ordered-positionals parity at `plugins/cc/tests/structure.test.ts:187`; all lifecycle wrappers expose exact `<name>` / `<nameOrPath>` hints. |
+| R8 | MET | Current `spur task` guidance in `plugins/cc/skills/cc-skills/SKILL.md:54`; corpus-wide obsolete-instruction regression at `plugins/cc/tests/structure.test.ts:237`. |
+| R9 | MET | Atomic key upsert at `plugins/cc/skills/cc-hooks/examples/load-context.sh:7`; repeated-run regression at `plugins/cc/tests/hook-examples.test.ts:159`. |
+| R10 | MET | Generic asset/CLI contract surface at `plugins/cc/tests/structure.test.ts:29`, `:150`, `:164`, `:187`, `:227`, and `:237`, plus executable hook examples at `plugins/cc/tests/hook-examples.test.ts:41`. |
+
+**Acceptance Criteria Verification**
+
+| AC | Status | Evidence Type | Evidence |
+|---|---|---|---|
+| AC1 Shell payloads cannot allow | MET | test | `plugins/cc/tests/hook-examples.test.ts:41` executes forced removal, substitution, newline separation, and malformed payloads. |
+| AC2 Write decisions are parseable and segment-aware | MET | test | `plugins/cc/tests/hook-examples.test.ts:88` parses hostile quoted/newline paths and distinguishes traversal from benign adjacent dots. |
+| AC3 Direct validator respects idle budget | MET | test | `plugins/cc/scripts/anti-hallucination/tests/validate_response.test.ts:65` holds stdin open and requires exit within one second. |
+| AC4 Weak coupling is sentence-local | MET | test | `plugins/cc/scripts/anti-hallucination/tests/ah_guard.test.ts:206` covers whitespace, newline, and no-whitespace punctuation boundaries. |
+| AC5 Stop documentation uses exit-zero JSON | MET | test | `plugins/cc/tests/structure.test.ts:227` asserts `decision:"block"`, the exit-zero row, and absence of an exit-1/2 denial row. |
+| AC6 Markdown fences and links are structurally valid | MET | test | `plugins/cc/tests/structure.test.ts:150` and `:164` scan the complete distributed Markdown corpus. |
+| AC7 Wrapper surfaces exactly match Commander | MET | test | `plugins/cc/tests/structure.test.ts:187` compares live help with hint/table options and ordered required positionals. |
+| AC8 Obsolete lifecycle instructions are absent | MET | test | `plugins/cc/tests/structure.test.ts:237` scans every distributed Markdown file. |
+| AC9 Context loading is idempotent | MET | test | `plugins/cc/tests/hook-examples.test.ts:159` runs the script twice over duplicate stale exports and expects one current value per key. |
+| AC10 Protected contracts fail regressions | MET | test | `plugins/cc/tests/structure.test.ts` and `plugins/cc/tests/hook-examples.test.ts` execute fence, link, CLI, Stop-doc, shell, JSON, path, and idempotency invariants. |
+
+**Design Conformance**
+
+| Check | Status | Evidence |
+|---|---|---|
+| design-conformance | PASS | 7/7 Design claims DONE: fail-safe jq decisions, bounded stdin reuse, punctuation-local weak claims, generic asset tests, live-help parity, skill-only invocation mode, and no new dependency/boundary. |
+| scope-creep | PASS | Every changed hunk maps to R2, R4–R7, or R10 and its regression; no unrelated production module changed. |
+| SECUA | PASS | Five residual P1/P2 findings were repaired; no blocker, major, minor, or advisory finding remains. |
+| evidence-rule-pass | PASS | Every behavior-bearing AC has executable `test` evidence from this run. |
+| cli-golden-path-present | PASS | The structure suite invoked every mapped lifecycle subcommand with `--help` and received exit 0. |
+
+**Fresh Gates**
+
+- Focused regressions — all 118 selected tests passed with 0 failures and 740 assertions. The
+  focused runner exited 1 after its partial coverage report; the authoritative full-repository
+  coverage command below exited 0.
+- `shellcheck plugins/cc/skills/cc-hooks/examples/{validate-bash,validate-write,load-context}.sh`
+  — PASS with no diagnostics.
+- `bun run lint` — PASS: Biome checked 214 files; both workspace typechecks exited 0.
+- `bun run spur-check` — PASS: all 31 enabled pre-check rules, 1,923 tests across 100 files with
+  0 failures and 5,400 assertions, 98.90% line / 99.65% function coverage, and all 3 post-check
+  rules passed.
+- `bun run build` — PASS: the portable validator twin regenerated and the standalone CLI bundled
+  and compiled.
+- `git diff --check` — PASS.
+- `spur task check 0108 --strict-core --json` — PASS with no findings.
+- Fix-pass artifact disclosure: `.spur/run/0108-verdict.json:1` is rewritten after tracked evidence
+  is finalized; no other persistent `.spur/run/**` deliverable is changed.
+### Review
+Forced all-focus review companion — 2026-07-26.
+
+| Priority | Dimension | Evidence | Finding | Resolution |
+|---|---|---|---|---|
+| P1 | Security / Correctness | `plugins/cc/skills/cc-hooks/examples/validate-write.sh:55` | The system-directory allow policy omitted Linux `/sys`, so `/sys/...` produced no decision and silently allowed the write. | Restored `/sys` and `/sys/*` denial; executable regression at `plugins/cc/tests/hook-examples.test.ts:98`. |
+| P2 | Correctness / Usability | `plugins/cc/skills/anti-hallucination/references/guard-implementation.md:14` | The reference still documented exit 2 as the Stop denial signal, contradicting the shipped exit-zero `decision:"block"` contract. | Replaced the table with the canonical exit-zero contract and added a structural regression at `plugins/cc/tests/structure.test.ts:227`. |
+| P2 | Correctness | `plugins/cc/scripts/anti-hallucination/ah_guard.ts:352` | Sentence locality required whitespace after punctuation, so two punctuation-delimited sentences without a space were recombined into a false external claim. | Split at punctuation boundaries with or without following whitespace; residual-proof regression at `plugins/cc/scripts/anti-hallucination/tests/ah_guard.test.ts:206`. |
+| P2 | Architecture / Correctness | `plugins/cc/tests/structure.test.ts:150` | Fence validation only counted matching-looking lines; mismatched markers and nested same-length fences could pass. The stronger probe exposed malformed nested examples in `agent-anatomy.md`. | Added marker/length-aware scanning shared by fence and link checks, repaired the asset with four-backtick outer fences, and added a false-green regression. |
+| P2 | Architecture / Usability | `plugins/cc/tests/structure.test.ts:187` | Wrapper parity checked only whether some required positional existed, so wrong names and counts passed despite the exact-parity contract. | Compare ordered required positionals from hints and tables against live Commander Usage; synchronized all 17 wrappers to `<name>` / `<nameOrPath>`. |
+
+No residual P1, P2, P3, or P4 finding remains. Security, efficiency, correctness, usability, and
+architecture were re-audited against R1–R10, all ten scenarios, and all seven Design claims.
 ### References
 - Review scope: `plugins/cc`
 - Reproduction: `validate-bash.sh` allowed `rm --recursive --force` and command substitution.
@@ -201,3 +268,4 @@ Final disposition: PASS after residual audit.
 - 2026-07-26T18:14:12.558Z backlog → todo (system)
 - 2026-07-26T18:14:13.910Z todo → wip (system)
 - 2026-07-26T18:24:03.879Z wip → testing (system)
+- 2026-07-26T20:49:17.119Z testing → done (system)

@@ -1,6 +1,6 @@
 ---
 description: Score main agent config across 6 quality dimensions
-argument-hint: "<config-path> [--json] [--target <platform>] [--save] [--rubric <file>] [--ingest <file>]"
+argument-hint: "<nameOrPath> [--json] [--target <platform>] [--save] [--rubric <file>] [--ingest <file>]"
 allowed-tools: ["Read", "Write", "Glob", "Bash", "Skill"]
 ---
 
@@ -19,7 +19,7 @@ Score main agent config quality across 6 dimensions. **Evaluate only — make NO
 
 | Argument | Description | Default |
 |----------|-------------|---------|
-| `config-path` | Path to the config .md file | (required) |
+| `<nameOrPath>` | Configuration name or path to its .md file | (required) |
 | `--json` | Output machine-readable JSON; with `--rubric`, emit a scoring work order | false |
 | `--target` | Target platform | claude |
 | `--save` | Persist the evaluation to the evaluation store (enables evolve trend analysis) | false |

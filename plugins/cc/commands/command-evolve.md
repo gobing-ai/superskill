@@ -1,6 +1,6 @@
 ---
 description: Analyze command evolution signals, draft/apply proposals, and rollback versions
-argument-hint: "<command-name> [--analyze] [--from <date>] [--propose-only] [--accept <id>] [--reject <id>] [--history] [--rollback <id> --confirm] [--ingest <file>] [--json] [--margin <n>] [--eval-gate] [--target <platform>]"
+argument-hint: "<name> [--analyze] [--from <date>] [--propose-only] [--accept <id>] [--reject <id>] [--history] [--rollback <id> --confirm] [--ingest <file>] [--json] [--margin <n>] [--eval-gate] [--target <platform>]"
 allowed-tools: ["Read", "Write", "Glob", "Bash", "Skill"]
 ---
 
@@ -21,7 +21,7 @@ Analyze command quality over time, draft heuristic proposals for declining/flat-
 
 | Argument | Description | Default |
 |----------|-------------|---------|
-| `command-name` | Name of the command | (required) |
+| `<name>` | Name of the command | (required) |
 | `--analyze` | Print trend table, score/grade, data-source inventory, and pattern summary | false |
 | `--from <date>` | Analyze evaluations since date (ISO 8601) | latest |
 | `--propose-only` | Draft proposals without applying | false |

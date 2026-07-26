@@ -1,6 +1,6 @@
 ---
 description: Evaluate and fix magent config issues in one step
-argument-hint: "<config-path> [--auto] [--save] [--dry-run] [--target <platform>]"
+argument-hint: "<nameOrPath> [--auto] [--save] [--dry-run] [--target <platform>]"
 allowed-tools: ["Read", "Write", "Glob", "Bash", "Skill"]
 ---
 
@@ -20,7 +20,7 @@ Run evaluation, apply deterministic structural fixes (missing fields, type coerc
 
 | Argument | Description | Default |
 |----------|-------------|---------|
-| `config-path` | Path to the config .md file | (required) |
+| `<nameOrPath>` | Configuration name or path to its .md file | (required) |
 | `--auto` | Skip interactive prompts (auto-apply fixes) | false |
 | `--save` | Persist the evaluation to the evaluation store | false |
 | `--dry-run` | Preview classified fixes and projected delta without writing | false |

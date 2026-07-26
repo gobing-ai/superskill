@@ -1,6 +1,6 @@
 ---
 description: Analyze magent evolution signals, draft proposals, and rollback applied versions
-argument-hint: "<config-name> [--analyze] [--from <date>] [--propose-only] [--accept <id>] [--reject <id>] [--history] [--rollback <id> --confirm] [--ingest <file>] [--json] [--margin <n>] [--eval-gate] [--target <platform>]"
+argument-hint: "<name> [--analyze] [--from <date>] [--propose-only] [--accept <id>] [--reject <id>] [--history] [--rollback <id> --confirm] [--ingest <file>] [--json] [--margin <n>] [--eval-gate] [--target <platform>]"
 allowed-tools: ["Read", "Write", "Glob", "Bash", "Skill"]
 ---
 
@@ -21,7 +21,7 @@ Analyze main agent config quality over time, persist refine-backed proposals, ap
 
 | Argument | Description | Default |
 |----------|-------------|---------|
-| `config-name` | Name or path of the config | (required) |
+| `<name>` | Name or path of the config | (required) |
 | `--analyze` | Print analysis summary (trends, score, data sources) without writing a proposal | false |
 | `--from <date>` | Analyze evaluations since date (ISO 8601) | latest |
 | `--propose-only` | Draft proposals without applying | false |

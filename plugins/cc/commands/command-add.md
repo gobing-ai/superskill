@@ -1,6 +1,6 @@
 ---
 description: Create a new slash command with scaffolding and templates
-argument-hint: "<command-name> [--description <text>] [--target <platform>] [--output <dir>] [--template <tier>] [--tools <list>] [--force]"
+argument-hint: "<name> [--description <text>] [--target <platform>] [--output <dir>] [--template <tier>] [--tools <list>] [--force]"
 allowed-tools: ["Read", "Write", "Glob", "Bash", "Skill"]
 ---
 
@@ -20,7 +20,7 @@ Scaffold a new slash command file from a tiered template. Delegates to **cc:cc-c
 
 | Argument | Description | Default |
 |----------|-------------|---------|
-| `command-name` | Name of the command (hyphen-case) | (required) |
+| `<name>` | Name of the command (hyphen-case) | (required) |
 | `--description` | Free-text description of the command's purpose | auto-generated |
 | `--target` | Target platform | claude |
 | `--output` | Output directory | ./commands |

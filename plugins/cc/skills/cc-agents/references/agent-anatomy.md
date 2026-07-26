@@ -292,7 +292,7 @@ Follow these steps for each request:
 **Purpose:** Define how the agent structures its responses.
 
 **Standard version:**
-```markdown
+````markdown
 ## Output Format
 
 ```markdown
@@ -307,10 +307,10 @@ Follow these steps for each request:
 - [Recommendation 1]
 - [Recommendation 2]
 ```
-```
+````
 
 **Specialist version (adds confidence + error template):**
-```markdown
+````markdown
 ## Output Format
 
 ### Primary Template
@@ -348,7 +348,7 @@ Follow these steps for each request:
 
 **Alternatives**: [Fallback options]
 ```
-```
+````
 
 **Common mistakes:**
 - No structured template (just free-form text)

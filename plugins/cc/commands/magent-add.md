@@ -1,6 +1,6 @@
 ---
 description: Create a new main agent config with scaffolding
-argument-hint: "<config-name> [--description <text>] [--target <platform>] [--output <dir>] [--template <tier>] [--tools <list>] [--force]"
+argument-hint: "<name> [--description <text>] [--target <platform>] [--output <dir>] [--template <tier>] [--tools <list>] [--force]"
 allowed-tools: ["Read", "Write", "Glob", "Bash", "Skill"]
 ---
 
@@ -19,7 +19,7 @@ Scaffold a new main agent configuration file. Delegates to **cc:cc-magents** ski
 
 | Argument | Description | Default |
 |----------|-------------|---------|
-| `config-name` | Name of the main-agent configuration | (required) |
+| `<name>` | Name of the main-agent configuration | (required) |
 | `--description` | Free-text description of the config's purpose | auto-generated |
 | `--target` | Target platform | claude |
 | `--output` | Output directory | . |

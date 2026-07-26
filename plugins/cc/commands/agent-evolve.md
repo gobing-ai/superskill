@@ -1,6 +1,6 @@
 ---
 description: Analyze agent evolution signals, draft/apply proposals, and rollback versions
-argument-hint: "<agent-name> [--analyze] [--from <date>] [--propose-only] [--accept <id>] [--reject <id>] [--history] [--rollback <id> --confirm] [--ingest <file>] [--json] [--margin <n>] [--eval-gate] [--target <platform>]"
+argument-hint: "<name> [--analyze] [--from <date>] [--propose-only] [--accept <id>] [--reject <id>] [--history] [--rollback <id> --confirm] [--ingest <file>] [--json] [--margin <n>] [--eval-gate] [--target <platform>]"
 allowed-tools: ["Read", "Write", "Glob", "Bash", "Skill"]
 ---
 
@@ -21,7 +21,7 @@ Analyze agent quality over time, draft heuristic proposals for declining/flat-lo
 
 | Argument | Description | Default |
 |----------|-------------|---------|
-| `agent-name` | Name of the agent | (required) |
+| `<name>` | Name of the agent | (required) |
 | `--analyze` | Print trend table, score/grade, data-source inventory, and pattern summary | false |
 | `--from <date>` | Analyze evaluations since date (ISO 8601) | latest |
 | `--propose-only` | Draft proposals without applying | false |

@@ -350,7 +350,7 @@ const LIFECYCLE_VERB_PATTERN = /\b(?:was|were|is|are)\s+(?:introduced|added|depr
 
 /** Weak vocabulary and its assertion must occur in the same sentence. */
 function hasWeakExternalClaim(text: string): boolean {
-    const sentences = text.split(/(?<=[.!?])\s+|\n+/);
+    const sentences = text.split(/(?<=[.!?])(?:\s+|(?=\S))|\n+/);
     return sentences.some(
         (sentence) =>
             WEAK_KEYWORD_PATTERN.test(sentence) &&

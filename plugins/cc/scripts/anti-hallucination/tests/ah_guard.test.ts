@@ -213,6 +213,9 @@ describe('requiresExternalVerification', () => {
         expect(requiresExternalVerification('The API change is local\nThe helper returns early when empty')).toBe(
             false,
         );
+        expect(requiresExternalVerification('The API change is local.The helper returns early when empty.')).toBe(
+            false,
+        );
     });
 
     it('detects weak vocabulary coupled with a capability assertion', () => {

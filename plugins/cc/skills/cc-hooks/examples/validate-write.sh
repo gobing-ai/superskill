@@ -54,7 +54,7 @@ fi
 # Check for system directories
 case "$lower_path" in
   / | /bin | /bin/* | /boot | /boot/* | /dev | /dev/* | /etc | /etc/* | /library | /library/* | /private/etc \
-    | /private/etc/* | /proc | /proc/* | /sbin | /sbin/* | /system | /system/* | /usr | /usr/*)
+    | /private/etc/* | /proc | /proc/* | /sbin | /sbin/* | /sys | /sys/* | /system | /system/* | /usr | /usr/*)
     emit_decision "deny" "Cannot write to system directory: $file_path"
     ;;
   [a-z]:/windows | [a-z]:/windows/* | [a-z]:/program\ files | [a-z]:/program\ files/* | [a-z]:/programdata \

@@ -15,8 +15,10 @@ The `ah_guard.ts` script enforces the anti-hallucination protocol by analyzing r
 
 | Code | Meaning |
 |------|---------|
-| 0 | Allow stop (protocol followed) |
-| 2 | Deny stop (universal cross-agent block signal; the reason is also written to stderr). Claude Code treats exit 1 as a *non-blocking* error, so 1 can never block a Stop. |
+| 0 | Always. Allow omits `decision`; deny emits `decision:"block"` with a reason. The JSON decision is the Stop signal. |
+
+Never use exit 1 or 2 to deny this Stop hook. Claude Code treats exit 1 as a non-blocking error and
+discards canonical decision JSON at exit 2.
 
 ## Output Format
 

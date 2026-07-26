@@ -24,6 +24,48 @@ function walkFiles(dir: string): string[] {
     return out;
 }
 
+interface MarkdownScan {
+    unclosedFenceLine?: number;
+    proseLines: Array<{ line: number; text: string }>;
+}
+
+function scanMarkdown(content: string): MarkdownScan {
+    let open: { marker: string; length: number; line: number } | undefined;
+    const proseLines: MarkdownScan['proseLines'] = [];
+    for (const [index, line] of content.split('\n').entries()) {
+        const match = line.match(/^ {0,3}(`{3,}|~{3,})(.*)$/);
+        if (match) {
+            const run = match[1] ?? '';
+            const marker = run[0] ?? '';
+            const suffix = match[2] ?? '';
+            if (!open) {
+                open = { marker, length: run.length, line: index + 1 };
+                continue;
+            }
+            if (marker === open.marker && run.length >= open.length && suffix.trim() === '') {
+                open = undefined;
+            }
+            continue;
+        }
+        if (!open) proseLines.push({ line: index + 1, text: line });
+    }
+    return { unclosedFenceLine: open?.line, proseLines };
+}
+
+function findUnclosedFence(content: string): number | undefined {
+    return scanMarkdown(content).unclosedFenceLine;
+}
+
+function requiredPositionalsFromHint(hint: string): string[] {
+    const prefix = hint.match(/^(.*?)(?=\s+\[--|$)/)?.[1] ?? '';
+    return prefix.match(/<[^>]+>/g) ?? [];
+}
+
+function requiredPositionalsFromHelp(help: string): string[] {
+    const usage = help.match(/^Usage:[^\n]+$/m)?.[0] ?? '';
+    return usage.match(/<[^>]+>/g) ?? [];
+}
+
 describe('cc plugin structure', () => {
     it('README flow map lists every commands/*.md exactly once', () => {
         const readme = readFileSync(join(PLUGIN_ROOT, 'README.md'), 'utf-8');
@@ -108,25 +150,21 @@ describe('cc plugin structure', () => {
     it('keeps every plugin Markdown code fence balanced', () => {
         const files = walkFiles(PLUGIN_ROOT).filter((file) => file.endsWith('.md'));
         for (const file of files) {
-            const fences = readFileSync(file, 'utf-8')
-                .split('\n')
-                .filter((line) => /^\s*```/.test(line));
-            expect(`${file}:${fences.length}`).toBe(`${file}:${fences.length - (fences.length % 2)}`);
+            const unclosedAt = findUnclosedFence(readFileSync(file, 'utf-8'));
+            expect(`${file}:unclosed-at:${unclosedAt ?? 'none'}`).toBe(`${file}:unclosed-at:none`);
         }
+    });
+
+    it('matches fence marker and minimum length instead of accepting an even fence count', () => {
+        expect(findUnclosedFence('```ts\ncontent\n~~~~')).toBe(1);
+        expect(findUnclosedFence('````md\n```ts\n```\n````')).toBeUndefined();
     });
 
     it('keeps live relative Markdown links resolvable', () => {
         const files = walkFiles(PLUGIN_ROOT).filter((file) => file.endsWith('.md'));
         for (const file of files) {
-            let inFence = false;
-            for (const [index, line] of readFileSync(file, 'utf-8').split('\n').entries()) {
-                if (/^\s*```/.test(line)) {
-                    inFence = !inFence;
-                    continue;
-                }
-                if (inFence) continue;
-
-                for (const match of line.matchAll(/\[[^\]]*]\(([^)]+)\)/g)) {
+            for (const { line: lineNumber, text } of scanMarkdown(readFileSync(file, 'utf-8')).proseLines) {
+                for (const match of text.matchAll(/\[[^\]]*]\(([^)]+)\)/g)) {
                     const destination = match[1]?.trim() ?? '';
                     if (
                         destination === '' ||
@@ -138,8 +176,8 @@ describe('cc plugin structure', () => {
                         continue;
                     }
                     const path = destination.split('#', 1)[0];
-                    expect(`${file}:${index + 1}:${destination}:${existsSync(resolve(dirname(file), path))}`).toBe(
-                        `${file}:${index + 1}:${destination}:true`,
+                    expect(`${file}:${lineNumber}:${destination}:${existsSync(resolve(dirname(file), path))}`).toBe(
+                        `${file}:${lineNumber}:${destination}:true`,
                     );
                 }
             }
@@ -167,15 +205,40 @@ describe('cc plugin structure', () => {
             const documented = [...new Set(hint.match(/--[a-z][a-z-]*/g) ?? [])].sort();
             const argumentsSection = content.match(/## Arguments\n([\s\S]*?)(?=\n## )/)?.[1] ?? '';
             const tableOptions = [...new Set(argumentsSection.match(/--[a-z][a-z-]*/g) ?? [])].sort();
+            const tablePositionals = [...argumentsSection.matchAll(/^\|\s*`(<[^>]+>)`\s*\|/gm)].map(
+                (match) => match[1] ?? '',
+            );
             const registered = [...new Set(help.match(/--[a-z][a-z-]*/g) ?? [])]
                 .filter((option) => option !== '--help')
                 .sort();
+            const registeredPositionals = requiredPositionalsFromHelp(help);
 
             expect(`${file}:${documented.join(',')}`).toBe(`${file}:${registered.join(',')}`);
             expect(`${file}:table:${tableOptions.join(',')}`).toBe(`${file}:table:${registered.join(',')}`);
-            expect(`${file}:required-arguments:${hint.startsWith('<')}`).toBe(
-                `${file}:required-arguments:${/^Usage: .+ <[^>]+>/m.test(help)}`,
+            expect(`${file}:hint-positionals:${requiredPositionalsFromHint(hint).join(',')}`).toBe(
+                `${file}:hint-positionals:${registeredPositionals.join(',')}`,
             );
+            expect(`${file}:table-positionals:${tablePositionals.join(',')}`).toBe(
+                `${file}:table-positionals:${registeredPositionals.join(',')}`,
+            );
+        }
+    });
+
+    it('keeps anti-hallucination Stop documentation on the exit-zero JSON decision contract', () => {
+        const guide = readFileSync(
+            join(SKILLS_ROOT, 'anti-hallucination', 'references', 'guard-implementation.md'),
+            'utf-8',
+        );
+        expect(guide).toContain('decision:"block"');
+        expect(guide).toContain('| 0 | Always.');
+        expect(guide).not.toMatch(/\|\s*[12]\s*\|\s*Deny stop/i);
+    });
+
+    it('contains no obsolete tasks update or cc:tasks lifecycle instructions', () => {
+        for (const file of walkFiles(PLUGIN_ROOT).filter((entry) => entry.endsWith('.md'))) {
+            const content = readFileSync(file, 'utf-8');
+            expect(`${file}:tasks-update:${/\btasks\s+update\b/.test(content)}`).toBe(`${file}:tasks-update:false`);
+            expect(`${file}:cc-tasks:${/\bcc:tasks\b/.test(content)}`).toBe(`${file}:cc-tasks:false`);
         }
     });
 });
