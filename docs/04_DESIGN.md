@@ -2,7 +2,7 @@
 doc: 04_DESIGN
 owns: SURFACE — concrete shapes: every CLI command, flag, config key, env var, table, DTO
 authority: derived
-version: 2.5.0
+version: 2.6.0
 derived_from: [00_ADR, 01_PRD, 02_ROADMAP]
 owner: Robin Min
 updated_at: 2026-07-26
@@ -41,9 +41,11 @@ partial feature set because those host installers operate on the full plugin pac
 
 | Command family | Lifecycle subcommands | Shared scaffold flags | Shared refine flags | Detail |
 |----------------|-----------------------|-----------------------|---------------------|--------|
-| `superskill agent|skill|command|hook|magent` | `scaffold`, `validate`, `evaluate`, `refine`, `evolve` | `--description <text>`, `--target <agent>`, `--output <dir>`, `--template <tier>`, `--skills <list>`, `--tools <list>`, `--force` | `--target <agent>`, `--auto`, `--save`, `--dry-run` | [design-doc-phase2.md §2.1](design/design-doc-phase2.md#21-scaffold--generate-from-template), [§2.4](design/design-doc-phase2.md#24-refine--evaluate-then-fix) |
+| `superskill agent|skill|command|hook|magent` | `scaffold`, `validate`, `evaluate`, `refine`, `evolve` | `--description <text>`, `--target <agent>`, `--output <dir>`, `--template <tier>`, `--tools <list>`, `--force` | `--target <agent>`, `--auto`, `--save`, `--dry-run` | [design-doc-phase2.md §2.1](design/design-doc-phase2.md#21-scaffold--generate-from-template), [§2.4](design/design-doc-phase2.md#24-refine--evaluate-then-fix) |
 
 `--dry-run` previews classified refine fixes and projected score delta without writing files or creating backups.
+Only `skill scaffold` exposes `--invocation-mode <user|model>`; the other scaffold families do not
+accept it because their output contracts have no invocation-mode field.
 
 `agent|command|magent|skill evolve` share the evolve surface from phase 2, including `--eval-gate`.
 `--margin` must be a finite number in `[0, 1]`; invalid `--from` dates and unsafe proposal IDs are

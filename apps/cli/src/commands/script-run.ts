@@ -46,7 +46,7 @@ export interface ScriptRunner {
  * `validate_response.ts main()`'s contract byte-for-byte:
  * `RESPONSE_TEXT` env first, else stdin; empty input is a pass; stdout is the
  * `JSON.stringify({ok, reason, issues?})` result line; exit 0/1 (validation-CLI
- * semantics, NOT the hook exit-2 block signal).
+ * semantics, NOT the hook's canonical exit-0 decision signal).
  */
 const ccValidateResponse: ScriptRunner = {
     run({ env, stdinText }) {

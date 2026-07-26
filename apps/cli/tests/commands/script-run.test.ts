@@ -207,7 +207,7 @@ describe('cc/validate-response — parity with the source script (AC3)', () => {
      * a TTY) and captures console.log bytes, then asserts the adapter produces the identical
      * exit code AND stdout bytes. Any output drift fails CI here, not an agent in the field.
      */
-    function captureSource(text: string): { code: number; out: string } {
+    async function captureSource(text: string): Promise<{ code: number; out: string }> {
         // Write via Bun.env, not process.env: main() reads Bun.env, and a prior file may have
         // reassigned process.env wholesale (splitting the alias) — see install-omp-helpers.
         Bun.env.RESPONSE_TEXT = text;
@@ -221,7 +221,7 @@ describe('cc/validate-response — parity with the source script (AC3)', () => {
             logs.push(args.map(String).join(' '));
         };
         try {
-            return { code: sourceMain(), out: `${logs.join('\n')}\n` };
+            return { code: await sourceMain(), out: `${logs.join('\n')}\n` };
         } finally {
             console.log = origLog;
             setGlobalSilent(priorSilent);
@@ -229,22 +229,22 @@ describe('cc/validate-response — parity with the source script (AC3)', () => {
         }
     }
 
-    it('identical exit code and stdout bytes for compliant text', () => {
-        const source = captureSource(COMPLIANT);
+    it('identical exit code and stdout bytes for compliant text', async () => {
+        const source = await captureSource(COMPLIANT);
         const adapter = capture('cc', 'validate-response', { env: { RESPONSE_TEXT: COMPLIANT } });
         expect(adapter.code).toBe(source.code);
         expect(adapter.out).toBe(source.out);
     });
 
-    it('identical exit code and stdout bytes for violation text', () => {
-        const source = captureSource(VIOLATION);
+    it('identical exit code and stdout bytes for violation text', async () => {
+        const source = await captureSource(VIOLATION);
         const adapter = capture('cc', 'validate-response', { env: { RESPONSE_TEXT: VIOLATION } });
         expect(adapter.code).toBe(source.code);
         expect(adapter.out).toBe(source.out);
     });
 
-    it('identical exit code and stdout bytes for empty input', () => {
-        const source = captureSource('');
+    it('identical exit code and stdout bytes for empty input', async () => {
+        const source = await captureSource('');
         const adapter = capture('cc', 'validate-response', { env: {} });
         expect(adapter.code).toBe(source.code);
         expect(adapter.out).toBe(source.out);

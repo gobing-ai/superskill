@@ -16,20 +16,22 @@ export function addTargetOption(cmd: Command): Command {
     return cmd.option('-t, --target <agent>', 'Target agent platform', 'claude');
 }
 
-/** Add scaffold-specific options. */
-export function addScaffoldOptions(cmd: Command): Command {
-    return cmd
+/** Add scaffold-specific options; invocation mode is meaningful only for skills. */
+export function addScaffoldOptions(cmd: Command, includeInvocationMode = false): Command {
+    const configured = cmd
         .option('-d, --description <text>', 'Content description')
         .option('-t, --target <agent>', 'Target agent platform', 'claude')
         .option('-o, --output <dir>', 'Output directory (default: cwd)')
         .option('--template <tier>', 'Template tier (e.g. minimal / standard / specialist)')
-        .option('--tools <list>', 'Comma-separated tool names to pre-populate frontmatter')
-        .option(
+        .option('--tools <list>', 'Comma-separated tool names to pre-populate frontmatter');
+    if (includeInvocationMode) {
+        configured.option(
             '--invocation-mode <mode>',
             "Skill invocation axis: 'user' (disable-model-invocation + one-line description) " +
                 "or 'model' (trigger-rich description, default)",
-        )
-        .option('--force', 'Overwrite existing file if present');
+        );
+    }
+    return configured.option('--force', 'Overwrite existing file if present');
 }
 
 /** Add evolve-specific options (F023: --json/--ingest; F024: --margin; G2/G3: --analyze/--history/--rollback/--confirm). */

@@ -40,16 +40,18 @@ Options:
   --target <agent>      Generate for a specific agent (default: claude)
   --output <dir>        Write to a directory (default: cwd)
   --template <tier>     Template tier; names are type-specific (see below)
-  --skills <list>       Comma-separated skill names to pre-populate frontmatter
   --tools <list>        Comma-separated tool names to pre-populate frontmatter
+  --invocation-mode <user|model>
+                        Skill-only invocation axis (default: model)
   --force               Overwrite an existing file
 ```
 
 Creates a new content file from a type-aware template. Templates contain the required
 YAML frontmatter structure plus placeholder body sections. `--template` selects a tier
 (`--template specialist` resolves `templates/<type>/specialist.md`); omitting it uses
-`templates/<type>/default.md`. `--skills`/`--tools` override the template's frontmatter
-defaults so the scaffolded artifact starts with the requested skill/tool list.
+`templates/<type>/default.md`. `--tools` overrides the template's frontmatter default.
+`--invocation-mode` is skill-only: `user` emits a directly invocable skill while `model`
+emits the default trigger-rich model-invoked form.
 
 **Tier names per type** (all ship a `default.md` fallback tier):
 - `skill`: `technique` / `pattern` / `reference`

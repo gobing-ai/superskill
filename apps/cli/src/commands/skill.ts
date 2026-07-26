@@ -421,7 +421,7 @@ export function registerSkill(program: Command): void {
         .option('--json', 'Output structured JSON envelope')
         .action(handleSkillUpdate);
 
-    addScaffoldOptions(cmd.command('scaffold <name>').description('Create a new skill from template')).action(
+    addScaffoldOptions(cmd.command('scaffold <name>').description('Create a new skill from template'), true).action(
         handleSkillScaffold,
     );
 
