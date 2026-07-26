@@ -1321,9 +1321,10 @@ export async function finalizeApply(
     baselineScore: number,
     appliedCount: number,
     proposalPath: string,
+    persistSnapshot: typeof persistVersionSnapshot = persistVersionSnapshot,
 ): Promise<EvolveResult> {
     if (!verdict.rejected) {
-        await persistVersionSnapshot(verdict.backupPath ?? fallbackBackupPath, resolvedPath, versionId);
+        await persistSnapshot(verdict.backupPath ?? fallbackBackupPath, resolvedPath, versionId);
     }
     return {
         baselineScore,
@@ -1351,6 +1352,8 @@ export interface ProposalTransactionInput {
     enforceGate?: boolean;
     ingestedAnchorHash?: string;
     skeptic?: SkepticVerdict;
+    /** Internal test seam for deterministic snapshot-persistence failures. */
+    persistSnapshotFn?: typeof persistVersionSnapshot;
 }
 
 /**
@@ -1360,6 +1363,32 @@ export interface ProposalTransactionInput {
  */
 export async function applyProposalTransaction(input: ProposalTransactionInput): Promise<EvolveResult> {
     assertSafePathSegment(input.proposalId, 'proposal_id');
+    const proposalDao = new ProposalDao(input.db);
+    const proposal = (await proposalDao.getProposals(input.type, input.name)).find(
+        (candidate) => candidate.id === input.proposalDbId,
+    );
+    if (!proposal) {
+        throw Object.assign(new Error(`Proposal ${input.proposalId} is unavailable for ${input.type}/${input.name}.`), {
+            code: 1,
+        });
+    }
+    if (proposal.status !== 'draft') {
+        throw Object.assign(
+            new Error(`Proposal ${input.proposalId} is ${proposal.status}; only draft proposals can be accepted.`),
+            { code: 1 },
+        );
+    }
+
+    const versionPath = `${input.resolvedPath}.version-${input.proposalId}`;
+    if (existsSync(versionPath)) {
+        throw Object.assign(
+            new Error(
+                `Version snapshot already exists for draft proposal ${input.proposalId}; refusing to overwrite it.`,
+            ),
+            { code: 1 },
+        );
+    }
+
     const backupPath = await backupFile(input.resolvedPath);
     try {
         const appliedCount = await stepApply(input.changes, input.resolvedPath);
@@ -1392,12 +1421,46 @@ export async function applyProposalTransaction(input: ProposalTransactionInput):
             input.baselineScore,
             appliedCount,
             input.proposalPath,
+            input.persistSnapshotFn,
         );
     } catch (err) {
+        const rollbackErrors: string[] = [];
         if (existsSync(backupPath)) {
-            await restoreFromBackup(backupPath, input.resolvedPath);
+            try {
+                await restoreFromBackup(backupPath, input.resolvedPath);
+            } catch (rollbackErr) {
+                rollbackErrors.push(
+                    `file restore failed: ${rollbackErr instanceof Error ? rollbackErr.message : String(rollbackErr)}`,
+                );
+            }
         }
-        await new ProposalDao(input.db).updateProposalStatus(input.proposalDbId, 'draft');
+        if (existsSync(versionPath)) {
+            try {
+                rmSync(versionPath, { force: true });
+            } catch (rollbackErr) {
+                rollbackErrors.push(
+                    `snapshot cleanup failed: ${rollbackErr instanceof Error ? rollbackErr.message : String(rollbackErr)}`,
+                );
+            }
+        }
+        try {
+            const reset = await proposalDao.updateProposalStatus(input.proposalDbId, 'draft', {
+                applied_at: null,
+                verify_id: null,
+            });
+            if (!reset) rollbackErrors.push(`proposal ${input.proposalId} disappeared during rollback`);
+        } catch (rollbackErr) {
+            rollbackErrors.push(
+                `proposal reset failed: ${rollbackErr instanceof Error ? rollbackErr.message : String(rollbackErr)}`,
+            );
+        }
+        if (rollbackErrors.length > 0) {
+            const original = err instanceof Error ? err.message : String(err);
+            throw Object.assign(new Error(`${original} Rollback incomplete: ${rollbackErrors.join('; ')}`), {
+                code: 1,
+                cause: err,
+            });
+        }
         throw err;
     }
 }

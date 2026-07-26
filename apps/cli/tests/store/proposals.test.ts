@@ -77,6 +77,20 @@ describe('ProposalDao', () => {
         expect(results[0]?.verify_id).toBe(42);
     });
 
+    it('updateProposalStatus can clear acceptance linkage during rollback', async () => {
+        const { id } = await dao.insertProposal(sampleProposal);
+        await dao.updateProposalStatus(id, 'accepted', {
+            applied_at: '2026-06-16T00:00:00.000Z',
+            verify_id: 42,
+        });
+        await dao.updateProposalStatus(id, 'draft', { applied_at: null, verify_id: null });
+
+        const result = (await dao.getProposals('skill', 'test-skill'))[0];
+        expect(result?.status).toBe('draft');
+        expect(result?.applied_at).toBeNull();
+        expect(result?.verify_id).toBeNull();
+    });
+
     it('getPendingProposals returns only draft proposals across all types', async () => {
         await dao.insertProposal(sampleProposal);
         await dao.insertProposal({

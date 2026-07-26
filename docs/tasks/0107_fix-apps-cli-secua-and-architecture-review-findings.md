@@ -3,7 +3,7 @@ template: issue
 schema_version: 1
 name: "Fix apps CLI SECUA and architecture review findings"
 description: ""
-status: testing
+status: done
 type: issue
 profile: standard
 feature_id: null
@@ -12,7 +12,7 @@ priority: P2
 tags: ["bug"]
 dependencies: []
 created_at: "2026-07-26T07:44:06.236Z"
-updated_at: "2026-07-26T08:10:55.916Z"
+updated_at: "2026-07-26T20:28:55.711Z"
 ---
 
 ## 0107. Fix apps CLI SECUA and architecture review findings
@@ -80,43 +80,95 @@ R12 (C2). Introduce one proposal-application transaction seam owning identity ch
 ### Root Cause
 The reviewed paths accepted typed-but-unvalidated external values, inferred transactional success from ambient “latest” state, and implemented target-specific reconciliation independently. Those three patterns produced the ten surface defects: unsafe path construction, permissive numeric/date parsing, mutation without rollback, stale verification linkage, stale Hermes hooks, lossy OMP argv generation, shared session state, and an orphaned config loader.
 ### Solution
-- `apps/cli/src/operations/evolve.ts:1361`, `apps/cli/src/operations/evaluate.ts:75`, and
+- `apps/cli/src/operations/evolve.ts:744`, `apps/cli/src/operations/evaluate.ts:76`, and
   `apps/cli/src/operations/refine.ts:536`: validate proposal/date/margin inputs, return exact inserted
-  evaluation IDs, and route all evolve accept paths through a rollback transaction; refine also
-  restores its backup when post-fix evaluation fails.
+  evaluation IDs, and route all evolve accept paths through a rollback transaction; refine restores
+  its backup when post-fix evaluation fails.
 - `apps/cli/src/hooks.ts:253`: centralize owner-aware event reconciliation and apply it to Pi and
   Hermes, including empty desired hook sets.
-- `apps/cli/src/command-argv.ts:8` and `apps/cli/src/commands/hook-run.ts:201`: share a quote-aware
+- `apps/cli/src/command-argv.ts:8` and `apps/cli/src/commands/hook-run.ts:214`: share a quote-aware
   non-shell argv parser and isolate context state in identity-hashed session files.
-- `apps/cli/src/config.ts:31`, `apps/cli/src/commands/install.ts:110`, and
-  `packages/core/src/mapper.ts:39`: parse JSONC comments/trailing commas, apply config
+- `apps/cli/src/config.ts:115`, `apps/cli/src/commands/install.ts:77`, and
+  `packages/core/src/mapper.ts:35`: parse JSONC comments/trailing commas, apply config
   plugin/target/feature defaults with CLI precedence, filter mapper classes, and fail native targets
   before mutation when partial features cannot be honored.
+- Forced verification repaired the shared transaction at `apps/cli/src/operations/evolve.ts:1364`:
+  only draft proposals may enter, existing rollback snapshots cannot be overwritten, and every
+  failure restores content, removes partial snapshots, and clears acceptance linkage.
+- `apps/cli/src/store/proposals.ts:24` supports explicitly clearing `applied_at` and `verify_id`;
+  regressions at `apps/cli/tests/operations/evolve.test.ts:481`,
+  `apps/cli/tests/operations/evolve.test.ts:499`, and
+  `apps/cli/tests/store/proposals.test.ts:80` lock the status/snapshot rollback invariants.
+- `docs/03_ARCHITECTURE.md:592` records the repaired proposal transaction lifecycle.
 - Synchronized ADR, architecture, surface, roadmap, design, help, indexed anatomy, buglog, and
-  do-not-repeat context.
+  do-not-repeat context for the original remediation.
 ### Testing
-Verified 2026-07-26T08:10:16Z:
+Forced verification completed 2026-07-26T20:26:46Z.
 
-- `bun run lint` — PASS; Biome checked 213 files and both workspaces typechecked.
-- `bun run test` — PASS; 1,895 tests across 99 files, 0 failures, 98.91% line and 99.64% function
-  coverage.
-- `bun run build` — PASS; scripts converted and standalone CLI bundled/compiled.
-- `bun run test-pre-check` — PASS as part of `bun run spur-check`; all 31 enabled pre-check rules.
-- `bun run test-post-check` — PASS; coverage, citation resolution, and exported-TSDoc rules.
+**Requirement Traceability**
 
-Regression tests cover unsafe/mismatched proposal IDs, invalid margins/dates, exact verification
-provenance and rollback, refine rollback, Hermes ownership cleanup, OMP quoting, concurrent context
-sessions, JSONC parsing/config precedence, mapper feature filtering, and native-target rejection.
+| Req | Status | Evidence |
+|---|---|---|
+| R1 | MET | `apps/cli/src/operations/evolve.ts:744`; traversal regression `apps/cli/tests/operations/evolve-ingest.test.ts:285`. |
+| R2 | MET | Identity equality gate `apps/cli/src/operations/evolve.ts:748`; byte-identical/no-persistence regression `apps/cli/tests/operations/evolve-ingest.test.ts:266`. |
+| R3 | MET | CLI parser `apps/cli/src/commands/helpers.ts:6` and operation boundary `apps/cli/src/operations/evolve.ts:1482`; regressions `apps/cli/tests/commands/helpers.test.ts:46` and `apps/cli/tests/operations/evolve.test.ts:427`. |
+| R4 | MET | Restore-and-reclassify path `apps/cli/src/operations/refine.ts:536`; executable rollback regression `apps/cli/tests/operations/refine.test.ts:460`. |
+| R5 | MET | Exact inserted identity is returned at `apps/cli/src/operations/evaluate.ts:135` and required at `apps/cli/src/operations/evolve.ts:1146`; missing-row rollback regression `apps/cli/tests/operations/evolve-ingest.test.ts:296`. |
+| R6 | MET | Hermes owner pruning uses `apps/cli/src/hooks.ts:411`; stale/foreign/user preservation regressions `apps/cli/tests/hooks.test.ts:806` and `:847`. |
+| R7 | MET | Quote-aware parser `apps/cli/src/command-argv.ts:8` is consumed by OMP at `apps/cli/src/omp-hooks.ts:103`; argv regression `apps/cli/tests/command-argv.test.ts:5`. |
+| R8 | MET | Identity-hashed state `apps/cli/src/commands/hook-run.ts:214`; interleaved-session regression `apps/cli/tests/commands/hook-run.test.ts:502`. |
+| R9 | MET | JSONC loader `apps/cli/src/config.ts:115` and install precedence `apps/cli/src/commands/install.ts:77`; regressions `apps/cli/tests/config.test.ts:82` and `apps/cli/tests/commands/install.test.ts:139`. |
+| R10 | MET | Actionable boundary error `apps/cli/src/operations/evolve.ts:1486`; regression `apps/cli/tests/operations/evolve.test.ts:423`. |
+| R11 | MET | Shared primitive `apps/cli/src/hooks.ts:253`, consumed by Pi at `:314` and Hermes at `:421`; executable ownership regressions `apps/cli/tests/hooks.test.ts:470` and `:806`. |
+| R12 | MET | All three accept paths call `apps/cli/src/operations/evolve.ts:1364`; full status/content/snapshot rollback and re-acceptance regressions `apps/cli/tests/operations/evolve.test.ts:481` and `:499`. |
+
+**Acceptance Criteria Verification**
+
+| AC | Status | Evidence Type | Evidence |
+|---|---|---|---|
+| AC1 Unsafe proposal IDs cannot escape | MET | test | `apps/cli/tests/operations/evolve-ingest.test.ts:285` |
+| AC2 Mismatched accept is non-mutating | MET | test | `apps/cli/tests/operations/evolve-ingest.test.ts:266` |
+| AC3 Invalid margins fail before mutation | MET | test | `apps/cli/tests/commands/helpers.test.ts:46`; `apps/cli/tests/operations/evolve.test.ts:427` |
+| AC4 Refine restores after evaluation failure | MET | test | `apps/cli/tests/operations/refine.test.ts:460` |
+| AC5 Verification failure leaves an unlinked draft | MET | test | `apps/cli/tests/operations/evolve-ingest.test.ts:296`; `apps/cli/tests/operations/evolve.test.ts:499` |
+| AC6 Hermes reinstall prunes only owned stale hooks | MET | test | `apps/cli/tests/hooks.test.ts:806`; `:847` |
+| AC7 OMP preserves quoted argv | MET | test | `apps/cli/tests/command-argv.test.ts:5`; `apps/cli/tests/omp-hooks.test.ts` |
+| AC8 Concurrent sessions stay independent | MET | test | `apps/cli/tests/commands/hook-run.test.ts:502` |
+| AC9 JSONC defaults and CLI precedence work | MET | test | `apps/cli/tests/config.test.ts:82`; `apps/cli/tests/commands/install.test.ts:139` and `:170` |
+| AC10 Invalid from-date is actionable | MET | test | `apps/cli/tests/operations/evolve.test.ts:423` |
+| AC11 Pi and Hermes share a tested reconciler | MET | test | `apps/cli/tests/hooks.test.ts:470` and `:806` execute both adapters over `apps/cli/src/hooks.ts:253`. |
+| AC12 All apply paths use a tested transaction | MET | test | Call-site audit at `apps/cli/src/operations/evolve.ts:778`, `:1654`, and `:1695`; transaction regressions `apps/cli/tests/operations/evolve.test.ts:481` and `:499`. |
+
+**Design Conformance**
+
+| Check | Status | Evidence |
+|---|---|---|
+| design-conformance | PASS | All seven Design claims are DONE. Boundary parsing, exact evaluation identity, shared hook ownership, quote-aware argv, session isolation, JSONC precedence, and one proposal transaction match the implementation. |
+| scope-creep | PASS | The fix pass is confined to R12/C2 transaction invariants, its DAO contract, regressions, and the authoritative architecture text. |
+| SECUA | PASS | One P2 correctness/architecture finding was repaired; no residual blocker, major, minor, or advisory finding remains. |
+
+**Fresh Gates**
+
+- `bun run lint` — PASS; Biome checked 214 files and both workspaces typechecked.
+- Focused regression command — 102 assertions passed, 0 failed; its process exit was nonzero only
+  because partial-suite coverage cannot satisfy the repository-wide aggregate threshold.
+- `bun run spur-check` — PASS; 31 enabled pre-check rules, 1,920 tests across 100 files, 0 failures,
+  98.90% line coverage, 99.65% function coverage, and all 3 post-check rules passed.
+- `bun run build` — PASS; hook script conversion and standalone CLI bundle/compile succeeded.
+- `spur task check 0107 --strict-core --json` — PASS; the remaining L4 missing-feature warning is
+  non-core and intentional for this standalone review-remediation task.
+- Coverage: 98.90% lines / 99.65% functions in the full repository run.
+- Fix-pass artifact disclosure: `.spur/run/0107-verdict.json:1` is rewritten after this evidence is
+  finalized; no other persistent `.spur/run/**` deliverable is changed.
 ### Review
-PASS — all R1–R12 and all twelve acceptance criteria are implemented with executable regression
-coverage. No P1–P4 findings remain in the task-owned apps/core-mapper diff.
+Forced SECUA re-audit — 2026-07-26.
 
-Residual behavior is intentional: an identity-free context payload reuses state only when exactly
-one active session exists; ambiguous payloads fail open. Native host installers still operate on
-whole plugins, so a configured partial feature set is rejected before any mutation.
+| Priority | Dimension | Evidence | Finding | Resolution |
+|---|---|---|---|---|
+| P2 | Correctness / Architecture | `apps/cli/src/operations/evolve.ts:1364` | Snapshot-persistence failure after verification linkage reset only the proposal status, leaving `applied_at`/`verify_id` and a possible partial snapshot; re-acceptance could overwrite the rollback snapshot. | Fixed in the shared transaction seam: accept only drafts, refuse snapshot collisions, clean partial snapshots, clear linkage fields, and attempt every rollback leg. Covered by `apps/cli/tests/operations/evolve.test.ts:481` and `:499`. |
 
-The first `spur-check` run found one missing TSDoc comment on exported `InstallOptions`; the comment
-was added, then lint/typecheck and all post-check rules passed.
+No residual P1, P2, P3, or P4 findings remain after the bounded `--fix all` pass. Security, efficiency,
+correctness, usability, and architecture were reviewed against R1–R12 and the seven Design claims.
 ### References
 - Review scope: `apps/`
 - Related package review remediation: task 0106 (separate ownership; do not modify its package changes)
@@ -126,3 +178,4 @@ was added, then lint/typecheck and all post-check rules passed.
 - 2026-07-26T07:44:57.431Z backlog → todo (system)
 - 2026-07-26T07:44:58.696Z todo → wip (system)
 - 2026-07-26T08:09:47.851Z wip → testing (system)
+- 2026-07-26T20:28:55.711Z testing → done (system)

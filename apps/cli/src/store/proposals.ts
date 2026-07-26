@@ -23,8 +23,8 @@ export interface Proposal extends ProposalInput {
 
 /** Options for updating proposal status. */
 export interface UpdateProposalStatusOpts {
-    applied_at?: string;
-    verify_id?: number;
+    applied_at?: string | null;
+    verify_id?: number | null;
 }
 
 /** Data access object for the proposals table. */

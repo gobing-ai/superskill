@@ -591,9 +591,11 @@ sequenceDiagram
 
 All accept paths use the same proposal transaction. The transaction retains the original file and
 keeps the proposal `draft` until apply, build/form/behavior gates, persisted verification, and exact
-`verify_id` linkage all succeed. Any thrown step restores the file and draft status. Ingested
-proposal IDs and CLI proposal IDs are validated as safe path segments, and ingest acceptance must
-name the proposal contained in the payload.
+`verify_id` linkage all succeed. Any thrown step restores the file, removes a partial version
+snapshot, and resets the proposal to an unlinked draft (`applied_at` and `verify_id` are cleared).
+Only draft proposals may enter the transaction, so re-acceptance cannot overwrite an existing
+rollback snapshot. Ingested proposal IDs and CLI proposal IDs are validated as safe path segments,
+and ingest acceptance must name the proposal contained in the payload.
 
 ---
 

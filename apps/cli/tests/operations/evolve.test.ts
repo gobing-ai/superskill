@@ -7,6 +7,7 @@ import type { QualityReport } from '@gobing-ai/superskill-core';
 import { createDbAdapter, type DbAdapter } from '@gobing-ai/ts-db';
 import type { ProposedChange, TrendEntry } from '../../src/operations/evolve';
 import {
+    applyProposalTransaction,
     computeTrends,
     evolve,
     finalizeApply,
@@ -475,6 +476,69 @@ cases:
         );
         expect(evolveEvals.length).toBeGreaterThanOrEqual(1);
         expect(after?.verify_id).toBe(evolveEvals[0]?.id ?? -1);
+    });
+
+    it('rejects re-accepting an accepted proposal without changing its file or rollback snapshot', async () => {
+        await seedHistory(adapter, [0.9, 0.5]);
+        await evolve('skill', 'widget', { adapter, proposeOnly: true });
+        const draft = (await new ProposalDao(adapter).getProposals('skill', 'widget'))[0];
+        const pid = ((draft?.proposal_json as Record<string, unknown>)?.proposal_id as string) ?? '';
+        await evolve('skill', 'widget', { adapter, acceptId: pid, skipDeltaGate: true });
+        const acceptedContent = readFileSync(join(dir, 'widget.md'), 'utf-8');
+        const snapshotPath = `${join(dir, 'widget.md')}.version-${pid}`;
+        const snapshotContent = readFileSync(snapshotPath, 'utf-8');
+
+        await expect(evolve('skill', 'widget', { adapter, acceptId: pid, skipDeltaGate: true })).rejects.toThrow(
+            /only draft proposals can be accepted/,
+        );
+
+        expect(readFileSync(join(dir, 'widget.md'), 'utf-8')).toBe(acceptedContent);
+        expect(readFileSync(snapshotPath, 'utf-8')).toBe(snapshotContent);
+    });
+
+    it('fully rolls back linkage, content, and partial snapshot when snapshot persistence fails', async () => {
+        const resolvedPath = join(dir, 'widget.md');
+        const original = readFileSync(resolvedPath, 'utf-8');
+        const proposalId = 'skill-evolve-snapshot-failure-001';
+        const proposal = await new ProposalDao(adapter).insertProposal({
+            content_type: 'skill',
+            content_name: 'widget',
+            proposal_json: { proposal_id: proposalId, changes: [] },
+        });
+        const versionPath = `${resolvedPath}.version-${proposalId}`;
+
+        await expect(
+            applyProposalTransaction({
+                db: adapter,
+                type: 'skill',
+                name: 'widget',
+                resolvedPath,
+                baselineScore: 0.5,
+                proposalDbId: proposal.id,
+                proposalId,
+                changes: [
+                    {
+                        dimension: 'clarity',
+                        location: 'frontmatter.description',
+                        current: 'A widget skill that does widget things well',
+                        proposed: 'A transaction-safe widget skill',
+                        reason: 'Exercise rollback after verification linkage.',
+                    },
+                ],
+                proposalPath: '',
+                persistSnapshotFn: async () => {
+                    writeFileSync(versionPath, 'partial snapshot');
+                    throw new Error('injected snapshot persistence failure');
+                },
+            }),
+        ).rejects.toThrow(/injected snapshot persistence failure/);
+
+        expect(readFileSync(resolvedPath, 'utf-8')).toBe(original);
+        expect(existsSync(versionPath)).toBe(false);
+        const rolledBack = (await new ProposalDao(adapter).getProposals('skill', 'widget'))[0];
+        expect(rolledBack?.status).toBe('draft');
+        expect(rolledBack?.applied_at).toBeNull();
+        expect(rolledBack?.verify_id).toBeNull();
     });
 
     it('--reject marks the proposal rejected without applying changes', async () => {
