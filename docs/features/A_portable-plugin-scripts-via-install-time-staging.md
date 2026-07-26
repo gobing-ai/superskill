@@ -41,8 +41,8 @@ Feature: Portable plugin scripts via install-time staging
 | 0093 | Migrate non-hook validate-response docs to path-based invocation | done |
 | 0094 | Design hook-path unification without CLAUDE_PLUGIN_ROOT regression | done |
 | 0095 | Supersede ADR-015 copied-on-install wording and extend ADR-022 scope | done |
-| 0104 | harden hook/script stdin payload read: bounded non-blocking reader replacing blocking readFileSync(0) | testing |
-| 0105 | anti-hallucination guard: lifecycle-verb pattern fires on local-change talk, blocking nearly every Stop | testing |
+| 0104 | harden hook/script stdin payload read: bounded non-blocking reader replacing blocking readFileSync(0) | done |
+| 0105 | anti-hallucination guard: lifecycle-verb pattern fires on local-change talk, blocking nearly every Stop | done |
 <!-- END AUTO-GENERATED -->
 
 ## Notes
