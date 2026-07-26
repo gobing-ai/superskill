@@ -26,6 +26,7 @@ import type { ParsedSource } from './types';
 interface ResolvedSource {
     parsed: ParsedSource;
     lockSource: string;
+    lockSkillPath?: string;
 }
 
 /** Parse once at the operation boundary; relative local paths are resolved against the requested cwd. */
@@ -38,6 +39,27 @@ function resolveSource(source: string, cwd: string, global: boolean): ResolvedSo
     return {
         parsed,
         lockSource: global && parsed.type === 'local' ? localPath : source,
+        ...(parsed.subpath ? { lockSkillPath: parsed.subpath } : {}),
+    };
+}
+
+function resolveLockedSource(
+    sourceInfo: { source: string; ref?: string; skillPath?: string },
+    skillName: string,
+    cwd: string,
+    global: boolean,
+): ResolvedSource {
+    const resolved = resolveSource(sourceInfo.source, cwd, global);
+    const lockedSubpath = sourceInfo.skillPath?.replace(/(?:^|[/\\])SKILL\.md$/i, '');
+    return {
+        ...resolved,
+        ...(sourceInfo.skillPath ? { lockSkillPath: sourceInfo.skillPath } : {}),
+        parsed: {
+            ...resolved.parsed,
+            ref: resolved.parsed.ref ?? sourceInfo.ref,
+            subpath: resolved.parsed.subpath ?? (lockedSubpath || undefined),
+            skillFilter: resolved.parsed.skillFilter ?? skillName,
+        },
     };
 }
 
@@ -84,10 +106,20 @@ export interface AddSkillsResult {
 export async function addSkills(source: string, options: AddSkillsOptions = {}): Promise<AddSkillsResult> {
     const global = options.global ?? false;
     const cwd = options.cwd || process.cwd();
+    return addResolvedSkills(source, options, resolveSource(source, cwd, global));
+}
+
+async function addResolvedSkills(
+    source: string,
+    options: AddSkillsOptions,
+    resolvedSource: ResolvedSource,
+): Promise<AddSkillsResult> {
+    const global = options.global ?? false;
+    const cwd = options.cwd || process.cwd();
     const homeDir = options.homeDir;
     const env = options.env ?? process.env;
     const targetAgents = options.targets ?? [...TARGETS];
-    const { parsed, lockSource } = resolveSource(source, cwd, global);
+    const { parsed, lockSource, lockSkillPath } = resolvedSource;
     const isLocal = parsed.type === 'local';
     let discoveredSkills: Array<Skill | BlobSkill> = [];
     let isBlobResult = false;
@@ -230,7 +262,7 @@ export async function addSkills(source: string, options: AddSkillsOptions = {}):
                         sourceType: parsed.type,
                         sourceUrl: parsed.url,
                         ...(parsed.ref ? { ref: parsed.ref } : {}),
-                        ...(parsed.subpath ? { skillPath: parsed.subpath } : {}),
+                        ...(lockSkillPath ? { skillPath: lockSkillPath } : {}),
                         skillFolderHash: computedHash,
                         installedAt: existing?.installedAt ?? now,
                         updatedAt: now,
@@ -241,7 +273,7 @@ export async function addSkills(source: string, options: AddSkillsOptions = {}):
                         sourceUrl: parsed.url,
                         sourceType: parsed.type,
                         ...(parsed.ref ? { ref: parsed.ref } : {}),
-                        ...(parsed.subpath ? { skillPath: parsed.subpath } : {}),
+                        ...(lockSkillPath ? { skillPath: lockSkillPath } : {}),
                         computedHash,
                     };
                 }
@@ -535,44 +567,55 @@ export async function updateSkills(names?: string[], options: UpdateSkillsOption
     }
 
     const results: UpdatedSkillItem[] = [];
+    let hadFailure = false;
 
     for (const name of skillNames) {
         const sourceInfo = lock.skills[name];
         if (!sourceInfo) {
             results.push({ name, updated: false, reason: 'Not found in lock file' });
+            hadFailure = true;
             continue;
         }
 
         const source = sourceInfo.source;
         const oldHash = 'skillFolderHash' in sourceInfo ? sourceInfo.skillFolderHash : sourceInfo.computedHash;
+        const resolvedSource = resolveLockedSource(sourceInfo, name, cwd, global);
 
         // No-op contract: when the source content hash still equals the stored hash, skip the
         // reinstall + re-emit entirely. Any hashing failure falls through to a full reinstall,
         // so an undecidable source never produces a false no-op.
-        const sourceHash = await computeSourceSkillHash(source, name, { cwd, fetchFn: options.fetchFn });
+        const sourceHash = await computeSourceSkillHash(resolvedSource.parsed, name, {
+            fetchFn: options.fetchFn,
+        });
         if (sourceHash !== undefined && sourceHash === oldHash) {
             results.push({ name, updated: false, oldHash, newHash: oldHash, reason: 'Already up to date' });
             continue;
         }
 
-        const addRes = await addSkills(source, {
-            skills: [name],
-            global,
-            cwd,
-            homeDir: options.homeDir,
-            env,
-            fetchFn: options.fetchFn,
-            cloneRepoFn: options.cloneRepoFn,
-        });
+        const addRes = await addResolvedSkills(
+            source,
+            {
+                skills: [name],
+                global,
+                cwd,
+                homeDir: options.homeDir,
+                env,
+                fetchFn: options.fetchFn,
+                cloneRepoFn: options.cloneRepoFn,
+            },
+            resolvedSource,
+        );
 
         if (!addRes.success || !addRes.installed || addRes.installed.length === 0) {
             results.push({ name, updated: false, reason: addRes.error || 'Failed to update from source' });
+            hadFailure = true;
             continue;
         }
 
         const installedPath = addRes.installed?.[0]?.canonicalPath;
         if (!installedPath) {
             results.push({ name, updated: false, reason: 'Failed to find installed path' });
+            hadFailure = true;
             continue;
         }
 
@@ -589,8 +632,16 @@ export async function updateSkills(names?: string[], options: UpdateSkillsOption
     }
 
     return {
-        success: true,
+        success: !hadFailure,
         updated: results,
+        ...(hadFailure
+            ? {
+                  error: `Failed to update ${results
+                      .filter((item) => !item.updated && item.reason !== 'Already up to date')
+                      .map((item) => `${item.name}: ${item.reason ?? 'unknown failure'}`)
+                      .join('; ')}`,
+              }
+            : {}),
     };
 }
 
@@ -600,11 +651,10 @@ export async function updateSkills(names?: string[], options: UpdateSkillsOption
  * caller then falls back to a full reinstall (never a false no-op).
  */
 async function computeSourceSkillHash(
-    source: string,
+    parsed: ParsedSource,
     skillName: string,
-    opts: { cwd: string; fetchFn?: typeof fetch },
+    opts: { fetchFn?: typeof fetch },
 ): Promise<string | undefined> {
-    const { parsed } = resolveSource(source, opts.cwd, false);
     if (parsed.type === 'local') {
         try {
             const discovered = await discoverSkills(parsed.localPath ?? parsed.url, parsed.subpath, {

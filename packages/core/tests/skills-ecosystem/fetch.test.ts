@@ -303,6 +303,22 @@ describe('fetch.ts - GitHub Trees/Blob fast path and hardened git clone', () => 
         await expect(cloneRepo('EXT::git-upload-pack /path')).rejects.toThrow(/Unsupported Git transport: ext/);
     });
 
+    it('cloneRepo terminates Git options before an option-shaped repository argument', async () => {
+        let capturedArgs: string[] = [];
+        const cloned = await cloneRepo('--upload-pack=attacker-controlled', undefined, {
+            execGit: async (args) => {
+                capturedArgs = args;
+                return { stdout: '', stderr: '' };
+            },
+        });
+
+        const terminator = capturedArgs.indexOf('--');
+        expect(terminator).toBeGreaterThan(-1);
+        expect(capturedArgs[terminator + 1]).toBe('--upload-pack=attacker-controlled');
+        expect(capturedArgs[terminator + 2]).toBe(cloned);
+        await cleanupTempDir(cloned);
+    });
+
     it('cloneRepo handles non-Error throwables and git runner errors', async () => {
         const mockStringGit = async () => {
             throw 'raw string error';

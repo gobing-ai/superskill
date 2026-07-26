@@ -509,11 +509,61 @@ describe('operations.ts - Skill ecosystem domain operations (add, list, remove, 
         await rm(testHome, { recursive: true, force: true });
     });
 
+    it('updates from one parsed plan while preserving lock-stored clone ref and SKILL.md subpath', async () => {
+        const testHome = await makeHome('ops-update-lock-metadata-');
+        const cloneDir = await makeHome('ops-update-lock-clone-');
+        await makeSource(join(cloneDir, 'skills/wanted'), skillMd('Wanted', 'Wanted v2'));
+        const now = new Date().toISOString();
+        await writeGlobalLock(
+            {
+                version: 3,
+                skills: {
+                    wanted: {
+                        source: 'https://gitlab.com/acme/repo.git',
+                        sourceType: 'gitlab',
+                        sourceUrl: 'https://gitlab.com/acme/repo.git',
+                        ref: 'release',
+                        skillPath: 'skills/wanted/SKILL.md',
+                        skillFolderHash: 'old-hash',
+                        installedAt: now,
+                        updatedAt: now,
+                    },
+                },
+            },
+            {},
+            testHome,
+        );
+        let cloneCall: { url: string; ref?: string } | undefined;
+        const cloneRepoFn = async (url: string, ref?: string): Promise<string> => {
+            cloneCall = { url, ref };
+            return cloneDir;
+        };
+
+        const result = await updateSkills(['wanted'], {
+            global: true,
+            homeDir: testHome,
+            env: {},
+            cloneRepoFn,
+        });
+
+        expect(result.success).toBe(true);
+        expect(result.updated[0]?.updated).toBe(true);
+        expect(cloneCall).toEqual({ url: 'https://gitlab.com/acme/repo.git', ref: 'release' });
+        expect(readFileSync(join(testHome, '.agents/skills/wanted/SKILL.md'), 'utf-8')).toContain('Wanted v2');
+        const lock = await readGlobalLock({}, testHome);
+        expect(lock.skills.wanted?.ref).toBe('release');
+        expect(lock.skills.wanted?.skillPath).toBe('skills/wanted/SKILL.md');
+
+        await rm(testHome, { recursive: true, force: true });
+    });
+
     it('reports not-found and unresolvable sources during update', async () => {
         const testHome = await makeHome('ops-up-fail-');
 
         const missing = await updateSkills(['ghost-skill'], { global: true, homeDir: testHome });
+        expect(missing.success).toBe(false);
         expect(missing.updated[0]?.reason).toBe('Not found in lock file');
+        expect(missing.error).toContain('ghost-skill: Not found in lock file');
 
         const sourceDir = join(testHome, 'gone-src');
         await makeSource(sourceDir, skillMd('Gone Skill'));
@@ -523,8 +573,10 @@ describe('operations.ts - Skill ecosystem domain operations (add, list, remove, 
 
         const res = await updateSkills(['gone-skill'], { global: true, homeDir: testHome });
 
+        expect(res.success).toBe(false);
         expect(res.updated[0]?.updated).toBe(false);
-        expect(res.updated[0]?.reason).toBe('Failed to update from source');
+        expect(res.updated[0]?.reason).toContain('No skills found in source');
+        expect(res.error).toContain('gone-skill: No skills found in source');
 
         await rm(testHome, { recursive: true, force: true });
     });

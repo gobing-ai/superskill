@@ -564,7 +564,7 @@ export async function cloneRepo(
 
     const tempDir = await mkdtemp(join(tmpdir(), 'skills-'));
     try {
-        await runGit(['-c', 'filter.lfs.required=false', ...cloneFlags, url, tempDir], gitEnv, timeoutMs);
+        await runGit(['-c', 'filter.lfs.required=false', ...cloneFlags, '--', url, tempDir], gitEnv, timeoutMs);
         return tempDir;
     } catch (error) {
         const msg = error instanceof Error ? error.message : String(error);
@@ -598,7 +598,7 @@ export async function cloneRepo(
             try {
                 sshDir = await mkdtemp(join(tmpdir(), 'skills-'));
                 await runGit(
-                    ['-c', 'filter.lfs.required=false', ...cloneFlags, repo.sshUrl, sshDir],
+                    ['-c', 'filter.lfs.required=false', ...cloneFlags, '--', repo.sshUrl, sshDir],
                     {
                         ...gitEnv,
                         GIT_SSH_COMMAND: process.env.GIT_SSH_COMMAND ?? 'ssh -o BatchMode=yes',

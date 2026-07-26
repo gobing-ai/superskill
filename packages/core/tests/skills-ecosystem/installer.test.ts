@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test';
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { mkdtemp, rm, symlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -166,6 +166,31 @@ describe('installer.ts - Canonical skill installation and security guards', () =
         await symlink(outsideDir, sourceRootLink);
         await expect(copyDir(sourceRootLink, join(testDir, 'root-dest'))).rejects.toThrow(/symbolic link/i);
         expect(existsSync(join(testDir, 'root-dest'))).toBe(false);
+
+        await rm(testDir, { recursive: true, force: true });
+    });
+
+    it('copyDir preserves ordinary file and directory modes', async () => {
+        const testDir = await mkdtemp(join(tmpdir(), 'copydir-modes-'));
+        const srcDir = join(testDir, 'src');
+        const nestedDir = join(srcDir, 'nested');
+        const destDir = join(testDir, 'dest');
+        await cleanAndCreateDir(nestedDir);
+        writeFileSync(join(nestedDir, 'tool.sh'), '#!/bin/sh\n');
+
+        if (process.platform !== 'win32') {
+            chmodSync(srcDir, 0o750);
+            chmodSync(nestedDir, 0o710);
+            chmodSync(join(nestedDir, 'tool.sh'), 0o640);
+        }
+
+        await copyDir(srcDir, destDir);
+        expect(readFileSync(join(destDir, 'nested/tool.sh'), 'utf-8')).toBe('#!/bin/sh\n');
+        if (process.platform !== 'win32') {
+            expect(statSync(destDir).mode & 0o777).toBe(0o750);
+            expect(statSync(join(destDir, 'nested')).mode & 0o777).toBe(0o710);
+            expect(statSync(join(destDir, 'nested/tool.sh')).mode & 0o777).toBe(0o640);
+        }
 
         await rm(testDir, { recursive: true, force: true });
     });

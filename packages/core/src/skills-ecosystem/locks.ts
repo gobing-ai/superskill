@@ -124,9 +124,14 @@ export function computeStructuredContentHash(
     entries: ReadonlyArray<{ path: string; contents: string | Uint8Array }>,
 ): string {
     const hash = createHash('sha256');
-    for (const entry of [...entries].sort((a, b) => a.path.localeCompare(b.path))) {
-        const pathBytes = Buffer.from(entry.path, 'utf-8');
-        const contentBytes = typeof entry.contents === 'string' ? Buffer.from(entry.contents, 'utf-8') : entry.contents;
+    const framedEntries = entries
+        .map((entry) => ({
+            pathBytes: Buffer.from(entry.path, 'utf-8'),
+            contentBytes: typeof entry.contents === 'string' ? Buffer.from(entry.contents, 'utf-8') : entry.contents,
+        }))
+        .sort((a, b) => Buffer.compare(a.pathBytes, b.pathBytes));
+
+    for (const { pathBytes, contentBytes } of framedEntries) {
         const pathLength = Buffer.allocUnsafe(8);
         const contentLength = Buffer.allocUnsafe(8);
         pathLength.writeBigUInt64BE(BigInt(pathBytes.byteLength));
@@ -274,9 +279,12 @@ export async function readLocalLock(cwd?: string): Promise<LocalSkillLockFile> {
  * on-disk lock whose version differs from the supported one (R3).
  */
 export async function writeLocalLock(lock: LocalSkillLockFile, cwd?: string): Promise<void> {
-    if (lock.version > LOCAL_LOCK_VERSION || lock.warning) {
+    if (lock.warning) {
+        throw new Error(`Cannot write local lock: ${lock.warning}`);
+    }
+    if (lock.version !== LOCAL_LOCK_VERSION) {
         throw new Error(
-            `Cannot write local lock: lock version (${lock.version}) is newer than supported version (${LOCAL_LOCK_VERSION}).`,
+            `Cannot write local lock: lock version (${lock.version}) differs from supported version (${LOCAL_LOCK_VERSION}).`,
         );
     }
 
@@ -385,9 +393,12 @@ export async function writeGlobalLock(
     env?: Record<string, string | undefined>,
     homeDir?: string,
 ): Promise<void> {
-    if (lock.version > GLOBAL_LOCK_VERSION || lock.warning) {
+    if (lock.warning) {
+        throw new Error(`Cannot write global lock: ${lock.warning}`);
+    }
+    if (lock.version !== GLOBAL_LOCK_VERSION) {
         throw new Error(
-            `Cannot write global lock: lock version (${lock.version}) is newer than supported version (${GLOBAL_LOCK_VERSION}).`,
+            `Cannot write global lock: lock version (${lock.version}) differs from supported version (${GLOBAL_LOCK_VERSION}).`,
         );
     }
 

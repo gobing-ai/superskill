@@ -173,6 +173,13 @@ describe('skill-verbs.ts - CLI command handlers for skill add/list/remove/update
                 handleSkillUpdate([], { global: true, json: true, homeDir: testHome }),
             );
             expect(empty.output).toContain('"success": true');
+
+            const missing = await captureOutput(() =>
+                handleSkillUpdate(['missing-skill'], { global: true, json: true, homeDir: testHome }),
+            );
+            expect(missing.exitCode).toBe(1);
+            expect(missing.output).toContain('"success": false');
+            expect(missing.output).toContain('missing-skill: Not found in lock file');
         });
     });
 

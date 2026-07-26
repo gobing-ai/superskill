@@ -169,6 +169,7 @@ describe('emit.ts - Three-tier per-target emission and removal matrix', () => {
     });
 
     it('handles canonical install failures gracefully', async () => {
+        const testHome = await mkdtemp(join(tmpdir(), 'emit-canonical-error-test-'));
         const badBlob: BlobSkill = {
             name: 'Bad Blob',
             description: '',
@@ -179,9 +180,16 @@ describe('emit.ts - Three-tier per-target emission and removal matrix', () => {
             repoPath: '',
         };
 
-        const result = await emitSkillForTargets(badBlob, ['claude']);
-        expect(result.success).toBe(false);
-        expect(result.error).toContain('Invalid file path');
+        try {
+            const result = await emitSkillForTargets(badBlob, ['claude'], {
+                global: true,
+                homeDir: testHome,
+            });
+            expect(result.success).toBe(false);
+            expect(result.error).toContain('Invalid file path');
+        } finally {
+            await rm(testHome, { recursive: true, force: true });
+        }
     });
 
     it('handles non-existent target removals gracefully', async () => {
@@ -244,6 +252,8 @@ describe('emit.ts - Three-tier per-target emission and removal matrix', () => {
         // Vendor case (remove.test.ts): lock key keeps the original name with characters
         // sanitizeName rewrites — 'ce:review' → folder 'ce-review'; the exact key must win.
         expect(resolveSkillsToRemove(['ce-review'], ['ce-review'], ['ce:review'])).toEqual(['ce:review']);
+        // An exact raw key wins even when another lock key has the same sanitized identity.
+        expect(resolveSkillsToRemove(['ce-review'], ['ce-review'], ['ce:review', 'ce-review'])).toEqual(['ce-review']);
         // Folder-only resolution still works.
         expect(resolveSkillsToRemove(['foo'], ['foo'])).toEqual(['foo']);
         // Unknown names resolve to nothing.

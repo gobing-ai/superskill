@@ -3,7 +3,7 @@ template: review
 schema_version: 1
 name: "Fix skills-ecosystem SECUA and architecture review findings"
 description: ""
-status: testing
+status: done
 type: review
 profile: standard
 feature_id: B
@@ -12,7 +12,7 @@ priority: P2
 tags: ["review"]
 dependencies: []
 created_at: "2026-07-26T00:26:35.312Z"
-updated_at: "2026-07-26T00:45:07.752Z"
+updated_at: "2026-07-26T19:51:29.640Z"
 ---
 
 ## 0106. Fix skills-ecosystem SECUA and architecture review findings
@@ -85,34 +85,78 @@ state remains valid and cleanup is best-effort.
 - [x] Re-run focused tests, full gates, and a SECUA/architecture re-review.
 ### Solution
 - `packages/core/src/skills-ecosystem/installer.ts:149` rejects symlink roots, symlink entries,
-  and special files; regular files use `O_NOFOLLOW`. `FilesystemTransaction` at line 239 stages
-  same-parent backups and exposes commit/rollback; canonical installation uses it at line 312.
-- `packages/core/src/skills-ecosystem/emit.ts:63` and `:243` retain canonical and target
-  emission/removal mutations in the caller's transaction. Direct helper calls commit on success
-  and roll back on failure.
-- `packages/core/src/skills-ecosystem/locks.ts:123` length-frames every path/content field for
-  canonical and blob hashes. Lock writes use same-parent temporary replacement at line 223.
-- `packages/core/src/skills-ecosystem/operations.ts:32` makes `ParsedSource` the sole source plan.
-  Add at line 84 and remove at line 412 preflight lock versions, mutate one in-memory lock, write
-  once, then commit or roll back. Update at line 517 reuses the same parser seam. Global local
-  sources persist absolute paths; removal resolves exact raw lock keys.
+  and special files, opens regular files with `O_NOFOLLOW`, and preserves file/directory modes.
+  `FilesystemTransaction` at line 240 stages same-parent backups and exposes commit/rollback.
+- `packages/core/src/skills-ecosystem/locks.ts:123` length-frames path/content fields and sorts
+  encoded paths by UTF-8 bytes. Raw writers at lines 281 and 391 reject every unsupported caller
+  version before creating or replacing a lock.
+- `packages/core/src/skills-ecosystem/operations.ts:32` makes parsed source plans the sole add/update
+  resolution seam. `resolveLockedSource` at line 46 merges persisted ref, `skillPath`, and skill
+  identity once; update at line 549 reuses that plan for hashing and installation and propagates
+  per-skill failure through the aggregate result.
+- Add and remove own one filesystem transaction through lock persistence
+  (`operations.ts:218-304`, `:444-501`). Removal resolves exact raw lock identities before sanitized
+  aliases (`emit.ts:326`); global local sources persist absolute paths.
+- `packages/core/src/skills-ecosystem/fetch.ts:533` rejects unsupported transports and places `--`
+  before every untrusted repository positional argument. `apps/cli/src/commands/skill.ts:359`
+  returns exit 1 with the aggregate update error.
+- `packages/core/tests/skills-ecosystem/emit.test.ts:171` isolates the canonical-install failure
+  fixture under an injected temporary home, so repository-local canonical state cannot change the
+  asserted error or trigger out-of-scope filesystem mutations.
 - ADR-029/030/031 and the architecture/design surfaces document the parser, transaction, and
-  length-framed hash contracts.
+  length-framed hash contracts. The accepted residual is cross-filesystem atomicity: same-parent
+  rename backups keep the supported publication path reversible.
 ### Testing
-_Evidence captured 2026-07-26T00:44:01Z._
+_Evidence captured 2026-07-26T19:49:51Z._
 
-- Focused skills-ecosystem suite: 273 passed, 0 failed.
-- `bun run lint`: PASS (Biome + both workspace typechecks).
-- `bun run test`: PASS — 1,872 passed, 0 failed, 4,787 assertions; aggregate 98.90% lines /
-  99.64% functions; every touched file remains above the per-file gate.
-- `bun run build`: PASS.
-- `bun run test-post-check`: PASS — coverage gate, citation resolution, and TSDoc exports.
-- `bun run spur-check`: BLOCKED before tests by the pre-existing bundled
-  `prefer-accessible-role-for-button-queries` rule: `rg` receives no eligible files and exits 2.
-  The other 30 enabled pre-check rules passed. This rule is not defined in this repository and is
-  outside task 0106's packages/core scope.
+| Req | Status | Evidence |
+| --- | --- | --- |
+| R1 | MET | `installer.ts:149-195`; symlink/special-file regressions and mode preservation in `installer.test.ts:146-196`. |
+| R2 | MET | `locks.ts:123-145`; structural collision and byte-order regressions in `locks.test.ts:66-102`. |
+| R3 | MET | `operations.ts:32-63`, `:106-137`, `:549-638`; filter/ref/subpath and persisted-plan regressions in `operations.test.ts:269-307`, `:512-579`. |
+| R4 | MET | `emit.ts:326-346`; transactional removal in `operations.ts:444-501`; exact-key and rollback regressions in `emit.test.ts:251-260`, `operations.test.ts:378-438`. |
+| R5 | MET | `operations.ts:218-304`, `:444-501`; lock preflight/write rollback in `operations.test.ts:440-480`; raw version guards in `locks.test.ts:276-335`. |
+| R6 | MET | Global local source normalization in `operations.ts:33-43`; cross-cwd regression in `operations.test.ts:482-509`. |
+| R7 | MET | Direct/symlink/translate matrix in `emit.test.ts:11-60`; vendor lock round trips in `locks.test.ts:338-405`; npx interop in `npx-interop.test.ts:19-171`; full suite and gates pass. |
+
+| AC | Status | Evidence Type | Evidence |
+| --- | --- | --- | --- |
+| AC1 | MET | Test | `installer.test.ts:146-170` proves absolute/relative links are rejected and linked bytes do not land. |
+| AC2 | MET | Test | `locks.test.ts:66-102` proves ambiguous trees differ, hashes are deterministic, and ordering is byte-stable. |
+| AC3 | MET | Test | `operations.test.ts:269-307`, `:512-555` proves filter, ref, and subpath reach blob/clone/update paths. |
+| AC4 | MET | Test | `emit.test.ts:251-260` and `operations.test.ts:378-438` prove exact lock deletion and rollback with `success: false`. |
+| AC5 | MET | Test | `operations.test.ts:440-480` and `locks.test.ts:296-335` prove incompatible/write-failed locks leave prior state intact. |
+| AC6 | MET | Test | `operations.test.ts:482-509` proves absolute persistence and update from another cwd. |
+| AC7 | MET | Command | `bun run spur-check`, `bun run build`, strict task check, and feature B check all pass. |
+
+- `bun run spur-check`: PASS — Biome checked 214 files; core and CLI typechecks passed; 31/31
+  enabled pre-check rules passed; 1,917 tests passed with 0 failures and 5,186 assertions across
+  100 files; aggregate coverage is 98.92% lines / 99.65% functions; all 3 post-check rules passed.
+- `bun run build`: PASS — portable validator generated and CLI bundled/compiled.
+- `spur task check 0106 --strict-core --json`: PASS; `spur feature check B --json`: PASS.
+- `emit.test.ts:171-193` now isolates the canonical-install failure fixture under an injected
+  temporary home, preventing repository-local state from changing the asserted failure path.
+- Design conformance: C1 and C2 are implemented; ADR-029/030/031 boundaries remain intact; no
+  cross-filesystem atomicity claim was introduced.
+- Scope creep: PASS — every change closes R1-R7 or a residual at the same trust/transaction boundary.
+- SECUA: PASS — no unresolved blocker/major finding. Git option injection, symlink reads,
+  incompatible lock writes, rollback failures, and identity collisions have residual-proof tests.
+- Verification artifact disclosed by this fix pass: `.spur/run/0106-verdict.json:1`.
 ### Review
-**Verdict: PARTIAL**
+**Verdict: PASS**
+
+**P1–P4 priority findings** (reviewer's priority ordering; original findings from the 2026-07-25 `sp-dev-review packages --focus all` run, status after this fix pass):
+
+| # | Severity | Title | Location | Status |
+|---|----------|-------|----------|--------|
+| 1 | P1 | `copyDir` follows source symlinks, copying arbitrary readable host files | `packages/core/src/skills-ecosystem/installer.ts` | FIXED — symlink roots/entries and special files rejected; regular files opened with `O_NOFOLLOW` (installer.ts:149-195) |
+| 2 | P2 | Folder hashing concatenates path/content without framing; distinct trees collide | `packages/core/src/skills-ecosystem/locks.ts` | FIXED — byte-length framing per path/content field, UTF-8 byte-sorted (locks.ts:123-145) |
+| 3 | P2 | Add/update bypass `parseSource`, dropping `@skill`, `#ref`, subpath semantics | `packages/core/src/skills-ecosystem/operations.ts` | FIXED — parsed source plan is the sole add/update resolution seam (operations.ts:32-63) |
+| 4 | P2 | Removal sanitizes away exact lock identities, discards failures, always reports success | `packages/core/src/skills-ecosystem/operations.ts` | FIXED — lock-key-first resolution, staged transactional removal, residual failure propagated (operations.ts:444-501, emit.ts:326-346) |
+| 5 | P2 | Filesystem emission before lock-version compatibility known; partial state after rejection | `packages/core/src/skills-ecosystem/operations.ts` | FIXED — lock preflight + one transaction through lock persistence with rollback (operations.ts:218-304) |
+| 6 | P2 | Global relative local sources persisted relative to install cwd; updates break cross-cwd | `packages/core/src/skills-ecosystem/operations.ts` | FIXED — global local sources persist resolved absolute paths (operations.ts:33-43) |
+
+No open P1–P4 findings remain in the changed skills-ecosystem paths.
 
 All six reported defects and C1/C2 are resolved with residual-proof coverage. Re-review found no
 remaining P1/P2 defect in the changed skills-ecosystem paths: source reads reject symlinks/special
@@ -120,14 +164,10 @@ files; hashes are structurally unambiguous; add/update share `ParsedSource`; rem
 identity and propagates failure; canonical/target changes roll back through lock persistence; and
 global local sources are cwd-independent.
 
-One verification back-issue prevents a PASS verdict: the bundled
-`prefer-accessible-role-for-button-queries` pre-check is misconfigured for this repository and
-causes `spur-check` to stop on ripgrep exit 2 when no eligible UI files exist. It pre-dates and is
-independent of these fixes; lint, full tests, build, and all post-check rules pass.
-
-| Severity | File | Finding | Recommendation |
-| -------- | ---- | ------- | -------------- |
-| P2 | Bundled Spur recommended preset | `prefer-accessible-role-for-button-queries` treats the valid no-eligible-files case as an evaluator error. | Fix the owning Spur rule/evaluator to treat ripgrep exit 2 from an empty eligible file set as a skip/pass, then rerun `spur-check`. |
+The earlier blocker is cleared: the bundled `prefer-accessible-role-for-button-queries` pre-check
+no longer fails — fresh `bun run spur-check` on 2026-07-26 passes 31/31 pre-check rules (including
+that rule) and 3/3 post-check rules, with lint, the full 1,917-test suite, and build green. Strict
+task check and feature B check both pass. No open findings.
 ### References
 - Parent feature task: 0097.
 - Original review: `sp-dev-review packages --auto --focus all --fix all`, 2026-07-25.
@@ -136,3 +176,8 @@ independent of these fixes; lint, full tests, build, and all post-check rules pa
 ### History
 - 2026-07-26T00:29:23.850Z todo → wip (system)
 - 2026-07-26T00:45:07.752Z wip → testing (system)
+- 2026-07-26T19:30:55.471Z testing → wip (system)
+- 2026-07-26T19:35:02.397Z wip → testing (system)
+- 2026-07-26T19:45:42.791Z testing → wip (system)
+- 2026-07-26T19:46:26.621Z wip → testing (system)
+- 2026-07-26T19:51:29.640Z testing → done (system)

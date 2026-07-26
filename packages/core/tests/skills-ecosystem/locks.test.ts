@@ -1,11 +1,13 @@
 import { describe, expect, it } from 'bun:test';
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
     addSkillToGlobalLock,
     addSkillToLocalLock,
     computeCanonicalSkillFolderHash,
+    computeStructuredContentHash,
     getGlobalLockPath,
     getLocalLockPath,
     isCanonicalSkillPath,
@@ -74,6 +76,29 @@ describe('locks.ts - Dual lock read/writers & hash invariant', () => {
         const secondHash = await computeCanonicalSkillFolderHash(secondDir);
 
         expect(firstHash).not.toBe(secondHash);
+    });
+
+    it('orders framed hash paths by UTF-8 bytes rather than the host locale', () => {
+        const entries = [
+            { path: 'ä', contents: 'umlaut' },
+            { path: 'z', contents: 'ascii' },
+        ];
+        const expected = createHash('sha256');
+        for (const entry of [entries[1], entries[0]]) {
+            if (!entry) continue;
+            const pathBytes = Buffer.from(entry.path, 'utf-8');
+            const contentBytes = Buffer.from(entry.contents, 'utf-8');
+            const pathLength = Buffer.alloc(8);
+            const contentLength = Buffer.alloc(8);
+            pathLength.writeBigUInt64BE(BigInt(pathBytes.byteLength));
+            contentLength.writeBigUInt64BE(BigInt(contentBytes.byteLength));
+            expected.update(pathLength);
+            expected.update(pathBytes);
+            expected.update(contentLength);
+            expected.update(contentBytes);
+        }
+
+        expect(computeStructuredContentHash(entries)).toBe(expected.digest('hex'));
     });
 
     it('round-trips local lock (v1) with sorted keys and no timestamps', async () => {
@@ -292,6 +317,22 @@ describe('locks.ts - Dual lock read/writers & hash invariant', () => {
         writeFileSync(globalPath, JSON.stringify({ version: 2, skills: {} }));
         await expect(writeGlobalLock({ version: 3, skills: {} }, env)).rejects.toThrow(/on-disk lock version/);
         expect(JSON.parse(readFileSync(globalPath, 'utf-8')).version).toBe(2);
+    });
+
+    it('raw writers reject caller-constructed older lock versions even when no lock exists', async () => {
+        const testDir = join(tmpdir(), `test-raw-write-old-local-${Date.now()}`);
+        mkdirSync(testDir, { recursive: true });
+        await expect(writeLocalLock({ version: 0, skills: {} }, testDir)).rejects.toThrow(
+            /differs from supported version/,
+        );
+        expect(existsSync(getLocalLockPath(testDir))).toBe(false);
+
+        const stateHome = join(tmpdir(), `test-raw-write-old-global-${Date.now()}`);
+        const env = { XDG_STATE_HOME: stateHome };
+        await expect(writeGlobalLock({ version: 2, skills: {} }, env)).rejects.toThrow(
+            /differs from supported version/,
+        );
+        expect(existsSync(getGlobalLockPath(env))).toBe(false);
     });
 
     it('round-trips a vendor-shaped local lock sample verbatim (R5)', async () => {

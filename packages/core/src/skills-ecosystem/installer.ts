@@ -192,6 +192,7 @@ export async function copyDir(src: string, dest: string): Promise<void> {
             }
         }),
     );
+    await chmod(dest, sourceRootStats.mode & 0o777);
 }
 
 /**

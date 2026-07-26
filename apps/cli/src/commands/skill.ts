@@ -371,7 +371,7 @@ export async function handleSkillUpdate(
         }
 
         if (!res.success) {
-            echoError('Failed to update skills');
+            echoError(res.error ?? 'Failed to update skills');
             return 1;
         }
 

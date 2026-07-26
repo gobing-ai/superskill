@@ -325,6 +325,7 @@ export async function removeSkillFromTargets(
  */
 export function resolveSkillsToRemove(requested: string[], folderNames: string[], lockKeys: string[] = []): string[] {
     const identityBySanitized = new Map<string, string>();
+    const exactLockKeys = new Set(lockKeys);
     for (const folder of folderNames) {
         identityBySanitized.set(sanitizeName(folder), folder);
     }
@@ -335,6 +336,10 @@ export function resolveSkillsToRemove(requested: string[], folderNames: string[]
 
     const matched = new Set<string>();
     for (const name of requested) {
+        if (exactLockKeys.has(name)) {
+            matched.add(name);
+            continue;
+        }
         const hit = identityBySanitized.get(sanitizeName(name));
         if (hit) matched.add(hit);
     }
