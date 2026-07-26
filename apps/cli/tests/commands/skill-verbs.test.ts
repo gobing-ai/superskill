@@ -45,17 +45,24 @@ async function withIsolatedHome(fn: (testHome: string) => Promise<void>): Promis
 }
 
 /**
- * Spy on process.stdout.write and stub process.exit (handlers terminate via runOperation,
- * whose try/catch would swallow a thrown sentinel and remap it to exit 1 — so the stub
- * records instead of throwing). Returns everything written plus the requested exit code.
+ * Spy on process.stdout.write + process.stderr.write and stub process.exit.
+ * Handlers terminate via runOperation; echoError writes to stderr (not stdout),
+ * so both streams must be captured to prevent output leaking into the test runner.
+ * Returns { output (stdout), stderr, exitCode }.
  */
-async function captureStdout(fn: () => Promise<void>): Promise<{ output: string; exitCode: number | undefined }> {
+async function captureOutput(fn: () => Promise<void>): Promise<{ output: string; stderr: string; exitCode: number | undefined }> {
     let output = '';
+    let stderr = '';
     let exitCode: number | undefined;
-    const originalWrite = process.stdout.write;
+    const originalStdout = process.stdout.write;
+    const originalStderr = process.stderr.write;
     const originalExit = process.exit;
     process.stdout.write = (chunk: string | Uint8Array) => {
         output += chunk.toString();
+        return true;
+    };
+    process.stderr.write = (chunk: string | Uint8Array) => {
+        stderr += chunk.toString();
         return true;
     };
     process.exit = ((code?: number) => {
@@ -64,10 +71,11 @@ async function captureStdout(fn: () => Promise<void>): Promise<{ output: string;
     try {
         await fn();
     } finally {
-        process.stdout.write = originalWrite;
+        process.stdout.write = originalStdout;
+        process.stderr.write = originalStderr;
         process.exit = originalExit;
     }
-    return { output, exitCode };
+    return { output, stderr, exitCode };
 }
 
 function skillMd(name: string): string {
@@ -81,7 +89,7 @@ describe('skill-verbs.ts - CLI command handlers for skill add/list/remove/update
             await cleanAndCreateDir(sourceDir);
             writeFileSync(join(sourceDir, 'SKILL.md'), skillMd('CLI Skill'));
 
-            const { output, exitCode } = await captureStdout(() =>
+            const { output, exitCode } = await captureOutput(() =>
                 handleSkillAdd(sourceDir, {
                     global: true,
                     json: true,
@@ -105,7 +113,7 @@ describe('skill-verbs.ts - CLI command handlers for skill add/list/remove/update
             writeFileSync(join(sourceDir, 'SKILL.md'), skillMd('List Src'));
             await addSkills(sourceDir, { global: true, homeDir: testHome });
 
-            const { output, exitCode } = await captureStdout(() =>
+            const { output, exitCode } = await captureOutput(() =>
                 handleSkillList({ global: true, json: true, homeDir: testHome }),
             );
 
@@ -124,14 +132,14 @@ describe('skill-verbs.ts - CLI command handlers for skill add/list/remove/update
             await addSkills(sourceDir, { global: true, homeDir: testHome });
             expect(existsSync(join(testHome, '.agents/skills/rm-src'))).toBe(true);
 
-            const removed = await captureStdout(() =>
+            const removed = await captureOutput(() =>
                 handleSkillRemove(['rm-src'], { global: true, json: true, homeDir: testHome }),
             );
             expect(removed.exitCode).toBe(0);
             expect(removed.output).toContain('"success": true');
             expect(existsSync(join(testHome, '.agents/skills/rm-src'))).toBe(false);
 
-            const unknown = await captureStdout(() =>
+            const unknown = await captureOutput(() =>
                 handleSkillRemove(['non-existent-skill'], { global: true, json: true, homeDir: testHome }),
             );
             expect(unknown.output).toContain('"success": true');
@@ -145,7 +153,7 @@ describe('skill-verbs.ts - CLI command handlers for skill add/list/remove/update
             writeFileSync(join(sourceDir, 'SKILL.md'), skillMd('Up Src'));
             await addSkills(sourceDir, { global: true, homeDir: testHome });
 
-            const noop = await captureStdout(() =>
+            const noop = await captureOutput(() =>
                 handleSkillUpdate(['up-src'], { global: true, json: true, homeDir: testHome }),
             );
             expect(noop.exitCode).toBe(0);
@@ -154,12 +162,12 @@ describe('skill-verbs.ts - CLI command handlers for skill add/list/remove/update
             expect(noop.output).toContain('Already up to date');
 
             writeFileSync(join(sourceDir, 'SKILL.md'), `${skillMd('Up Src')}\nv2\n`);
-            const changed = await captureStdout(() =>
+            const changed = await captureOutput(() =>
                 handleSkillUpdate(['up-src'], { global: true, json: true, homeDir: testHome }),
             );
             expect(changed.output).toContain('"updated": true');
 
-            const empty = await captureStdout(() =>
+            const empty = await captureOutput(() =>
                 handleSkillUpdate([], { global: true, json: true, homeDir: testHome }),
             );
             expect(empty.output).toContain('"success": true');
@@ -172,14 +180,14 @@ describe('skill-verbs.ts - CLI command handlers for skill add/list/remove/update
             await cleanAndCreateDir(sourceDir);
             writeFileSync(join(sourceDir, 'SKILL.md'), skillMd('Text Skill'));
 
-            const listed = await captureStdout(() =>
+            const listed = await captureOutput(() =>
                 handleSkillAdd(sourceDir, { global: true, list: true, homeDir: testHome }),
             );
             expect(listed.exitCode).toBe(0);
             expect(listed.output).toContain('Discovered 1 skill(s)');
             expect(listed.output).toContain('text-skill');
 
-            const installed = await captureStdout(() => handleSkillAdd(sourceDir, { global: true, homeDir: testHome }));
+            const installed = await captureOutput(() => handleSkillAdd(sourceDir, { global: true, homeDir: testHome }));
             expect(installed.exitCode).toBe(0);
             expect(installed.output).toContain('Installed 1 skill(s):');
             expect(installed.output).toContain('text-skill');
@@ -191,10 +199,10 @@ describe('skill-verbs.ts - CLI command handlers for skill add/list/remove/update
             const sourceDir = join(testHome, 'empty-src');
             await cleanAndCreateDir(sourceDir);
 
-            const text = await captureStdout(() => handleSkillAdd(sourceDir, { global: true, homeDir: testHome }));
+            const text = await captureOutput(() => handleSkillAdd(sourceDir, { global: true, homeDir: testHome }));
             expect(text.exitCode).toBe(1);
 
-            const json = await captureStdout(() =>
+            const json = await captureOutput(() =>
                 handleSkillAdd(sourceDir, { global: true, json: true, homeDir: testHome }),
             );
             expect(json.exitCode).toBe(1);
@@ -204,7 +212,7 @@ describe('skill-verbs.ts - CLI command handlers for skill add/list/remove/update
 
     it('handleSkillList, handleSkillUpdate, and handleSkillRemove print text output', async () => {
         await withIsolatedHome(async (testHome) => {
-            const emptyList = await captureStdout(() => handleSkillList({ global: true, homeDir: testHome }));
+            const emptyList = await captureOutput(() => handleSkillList({ global: true, homeDir: testHome }));
             expect(emptyList.output).toContain('No global skills installed.');
 
             const sourceDir = join(testHome, 'txt-src');
@@ -212,14 +220,14 @@ describe('skill-verbs.ts - CLI command handlers for skill add/list/remove/update
             writeFileSync(join(sourceDir, 'SKILL.md'), skillMd('Txt Src'));
             await addSkills(sourceDir, { global: true, homeDir: testHome });
 
-            const list = await captureStdout(() => handleSkillList({ global: true, homeDir: testHome }));
+            const list = await captureOutput(() => handleSkillList({ global: true, homeDir: testHome }));
             expect(list.output).toContain('Installed global skills (1):');
             expect(list.output).toContain('txt-src');
 
-            const upd = await captureStdout(() => handleSkillUpdate(['txt-src'], { global: true, homeDir: testHome }));
+            const upd = await captureOutput(() => handleSkillUpdate(['txt-src'], { global: true, homeDir: testHome }));
             expect(upd.output).toContain('Up to date');
 
-            const rmOut = await captureStdout(() =>
+            const rmOut = await captureOutput(() =>
                 handleSkillRemove(['txt-src'], { global: true, homeDir: testHome }),
             );
             expect(rmOut.output).toContain('Removed 1 skill(s):');
