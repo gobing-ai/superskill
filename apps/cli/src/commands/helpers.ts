@@ -1,6 +1,15 @@
 import { TARGETS, type Target } from '@gobing-ai/superskill-core';
 import { echoError } from '@gobing-ai/ts-utils';
-import type { Command } from 'commander';
+import { type Command, InvalidArgumentError } from 'commander';
+
+/** Parse and validate a quality delta margin in the inclusive [0, 1] range. */
+export function parseMargin(value: string): number {
+    const margin = Number(value);
+    if (!Number.isFinite(margin) || margin < 0 || margin > 1) {
+        throw new InvalidArgumentError('margin must be a finite number between 0 and 1');
+    }
+    return margin;
+}
 
 /** Add --target <agent> option (common to all operations). */
 export function addTargetOption(cmd: Command): Command {
@@ -33,7 +42,7 @@ export function addEvolveOptions(cmd: Command): Command {
         .option('--reject <id>', 'Reject a specific proposal')
         .option('--json', 'Output machine-readable JSON (envelope-out with --propose-only)')
         .option('--ingest <file>', 'Agent-authored proposal JSON (ingest-in mode)')
-        .option('--margin <n>', 'Δ-margin gate threshold for accept (default 0.05)', Number.parseFloat, 0.05)
+        .option('--margin <n>', 'Δ-margin gate threshold for accept (default 0.05)', parseMargin, 0.05)
         .option('--eval-gate', 'Enable empirical behavior gate (requires skills/<name>/eval/cases.yaml)')
         .option('--analyze', 'Print analysis summary (trends, score, data sources) without writing a proposal')
         .option('--history', 'List applied proposal versions from the store')

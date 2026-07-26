@@ -135,9 +135,83 @@ describe('registerInstall', () => {
         );
         stdout.mockRestore();
     });
+
+    it('uses JSONC plugin path, targets, and features as install defaults', async () => {
+        const workspace = createTempWorkspace();
+        const configuredRoot = join(workspace, 'configured-plugin');
+        mkdirSync(join(configuredRoot, 'skills'), { recursive: true });
+        mkdirSync(join(configuredRoot, 'commands'), { recursive: true });
+        writeFileSync(join(configuredRoot, 'skills', 'a.md'), '---\nname: a\n---\n# A\n');
+        writeFileSync(join(configuredRoot, 'commands', 'run.md'), '# Run\n');
+        writeFileSync(
+            join(workspace, 'superskill.jsonc'),
+            `{
+                // Defaults consumed by install
+                "version": 1,
+                "plugins": [{ "name": "demo", "path": "./configured-plugin" }],
+                "targets": ["codex",],
+                "features": ["commands",],
+            }`,
+        );
+        const program = new Command();
+        program.exitOverride();
+        registerInstall(program);
+        const stdout = spyOn(process.stdout, 'write').mockImplementation(() => true);
+
+        await program.parseAsync(['node', 'superskill', 'install', 'demo', '--no-global', '--dry-run', '--verbose']);
+        const output = stdout.mock.calls.map((call) => String(call[0])).join('');
+        expect(output).toContain('Plugin root: ');
+        expect(output).toContain('/configured-plugin');
+        expect(output).toContain('Skills: 0, Commands: 1, Subagents: 0');
+        expect(output).toContain('Running rulesync for codex');
+        stdout.mockRestore();
+    });
+
+    it('lets explicit --targets override configured target defaults', async () => {
+        const workspace = createTempWorkspace();
+        createPlugin(workspace);
+        writeFileSync(
+            join(workspace, 'superskill.jsonc'),
+            JSON.stringify({ version: 1, targets: ['codex'], features: ['skills'] }),
+        );
+        const program = new Command();
+        program.exitOverride();
+        registerInstall(program);
+        const stdout = spyOn(process.stdout, 'write').mockImplementation(() => true);
+
+        await program.parseAsync([
+            'node',
+            'superskill',
+            'install',
+            'demo',
+            '--targets',
+            'pi',
+            '--no-global',
+            '--dry-run',
+            '--verbose',
+        ]);
+        const output = stdout.mock.calls.map((call) => String(call[0])).join('');
+        expect(output).toContain('Running rulesync for pi');
+        expect(output).not.toContain('Running rulesync for codex');
+        stdout.mockRestore();
+    });
 });
 
 describe('executeInstall', () => {
+    it('fails loudly when partial feature filtering is requested for native plugin targets', async () => {
+        const workspace = createTempWorkspace();
+        createPlugin(workspace);
+
+        await expect(
+            executeInstall('demo', ['claude'], {
+                global: false,
+                dryRun: true,
+                verbose: false,
+                features: ['skills'],
+            }),
+        ).rejects.toThrow(/Feature filtering is not supported by native plugin targets/);
+    });
+
     it('maps a fallback plugins/<name> plugin and performs a dry-run install', async () => {
         const workspace = createTempWorkspace();
         createPlugin(workspace);
@@ -699,6 +773,19 @@ describe('resolvePluginRoot — marketplace name safety', () => {
         const resolution = resolvePluginRoot('demo');
         expect(resolution.marketplaceName).toBe('my-marketplace');
     });
+
+    it('gives an explicit marketplace path precedence over a configured plugin path', () => {
+        const root = createTempWorkspace();
+        const expected = createPlugin(root, 'demo');
+        mkdirSync(join(root, '.claude-plugin'), { recursive: true });
+        writeFileSync(
+            join(root, '.claude-plugin', 'marketplace.json'),
+            JSON.stringify({ plugins: [{ name: 'demo', source: './plugins/demo' }] }),
+        );
+
+        const resolution = resolvePluginRoot('demo', join(root, '.claude-plugin'), join(root, 'missing-config-path'));
+        expect(resolution.pluginRoot).toBe(expected);
+    });
 });
 
 describe('resolvePluginRoot — plugin name safety', () => {
@@ -721,6 +808,12 @@ describe('resolvePluginRoot — plugin name safety', () => {
         const resolution = resolvePluginRoot('demo');
         expect(resolution.pluginRoot).toContain('plugins');
         expect(resolution.pluginRoot).toContain('demo');
+    });
+
+    it('resolves a configured direct plugin directory', () => {
+        const root = createTempWorkspace();
+        const pluginRoot = createPlugin(root, 'configured');
+        expect(resolvePluginRoot('configured', undefined, pluginRoot).pluginRoot).toBe(pluginRoot);
     });
 });
 

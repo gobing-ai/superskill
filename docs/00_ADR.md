@@ -2,9 +2,9 @@
 doc: 00_ADR
 owns: WHY — which cross-cutting decision was made, and the one-line reason
 authority: authoritative
-version: 1.7.0
+version: 1.9.0
 owner: Robin Min
-updated_at: 2026-07-10
+updated_at: 2026-07-26
 read_before: any structural change; add a dated entry before diverging from a decision
 edit_rules: 99 §6.1
 sync: [T1, T2]
@@ -218,6 +218,11 @@ Reversals = new entries naming what they supersede. Burned numbers get a `Skippe
 
 **Detail.** ts-libs: `packages/infra/src/application-cli.ts` (100% coverage, 10 tests). When superskill adopts it, the prerequisite is removing `process.exit` from `runOperation` (`apps/cli/src/commands/helpers.ts:72-82`) and the 6 command action callbacks, letting each return an exit code that Commander's action propagates up to `runCliApplication`'s `start`. This decision may be revisited when Phase 2+ adds diagnostic logging or a startup-opened store.
 
+**Amendment (2026-07-26, task 0107).** `superskill install` now loads and validates the project-local
+`superskill.jsonc` for plugin-path, target, and feature defaults. This does not reverse the deferred
+`runCliApplication` decision: config loading remains command-scoped, and command actions still own
+their exit behavior.
+
 ---
 
 ## ADR-017: repo-local script utilities are builder subcommands
@@ -355,3 +360,38 @@ Number burned — same off-sequence jump as ADR-025. Never assigned a decision; 
 
 **Detail.** See tasks 0097–0103; implementation at `packages/core/src/skills-ecosystem/` (`source-parser.ts`, `github-host.ts`, `sanitize.ts`, `frontmatter.ts`, `agents.ts`, `locks.ts`, `fetch.ts`, `discovery.ts`, `installer.ts`, `emit.ts`, `operations.ts`) and `apps/cli/src/commands/skill.ts`.
 
+---
+
+## ADR-029: ParsedSource is the sole skills-source resolution seam
+
+**Status:** Accepted · **Date:** 2026-07-25
+
+**Decision.** `addSkills` and `updateSkills` parse every local, shorthand, GitHub, GitLab, and git source through `parseSource`; downstream blob and clone paths consume only the resulting `ParsedSource`.
+
+**Why.** Parallel ad hoc parsing corrupted `@skill`, `#ref`, and subpath semantics and made add/update disagree.
+
+**Detail:** see 03 §Skills-ecosystem operation boundary and task 0106.
+
+---
+
+## ADR-030: Skills mutations commit only with their compatible lock write
+
+**Status:** Accepted · **Date:** 2026-07-25
+
+**Decision.** Skill add/remove mutations use same-parent reversible filesystem staging across the canonical and target paths; incompatible locks fail before staging, successful atomic lock replacement commits the staged tree, and every earlier failure rolls it back.
+
+**Why.** Canonical, target, and lock state form one logical operation; partial success leaves an untrackable or falsely tracked installation.
+
+**Detail:** see 03 §Skills-ecosystem operation boundary and task 0106.
+
+---
+
+## ADR-031: Canonical skill hashes use length-framed path/content fields
+
+**Status:** Accepted · **Date:** 2026-07-25
+
+**Decision.** ADR-028's canonical hash invariant is amended: each sorted relative path and file content is SHA-256 hashed with an unsigned 64-bit byte-length prefix, and blob snapshot hashes use the identical framing.
+
+**Why.** Unframed `path || content` concatenation permits distinct directory trees to produce the same hash input.
+
+**Detail:** see 04 §Skills-ecosystem module surface and task 0106.

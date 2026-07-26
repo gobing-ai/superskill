@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'bun:test';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { cleanAndCreateDir } from '../../src/skills-ecosystem/installer';
-import { readGlobalLock } from '../../src/skills-ecosystem/locks';
+import { getGlobalLockPath, readGlobalLock, writeGlobalLock } from '../../src/skills-ecosystem/locks';
 import { addSkills, listSkills, removeSkills, updateSkills } from '../../src/skills-ecosystem/operations';
 
 /** Minimal valid skill fixture: discovery requires frontmatter name + description. */
@@ -237,6 +237,76 @@ describe('operations.ts - Skill ecosystem domain operations (add, list, remove, 
         await rm(testHome, { recursive: true, force: true });
     });
 
+    it('routes GitHub shorthand skill filters through parseSource without corrupting the repository slug', async () => {
+        const testHome = await makeHome('ops-add-filtered-');
+        const requests: string[] = [];
+        const fetchFn = (async (urlInput: string | URL | Request) => {
+            const url = String(urlInput);
+            requests.push(url);
+            if (url.includes('/git/trees/')) {
+                return new Response(
+                    JSON.stringify({
+                        sha: 'tree-sha',
+                        tree: [
+                            { path: 'skills/wanted/SKILL.md', type: 'blob', sha: 'w1' },
+                            { path: 'skills/bar/SKILL.md', type: 'blob', sha: 'b1' },
+                        ],
+                    }),
+                    { status: 200 },
+                );
+            }
+            if (url.includes('/skills/wanted/SKILL.md')) {
+                return new Response(skillMd('Wanted'), { status: 200 });
+            }
+            if (url.includes('/api/download/owner/repo/wanted')) {
+                return new Response(JSON.stringify({ files: [{ path: 'SKILL.md', contents: skillMd('Wanted') }] }), {
+                    status: 200,
+                });
+            }
+            return new Response('Not found', { status: 404 });
+        }) as unknown as typeof fetch;
+
+        const result = await addSkills('owner/repo@wanted', {
+            global: true,
+            homeDir: testHome,
+            env: {},
+            fetchFn,
+        });
+
+        expect(result.success).toBe(true);
+        expect(result.installed?.map((item) => item.name)).toEqual(['wanted']);
+        expect(requests.some((url) => url.includes('repo@wanted'))).toBe(false);
+        expect(existsSync(join(testHome, '.agents/skills/bar'))).toBe(false);
+
+        await rm(testHome, { recursive: true, force: true });
+    });
+
+    it('passes parsed refs and subpaths to the clone fallback', async () => {
+        const testHome = await makeHome('ops-add-clone-');
+        const cloneDir = await makeHome('ops-clone-source-');
+        await makeSource(join(cloneDir, 'skills/wanted'), skillMd('Wanted'));
+        let cloneCall: { url: string; ref?: string } | undefined;
+        const cloneRepoFn = async (url: string, ref?: string): Promise<string> => {
+            cloneCall = { url, ref };
+            return cloneDir;
+        };
+        const fetchFn = (async () => new Response('Not found', { status: 404 })) as unknown as typeof fetch;
+
+        const result = await addSkills('https://gitlab.com/acme/repo/-/tree/release/skills/wanted', {
+            global: true,
+            homeDir: testHome,
+            env: {},
+            fetchFn,
+            cloneRepoFn,
+        });
+
+        expect(result.success).toBe(true);
+        expect(result.installed?.map((item) => item.name)).toEqual(['wanted']);
+        expect(cloneCall).toEqual({ url: 'https://gitlab.com/acme/repo.git', ref: 'release' });
+
+        await rm(testHome, { recursive: true, force: true });
+    });
+
     it('update is a no-op for an unchanged GitHub-sourced skill via snapshot hash', async () => {
         const testHome = await makeHome('ops-up-remote-');
         const fetchFn = mockGitHubFetch(
@@ -303,6 +373,140 @@ describe('operations.ts - Skill ecosystem domain operations (add, list, remove, 
         expect(existsSync(join(projectDir, '.agents/skills/local-skill'))).toBe(false);
 
         await rm(projectDir, { recursive: true, force: true });
+    });
+
+    it('removes the exact raw lock identity while deleting its sanitized folders', async () => {
+        const testHome = await makeHome('ops-remove-identity-');
+        const now = new Date().toISOString();
+        await mkdir(join(testHome, '.agents/skills/ce-review'), { recursive: true });
+        writeFileSync(join(testHome, '.agents/skills/ce-review/SKILL.md'), skillMd('ce:review'));
+        await mkdir(join(testHome, '.hermes/skills/ce-review'), { recursive: true });
+        await writeGlobalLock(
+            {
+                version: 3,
+                skills: {
+                    'ce:review': {
+                        source: '/source',
+                        sourceType: 'local',
+                        sourceUrl: '/source',
+                        skillFolderHash: 'hash',
+                        installedAt: now,
+                        updatedAt: now,
+                    },
+                },
+            },
+            {},
+            testHome,
+        );
+
+        const result = await removeSkills(['ce-review'], {
+            global: true,
+            homeDir: testHome,
+            env: { HERMES_HOME: join(testHome, '.hermes') },
+            targets: ['hermes'],
+        });
+
+        expect(result.success).toBe(true);
+        expect(result.removed).toEqual(['ce:review']);
+        expect((await readGlobalLock({}, testHome)).skills['ce:review']).toBeUndefined();
+        expect(existsSync(join(testHome, '.agents/skills/ce-review'))).toBe(false);
+        expect(existsSync(join(testHome, '.hermes/skills/ce-review'))).toBe(false);
+
+        await rm(testHome, { recursive: true, force: true });
+    });
+
+    it('rolls removal back and retains the lock when any target cannot be staged', async () => {
+        const testHome = await makeHome('ops-remove-rollback-');
+        const sourceDir = join(testHome, 'source');
+        await makeSource(sourceDir, skillMd('Rollback Skill'));
+        await addSkills(sourceDir, { global: true, homeDir: testHome, env: {}, targets: [] });
+        const blocker = join(testHome, 'hermes-blocker');
+        writeFileSync(blocker, 'not a directory');
+
+        const result = await removeSkills(['rollback-skill'], {
+            global: true,
+            homeDir: testHome,
+            env: { HERMES_HOME: blocker },
+            targets: ['hermes'],
+        });
+
+        expect(result.success).toBe(false);
+        expect(existsSync(join(testHome, '.agents/skills/rollback-skill/SKILL.md'))).toBe(true);
+        expect((await readGlobalLock({}, testHome)).skills['rollback-skill']).toBeDefined();
+
+        await rm(testHome, { recursive: true, force: true });
+    });
+
+    it('rejects incompatible locks before mutating the canonical store', async () => {
+        const testHome = await makeHome('ops-version-preflight-');
+        const sourceDir = join(testHome, 'source');
+        await makeSource(sourceDir, skillMd('Version Guard'));
+        await mkdir(join(testHome, '.agents'), { recursive: true });
+        writeFileSync(getGlobalLockPath({}, testHome), '{"version":4,"skills":{"existing":{}}}\n');
+
+        const result = await addSkills(sourceDir, { global: true, homeDir: testHome, env: {}, targets: [] });
+
+        expect(result.success).toBe(false);
+        expect(result.error).toMatch(/lock version/i);
+        expect(existsSync(join(testHome, '.agents/skills/version-guard'))).toBe(false);
+        expect(readFileSync(getGlobalLockPath({}, testHome), 'utf-8')).toContain('"version":4');
+
+        await rm(testHome, { recursive: true, force: true });
+    });
+
+    it('rolls installation back when the lock cannot be written', async () => {
+        const testHome = await makeHome('ops-lock-rollback-');
+        const sourceDir = join(testHome, 'source');
+        await makeSource(sourceDir, skillMd('Lock Rollback'));
+        const existingCanonical = join(testHome, '.agents/skills/lock-rollback');
+        await makeSource(existingCanonical, skillMd('Lock Rollback', 'previous installation'));
+        const existingTarget = join(testHome, '.hermes/skills/lock-rollback');
+        await makeSource(existingTarget, skillMd('Lock Rollback', 'previous target'));
+        const stateBlocker = join(testHome, 'state-blocker');
+        writeFileSync(stateBlocker, 'not a directory');
+
+        const result = await addSkills(sourceDir, {
+            global: true,
+            homeDir: testHome,
+            env: { HERMES_HOME: join(testHome, '.hermes'), XDG_STATE_HOME: stateBlocker },
+            targets: ['hermes'],
+        });
+
+        expect(result.success).toBe(false);
+        expect(readFileSync(join(existingCanonical, 'SKILL.md'), 'utf-8')).toContain('previous installation');
+        expect(readFileSync(join(existingTarget, 'SKILL.md'), 'utf-8')).toContain('previous target');
+
+        await rm(testHome, { recursive: true, force: true });
+    });
+
+    it('stores global local sources as absolute paths so updates are independent of cwd', async () => {
+        const testHome = await makeHome('ops-global-source-');
+        const projectDir = join(testHome, 'project');
+        const otherDir = join(testHome, 'other');
+        const sourceDir = join(projectDir, 'src');
+        await makeSource(sourceDir, skillMd('Portable Update'));
+        await mkdir(otherDir, { recursive: true });
+
+        const addResult = await addSkills('./src', {
+            global: true,
+            cwd: projectDir,
+            homeDir: testHome,
+            env: {},
+            targets: [],
+        });
+        const lock = await readGlobalLock({}, testHome);
+        expect(addResult.success).toBe(true);
+        expect(lock.skills['portable-update']?.source).toBe(sourceDir);
+
+        const updateResult = await updateSkills(['portable-update'], {
+            global: true,
+            cwd: otherDir,
+            homeDir: testHome,
+            env: {},
+        });
+        expect(updateResult.updated[0]?.reason).toBe('Already up to date');
+
+        await rm(testHome, { recursive: true, force: true });
     });
 
     it('reports not-found and unresolvable sources during update', async () => {

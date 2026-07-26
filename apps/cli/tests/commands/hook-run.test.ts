@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, mock, spyOn } from 'bun:test';
-import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Command } from 'commander';
@@ -355,6 +355,20 @@ describe('hook run — sp/context-* (indexed-context token ledger, all fail-open
     // missing session, bad JSON, wrong tool), plus a golden-path ledger write.
     let tmpRoot: string;
 
+    function sessionPaths(): string[] {
+        const ctxDir = join(tmpRoot, '.spur', 'context');
+        if (!existsSync(ctxDir)) return [];
+        return readdirSync(ctxDir)
+            .filter((name) => /^\.session-[a-f0-9]{16}\.json$/.test(name))
+            .map((name) => join(ctxDir, name));
+    }
+
+    function onlySessionPath(): string {
+        const paths = sessionPaths();
+        expect(paths).toHaveLength(1);
+        return paths[0] as string;
+    }
+
     beforeEach(() => {
         tmpRoot = mkdtempSync(join(tmpdir(), 'hook-run-ctx-'));
     });
@@ -362,13 +376,13 @@ describe('hook run — sp/context-* (indexed-context token ledger, all fail-open
         mock.restore();
     });
 
-    it('context-session-start: creates .session.json + session_start event and exits 0', () => {
+    it('context-session-start: creates an isolated session file + session_start event and exits 0', () => {
         const { code, out } = capture('sp', 'context-session-start', { CLAUDE_PROJECT_DIR: tmpRoot }, '');
         expect(code).toBe(0);
         expect(out).toBe('');
         const ctxDir = join(tmpRoot, '.spur', 'context');
-        const session = JSON.parse(readFileSync(join(ctxDir, '.session.json'), 'utf-8'));
-        expect(session.session).toMatch(/^session-\d{4}-\d{2}-\d{2}-\d{4}$/);
+        const session = JSON.parse(readFileSync(onlySessionPath(), 'utf-8'));
+        expect(session.session).toMatch(/^session-\d{4}-\d{2}-\d{2}-\d{4}-[a-f0-9]{8}$/);
         expect(session.reads).toBe(0);
         expect(session.writes).toBe(0);
         expect(session.tokens).toBe(0);
@@ -396,15 +410,15 @@ describe('hook run — sp/context-* (indexed-context token ledger, all fail-open
         expect(readEvt).toBeDefined();
         expect(readEvt.file).toBe('/tmp/x.md');
         expect(readEvt.tokens).toBeGreaterThan(0);
-        // Running totals on .session.json keep Stop O(1).
-        const session = JSON.parse(readFileSync(join(tmpRoot, '.spur', 'context', '.session.json'), 'utf-8'));
+        // Running totals on the isolated session file keep Stop O(1).
+        const session = JSON.parse(readFileSync(onlySessionPath(), 'utf-8'));
         expect(session.reads).toBe(1);
         expect(session.writes).toBe(0);
         expect(session.tokens).toBe(readEvt.tokens);
     });
 
     it('context-post-tool: fails open (exit 0, no ledger write) without a session', () => {
-        // No session-start called → no .session.json → hook must fail open silently.
+        // No session-start called → no session file → hook must fail open silently.
         const payload = JSON.stringify({
             tool_name: 'Read',
             tool_input: { file_path: '/tmp/x.md' },
@@ -439,7 +453,7 @@ describe('hook run — sp/context-* (indexed-context token ledger, all fail-open
         expect(events.some((e) => e.type === 'read' || e.type === 'write')).toBe(false);
     });
 
-    it('context-session-stop: appends session_end with totals and removes .session.json', () => {
+    it('context-session-stop: appends session_end with totals and removes its session file', () => {
         capture('sp', 'context-session-start', { CLAUDE_PROJECT_DIR: tmpRoot }, '');
         capture(
             'sp',
@@ -467,7 +481,7 @@ describe('hook run — sp/context-* (indexed-context token ledger, all fail-open
         expect(out).toBe('');
 
         const ctxDir = join(tmpRoot, '.spur', 'context');
-        expect(existsSync(join(ctxDir, '.session.json'))).toBe(false);
+        expect(sessionPaths()).toHaveLength(0);
         const events = readFileSync(join(ctxDir, 'token-ledger.jsonl'), 'utf-8')
             .trim()
             .split('\n')
@@ -483,5 +497,63 @@ describe('hook run — sp/context-* (indexed-context token ledger, all fail-open
         const { code, out } = capture('sp', 'context-session-stop', { CLAUDE_PROJECT_DIR: tmpRoot }, '');
         expect(code).toBe(0);
         expect(out).toBe('');
+    });
+
+    it('isolates interleaved concurrent sessions by payload session_id', () => {
+        const env = { CLAUDE_PROJECT_DIR: tmpRoot };
+        const sessionA = JSON.stringify({ session_id: 'session-a' });
+        const sessionB = JSON.stringify({ session_id: 'session-b' });
+        capture('sp', 'context-session-start', env, sessionA);
+        capture('sp', 'context-session-start', env, sessionB);
+        expect(sessionPaths()).toHaveLength(2);
+
+        capture(
+            'sp',
+            'context-post-tool',
+            env,
+            JSON.stringify({
+                session_id: 'session-a',
+                tool_name: 'Read',
+                tool_input: { file_path: '/a.md' },
+                tool_response: { content: 'aaaa' },
+            }),
+        );
+        for (const file of ['/b.md', '/c.md']) {
+            capture(
+                'sp',
+                'context-post-tool',
+                env,
+                JSON.stringify({
+                    session_id: 'session-b',
+                    tool_name: 'Write',
+                    tool_input: { file_path: file },
+                    tool_response: { content: 'bbbb' },
+                }),
+            );
+        }
+
+        capture('sp', 'context-session-stop', env, sessionA);
+        expect(sessionPaths()).toHaveLength(1);
+        const remaining = JSON.parse(readFileSync(onlySessionPath(), 'utf-8'));
+        expect(remaining.session).toBe('session-b');
+        expect(remaining.reads).toBe(0);
+        expect(remaining.writes).toBe(2);
+
+        capture('sp', 'context-session-stop', env, sessionB);
+        expect(sessionPaths()).toHaveLength(0);
+        const events = readFileSync(join(tmpRoot, '.spur', 'context', 'token-ledger.jsonl'), 'utf-8')
+            .trim()
+            .split('\n')
+            .map((line) => JSON.parse(line));
+        expect(events.find((event) => event.type === 'session_end' && event.session === 'session-a').totals).toEqual({
+            reads: 1,
+            writes: 0,
+            tokens: 1,
+        });
+        expect(events.find((event) => event.type === 'session_end' && event.session === 'session-b').totals).toEqual({
+            reads: 0,
+            writes: 2,
+            tokens: 2,
+        });
     });
 });

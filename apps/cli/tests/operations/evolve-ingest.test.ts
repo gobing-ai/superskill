@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { chdir, cwd } from 'node:process';
 import { createDbAdapter, type DbAdapter } from '@gobing-ai/ts-db';
+import { evaluate } from '../../src/operations/evaluate';
 import type { ProposedChange } from '../../src/operations/evolve';
 import { evolve } from '../../src/operations/evolve';
 import { EvaluationDao } from '../../src/store/evaluations';
@@ -250,7 +251,7 @@ describe('generation seam — ingest-in (F023)', () => {
             adapter,
             ingest: proposalPath,
             acceptId: 'skill-evolve-test-001',
-            margin: -1, // gate disabled — test probes apply mechanics, not Δ
+            skipDeltaGate: true, // test probes apply mechanics, not Δ
         });
 
         // The proposal was applied — changesApplied should be >= 1
@@ -260,6 +261,65 @@ describe('generation seam — ingest-in (F023)', () => {
         const fileContent = readFileSync(join(dir, 'widget.md'), 'utf-8');
         expect(fileContent).toContain('focused widget skill');
         expect(fileContent).not.toContain('[Improve');
+    });
+
+    it('rejects a mismatched --accept identity before persisting or applying the ingested proposal', async () => {
+        await seedHistory(adapter);
+        const original = readFileSync(join(dir, 'widget.md'), 'utf-8');
+        const proposalPath = join(dir, 'proposal.json');
+        writeFileSync(proposalPath, JSON.stringify(AUTHORED_PROPOSAL));
+
+        await expect(
+            evolve('skill', 'widget', {
+                adapter,
+                ingest: proposalPath,
+                acceptId: 'different-proposal-id',
+                skipDeltaGate: true,
+            }),
+        ).rejects.toThrow(/does not match ingested proposal_id/);
+
+        expect(readFileSync(join(dir, 'widget.md'), 'utf-8')).toBe(original);
+        expect(await new ProposalDao(adapter).getProposals('skill', 'widget')).toHaveLength(0);
+    });
+
+    it('rejects a proposal_id containing path traversal before any persistence', async () => {
+        await seedHistory(adapter);
+        const proposalPath = join(dir, 'proposal.json');
+        writeFileSync(proposalPath, JSON.stringify({ ...AUTHORED_PROPOSAL, proposal_id: '../escaped' }));
+
+        await expect(evolve('skill', 'widget', { adapter, ingest: proposalPath })).rejects.toThrow(
+            /Invalid proposal_id/,
+        );
+        expect(await new ProposalDao(adapter).getProposals('skill', 'widget')).toHaveLength(0);
+    });
+
+    it('rolls back and keeps the proposal draft when a new verification row is unavailable', async () => {
+        await seedHistory(adapter);
+        const original = readFileSync(join(dir, 'widget.md'), 'utf-8');
+        const proposalPath = join(dir, 'proposal.json');
+        writeFileSync(proposalPath, JSON.stringify(AUTHORED_PROPOSAL));
+        let calls = 0;
+
+        await expect(
+            evolve('skill', 'widget', {
+                adapter,
+                ingest: proposalPath,
+                acceptId: AUTHORED_PROPOSAL.proposal_id,
+                skipDeltaGate: true,
+                evaluateFn: async (type, path, options) => {
+                    calls++;
+                    if (calls === 2) {
+                        return evaluate(type, path, { target: options?.target });
+                    }
+                    return evaluate(type, path, options);
+                },
+            }),
+        ).rejects.toThrow(/evaluation was not persisted/);
+
+        expect(readFileSync(join(dir, 'widget.md'), 'utf-8')).toBe(original);
+        const stored = await new ProposalDao(adapter).getProposals('skill', 'widget');
+        expect(stored[0]?.status).toBe('draft');
+        expect(stored[0]?.verify_id).toBeNull();
     });
 
     it('throws on invalid proposal (missing required fields)', async () => {

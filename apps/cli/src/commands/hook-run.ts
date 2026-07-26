@@ -1,9 +1,11 @@
 import { spawnSync } from 'node:child_process';
-import { appendFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { createHash, randomUUID } from 'node:crypto';
+import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { echo, echoError } from '@gobing-ai/ts-utils';
 import type { Command } from 'commander';
 import { runStopGuard, type StopProfile } from '../../../../plugins/cc/scripts/anti-hallucination/ah_guard';
+import { parseCommandArgv } from '../command-argv';
 import { readStdinNonBlocking } from '../stdin';
 import { cliVersion } from '../version';
 
@@ -89,36 +91,7 @@ function preToolUseDecision(decision: 'allow' | 'deny', reason?: string, env?: N
  * spaces work when quoted (`"/opt/my tools/spur" --flag`). Unquoted spaces still
  * separate argv tokens. Single- and double-quoted runs preserve interior spaces.
  */
-export function parseSpurBinSpec(spec: string): string[] {
-    const tokens: string[] = [];
-    let cur = '';
-    let quote: '"' | "'" | null = null;
-    for (let i = 0; i < spec.length; i++) {
-        const c = spec[i];
-        if (quote) {
-            if (c === quote) {
-                quote = null;
-            } else {
-                cur += c;
-            }
-            continue;
-        }
-        if (c === '"' || c === "'") {
-            quote = c;
-            continue;
-        }
-        if (c === ' ' || c === '\t') {
-            if (cur.length > 0) {
-                tokens.push(cur);
-                cur = '';
-            }
-            continue;
-        }
-        cur += c;
-    }
-    if (cur.length > 0) tokens.push(cur);
-    return tokens;
-}
+export const parseSpurBinSpec = parseCommandArgv;
 
 /**
  * Resolve whether a file path is owned by a Spur task. Shells out to `spur task resolve --strict --json`:
@@ -219,18 +192,55 @@ function spurContextDir(env: NodeJS.ProcessEnv): string {
     return join(env.CLAUDE_PROJECT_DIR ?? process.cwd(), '.spur', 'context');
 }
 
-/** Read `.session.json` → session id, or '' when absent/unparseable. */
-function readSpurSession(dir: string): string {
-    const sessionFile = join(dir, '.session.json');
-    if (!existsSync(sessionFile)) return '';
+interface SpurSession {
+    id: string;
+    path: string;
+}
+
+/** Extract the stable host session identity carried by lifecycle/tool hook payloads. */
+function payloadSessionIdentity(stdinText: string): string {
+    try {
+        const payload = JSON.parse(stdinText) as Record<string, unknown>;
+        if (typeof payload.session_id === 'string' && payload.session_id.length > 0) return payload.session_id;
+        if (typeof payload.transcript_path === 'string' && payload.transcript_path.length > 0) {
+            return payload.transcript_path;
+        }
+    } catch {
+        // Hooks without a payload use the single-session compatibility fallback below.
+    }
+    return '';
+}
+
+function sessionPathForIdentity(dir: string, identity: string): string {
+    const key = createHash('sha256').update(identity).digest('hex').slice(0, 16);
+    return join(dir, `.session-${key}.json`);
+}
+
+function existingSessionPaths(dir: string): string[] {
+    try {
+        return readdirSync(dir)
+            .filter((name) => /^\.session-[a-f0-9]{16}\.json$/.test(name))
+            .sort()
+            .map((name) => join(dir, name));
+    } catch {
+        return [];
+    }
+}
+
+/** Resolve the payload's session, falling back only when exactly one session is active. */
+function readSpurSession(dir: string, stdinText: string): SpurSession | null {
+    const identity = payloadSessionIdentity(stdinText);
+    const existingSessions = identity ? [] : existingSessionPaths(dir);
+    const sessionFile = identity ? sessionPathForIdentity(dir, identity) : existingSessions[0];
+    if (!sessionFile || (!identity && existingSessions.length !== 1) || !existsSync(sessionFile)) return null;
     try {
         const data = JSON.parse(readFileSync(sessionFile, 'utf-8'));
         if (typeof data === 'object' && data !== null && 'session' in data && typeof data.session === 'string') {
-            return data.session;
+            return { id: data.session, path: sessionFile };
         }
-        return '';
+        return null;
     } catch {
-        return '';
+        return null;
     }
 }
 
@@ -260,7 +270,7 @@ const spContextPostTool: HookRunner = {
                 : '';
         if (!filePath) return OK;
 
-        const session = readSpurSession(dir);
+        const session = readSpurSession(dir, stdinText);
         if (!session) return OK;
 
         const toolResponse = p.tool_response;
@@ -276,7 +286,7 @@ const spContextPostTool: HookRunner = {
         const type = toolName === 'Read' ? 'read' : 'write';
         const action = toolName === 'Read' ? undefined : toolName === 'Write' ? 'create' : 'edit';
 
-        const event: Record<string, unknown> = { ts, session, type, file: filePath, tokens };
+        const event: Record<string, unknown> = { ts, session: session.id, type, file: filePath, tokens };
         if (action) event.action = action;
 
         try {
@@ -285,15 +295,14 @@ const spContextPostTool: HookRunner = {
             // fail-open: a broken ledger must never wedge the agent
         }
 
-        // Keep running totals on .session.json so Stop is O(1) (no full ledger scan).
+        // Keep running totals on the payload-scoped session file so Stop is O(1).
         try {
-            const sessionPath = join(dir, '.session.json');
-            const raw = JSON.parse(readFileSync(sessionPath, 'utf-8')) as Record<string, unknown>;
-            if (typeof raw.session === 'string' && raw.session === session) {
+            const raw = JSON.parse(readFileSync(session.path, 'utf-8')) as Record<string, unknown>;
+            if (typeof raw.session === 'string' && raw.session === session.id) {
                 if (type === 'read') raw.reads = (typeof raw.reads === 'number' ? raw.reads : 0) + 1;
                 else raw.writes = (typeof raw.writes === 'number' ? raw.writes : 0) + 1;
                 raw.tokens = (typeof raw.tokens === 'number' ? raw.tokens : 0) + tokens;
-                writeFileSync(sessionPath, JSON.stringify(raw));
+                writeFileSync(session.path, JSON.stringify(raw));
             }
         } catch {
             // fail-open: missing counters fall back at Stop
@@ -302,9 +311,9 @@ const spContextPostTool: HookRunner = {
     },
 };
 
-/** SessionStart: create `.spur/context/`, write `.session.json`, append `session_start`. */
+/** SessionStart: create a payload-scoped session file and append `session_start`. */
 const spContextSessionStart: HookRunner = {
-    run(env) {
+    run(env, stdinText) {
         const dir = spurContextDir(env);
         try {
             mkdirSync(dir, { recursive: true });
@@ -314,12 +323,16 @@ const spContextSessionStart: HookRunner = {
 
         const now = new Date();
         const pad = (n: number) => String(n).padStart(2, '0');
-        const sessionId = `session-${now.toISOString().slice(0, 10)}-${pad(now.getHours())}${pad(now.getMinutes())}`;
+        const identity = payloadSessionIdentity(stdinText);
+        const sessionId =
+            identity ||
+            `session-${now.toISOString().slice(0, 10)}-${pad(now.getHours())}${pad(now.getMinutes())}-${randomUUID().slice(0, 8)}`;
+        const sessionFile = sessionPathForIdentity(dir, identity || sessionId);
         const ts = now.toISOString();
 
         try {
             writeFileSync(
-                join(dir, '.session.json'),
+                sessionFile,
                 JSON.stringify({ session: sessionId, started: ts, reads: 0, writes: 0, tokens: 0 }),
             );
         } catch {
@@ -338,12 +351,13 @@ const spContextSessionStart: HookRunner = {
     },
 };
 
-/** Stop: read O(1) totals from `.session.json`, append `session_end`, clean up session file. */
+/** Stop: read O(1) totals from the payload-scoped session file, append `session_end`, then clean up. */
 const spContextSessionStop: HookRunner = {
-    run(env) {
+    run(env, stdinText) {
         const dir = spurContextDir(env);
-        const sessionFile = join(dir, '.session.json');
-        if (!existsSync(sessionFile)) return OK;
+        const session = readSpurSession(dir, stdinText);
+        if (!session) return OK;
+        const sessionFile = session.path;
 
         let sessionId = '';
         let reads = 0;

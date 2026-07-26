@@ -61,6 +61,21 @@ describe('locks.ts - Dual lock read/writers & hash invariant', () => {
         expect(hash1).not.toBe(hash2);
     });
 
+    it('length-frames file paths and contents so distinct trees cannot concatenate to the same hash input', async () => {
+        const testDir = join(tmpdir(), `test-lock-framing-${Date.now()}`);
+        const firstDir = join(testDir, 'first');
+        const secondDir = join(testDir, 'second');
+        mkdirSync(firstDir, { recursive: true });
+        mkdirSync(secondDir, { recursive: true });
+        writeFileSync(join(firstDir, 'a'), 'bc');
+        writeFileSync(join(secondDir, 'ab'), 'c');
+
+        const firstHash = await computeCanonicalSkillFolderHash(firstDir);
+        const secondHash = await computeCanonicalSkillFolderHash(secondDir);
+
+        expect(firstHash).not.toBe(secondHash);
+    });
+
     it('round-trips local lock (v1) with sorted keys and no timestamps', async () => {
         const testDir = join(tmpdir(), `test-local-lock-${Date.now()}`);
         mkdirSync(testDir, { recursive: true });

@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, spyOn } from 'bun:test';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { evaluate } from '../../src/operations/evaluate';
 import {
     applyAutoFixes,
     classifyFix,
@@ -454,6 +455,26 @@ describe('refine — auto mode', () => {
         expect(after).not.toContain('TODO');
         // Refine is monotonic-or-neutral: the score never drops.
         expect(r.postScore).toBeGreaterThanOrEqual(r.preScore);
+    });
+
+    it('restores the original file when post-fix evaluation fails', async () => {
+        const file = createTempFile(MISSING_DESC, tmpDir);
+        const original = readFileSync(file, 'utf8');
+        let calls = 0;
+        const result = await refine('skill', file, {
+            auto: true,
+            evaluateFn: async (...args) => {
+                calls++;
+                if (calls === 2) throw new Error('injected post-evaluation failure');
+                return evaluate(...args);
+            },
+        });
+
+        expect(calls).toBe(2);
+        expect(readFileSync(file, 'utf8')).toBe(original);
+        expect(result.fixesApplied).toEqual([]);
+        expect(result.fixesSkipped.some((fix) => fix.applied === false)).toBe(true);
+        expect(result.delta).toBe(0);
     });
 
     it('runs with --save flag', async () => {

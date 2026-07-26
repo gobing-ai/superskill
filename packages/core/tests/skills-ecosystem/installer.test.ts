@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'bun:test';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, rm, symlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { BlobSkill } from '../../src/skills-ecosystem/fetch';
@@ -140,6 +140,34 @@ describe('installer.ts - Canonical skill installation and security guards', () =
 
         await rm(srcDir, { recursive: true, force: true });
         await rm(destDir, { recursive: true, force: true });
+    });
+
+    it('copyDir rejects symbolic links instead of following files outside the source tree', async () => {
+        const testDir = await mkdtemp(join(tmpdir(), 'copydir-symlink-'));
+        const srcDir = join(testDir, 'src');
+        const destDir = join(testDir, 'dest');
+        const outsideDir = join(testDir, 'outside');
+        const secretPath = join(testDir, 'secret.txt');
+        await cleanAndCreateDir(srcDir);
+        await cleanAndCreateDir(outsideDir);
+        writeFileSync(secretPath, 'SENSITIVE-CONTENT');
+        writeFileSync(join(outsideDir, 'nested-secret.txt'), 'NESTED-SENSITIVE-CONTENT');
+        await symlink(secretPath, join(srcDir, 'linked-secret.txt'));
+
+        await expect(copyDir(srcDir, destDir)).rejects.toThrow(/symbolic link/i);
+        expect(existsSync(join(destDir, 'linked-secret.txt'))).toBe(false);
+
+        await rm(join(srcDir, 'linked-secret.txt'));
+        await symlink(outsideDir, join(srcDir, 'linked-directory'));
+        await expect(copyDir(srcDir, join(testDir, 'directory-dest'))).rejects.toThrow(/symbolic link/i);
+        expect(existsSync(join(testDir, 'directory-dest/linked-directory/nested-secret.txt'))).toBe(false);
+
+        const sourceRootLink = join(testDir, 'source-root-link');
+        await symlink(outsideDir, sourceRootLink);
+        await expect(copyDir(sourceRootLink, join(testDir, 'root-dest'))).rejects.toThrow(/symbolic link/i);
+        expect(existsSync(join(testDir, 'root-dest'))).toBe(false);
+
+        await rm(testDir, { recursive: true, force: true });
     });
 
     it('createSymlink handles existing symlinks, identical target/link paths, and fallbacks', async () => {

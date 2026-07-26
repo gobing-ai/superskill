@@ -1,5 +1,4 @@
-import { existsSync } from 'node:fs';
-import { lstat, readdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { extname, join } from 'node:path';
 import { rewriteSkillReferences } from '../pipeline/rewrite-references';
 import { translateSlashCommands } from '../pipeline/slash-command';
@@ -7,9 +6,9 @@ import type { Target } from '../targets';
 import { getTargetAgentConfig, type InstallTier } from './agents';
 import type { BlobSkill } from './fetch';
 import {
-    cleanAndCreateDir,
     copyDir,
     createSymlink,
+    FilesystemTransaction,
     getCanonicalSkillsDir,
     installSkillCanonical,
     pathsOverlap,
@@ -31,6 +30,8 @@ export interface EmitOptions {
      * requested name wins over the folder name so the exact lock key is returned.
      */
     lockKeys?: string[];
+    /** Shared transaction retained by the operation until its lock write succeeds. */
+    transaction?: FilesystemTransaction;
 }
 
 /** Result for emitting a skill to a specific target agent. */
@@ -67,9 +68,20 @@ export async function emitSkillForTargets(
     const global = options.global ?? false;
     const cwd = options.cwd || process.cwd();
     const homeDir = options.homeDir;
+    const transaction = options.transaction ?? new FilesystemTransaction();
+    const ownsTransaction = options.transaction === undefined;
 
-    const canonicalResult = await installSkillCanonical(source, { global, cwd, homeDir, name: options.name });
+    const canonicalResult = await installSkillCanonical(source, {
+        global,
+        cwd,
+        homeDir,
+        name: options.name,
+        transaction,
+    });
     if (!canonicalResult.success) {
+        if (ownsTransaction) {
+            await transaction.rollback();
+        }
         return {
             success: false,
             skillName: canonicalResult.skillName,
@@ -109,65 +121,47 @@ export async function emitSkillForTargets(
         }
 
         if (config.tier === 'symlink') {
-            if (options.mode === 'copy') {
-                try {
-                    await cleanAndCreateDir(targetDir);
-                    await copyDir(canonicalPath, targetDir);
-                    emitResults[target] = {
-                        target,
-                        tier: 'symlink',
-                        success: true,
-                        targetPath: targetDir,
-                    };
-                } catch (err) {
-                    emitResults[target] = {
-                        target,
-                        tier: 'symlink',
-                        success: false,
-                        targetPath: targetDir,
-                        error: err instanceof Error ? err.message : String(err),
-                    };
-                }
-            } else {
-                const symlinkCreated = await createSymlink(canonicalPath, targetDir);
-                if (!symlinkCreated) {
-                    try {
-                        await cleanAndCreateDir(targetDir);
-                        await copyDir(canonicalPath, targetDir);
-                        emitResults[target] = {
-                            target,
-                            tier: 'symlink',
-                            success: true,
-                            targetPath: targetDir,
-                            symlinkFailed: true,
-                        };
-                    } catch (err) {
-                        emitResults[target] = {
-                            target,
-                            tier: 'symlink',
-                            success: false,
-                            targetPath: targetDir,
-                            symlinkFailed: true,
-                            error: err instanceof Error ? err.message : String(err),
-                        };
+            let symlinkFailed = false;
+            try {
+                await transaction.replace(targetDir, async (destination) => {
+                    if (options.mode === 'copy') {
+                        await copyDir(canonicalPath, destination);
+                        return;
                     }
-                } else {
-                    emitResults[target] = {
-                        target,
-                        tier: 'symlink',
-                        success: true,
-                        targetPath: targetDir,
-                    };
-                }
+
+                    const symlinkCreated = await createSymlink(canonicalPath, destination);
+                    if (!symlinkCreated) {
+                        symlinkFailed = true;
+                        await rm(destination, { recursive: true, force: true });
+                        await copyDir(canonicalPath, destination);
+                    }
+                });
+                emitResults[target] = {
+                    target,
+                    tier: 'symlink',
+                    success: true,
+                    targetPath: targetDir,
+                    ...(symlinkFailed ? { symlinkFailed: true } : {}),
+                };
+            } catch (err) {
+                emitResults[target] = {
+                    target,
+                    tier: 'symlink',
+                    success: false,
+                    targetPath: targetDir,
+                    ...(symlinkFailed ? { symlinkFailed: true } : {}),
+                    error: err instanceof Error ? err.message : String(err),
+                };
             }
             continue;
         }
 
         if (config.tier === 'translate') {
             try {
-                await cleanAndCreateDir(targetDir);
-                await copyDir(canonicalPath, targetDir);
-                await translateMarkdownFilesInDir(targetDir, target, skillName);
+                await transaction.replace(targetDir, async (destination) => {
+                    await copyDir(canonicalPath, destination);
+                    await translateMarkdownFilesInDir(destination, target, skillName);
+                });
                 emitResults[target] = {
                     target,
                     tier: 'translate',
@@ -187,11 +181,19 @@ export async function emitSkillForTargets(
     }
 
     const allSuccessful = Object.values(emitResults).every((r) => r.success);
+    if (ownsTransaction) {
+        if (allSuccessful) {
+            await transaction.commit();
+        } else {
+            await transaction.rollback();
+        }
+    }
     return {
         success: allSuccessful,
         skillName,
         canonicalPath,
         results: emitResults,
+        ...(!allSuccessful ? { error: 'One or more target emissions failed' } : {}),
     };
 }
 
@@ -232,6 +234,7 @@ export interface RemoveResult {
     skillName: string;
     canonicalPath: string;
     results: Partial<Record<Target, RemoveTargetResult>>;
+    error?: string;
 }
 
 /**
@@ -245,6 +248,8 @@ export async function removeSkillFromTargets(
     const global = options.global ?? false;
     const cwd = options.cwd || process.cwd();
     const homeDir = options.homeDir;
+    const transaction = options.transaction ?? new FilesystemTransaction();
+    const ownsTransaction = options.transaction === undefined;
 
     const sanitized = sanitizeName(skillName);
     const canonicalBase = getCanonicalSkillsDir(global, cwd, homeDir);
@@ -259,57 +264,57 @@ export async function removeSkillFromTargets(
         resolveSkillsToRemove([skillName], [skillName, ...(options.lockKeys ?? [])], options.lockKeys ?? [])[0] ??
         skillName;
 
-    if (existsSync(canonicalPath)) {
-        await rm(canonicalPath, { recursive: true, force: true }).catch(() => {});
-    }
-
     const removeResults: Partial<Record<Target, RemoveTargetResult>> = {};
+    let canonicalRemoved = false;
 
-    for (const target of targets) {
-        const config = getTargetAgentConfig(target, { homeDir, env: options.env });
-        const targetBase = global ? config.globalSkillsDir : join(cwd, config.skillsDir);
-        const targetDir = join(targetBase, sanitized);
+    try {
+        canonicalRemoved = await transaction.remove(canonicalPath);
 
-        if (config.tier === 'direct') {
-            removeResults[target] = {
-                target,
-                success: true,
-                path: canonicalPath,
-                removed: true,
-            };
-            continue;
-        }
+        for (const target of targets) {
+            const config = getTargetAgentConfig(target, { homeDir, env: options.env });
+            const targetBase = global ? config.globalSkillsDir : join(cwd, config.skillsDir);
+            const targetDir = join(targetBase, sanitized);
 
-        let wasRemoved = false;
-        try {
-            if (existsSync(targetDir) || (await isSymlink(targetDir))) {
-                await rm(targetDir, { recursive: true, force: true });
-                wasRemoved = true;
+            if (config.tier === 'direct' || pathsOverlap(canonicalPath, targetDir)) {
+                removeResults[target] = {
+                    target,
+                    success: true,
+                    path: canonicalPath,
+                    removed: canonicalRemoved,
+                };
+                continue;
             }
+
+            const wasRemoved = await transaction.remove(targetDir);
             removeResults[target] = {
                 target,
                 success: true,
                 path: targetDir,
                 removed: wasRemoved,
             };
-        } catch (err) {
-            removeResults[target] = {
-                target,
-                success: false,
-                path: targetDir,
-                removed: false,
-                error: err instanceof Error ? err.message : String(err),
-            };
         }
-    }
 
-    const allSuccessful = Object.values(removeResults).every((r) => r.success);
-    return {
-        success: allSuccessful,
-        skillName: identity,
-        canonicalPath,
-        results: removeResults,
-    };
+        if (ownsTransaction) {
+            await transaction.commit();
+        }
+        return {
+            success: true,
+            skillName: identity,
+            canonicalPath,
+            results: removeResults,
+        };
+    } catch (err) {
+        if (ownsTransaction) {
+            await transaction.rollback();
+        }
+        return {
+            success: false,
+            skillName: identity,
+            canonicalPath,
+            results: removeResults,
+            error: err instanceof Error ? err.message : String(err),
+        };
+    }
 }
 
 /**
@@ -334,13 +339,4 @@ export function resolveSkillsToRemove(requested: string[], folderNames: string[]
         if (hit) matched.add(hit);
     }
     return Array.from(matched);
-}
-
-async function isSymlink(path: string): Promise<boolean> {
-    try {
-        const stats = await lstat(path);
-        return stats.isSymbolicLink();
-    } catch {
-        return false;
-    }
 }

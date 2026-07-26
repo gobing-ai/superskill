@@ -174,7 +174,7 @@ You are a careful, helpful agent. Do tasks well, verify your work, and ask when 
             adapter,
             ingest: proposalPath,
             acceptId: 'agent-evolve-invalid-001',
-            margin: -1, // disable Δ-gate so the deterministic gate is the one that fires
+            skipDeltaGate: true, // isolate the deterministic gate
         });
 
         expect(r.rejected).toBe(true);
@@ -207,7 +207,7 @@ You are a careful, helpful agent. Do tasks well, verify your work, and ask when 
             adapter,
             ingest: proposalPath,
             acceptId: 'skill-evolve-anchor-001',
-            margin: -1, // pass Δ so the anchor gate is the one that fires
+            skipDeltaGate: true, // isolate the anchor gate
         });
 
         expect(r.rejected).toBe(true);
@@ -240,7 +240,7 @@ You are a careful, helpful agent. Do tasks well, verify your work, and ask when 
             adapter,
             ingest: proposalPath,
             acceptId: 'skill-evolve-skeptic-001',
-            margin: -1, // pass Δ so the skeptic gate is the one that fires
+            skipDeltaGate: true, // isolate the skeptic gate
         });
 
         expect(r.rejected).toBe(true);
@@ -276,7 +276,7 @@ You are a careful, helpful agent. Do tasks well, verify your work, and ask when 
             adapter,
             ingest: proposalPath,
             acceptId: 'skill-evolve-good-001',
-            margin: -1, // isolate the anchor + skeptic + deterministic gates; Δ passes vacuously
+            skipDeltaGate: true, // isolate the anchor + skeptic + deterministic gates
         });
 
         // Applied, not rejected.

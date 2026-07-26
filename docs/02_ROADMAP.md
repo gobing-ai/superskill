@@ -2,10 +2,10 @@
 doc: 02_ROADMAP
 owns: WHEN — phases, current vs deferred, sequencing
 authority: derived
-version: 3.3.1
+version: 3.4.0
 derived_from: [00_ADR, 01_PRD]
 owner: Robin Min
-updated_at: 2026-06-17
+updated_at: 2026-07-26
 read_before: placing work in a phase; edit when phase status changes
 edit_rules: 99 §6.3
 sync: [T5]
@@ -20,13 +20,13 @@ sync: [T5]
 **Design:** [design-doc-phase1.md](design/design-doc-phase1.md)
 
 - [x] Foundation: scaffold, gates green, ts-base artifacts removed, docs 00–05 ready
-- [ ] Target taxonomy + `superskill.jsonc` config schema
-- [ ] Marketplace manifest resolver — `--marketplace`, local relative-path sources (ADR-011)
-- [ ] `superskill install <plugin>` — plugin → `.rulesync/` → `rulesync.generate()` → targets
-- [ ] Conversion pipeline: slash dialect, colon→hyphen, frontmatter normalization
-- [ ] Feature dispatch: skills, commands, subagents, hooks, MCP, Claude Code marketplace
-- [ ] Target agents: Claude Code, Codex, Pi, omp, OpenCode, antigravity-cli, antigravity-ide, Hermes
-- [ ] Verify: idempotent, dry-run, error handling, ≥90% test coverage
+- [x] Target taxonomy + live `superskill.jsonc` defaults
+- [x] Marketplace manifest resolver — `--marketplace`, local relative-path sources (ADR-011)
+- [x] `superskill install <plugin>` — plugin → `.rulesync/` → `rulesync.generate()` → targets
+- [x] Conversion pipeline: slash dialect, colon→hyphen, frontmatter normalization
+- [x] Feature dispatch: skills, commands, subagents, hooks, MCP, Claude Code marketplace
+- [x] Target agents: Claude Code, Codex, Pi, omp, OpenCode, antigravity-cli, antigravity-ide, Hermes
+- [x] Verify: idempotent, dry-run, error handling, ≥90% test coverage
 
 **Exit:** `superskill install rd3 --targets all` produces correct output for every target from a fresh checkout.
 
@@ -121,4 +121,3 @@ sync: [T5]
 
 > **Continuously deferred** (no target phase until `superskill` matures): import from non-Claude formats (Codex/Pi → canonical); `rulesync` upstream contribution for Hermes/omp.
 > **Permanently out of scope** (PRD §Out of scope): runtime agent orchestration (`@gobing-ai/ts-ai-runner`), GUI/TUI, cloud sync / registry.
-

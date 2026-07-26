@@ -20,6 +20,7 @@
 
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { parseCommandArgv } from './command-argv';
 import {
     applyHookTargetPolicy,
     BLOCKABLE_OMP_EVENTS,
@@ -99,7 +100,7 @@ function buildModuleContent(hook: ParsedHook): string {
     // command containing a quote (e.g. `bash -c 'echo hi'` → syntax error module).
     // spawnSync takes (command, args[], options) — the args MUST be one array literal;
     // spreading tokens as positional arguments throws ERR_INVALID_ARG_TYPE at runtime.
-    const tokens = hook.command.trim().split(/\s+/);
+    const tokens = parseCommandArgv(hook.command);
     const commandLiteral = JSON.stringify(tokens[0] ?? 'true');
     const argsLiteral = `[${tokens
         .slice(1)

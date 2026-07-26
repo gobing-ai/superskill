@@ -2,10 +2,10 @@
 doc: 03_ARCHITECTURE
 owns: HOW — module boundaries, data flow, runtime model, invariants
 authority: derived
-version: 2.6.0
+version: 2.8.0
 derived_from: [00_ADR, 01_PRD]
 owner: Robin Min
-updated_at: 2026-07-11
+updated_at: 2026-07-26
 read_before: cross-module, seam, or schema work
 edit_rules: 99 §6.4
 sync: [T1]
@@ -157,6 +157,9 @@ apps/cli/src/                     # ── CLI app (@gobing-ai/superskill) ─�
 ### Phase 1: Distribution
 
 ```
+CLI flags + superskill.jsonc
+          │
+          ▼
 Plugin source                    Canonical              Target output
 ─────────────                    ─────────              ─────────────
 plugins/<name>/                  .rulesync/             ~/.agents/skills/
@@ -177,6 +180,13 @@ plugins/<name>/                  .rulesync/             ~/.agents/skills/
 ```
 
 `outputRoots = global ? [os.homedir()] : [process.cwd()]` (ADR-010). For every rulesync-supported target, the write is done by `generate()`; superskill copies only the two targets rulesync lacks (`hermes` and `omp`).
+
+The install action loads `superskill.jsonc` before resolving the plugin. Explicit
+`--marketplace`/`--targets` values win over configured defaults; a configured plugin path is used
+before ambient marketplace discovery when `--marketplace` is absent. The configured `features`
+filter is applied by the mapper, so excluded artifact classes never enter `.rulesync/`. Native
+targets whose installers cannot honor a partial feature set fail before mutation instead of
+silently installing the full plugin.
 
 > [!IMPORTANT]
 > **Invariant:** `.rulesync/` is the canonical intermediate representation. No feature module writes directly from plugin source to target output.
@@ -253,11 +263,13 @@ plugins/<name>/
 
 ## Plugin resolution
 
-`superskill install <plugin>` locates the plugin root via a Claude Code marketplace manifest (ADR-011). Resolution order, first match wins:
+`superskill install <plugin>` resolves the plugin root from explicit CLI input, validated config, or
+a Claude Code marketplace manifest (ADR-011). Resolution order, first match wins:
 
 1. `--marketplace <path>` — explicit path to a `.claude-plugin/marketplace.json` (or its containing dir).
-2. `.claude-plugin/marketplace.json` in CWD.
-3. Fallback: the `plugins/<name>/` directory scan (legacy convention).
+2. Matching `plugins[].path` in project-local `superskill.jsonc`.
+3. `.claude-plugin/marketplace.json` in CWD.
+4. Fallback: the `plugins/<name>/` directory scan (legacy convention).
 
 **Manifest shape** (verified against Claude Code docs + `cc-agents/.claude-plugin/marketplace.json`):
 
@@ -536,11 +548,10 @@ sequenceDiagram
         FS-->>Evolve: file contents
         Evolve->>Edit: applyChange(content, proposal changes)
         Edit-->>Evolve: Updated content
-        Evolve->>FS: Write updated file
-        Evolve->>DB: updateProposalStatus(id, 'accepted')
-        Evolve->>Evaluate: evaluate(type, path, {save: true, operation: 'evolve'})
-        Evaluate-->>Evolve: Post-evolution report
-        Evolve->>DB: updateProposalStatus(id, 'accepted', {verify_id})
+        Evolve->>FS: Write updated file (transaction candidate)
+        Evolve->>Evaluate: evaluate(type, path, {save: true, requireSave: true})
+        Evaluate-->>Evolve: Post-evolution report + exact evaluationId
+        Evolve->>DB: updateProposalStatus(id, 'accepted', {verify_id: evaluationId})
         Evolve-->>CLI: EvolveResult
     else Reject proposal flag (--reject <id>)
         Evolve->>DB: updateProposalStatus(id, 'rejected')
@@ -568,18 +579,41 @@ sequenceDiagram
             FS-->>Evolve: file contents
             Evolve->>Edit: applyChange(content, accepted changes)
             Edit-->>Evolve: Updated content
-            Evolve->>FS: Write updated file
-            Evolve->>DB: updateProposalStatus(id, 'accepted')
-            Evolve->>Evaluate: evaluate(type, path, {save: true, operation: 'evolve'})
-            Evaluate-->>Evolve: Post-evolution report
-            Evolve->>DB: updateProposalStatus(id, 'accepted', {verify_id})
+            Evolve->>FS: Write updated file (transaction candidate)
+            Evolve->>Evaluate: evaluate(type, path, {save: true, requireSave: true})
+            Evaluate-->>Evolve: Post-evolution report + exact evaluationId
+            Evolve->>DB: updateProposalStatus(id, 'accepted', {verify_id: evaluationId})
             Evolve-->>CLI: EvolveResult
         end
     end
     CLI-->>User: Output evolution summary & score delta
 ```
 
+All accept paths use the same proposal transaction. The transaction retains the original file and
+keeps the proposal `draft` until apply, build/form/behavior gates, persisted verification, and exact
+`verify_id` linkage all succeed. Any thrown step restores the file and draft status. Ingested
+proposal IDs and CLI proposal IDs are validated as safe path segments, and ingest acceptance must
+name the proposal contained in the payload.
+
 ---
+
+## Skills-ecosystem operation boundary
+
+`operations.ts` resolves a source once through `parseSource` (ADR-029). Local paths are anchored to
+the operation's `cwd`; the resulting `ParsedSource` supplies repository URL, ref, subpath, skill
+filter, and source type to both the GitHub blob fast path and clone fallback. Global local locks
+persist that anchored absolute path, so later updates do not depend on the caller's directory.
+
+Add/remove treat canonical paths, target paths, and the scoped lock as one logical transaction
+(ADR-030). A version-compatible lock is loaded before mutation. Existing filesystem entries move
+to same-parent backups; new copies, symlinks, translations, and removals remain reversible until
+the lock is atomically replaced from a same-parent temporary file. Failure rolls paths back in
+reverse order; success discards backups. Source copies reject symlinks and special files, and
+regular files are opened with `O_NOFOLLOW`.
+
+Canonical and blob-snapshot hashes share the ADR-031 encoding: sorted path/content pairs, each
+field prefixed by its unsigned 64-bit byte length. This preserves deterministic SHA-256 identity
+without concatenation ambiguity.
 
 ## Invariants
 
@@ -588,5 +622,16 @@ sequenceDiagram
 3. **No silent data loss.** If a target path is unwritable, the command fails before touching any target.
 4. **rulesync owns format knowledge.** superskill never hardcodes a target's file format — it delegates to `rulesync.generate()`.
 5. **Pipeline stages are pure functions.** Each transform is a pure `(content: string, …) => string` function (e.g. `translateSlashCommands(content, target)`, `rewriteSkillReferences(content, pluginPrefix)`) — no side effects, no filesystem access. install.ts composes them in order per target.
-6. **Closed evolve loop.** Every accepted evolution proposal triggers a verification evaluation — every change has a measured outcome.
+6. **Transactional closed evolve loop.** A proposal becomes `accepted` only after its candidate
+   passes every gate, the verification evaluation is persisted, and that exact inserted evaluation
+   ID is linked as `verify_id`; failure restores the file and leaves the proposal `draft`.
 7. **Marketplace-relative resolution.** A relative plugin `source` resolves against the marketplace root (the dir containing `.claude-plugin/`), never against `.claude-plugin/` or CWD. A `source` escaping the marketplace root (`../`) or using an object form is rejected, not silently resolved.
+8. **Owned hook reconciliation.** Pi and Hermes remove stale entries owned by the plugin across all
+   events before adding the desired set. User hooks and hooks owned by other plugins are preserved;
+   reinstalling unchanged input is byte-idempotent, including the zero-hook case.
+9. **Scoped hook sessions.** Context hook state is stored in `.session-<identity-hash>.json`, keyed
+   from payload `session_id` or `transcript_path`. A payload without identity may use the sole active
+   session for compatibility; multiple candidates are ambiguous and fail open.
+10. **Config precedence is explicit.** CLI marketplace and target flags override JSONC defaults;
+    configured plugin paths precede ambient discovery. Feature filters are applied during mapping,
+    and native installers reject unsupported partial filters before mutation.

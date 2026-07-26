@@ -32,6 +32,14 @@ export interface MapResult {
     scripts: number;
 }
 
+/** Configurable plugin artifact classes accepted by `superskill.jsonc`. */
+export type MapFeature = 'skills' | 'commands' | 'subagents' | 'hooks' | 'mcp';
+
+/** Optional mapper feature filter; omitted means all artifact classes. */
+export interface MapOptions {
+    features?: readonly MapFeature[];
+}
+
 /**
  * Convert a Claude Code-format hooks object to the rulesync canonical format.
  *
@@ -120,7 +128,12 @@ function setSkillName(content: string, newName: string): string {
  * Missing optional directories (e.g. no `agents/`, no `hooks.json`) are handled
  * gracefully — nothing is created for absent inputs.
  */
-export function mapPluginToRulesync(pluginPath: string, pluginName: string, outputDir: string): MapResult {
+export function mapPluginToRulesync(
+    pluginPath: string,
+    pluginName: string,
+    outputDir: string,
+    options: MapOptions = {},
+): MapResult {
     assertSafePathSegment(pluginName, 'plugin name');
     // Guard against destructive recursive deletes: reject paths that resolve
     // to filesystem root, home dir, or cwd — a CLI bug or bad --output could
@@ -152,13 +165,14 @@ export function mapPluginToRulesync(pluginPath: string, pluginName: string, outp
         mcp: false,
         scripts: 0,
     };
+    const features = new Set<MapFeature>(options.features ?? ['skills', 'commands', 'subagents', 'hooks', 'mcp']);
 
     // Skills: two layouts are supported — flat (`skills/<name>.md`) and the
     // Claude Code standard directory layout (`skills/<name>/SKILL.md`).
     // Support subdirs (scripts/, references/, templates/, assets/) are copied
     // and reference-rewritten alongside the SKILL.md.
     const skillsDir = join(pluginPath, 'skills');
-    if (existsSync(skillsDir)) {
+    if (features.has('skills') && existsSync(skillsDir)) {
         const skillsOut = join(outputDir, 'skills');
         for (const entry of readdirSync(skillsDir)) {
             const flatPath = join(skillsDir, entry);
@@ -200,7 +214,7 @@ export function mapPluginToRulesync(pluginPath: string, pluginName: string, outp
 
     // Commands: adapt each .md into a skill directory → skills/<plugin>-<cmd>/SKILL.md
     const commandsDir = join(pluginPath, 'commands');
-    if (existsSync(commandsDir)) {
+    if (features.has('commands') && existsSync(commandsDir)) {
         const skillsOut = join(outputDir, 'skills');
         for (const entry of readdirSync(commandsDir)) {
             if (!entry.endsWith('.md')) continue;
@@ -217,7 +231,7 @@ export function mapPluginToRulesync(pluginPath: string, pluginName: string, outp
 
     // Subagents: adapt each agent .md into a skill directory → skills/<plugin>-<agent>/SKILL.md
     const agentsDir = join(pluginPath, 'agents');
-    if (existsSync(agentsDir)) {
+    if (features.has('subagents') && existsSync(agentsDir)) {
         const skillsOut = join(outputDir, 'skills');
         for (const entry of readdirSync(agentsDir)) {
             if (!entry.endsWith('.md')) continue;
@@ -244,17 +258,23 @@ export function mapPluginToRulesync(pluginPath: string, pluginName: string, outp
     const hooksSubdirPath = join(pluginPath, 'hooks', 'hooks.json');
     const hooksPath = existsSync(hooksRootPath) ? hooksRootPath : hooksSubdirPath;
     if (existsSync(hooksPath)) {
-        const claudeHooks = readJsonObject(hooksPath);
-        const canonical = convertClaudeHooksToCanonical(claudeHooks);
-        writeFileSync(join(outputDir, 'hooks.json'), `${JSON.stringify(canonical, null, 4)}\n`);
-        result.hooks = true;
+        if (features.has('hooks')) {
+            const claudeHooks = readJsonObject(hooksPath);
+            const canonical = convertClaudeHooksToCanonical(claudeHooks);
+            writeFileSync(join(outputDir, 'hooks.json'), `${JSON.stringify(canonical, null, 4)}\n`);
+            result.hooks = true;
+        } else {
+            // Preserve an explicit empty desired state so surrogate emitters can prune
+            // hooks previously owned by this plugin during a feature-disabled reinstall.
+            writeFileSync(join(outputDir, 'hooks.json'), `${JSON.stringify({ hooks: {} }, null, 4)}\n`);
+        }
     }
 
     // mcp.json — check both the plugin root and `mcp/mcp.json` for symmetry.
     const mcpRootPath = join(pluginPath, 'mcp.json');
     const mcpSubdirPath = join(pluginPath, 'mcp', 'mcp.json');
     const mcpPath = existsSync(mcpRootPath) ? mcpRootPath : mcpSubdirPath;
-    if (existsSync(mcpPath)) {
+    if (features.has('mcp') && existsSync(mcpPath)) {
         deepMergeJsonFile(mcpPath, join(outputDir, 'mcp.json'));
         result.mcp = true;
     }

@@ -1,13 +1,15 @@
+import { randomUUID } from 'node:crypto';
+import { constants } from 'node:fs';
 import {
     chmod,
     lstat,
     mkdir,
+    open,
     readdir,
-    readFile,
     readlink,
     realpath,
+    rename,
     rm,
-    stat,
     symlink,
     writeFile,
 } from 'node:fs/promises';
@@ -145,6 +147,14 @@ export async function createSymlink(targetDir: string, linkPath: string): Promis
  * Recursively copy directory contents with path security checks.
  */
 export async function copyDir(src: string, dest: string): Promise<void> {
+    const sourceRootStats = await lstat(src);
+    if (sourceRootStats.isSymbolicLink()) {
+        throw new Error(`Refusing to copy symbolic link: ${src}`);
+    }
+    if (!sourceRootStats.isDirectory()) {
+        throw new Error(`Refusing to copy non-directory source: ${src}`);
+    }
+
     await mkdir(dest, { recursive: true });
     const entries = await readdir(src, { withFileTypes: true });
 
@@ -161,17 +171,24 @@ export async function copyDir(src: string, dest: string): Promise<void> {
                 throw new Error(`Path traversal detected during copy: ${entry.name}`);
             }
 
-            if (entry.isDirectory()) {
+            const sourceStats = await lstat(srcPath);
+            if (sourceStats.isSymbolicLink()) {
+                throw new Error(`Refusing to copy symbolic link: ${srcPath}`);
+            }
+
+            if (sourceStats.isDirectory()) {
                 await copyDir(srcPath, destPath);
-            } else {
-                const content = await readFile(srcPath);
-                await writeFile(destPath, content);
+            } else if (sourceStats.isFile()) {
+                const sourceFile = await open(srcPath, constants.O_RDONLY | constants.O_NOFOLLOW);
                 try {
-                    const sourceStats = await stat(srcPath);
+                    const content = await sourceFile.readFile();
+                    await writeFile(destPath, content);
                     await chmod(destPath, sourceStats.mode & 0o777);
-                } catch {
-                    // Ignore chmod failure on unsupported filesystems
+                } finally {
+                    await sourceFile.close();
                 }
+            } else {
+                throw new Error(`Refusing to copy special file: ${srcPath}`);
             }
         }),
     );
@@ -201,12 +218,106 @@ export interface CanonicalInstallResult {
     error?: string;
 }
 
+interface FilesystemMutation {
+    destination: string;
+    backupPath?: string;
+}
+
+function isMissingPathError(error: unknown): boolean {
+    return (
+        error !== null &&
+        typeof error === 'object' &&
+        'code' in error &&
+        (error as { code?: unknown }).code === 'ENOENT'
+    );
+}
+
+/**
+ * Reversible same-parent filesystem mutations used to keep canonical and target trees
+ * recoverable until their lock-file update commits.
+ */
+export class FilesystemTransaction {
+    private readonly mutations: FilesystemMutation[] = [];
+    private readonly destinations = new Set<string>();
+
+    private async reserve(destination: string): Promise<FilesystemMutation> {
+        if (this.destinations.has(destination)) {
+            throw new Error(`Filesystem transaction already contains destination: ${destination}`);
+        }
+
+        let backupPath: string | undefined;
+        try {
+            await lstat(destination);
+            backupPath = join(dirname(destination), `.superskill-backup-${randomUUID()}`);
+            await rename(destination, backupPath);
+        } catch (error) {
+            if (!isMissingPathError(error)) {
+                throw error;
+            }
+        }
+
+        const mutation = { destination, ...(backupPath ? { backupPath } : {}) };
+        this.destinations.add(destination);
+        this.mutations.push(mutation);
+        return mutation;
+    }
+
+    async replace(destination: string, populate: (path: string) => Promise<void>): Promise<void> {
+        await this.reserve(destination);
+        await populate(destination);
+    }
+
+    async remove(destination: string): Promise<boolean> {
+        const mutation = await this.reserve(destination);
+        return mutation.backupPath !== undefined;
+    }
+
+    async commit(): Promise<void> {
+        for (const mutation of this.mutations) {
+            if (mutation.backupPath) {
+                try {
+                    await rm(mutation.backupPath, { recursive: true, force: true });
+                } catch {
+                    // The committed destination is authoritative; an orphaned backup is cleanup-only.
+                }
+            }
+        }
+        this.mutations.length = 0;
+        this.destinations.clear();
+    }
+
+    async rollback(): Promise<void> {
+        const errors: string[] = [];
+        for (const mutation of [...this.mutations].reverse()) {
+            try {
+                await rm(mutation.destination, { recursive: true, force: true });
+                if (mutation.backupPath) {
+                    await rename(mutation.backupPath, mutation.destination);
+                }
+            } catch (error) {
+                errors.push(error instanceof Error ? error.message : String(error));
+            }
+        }
+        this.mutations.length = 0;
+        this.destinations.clear();
+        if (errors.length > 0) {
+            throw new Error(`Filesystem rollback failed: ${errors.join('; ')}`);
+        }
+    }
+}
+
 /**
  * Install a skill (directory path or BlobSkill) into the canonical `.agents/skills/<skillName>` location.
  */
 export async function installSkillCanonical(
     source: string | BlobSkill,
-    options: { global?: boolean; cwd?: string; homeDir?: string; name?: string } = {},
+    options: {
+        global?: boolean;
+        cwd?: string;
+        homeDir?: string;
+        name?: string;
+        transaction?: FilesystemTransaction;
+    } = {},
 ): Promise<CanonicalInstallResult> {
     const global = options.global ?? false;
     const cwd = options.cwd || process.cwd();
@@ -228,40 +339,50 @@ export async function installSkillCanonical(
         };
     }
 
-    if (typeof source === 'string') {
-        const resolvedSource = resolve(source);
-        if (pathsOverlap(resolvedSource, canonicalDir)) {
-            return {
-                success: true,
-                canonicalPath: canonicalDir,
-                skillName,
-                skipped: true,
-            };
+    const resolvedSource = typeof source === 'string' ? resolve(source) : undefined;
+    if (resolvedSource && pathsOverlap(resolvedSource, canonicalDir)) {
+        return {
+            success: true,
+            canonicalPath: canonicalDir,
+            skillName,
+            skipped: true,
+        };
+    }
+
+    const transaction = options.transaction ?? new FilesystemTransaction();
+    const ownsTransaction = options.transaction === undefined;
+    try {
+        await transaction.replace(canonicalDir, async (destination) => {
+            if (resolvedSource) {
+                await copyDir(resolvedSource, destination);
+            } else {
+                await writeBlobSkill(source as BlobSkill, destination);
+            }
+        });
+        if (ownsTransaction) {
+            await transaction.commit();
         }
-        try {
-            await cleanAndCreateDir(canonicalDir);
-            await copyDir(resolvedSource, canonicalDir);
-            return { success: true, canonicalPath: canonicalDir, skillName };
-        } catch (err) {
-            return {
-                success: false,
-                canonicalPath: canonicalDir,
-                skillName,
-                error: err instanceof Error ? err.message : String(err),
-            };
+        return { success: true, canonicalPath: canonicalDir, skillName };
+    } catch (err) {
+        if (ownsTransaction) {
+            try {
+                await transaction.rollback();
+            } catch (rollbackError) {
+                const installError = err instanceof Error ? err.message : String(err);
+                const rollbackMessage = rollbackError instanceof Error ? rollbackError.message : String(rollbackError);
+                return {
+                    success: false,
+                    canonicalPath: canonicalDir,
+                    skillName,
+                    error: `${installError}; ${rollbackMessage}`,
+                };
+            }
         }
-    } else {
-        try {
-            await cleanAndCreateDir(canonicalDir);
-            await writeBlobSkill(source, canonicalDir);
-            return { success: true, canonicalPath: canonicalDir, skillName };
-        } catch (err) {
-            return {
-                success: false,
-                canonicalPath: canonicalDir,
-                skillName,
-                error: err instanceof Error ? err.message : String(err),
-            };
-        }
+        return {
+            success: false,
+            canonicalPath: canonicalDir,
+            skillName,
+            error: err instanceof Error ? err.message : String(err),
+        };
     }
 }

@@ -137,6 +137,13 @@ describe('evaluate', () => {
         }
     });
 
+    it('throws on save failure when persistence is required transactionally', async () => {
+        const file = createTempFile(GOOD_SKILL);
+        const adapter = await createDbAdapter({ driver: 'bun-sqlite', url: ':memory:' });
+
+        await expect(evaluate('skill', file, { save: true, requireSave: true, adapter })).rejects.toThrow();
+    });
+
     it('uses custom operation string', async () => {
         const adapter = await createDbAdapter({ driver: 'bun-sqlite', url: ':memory:' });
         await adapter.exec(evaluations.createTableSql);

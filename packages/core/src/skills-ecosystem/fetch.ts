@@ -1,11 +1,11 @@
 import { execFile, execSync } from 'node:child_process';
-import { createHash } from 'node:crypto';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, normalize, resolve, sep } from 'node:path';
 import { promisify } from 'node:util';
 import { parseSkillFrontmatter } from './frontmatter';
 import { isGitHubHost } from './github-host';
+import { computeStructuredContentHash } from './locks';
 import { sanitizeMetadata } from './sanitize';
 
 const execFileAsync = promisify(execFile);
@@ -492,7 +492,7 @@ export async function tryBlobInstall(
             rawContent: skill.content,
             metadata: skill.metadata,
             files,
-            snapshotHash: download.hash || computeSnapshotHash(files),
+            snapshotHash: computeSnapshotHash(files),
             repoPath: skill.mdPath,
         });
     }
@@ -501,12 +501,7 @@ export async function tryBlobInstall(
 }
 
 function computeSnapshotHash(files: SkillSnapshotFile[]): string {
-    const hash = createHash('sha256');
-    for (const file of [...files].sort((a, b) => a.path.localeCompare(b.path))) {
-        hash.update(file.path);
-        hash.update(file.contents);
-    }
-    return hash.digest('hex');
+    return computeStructuredContentHash(files);
 }
 
 /** Default git process runner — the DI seam behind `cloneRepo` `options.execGit`. */

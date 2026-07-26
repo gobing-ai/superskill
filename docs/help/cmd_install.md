@@ -23,6 +23,13 @@ superskill install [options] <plugin>
 | `--dry-run` | Preview the install without writing files. | `false` |
 | `--verbose` | Print each pipeline step and file copy. | `false` |
 
+Project-local `superskill.jsonc` may provide plugin paths, targets, and feature defaults. The parser
+accepts JSONC comments and trailing commas. Explicit `--marketplace` and `--targets` flags win;
+otherwise the matching configured plugin path is preferred over ambient marketplace discovery and
+configured targets are used (an empty list means all). `features` filters
+`skills|commands|subagents|hooks|mcp`; native Claude/OMP/Grok targets reject partial filters because
+their host installers install the complete package.
+
 ### Examples
 
 ```bash

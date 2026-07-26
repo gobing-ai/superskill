@@ -26,6 +26,8 @@ export interface EvaluateOptions {
     json?: boolean;
     /** Persist the evaluation to the SQLite store. */
     save?: boolean;
+    /** Treat a persistence failure as fatal. Internal transactional seam used by evolve verification. */
+    requireSave?: boolean;
     /** Operation label stored in the evaluations table (defaults to 'evaluate'; refine passes 'refine'). */
     operation?: string;
     /** Inject an already-open DbAdapter (e.g. from F013 evolve or tests). When absent and `save` is true, openStore() is called. */
@@ -69,8 +71,10 @@ async function showHistory(type: ContentType, contentName: string, opts: Evaluat
     echo(lines.join('\n'));
 }
 
-/** Result of an evaluate call — aliases QualityReport from F009. */
-export type EvaluationResult = QualityReport;
+/** Result of an evaluate call, including the exact persisted row when `save` succeeds. */
+export interface EvaluationResult extends QualityReport {
+    evaluationId?: number;
+}
 
 // ── Core ─────────────────────────────────────────────────────────────────────
 
@@ -121,14 +125,14 @@ export async function evaluate(
     }
 
     // 6. Heuristic mode (default): deterministic F009 evaluators
-    const report = evaluateContent(type, content, resolvedTarget);
+    const report: EvaluationResult = evaluateContent(type, content, resolvedTarget);
     report.content = resolveContentName(resolvedPath);
     applyRubricWeightingAndVerdict(type, report, opts);
 
     if (opts?.save) {
         try {
             const adapter = opts.adapter ?? (await openStore());
-            await new EvaluationDao(adapter).insertEvaluation({
+            report.evaluationId = await new EvaluationDao(adapter).insertEvaluation({
                 content_type: type,
                 content_name: resolveContentName(resolvedPath),
                 target_agent: resolvedTarget,
@@ -139,6 +143,7 @@ export async function evaluate(
                 scorer: 'heuristic',
             });
         } catch (err) {
+            if (opts.requireSave) throw err;
             const msg = err instanceof Error ? err.message : String(err);
             echoError(`Warning: failed to save evaluation: ${msg}`);
         }
@@ -234,7 +239,7 @@ async function ingestScores(
     resolvedPath: string,
     resolvedTarget: string,
     opts: EvaluateOptions,
-): Promise<QualityReport> {
+): Promise<EvaluationResult> {
     const rubric = loadRubric(type, opts.rubric ? { path: opts.rubric } : {});
     const contentName = resolveContentName(resolvedPath);
     const ingestPath = opts.ingest;
@@ -299,7 +304,7 @@ async function ingestScores(
     // Build QualityReport with weighted aggregate
     const dimensions = scores.dimensions as Record<string, DimensionScore>;
     const aggregate = computeWeightedAggregate(dimensions, rubric);
-    const report: QualityReport = {
+    const report: EvaluationResult = {
         content: contentName,
         type,
         target: resolvedTarget,
@@ -310,7 +315,7 @@ async function ingestScores(
     if (opts.save) {
         try {
             const adapter = opts.adapter ?? (await openStore());
-            await new EvaluationDao(adapter).insertEvaluation({
+            report.evaluationId = await new EvaluationDao(adapter).insertEvaluation({
                 content_type: type,
                 content_name: resolveContentName(resolvedPath),
                 target_agent: resolvedTarget,
@@ -322,6 +327,7 @@ async function ingestScores(
                 rubric_version: rubric.version,
             });
         } catch (err) {
+            if (opts.requireSave) throw err;
             const msg = err instanceof Error ? err.message : String(err);
             echoError(`Warning: failed to save evaluation: ${msg}`);
         }

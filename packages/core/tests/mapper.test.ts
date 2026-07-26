@@ -63,6 +63,21 @@ describe('mapPluginToRulesync', () => {
         expect(existsSync(join(outDir, 'subagents'))).toBe(false);
     });
 
+    it('maps only configured artifact classes when a feature filter is provided', () => {
+        tmpDir = mkdtempSync('superskill-mapper-');
+        const outDir = join(tmpDir, '.rulesync');
+        const result = mapPluginToRulesync(FIXTURE_DIR, 'demo', outDir, { features: ['commands'] });
+
+        expect(result.skills).toBe(0);
+        expect(result.commands).toBe(1);
+        expect(result.subagents).toBe(0);
+        expect(result.hooks).toBe(false);
+        expect(result.mcp).toBe(false);
+        expect(existsSync(join(outDir, 'skills', 'demo-run', 'SKILL.md'))).toBe(true);
+        expect(existsSync(join(outDir, 'skills', 'demo-a', 'SKILL.md'))).toBe(false);
+        expect(existsSync(join(outDir, 'skills', 'demo-coder', 'SKILL.md'))).toBe(false);
+    });
+
     it('returns zero counts for missing hooks.json and mcp.json', () => {
         tmpDir = mkdtempSync('superskill-mapper-');
         const outDir = join(tmpDir, '.rulesync');

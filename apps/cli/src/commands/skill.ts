@@ -19,6 +19,7 @@ import {
     addStrictOption,
     addTargetOption,
     exitFor,
+    parseMargin,
     resolveTarget,
     runOperation,
 } from './helpers';
@@ -463,6 +464,6 @@ export function registerSkill(program: Command): void {
         .option('--refine', 'Route through the generation seam (F023) for content refinement')
         .option('--ingest <file>', 'Agent-authored proposal JSON (apply through the double-loop gate)')
         .option('-t, --target <agent>', 'Target agent platform', 'claude')
-        .option('--margin <n>', 'Δ-margin gate threshold (default 0.05)', Number.parseFloat, 0.05)
+        .option('--margin <n>', 'Δ-margin gate threshold (default 0.05)', parseMargin, 0.05)
         .action(handleSkillMigrate);
 }

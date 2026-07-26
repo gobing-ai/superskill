@@ -77,6 +77,10 @@ export type SuperskillConfig = z.infer<typeof configSchema>;
 ```
 
 The `features` set is a verified subset of rulesync's `ALL_FEATURES` (`rules, ignore, mcp, subagents, commands, skills, hooks, permissions`).
+The loader accepts JSONC line/block comments and trailing commas. Explicit `--marketplace` and
+`--targets` values override config. Otherwise a matching configured plugin path and configured
+targets are used; an empty target list means all targets. `features` filters mapper input classes.
+Native full-package installers reject partial feature selection before writing.
 
 ### 1.5 Target → agent-name bridge (for slash translation)
 
@@ -202,13 +206,15 @@ plugins/rd3/                       .rulesync/skills/                      ~/.age
 superskill install rd3 --targets pi,codex
 ```
 
-**Step 0 — Resolve plugin via marketplace manifest (ADR-011)**
-- Locate the manifest: `--marketplace <path>` → else `.claude-plugin/marketplace.json` in CWD → else fall back to the `plugins/rd3/` scan.
+**Step 0 — Resolve plugin input (ADR-011)**
+- Resolve input: explicit `--marketplace <path>` → else matching `superskill.jsonc` plugin path →
+  else `.claude-plugin/marketplace.json` in CWD → else fall back to the `plugins/rd3/` scan.
 - Parse `marketplace.json`; find the entry where `plugins[].name === 'rd3'`.
 - Plugin root = `source` (prefixed by `metadata.pluginRoot` if `source` is bare), resolved **relative to the marketplace root** = the dir containing `.claude-plugin/` (NOT `.claude-plugin/` itself). E.g. `cc-agents/.claude-plugin/marketplace.json` + `"source": "./plugins/rd3"` → `cc-agents/plugins/rd3`.
 - **Phase 1: string relative-path `source` only.** An object `source` (`github`/`url`/`git-subdir`/`npm`) → exit 1 "remote sources not yet supported" (deferred, 01). A `source` with `../` escaping the marketplace root → exit 1.
 - Validate `<pluginRoot>/plugin.json` exists.
-- If `rd3` is also listed in `superskill.jsonc` `plugins`, that path takes precedence over the marketplace scan (explicit local override).
+- A configured plugin path is a validated direct directory. Explicit `--marketplace` still takes
+  precedence when both are present.
 
 See §0.1 for the resolver shape.
 

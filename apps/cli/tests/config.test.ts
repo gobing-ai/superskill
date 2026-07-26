@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'bun:test';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { configSchema, loadConfig } from '../src/config';
+import { configSchema, loadConfig, parseJsonc } from '../src/config';
 
 describe('configSchema', () => {
     it('validates a minimal valid config', () => {
@@ -79,6 +79,32 @@ describe('loadConfig', () => {
         }
     });
 
+    it('loads JSONC with line comments, block comments, and trailing commas', () => {
+        const dir = mkdtempSync('superskill-config-test-');
+        const configPath = join(dir, 'superskill.jsonc');
+        try {
+            writeFileSync(
+                configPath,
+                `{
+                    // target defaults
+                    "version": 1,
+                    "plugins": [
+                        { "name": "rd3", "path": "https://example.test/a//b" },
+                    ],
+                    /* keep only configured targets */
+                    "targets": ["codex",],
+                    "features": ["skills", "hooks",],
+                }`,
+            );
+            const config = loadConfig(configPath);
+            expect(config.plugins[0]?.path).toBe('https://example.test/a//b');
+            expect(config.targets).toEqual(['codex']);
+            expect(config.features).toEqual(['skills', 'hooks']);
+        } finally {
+            rmSync(dir, { recursive: true, force: true });
+        }
+    });
+
     it('throws on invalid JSON', () => {
         const dir = mkdtempSync('superskill-config-test-');
         const configPath = join(dir, 'superskill.jsonc');
@@ -106,5 +132,15 @@ describe('loadConfig', () => {
         const config = loadConfig();
         expect(config.version).toBe(1);
         expect(config.targets).toEqual([]);
+    });
+});
+
+describe('parseJsonc', () => {
+    it('preserves comment-like and escaped content inside strings', () => {
+        expect(parseJsonc(`{"url":"https://example.test/a/*b*/","quote":"\\\\\\"//literal","items":[1,],}`)).toEqual({
+            url: 'https://example.test/a/*b*/',
+            quote: '\\"//literal',
+            items: [1],
+        });
     });
 });

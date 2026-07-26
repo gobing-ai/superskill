@@ -1,5 +1,5 @@
-import { createHash } from 'node:crypto';
-import { mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
+import { createHash, randomUUID } from 'node:crypto';
+import { mkdir, readdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { dirname, join, relative } from 'node:path';
 
@@ -118,6 +118,28 @@ export function isCanonicalSkillPath(path: string): boolean {
 }
 
 /**
+ * Compute a deterministic SHA-256 over path/content pairs with unambiguous length framing.
+ */
+export function computeStructuredContentHash(
+    entries: ReadonlyArray<{ path: string; contents: string | Uint8Array }>,
+): string {
+    const hash = createHash('sha256');
+    for (const entry of [...entries].sort((a, b) => a.path.localeCompare(b.path))) {
+        const pathBytes = Buffer.from(entry.path, 'utf-8');
+        const contentBytes = typeof entry.contents === 'string' ? Buffer.from(entry.contents, 'utf-8') : entry.contents;
+        const pathLength = Buffer.allocUnsafe(8);
+        const contentLength = Buffer.allocUnsafe(8);
+        pathLength.writeBigUInt64BE(BigInt(pathBytes.byteLength));
+        contentLength.writeBigUInt64BE(BigInt(contentBytes.byteLength));
+        hash.update(pathLength);
+        hash.update(pathBytes);
+        hash.update(contentLength);
+        hash.update(contentBytes);
+    }
+    return hash.digest('hex');
+}
+
+/**
  * Compute SHA-256 content hash of all files in a CANONICAL skill directory.
  * Enforces the hash invariant: throws if provided a translated skill path.
  * Optional exclusion sets mirror copyDir semantics so a source directory can be
@@ -136,15 +158,7 @@ export async function computeCanonicalSkillFolderHash(
     const files: Array<{ relativePath: string; content: Buffer }> = [];
     await collectFiles(canonicalSkillDir, canonicalSkillDir, files, opts);
 
-    files.sort((a, b) => a.relativePath.localeCompare(b.relativePath));
-
-    const hash = createHash('sha256');
-    for (const file of files) {
-        hash.update(file.relativePath);
-        hash.update(file.content);
-    }
-
-    return hash.digest('hex');
+    return computeStructuredContentHash(files.map((file) => ({ path: file.relativePath, contents: file.content })));
 }
 
 /** Alias for computeCanonicalSkillFolderHash for vendor compatibility. */
@@ -203,6 +217,17 @@ async function assertOnDiskVersionMatches(
     } catch (error) {
         if (error instanceof Error && error.message.startsWith('Cannot write')) throw error;
         // Missing or corrupt file: writing a fresh lock is the recovery path.
+    }
+}
+
+async function writeLockAtomically(lockPath: string, content: string): Promise<void> {
+    await mkdir(dirname(lockPath), { recursive: true });
+    const temporaryPath = join(dirname(lockPath), `.superskill-lock-${randomUUID()}`);
+    try {
+        await writeFile(temporaryPath, content, 'utf-8');
+        await rename(temporaryPath, lockPath);
+    } finally {
+        await rm(temporaryPath, { force: true }).catch(() => {});
     }
 }
 
@@ -270,7 +295,7 @@ export async function writeLocalLock(lock: LocalSkillLockFile, cwd?: string): Pr
         skills: sortedSkills,
     };
 
-    await writeFile(lockPath, `${JSON.stringify(output, null, 2)}\n`, 'utf-8');
+    await writeLockAtomically(lockPath, `${JSON.stringify(output, null, 2)}\n`);
 }
 
 /**
@@ -368,7 +393,6 @@ export async function writeGlobalLock(
 
     const lockPath = getGlobalLockPath(env, homeDir);
     await assertOnDiskVersionMatches(lockPath, GLOBAL_LOCK_VERSION, 'global');
-    await mkdir(dirname(lockPath), { recursive: true });
 
     const sortedSkills: Record<string, GlobalSkillLockEntry> = {};
     for (const key of Object.keys(lock.skills).sort()) {
@@ -385,7 +409,7 @@ export async function writeGlobalLock(
         ...(lock.lastSelectedAgents ? { lastSelectedAgents: lock.lastSelectedAgents } : {}),
     };
 
-    await writeFile(lockPath, `${JSON.stringify(output, null, 2)}\n`, 'utf-8');
+    await writeLockAtomically(lockPath, `${JSON.stringify(output, null, 2)}\n`);
 }
 
 /** Alias for writeGlobalLock for vendor compatibility. */

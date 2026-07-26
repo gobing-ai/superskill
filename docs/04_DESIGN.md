@@ -2,10 +2,10 @@
 doc: 04_DESIGN
 owns: SURFACE — concrete shapes: every CLI command, flag, config key, env var, table, DTO
 authority: derived
-version: 2.3.0
+version: 2.5.0
 derived_from: [00_ADR, 01_PRD, 02_ROADMAP]
 owner: Robin Min
-updated_at: 2026-07-10
+updated_at: 2026-07-26
 read_before: changing a command, flag, env var, or schema
 edit_rules: 99 §6.5
 sync: [T3]
@@ -16,6 +16,27 @@ sync: [T3]
 - Phase 1 — Distribution: [design-doc-phase1.md](design/design-doc-phase1.md) — `superskill install` and supporting commands.
 - Phase 2 — Authoring + quality: [design-doc-phase2.md](design/design-doc-phase2.md) — `superskill agent|skill|command|hook|magent` with scaffold, validate, evaluate, refine, evolve.
 
+## Phase 1 install surface
+
+```text
+superskill install <plugin> [--marketplace <path>] [--targets <list>] [--no-global]
+    [--magent <name>] [--marketplace-source <directory|github>] [--dry-run] [--verbose]
+```
+
+| Input | Shape and precedence |
+|-------|----------------------|
+| `<plugin>` | Required plugin name |
+| `--marketplace <path>` | Explicit manifest/directory; overrides configured plugin path and ambient discovery |
+| `--targets <list>` | Comma-separated target names or `all`; overrides configured targets |
+| `superskill.jsonc` | Project-local JSONC; supports line/block comments and trailing commas |
+| `version` | Literal `1` |
+| `plugins` | `{ name: string, path: string }[]`; matching path is used when `--marketplace` is absent |
+| `targets` | `Target[]`; an empty array means all targets |
+| `features` | Any of `skills`, `commands`, `subagents`, `hooks`, `mcp`; defaults to all five |
+
+Feature selection filters canonical mapper output. Native Claude/OMP/Grok installation rejects a
+partial feature set because those host installers operate on the full plugin package.
+
 ## Phase 2 command surface
 
 | Command family | Lifecycle subcommands | Shared scaffold flags | Shared refine flags | Detail |
@@ -25,6 +46,9 @@ sync: [T3]
 `--dry-run` previews classified refine fixes and projected score delta without writing files or creating backups.
 
 `agent|command|magent|skill evolve` share the evolve surface from phase 2, including `--eval-gate`.
+`--margin` must be a finite number in `[0, 1]`; invalid `--from` dates and unsafe proposal IDs are
+rejected. A saved evaluation result carries its exact `evaluationId`, which the evolve transaction
+uses as the proposal's `verify_id`.
 When `--eval-gate` is set and `skills/<name>/eval/cases.yaml` exists, the evolve accept path runs
 the empirical behavior gate after the form Δ-margin gate and before anchor/skeptic checks. The
 `cases.yaml` artifact shape is:
@@ -45,6 +69,13 @@ The gate is opt-in and skip-when-absent: without the flag or without `cases.yaml
 is constructed and evolve behavior remains unchanged. If the configured model-call budget is exceeded during replay/judging, the empirical gate fails loud and restores the candidate file.
 
 **Hook divergence (tasks 0061, 0066):** `hook` does NOT share the full surface above. Hooks are hand-authored in `hooks.json` (JSON, security-critical), so: (1) `hook scaffold` is removed — scaffold emits markdown, which is the wrong artifact type for JSON config; (2) `hook refine` is **suggest-only** — it registers only `--target`/`--dry-run` (no `--auto`/`--save`), and the engine forces the dry-run path so no fix is ever applied; (3) `hook evolve` is **analyze-only** (task 0056) — no `--history`/`--rollback`/`--confirm`. `hook validate` and `hook evaluate` work normally. `ContentType` retains `'hook'` for all lifecycle operations; only scaffold/refine/evolve diverge.
+
+Pi and Hermes hook emitters share owner-aware reconciliation: entries bearing the current plugin's
+ownership marker are pruned across every event before desired hooks are added; unowned and
+foreign-owned entries are retained. Empty desired hooks therefore remove stale owned entries.
+
+Context hook sessions use `.session-<sha256-prefix>.json`, keyed by payload `session_id` or
+`transcript_path`. Identity-free payloads reuse a session only when exactly one candidate exists.
 
 ## Plugin-level scripts directory
 
@@ -108,25 +139,25 @@ Ports of vercel-labs/skills (MIT) for `npx skills` interop (feature B, tasks 009
 | `sanitize.ts` | `sanitizeName`, `stripTerminalEscapes`, `sanitizeMetadata` | CWE-150 terminal-escape stripping; control bytes built via `String.fromCharCode` (no lint suppression) |
 | `frontmatter.ts` | `parseFrontmatter` (as `parseSkillMdFrontmatter`), `parseSkillFrontmatter` | YAML-only SKILL.md frontmatter (no `---js` engine); name+description required strings |
 | `agents.ts` | `TARGET_TIERS`, `TARGET_AGENTS`, `getTargetAgentConfig`, `detectInstalledTargetAgents`, `InstallTier` | 9-target registry with install tiers (`direct`/`symlink`/`translate`); env overrides **`CODEX_HOME`**, **`CLAUDE_CONFIG_DIR`**, **`HERMES_HOME`**, **`GROK_HOME`**, **`XDG_CONFIG_HOME`**; per-agent dirs vendor-faithful (interop data, not superskill's landing paths) |
-| `locks.ts` | lock read/writers + `isCanonicalSkillPath`, `computeCanonicalSkillFolderHash`, `computeContentHash` | Dual lock schemas below; version-mismatch preservation (never auto-wipe); canonical-only hash invariant |
+| `locks.ts` | lock read/writers + `isCanonicalSkillPath`, `computeCanonicalSkillFolderHash`, `computeStructuredContentHash`, `computeContentHash` | Dual lock schemas below; version-mismatch preservation (never auto-wipe); atomic same-parent lock replacement; canonical-only, length-framed hash invariant |
 | `fetch.ts` | `tryBlobInstall`, `fetchRepoTree`, `findSkillMdPaths`, `getSkillFolderHashFromTree`, `cloneRepo`, `cleanupTempDir`, `getGitHubToken`, `ghAuthTokenFromCli`, `spawnGit`/`spawnGh` (DI seams) | GitHub Trees/Blob fast path (clone-free, tree-SHA folder hash) + hardened `git clone --depth 1` fallback into mkdtemp (protocol allowlist `https:http:ssh:git:file`, `ext::` rejected, `GIT_TERMINAL_PROMPT=0`, LFS smudge off, 300 s timeout, https→gh→ssh auth fallback). Token resolution: **`GITHUB_TOKEN`**/**`GH_TOKEN`** env first, lazy `gh auth token` only after a 403/429 + `X-RateLimit-Remaining: 0` rate-limit. **`SKILLS_DOWNLOAD_URL`** overrides the skills.sh download base per call |
 | `discovery.ts` | `discoverSkills`, `parseSkillMd`, `filterSkills`, `getSkillDisplayName`, `AGENT_PROJECT_SKILL_DIRS`, `SKIP_DIRS`, `isSubpathSafe` (re-export) | SKILL.md scan: searchPath, priority dirs (root, `skills/`, `.curated`/`.experimental`/`.system`, 26 agent dirs), catalog one-extra-level layout, depth-5 recursive fallback skipping `node_modules`/`.git`/`dist`/`build`/`__pycache__`; `metadata.internal` hidden unless **`INSTALL_INTERNAL_SKILLS=1`**; subpath safety enforced |
-| `installer.ts` | `installSkillCanonical`, `sanitizeName`, `isPathSafe`, `pathsOverlap`, `getCanonicalSkillsDir`, `createSymlink`, `copyDir`, `writeBlobSkill` | Canonical copy to `<cwd\|~>/.agents/skills/<sanitizeName(name)>`; relative symlinks (win32 `junction`) with copy fallback; `isPathSafe` on every checked write target; `pathsOverlap` refusal (never install onto/inside the source) |
-| `emit.ts` | `emitSkillForTargets`, `removeSkillFromTargets`, `resolveSkillsToRemove`, `EmitOptions` | Three-tier per-target emission: direct (canonical only), symlink from the agent's native skills dir, translated copy re-driving the install pipeline's primitives (`translateSlashCommands` → `rewriteSkillReferences` with the skill name as plugin prefix). Removal sweeps all tiers; lock-key-wins name resolution via `lockKeys` (exact key returned for the CLI child's lock removal). `EmitOptions.name` overrides the canonical dir name with the declared (frontmatter) skill name |
-| `operations.ts` | `addSkills`, `listSkills`, `removeSkills`, `updateSkills` + option/result envelopes | Domain operations behind the CLI verbs. `addSkills`: resolve → fetch → discover → emit → write the scope's lock (declared-name canonical, cloned temp dirs cleaned up via `cleanupTempDir`; local sources record the source path as `sourceUrl`). `listSkills`: scoped lock + canonical on-disk scan for BOTH scopes (unlocked dirs surface as `source: 'disk-scan'`). `removeSkills`: tier sweep + scoped lock removal. `updateSkills`: hash-based — a source-hash pre-check (local: exclusion-aware folder hash; remote: blob `snapshotHash`) makes unchanged skills a true no-op (no fetch-emit, no lock write); changed sources reinstall + re-emit all tiers; undecidable sources always fall back to reinstall (never a false no-op) |
+| `installer.ts` | `FilesystemTransaction`, `installSkillCanonical`, `sanitizeName`, `isPathSafe`, `pathsOverlap`, `getCanonicalSkillsDir`, `createSymlink`, `copyDir`, `writeBlobSkill` | Canonical copy to `<cwd\|~>/.agents/skills/<sanitizeName(name)>`; same-parent reversible replacement/removal; relative symlinks (win32 `junction`) with copy fallback; source-copy rejection of symlinks/special files; `isPathSafe` on every checked write target; `pathsOverlap` refusal (never install onto/inside the source) |
+| `emit.ts` | `emitSkillForTargets`, `removeSkillFromTargets`, `resolveSkillsToRemove`, `EmitOptions` | Three-tier per-target emission: direct (canonical only), symlink from the agent's native skills dir, translated copy re-driving the install pipeline's primitives (`translateSlashCommands` → `rewriteSkillReferences` with the skill name as plugin prefix). Removal sweeps all tiers; lock-key-wins name resolution via `lockKeys` (exact key returned for lock removal). `EmitOptions.name` overrides the canonical dir name; optional `transaction` retains reversible mutations for the calling operation |
+| `operations.ts` | `addSkills`, `listSkills`, `removeSkills`, `updateSkills` + option/result envelopes | Domain operations behind the CLI verbs. Add/update resolve exclusively through `parseSource`; `ParsedSource` controls blob/clone URL, ref, subpath, filter, and source type. Add/remove preflight lock versions, stage every canonical/target mutation in one `FilesystemTransaction`, write the scope lock once, then commit or roll back. Global local sources persist absolute paths. `listSkills`: scoped lock + canonical on-disk scan for BOTH scopes (unlocked dirs surface as `source: 'disk-scan'`). Update's source-hash pre-check keeps unchanged skills a true no-op; undecidable sources reinstall (never a false no-op) |
 
 **CLI verbs (task 0102).** Registered under the existing `skill` group (`apps/cli/src/commands/skill.ts`); `superskill install` is untouched. Non-interactive by design (AI-first); `-y` accepted for vendor-parity scripts; `--json` emits the operation's result envelope. Handlers accept an injected `homeDir` (test seam, not a CLI flag).
 
 | Verb | Flags | Behavior |
 |------|-------|----------|
-| `superskill skill add <source>` | `-s, --skill <name...>`, `-a, --agent <targets...>`, `-g, --global`, `--copy`, `-y, --yes`, `--list`, `--dry-run`, `--json` | Install from local dir or GitHub slug/URL. Project scope default; `-g` for user-level. `--list` discovers without installing; `--dry-run` previews with zero writes (no canonical copy, no lock) |
+| `superskill skill add <source>` | `-s, --skill <name...>`, `-a, --agent <targets...>`, `-g, --global`, `--copy`, `-y, --yes`, `--list`, `--dry-run`, `--json` | Install from a local path or parsed GitHub/GitLab/git source (`@skill`, `#ref`, and subpaths honored). Project scope default; `-g` for user-level. `--list` discovers without installing; `--dry-run` previews with zero writes (no canonical copy, no lock) |
 | `superskill skill list` | `-g, --global`, `--json` | Scoped lock entries + on-disk scan of the scope's canonical dir |
 | `superskill skill remove <names...>` (alias `rm`) | `-g, --global`, `-y, --yes`, `--json` | Sweeps canonical + all target tiers, removes the scoped lock entry (lock-key-wins name resolution) |
 | `superskill skill update [names...]` | `-g, --global`, `-y, --yes`, `--json` | Hash-based: no-op when the source hash equals the stored hash; reinstall + re-emit all tiers when changed. No names = every skill in the scope's lock |
 
-**Local lock — `./skills-lock.json` (v1, `LOCAL_LOCK_VERSION = 1`).** Sorted keys, timestamp-free. Entry: `source`, `sourceType`, `computedHash` (SHA-256 over sorted relpath+content of the CANONICAL skill folder), optional `sourceUrl`, `ref`, `skillPath`, `subagents`.
+**Local lock — `./skills-lock.json` (v1, `LOCAL_LOCK_VERSION = 1`).** Sorted keys, timestamp-free. Entry: `source`, `sourceType`, `computedHash` (SHA-256 over sorted, unsigned-64-bit-length-framed relative path/content pairs from the CANONICAL skill folder), optional `sourceUrl`, `ref`, `skillPath`, `subagents`.
 
-**Global lock — `~/.agents/.skill-lock.json` (v3, `GLOBAL_LOCK_VERSION = 3`; `$XDG_STATE_HOME/skills/` when set).** Entry: `source`, `sourceType`, `sourceUrl`, `skillFolderHash` (GitHub tree SHA), `installedAt`, `updatedAt`, optional `ref`, `skillPath`, `pluginName`; file also carries optional `dismissed` and `lastSelectedAgents`. Vendor-shaped locks in the wild may omit `sourceUrl`; reads tolerate it (no runtime validation), matching the vendor. All global-lock accessors take an optional `homeDir` (test/seam injection; defaults to `os.homedir()`); `computeCanonicalSkillFolderHash` takes optional exclusion sets so a source directory hashes comparably to its canonical copy (update no-op check).
+**Global lock — `~/.agents/.skill-lock.json` (v3, `GLOBAL_LOCK_VERSION = 3`; `$XDG_STATE_HOME/skills/` when set).** Entry: `source`, `sourceType`, `sourceUrl`, `skillFolderHash` (same canonical length-framed SHA-256 as local), `installedAt`, `updatedAt`, optional `ref`, `skillPath`, `pluginName`; file also carries optional `dismissed` and `lastSelectedAgents`. Vendor-shaped locks in the wild may omit `sourceUrl`; reads tolerate it (no runtime validation). All global-lock accessors take an optional `homeDir` (test/seam injection; defaults to `os.homedir()`); `computeCanonicalSkillFolderHash` takes optional exclusion sets so a source directory hashes comparably to its canonical copy (update no-op check).
 
 **Version-mismatch contract (R3).** Reads never wipe: newer or older versions return the parsed lock with a `warning` field; the vendor's wipe-on-bump is not ported. Writers refuse warned locks and throw when the on-disk version differs from the supported one — migration is always an explicit caller act.
 

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, mock, spyOn } from 'bun:test';
-import { exitFor, resolveTarget, runOperation } from '../../src/commands/helpers';
+import { exitFor, parseMargin, resolveTarget, runOperation } from '../../src/commands/helpers';
 
 afterEach(() => {
     mock.restore();
@@ -32,6 +32,20 @@ describe('resolveTarget', () => {
         ] as const;
         for (const t of targets) {
             expect(() => resolveTarget({ target: t })).not.toThrow();
+        }
+    });
+});
+
+describe('parseMargin', () => {
+    it('accepts finite values in the inclusive [0, 1] range', () => {
+        expect(parseMargin('0')).toBe(0);
+        expect(parseMargin('0.25')).toBe(0.25);
+        expect(parseMargin('1')).toBe(1);
+    });
+
+    it('rejects non-finite and out-of-range values', () => {
+        for (const value of ['NaN', 'Infinity', '-0.01', '1.01']) {
+            expect(() => parseMargin(value)).toThrow(/finite number between 0 and 1/);
         }
     });
 });

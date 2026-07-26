@@ -32,6 +32,8 @@ export interface RefineOptions {
     save?: boolean;
     /** Preview classified fixes and a projected score delta without writing. */
     dryRun?: boolean;
+    /** Internal test seam for deterministic evaluation failures without module mocking. */
+    evaluateFn?: typeof evaluate;
 }
 
 /** A single fix attempt recorded during refine. */
@@ -407,6 +409,7 @@ export function applyAutoFixes(
 export async function refine(type: ContentType, nameOrPath: string, opts?: RefineOptions): Promise<RefineResult> {
     const resolvedPath = resolveContentPath(type, nameOrPath);
     const resolvedTarget = opts?.target ?? 'claude';
+    const evaluateFn = opts?.evaluateFn ?? evaluate;
     const filePath = resolvedPath ?? nameOrPath;
 
     // Task 0061 decision C: hook refine is suggest-only — no auto-apply, no save.
@@ -429,7 +432,7 @@ export async function refine(type: ContentType, nameOrPath: string, opts?: Refin
     let preScore = 0;
     let preDimensions: Record<string, DimensionScore> = {};
     try {
-        const report = await evaluate(type, filePath, { target: resolvedTarget });
+        const report = await evaluateFn(type, filePath, { target: resolvedTarget });
         if (report) {
             preScore = report.aggregate;
             preDimensions = report.dimensions;
@@ -515,10 +518,13 @@ export async function refine(type: ContentType, nameOrPath: string, opts?: Refin
             strict: opts?.auto === true,
         });
         if (!revalidation.valid) {
+            await restoreFromBackup(backupPath, filePath);
             for (const f of revalidation.findings) {
                 if (f.severity === 'error') echoError(`[ERROR] ${f.field}: ${f.message}`);
             }
             echoError('Validation errors remain after structural fixes; refine aborted.');
+            for (const f of fixesApplied) fixesSkipped.push({ ...f, applied: false });
+            fixesApplied = [];
             return { preScore, postScore: preScore, delta: 0, fixesApplied, fixesSkipped };
         }
     }
@@ -527,10 +533,13 @@ export async function refine(type: ContentType, nameOrPath: string, opts?: Refin
     let postScore: number;
     let postReport: import('@gobing-ai/superskill-core').QualityReport | null = null;
     try {
-        postReport = await evaluate(type, filePath, { target: resolvedTarget });
+        postReport = await evaluateFn(type, filePath, { target: resolvedTarget });
         if (!postReport) throw new Error('evaluate returned null in heuristic mode');
         postScore = postReport.aggregate;
     } catch {
+        await restoreFromBackup(backupPath, filePath);
+        for (const f of fixesApplied) fixesSkipped.push({ ...f, applied: false });
+        fixesApplied = [];
         echoError('Cannot re-evaluate after fixes.');
         return { preScore, postScore: preScore, delta: 0, fixesApplied, fixesSkipped };
     }

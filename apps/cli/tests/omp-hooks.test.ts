@@ -486,7 +486,7 @@ describe('generateOmpHookModules', () => {
             const content = readFileSync(modulePath, 'utf-8');
             // A naive '${p}' wrap produced a syntax-error module here — the file
             // must parse AND execute, or OMP silently fails to load the hook.
-            expect(content).toContain('"\'echo"');
+            expect(content).toContain('["echo hi"]');
             // Non-matching tool short-circuits on the matcher guard; matching tool
             // runs the command (exit 2) → deny translation.
             const run = runGeneratedModule(modulePath, [{ toolName: 'read' }, { toolName: 'write' }]);

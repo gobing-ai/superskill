@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import { createInterface } from 'node:readline';
 import {
     applyChange,
+    assertSafePathSegment,
     backupFile,
     type Change,
     type ContentType,
@@ -46,6 +47,8 @@ export interface EvolveOptions {
     ingest?: string;
     /** Δ-margin gate threshold: post must exceed baseline by at least this (default 0.05). */
     margin?: number;
+    /** Internal test seam for isolating non-margin gates without accepting an invalid public margin. */
+    skipDeltaGate?: boolean;
     /** Print analysis summary (trend table + score/grade + data sources) without writing a proposal. */
     analyze?: boolean;
     /** List applied proposal versions from the store. */
@@ -60,6 +63,8 @@ export interface EvolveOptions {
     replayBackend?: ReplayBackend;
     /** Internal test seam for deterministic rubric judging without model calls. */
     judgeBackend?: JudgeBackend;
+    /** Internal test seam for deterministic verification persistence failures. */
+    evaluateFn?: typeof evaluate;
     /** Number of judge replays used to estimate the rubric noise floor. */
     judgeReplays?: number;
     /** Fail-loud model-call cap for the empirical gate. */
@@ -391,6 +396,8 @@ interface GateInput {
     postScore: number;
     baselineScore: number;
     margin: number;
+    /** Internal test seam; never exposed as a CLI option. */
+    skipDeltaGate?: boolean;
     /** anchor_hash carried on the ingested proposal (optional — absent ⇒ anchor gate skipped). */
     ingestedAnchorHash?: string;
     /** Baseline anchor hash recomputed from the current file (paired with ingestedAnchorHash). */
@@ -443,7 +450,7 @@ async function runGate(input: GateInput): Promise<GateResult> {
 
     // 2. Δ-margin gate (R2): the post-aggregate must exceed baseline by at least the margin.
     const delta = input.postScore - input.baselineScore;
-    if (delta < input.margin) {
+    if (!input.skipDeltaGate && delta < input.margin) {
         return {
             ok: false,
             failedGate: 'delta-margin',
@@ -733,6 +740,16 @@ async function ingestProposal(
     const proposalDao = new ProposalDao(db);
     const existingProposals = await proposalDao.getProposals(type, name);
     const proposalId = parsed.proposal_id ?? generateProposalId(type, name, existingProposals);
+    try {
+        assertSafePathSegment(proposalId, 'proposal_id');
+    } catch (err) {
+        throw Object.assign(err instanceof Error ? err : new Error(String(err)), { code: 1 });
+    }
+    if (opts?.acceptId !== undefined && opts.acceptId !== proposalId) {
+        throw Object.assign(new Error(`--accept ${opts.acceptId} does not match ingested proposal_id ${proposalId}`), {
+            code: 1,
+        });
+    }
 
     const proposalJson = {
         proposal_id: proposalId,
@@ -758,17 +775,21 @@ async function ingestProposal(
 
     // If --accept <id> is also provided, apply the ingested proposal through the double-loop gate.
     if (opts?.acceptId) {
-        // R6: back up before applying so a gate failure can restore the file byte-identical.
-        const backupPath = await backupFile(resolvedPath);
-        const appliedCount = await stepApply(parsed.changes, resolvedPath, proposalRecord.id, db);
-        const evalGate = await buildEvalGateContext(name, resolvedPath, backupPath, opts);
-        const verdict = await stepVerify(type, name, resolvedPath, baselineScore, proposalRecord.id, opts, db, {
-            backupPath,
+        return applyProposalTransaction({
+            db,
+            type,
+            name,
+            resolvedPath,
+            baselineScore,
+            proposalDbId: proposalRecord.id,
+            proposalId,
+            changes: parsed.changes,
+            proposalPath,
+            opts,
+            enforceGate: true,
             ingestedAnchorHash: parsed.anchor_hash,
             skeptic: parsed.skeptic,
-            evalGate,
         });
-        return finalizeApply(verdict, backupPath, resolvedPath, proposalId, baselineScore, appliedCount, proposalPath);
     }
 
     echo(`Use --accept ${proposalId} to apply this proposal.`);
@@ -801,9 +822,7 @@ async function stepAnalyze(
 
     if (opts?.from) {
         const fromMs = Date.parse(opts.from);
-        if (!Number.isNaN(fromMs)) {
-            evaluations = evaluations.filter((e) => e.created_at >= fromMs);
-        }
+        evaluations = evaluations.filter((e) => e.created_at >= fromMs);
     }
 
     if (evaluations.length === 0) {
@@ -999,12 +1018,7 @@ export async function interactiveReview(
     return { accepted, rejected };
 }
 
-async function stepApply(
-    acceptedChanges: ProposedChange[],
-    filePath: string,
-    proposalDbId: number,
-    db: DbAdapter,
-): Promise<number> {
+async function stepApply(acceptedChanges: ProposedChange[], filePath: string): Promise<number> {
     let content: string;
     try {
         content = await Bun.file(filePath).text();
@@ -1051,9 +1065,6 @@ async function stepApply(
     }
 
     await Bun.write(filePath, content);
-
-    const proposalDao = new ProposalDao(db);
-    await proposalDao.updateProposalStatus(proposalDbId, 'accepted', { applied_at: new Date().toISOString() });
 
     return applied;
 }
@@ -1120,20 +1131,25 @@ async function stepVerify(
 ): Promise<{ postScore: number; delta: number; rejected?: boolean; reason?: string; backupPath?: string }> {
     let postScore = baselineScore;
     let postReport: QualityReport | undefined;
+    let verifyId: number | undefined;
     try {
         // R10/R7: persist the post-evolution evaluation with operation 'evolve' (reuses the same store adapter).
         // The gate sits ON TOP of this row — it never bypasses the closed-loop verify write (invariant #6).
-        const report = await evaluate(type, filePath, {
+        const report = await (opts?.evaluateFn ?? evaluate)(type, filePath, {
             target: opts?.target,
             adapter: db,
             save: true,
+            requireSave: true,
             operation: 'evolve',
         });
         if (!report) throw new Error('evaluate returned null in heuristic mode');
+        if (report.evaluationId === undefined) throw new Error('evaluation was not persisted');
         postScore = report.aggregate;
         postReport = report;
-    } catch {
-        echoError('Cannot re-evaluate after changes.');
+        verifyId = report.evaluationId;
+    } catch (err) {
+        const detail = err instanceof Error ? ` ${err.message}` : '';
+        throw Object.assign(new Error(`Cannot re-evaluate and persist changes.${detail}`), { code: 1 });
     }
 
     const delta = postScore - baselineScore;
@@ -1152,6 +1168,7 @@ async function stepVerify(
             postScore: postReport ? postScore : baselineScore,
             baselineScore,
             margin,
+            skipDeltaGate: opts?.skipDeltaGate,
             ingestedAnchorHash: gate.ingestedAnchorHash,
             baselineAnchorHash,
             skeptic: gate.skeptic,
@@ -1200,14 +1217,22 @@ async function stepVerify(
         }
     }
 
-    // On pass (or no gate): keep the existing accept + verify_id linkage (R7).
-    try {
-        const verifyEval = await new EvaluationDao(db).getLatestEvaluation(type, name);
-        if (verifyEval) {
-            await new ProposalDao(db).updateProposalStatus(proposalDbId, 'accepted', { verify_id: verifyEval.id });
-        }
-    } catch {
-        echoError('Cannot link verify evaluation.');
+    if (verifyId === undefined) {
+        throw Object.assign(new Error('Cannot link verify evaluation: persisted evaluation ID is unavailable.'), {
+            code: 1,
+        });
+    }
+    const acceptedProposal = await new ProposalDao(db).updateProposalStatus(proposalDbId, 'accepted', {
+        applied_at: new Date().toISOString(),
+        verify_id: verifyId,
+    });
+    if (!acceptedProposal) {
+        throw Object.assign(
+            new Error(`Cannot link verify evaluation ${verifyId}: proposal ${proposalDbId} not found.`),
+            {
+                code: 1,
+            },
+        );
     }
 
     // R6: on a clean pass, keep the backup as a version snapshot for --rollback.
@@ -1310,6 +1335,73 @@ export async function finalizeApply(
     };
 }
 
+/** Inputs for the single proposal apply/verify/commit transaction (C2). */
+export interface ProposalTransactionInput {
+    db: DbAdapter;
+    type: ContentType;
+    name: string;
+    resolvedPath: string;
+    baselineScore: number;
+    proposalDbId: number;
+    proposalId: string;
+    changes: ProposedChange[];
+    proposalPath: string;
+    opts?: EvolveOptions;
+    /** Ingest and stored-accept paths always enforce the deterministic/delta/persona gates. */
+    enforceGate?: boolean;
+    ingestedAnchorHash?: string;
+    skeptic?: SkepticVerdict;
+}
+
+/**
+ * Apply a proposal atomically from the caller's perspective.
+ * Any thrown apply, persistence, verification, linkage, or snapshot failure restores
+ * the original file and leaves the proposal in draft state.
+ */
+export async function applyProposalTransaction(input: ProposalTransactionInput): Promise<EvolveResult> {
+    assertSafePathSegment(input.proposalId, 'proposal_id');
+    const backupPath = await backupFile(input.resolvedPath);
+    try {
+        const appliedCount = await stepApply(input.changes, input.resolvedPath);
+        const evalGate = await buildEvalGateContext(input.name, input.resolvedPath, backupPath, input.opts);
+        const shouldGate = Boolean(input.enforceGate || evalGate);
+        const verdict = await stepVerify(
+            input.type,
+            input.name,
+            input.resolvedPath,
+            input.baselineScore,
+            input.proposalDbId,
+            input.opts,
+            input.db,
+            shouldGate
+                ? {
+                      backupPath,
+                      ...(input.ingestedAnchorHash !== undefined
+                          ? { ingestedAnchorHash: input.ingestedAnchorHash }
+                          : {}),
+                      ...(input.skeptic !== undefined ? { skeptic: input.skeptic } : {}),
+                      ...(evalGate ? { evalGate } : {}),
+                  }
+                : undefined,
+        );
+        return await finalizeApply(
+            verdict,
+            backupPath,
+            input.resolvedPath,
+            input.proposalId,
+            input.baselineScore,
+            appliedCount,
+            input.proposalPath,
+        );
+    } catch (err) {
+        if (existsSync(backupPath)) {
+            await restoreFromBackup(backupPath, input.resolvedPath);
+        }
+        await new ProposalDao(input.db).updateProposalStatus(input.proposalDbId, 'draft');
+        throw err;
+    }
+}
+
 // ── Core ─────────────────────────────────────────────────────────────────────
 
 /**
@@ -1324,6 +1416,26 @@ export async function finalizeApply(
  * 5. VERIFY — re-evaluate and display score delta
  */
 export async function evolve(type: ContentType, name: string, opts?: EvolveOptions): Promise<EvolveResult> {
+    if (opts?.margin !== undefined && (!Number.isFinite(opts.margin) || opts.margin < 0 || opts.margin > 1)) {
+        throw Object.assign(new Error('--margin must be a finite number between 0 and 1'), { code: 1 });
+    }
+    if (opts?.from !== undefined && Number.isNaN(Date.parse(opts.from))) {
+        throw Object.assign(new Error(`Invalid --from date "${opts.from}". Expected an ISO 8601 date.`), { code: 1 });
+    }
+    for (const [label, value] of [
+        ['--accept', opts?.acceptId],
+        ['--reject', opts?.rejectId],
+        ['--rollback', opts?.rollback],
+    ] as const) {
+        if (value !== undefined) {
+            try {
+                assertSafePathSegment(value, `${label} proposal ID`);
+            } catch (err) {
+                throw Object.assign(err instanceof Error ? err : new Error(String(err)), { code: 1 });
+            }
+        }
+    }
+
     // Resolve path
     const resolvedPath = resolveContentPath(type, name);
     if (!resolvedPath || !existsSync(resolvedPath)) {
@@ -1416,7 +1528,7 @@ export async function evolve(type: ContentType, name: string, opts?: EvolveOptio
     // Get baseline report
     let baselineReport: QualityReport;
     try {
-        const report = await evaluate(type, resolvedPath, { target: opts?.target });
+        const report = await (opts?.evaluateFn ?? evaluate)(type, resolvedPath, { target: opts?.target });
         if (!report) throw new Error('evaluate returned null in heuristic mode');
         baselineReport = report;
     } catch {
@@ -1476,16 +1588,21 @@ export async function evolve(type: ContentType, name: string, opts?: EvolveOptio
         } catch {
             acceptedFromStore = [];
         }
-        const backupPath = await backupFile(resolvedPath);
-        const appliedCount = await stepApply(acceptedFromStore, resolvedPath, target.id, db);
-        const evalGateCtx = await buildEvalGateContext(contentName, resolvedPath, backupPath, opts);
-        const verdict = await stepVerify(type, contentName, resolvedPath, baselineScore, target.id, opts, db, {
-            backupPath,
+        return applyProposalTransaction({
+            db,
+            type,
+            name: contentName,
+            resolvedPath,
+            baselineScore,
+            proposalDbId: target.id,
+            proposalId: opts.acceptId,
+            changes: acceptedFromStore,
+            proposalPath: '',
+            opts,
+            enforceGate: true,
             ingestedAnchorHash: storedAnchorHash,
             skeptic: storedSkeptic,
-            evalGate: evalGateCtx,
         });
-        return finalizeApply(verdict, backupPath, resolvedPath, opts.acceptId, baselineScore, appliedCount, '');
     }
 
     // Step 2: PROPOSE (interactive and --propose-only paths create a fresh draft).
@@ -1511,25 +1628,17 @@ export async function evolve(type: ContentType, name: string, opts?: EvolveOptio
     // Interactive mode
     const { accepted: acceptedChanges } = await interactiveReview(changes, trends);
 
-    // Step 4: APPLY (with backup for version history)
-    const backupPath = await backupFile(resolvedPath);
-    const changesApplied = await stepApply(acceptedChanges, resolvedPath, proposalDbId, db);
-
-    const evalGateCtx = await buildEvalGateContext(contentName, resolvedPath, backupPath, opts);
-
-    // Step 5: VERIFY
-    const verdict = await stepVerify(
+    // Steps 4–5: APPLY + VERIFY through the shared transaction seam.
+    return applyProposalTransaction({
+        db,
         type,
-        contentName,
+        name: contentName,
         resolvedPath,
         baselineScore,
         proposalDbId,
+        proposalId,
+        changes: acceptedChanges,
+        proposalPath,
         opts,
-        db,
-        evalGateCtx ? { backupPath, evalGate: evalGateCtx } : undefined,
-    );
-
-    // Persist the version snapshot for --rollback — except on a gate rejection,
-    // where the restore already consumed the backup (finalizeApply guards this).
-    return finalizeApply(verdict, backupPath, resolvedPath, proposalId, baselineScore, changesApplied, proposalPath);
+    });
 }

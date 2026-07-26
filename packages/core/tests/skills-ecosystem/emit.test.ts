@@ -120,6 +120,7 @@ describe('emit.ts - Three-tier per-target emission and removal matrix', () => {
         });
         expect(resSymlink.success).toBe(false);
         expect(resSymlink.results.claude?.success).toBe(false);
+        expect(existsSync(join(testHome, '.agents/skills/err-skill'))).toBe(false);
 
         // Copy mode with blocked path
         const resCopy = await emitSkillForTargets(sourceDir, ['claude'], {
@@ -130,6 +131,7 @@ describe('emit.ts - Three-tier per-target emission and removal matrix', () => {
         });
         expect(resCopy.success).toBe(false);
         expect(resCopy.results.claude?.success).toBe(false);
+        expect(existsSync(join(testHome, '.agents/skills/err-skill'))).toBe(false);
 
         // Translate mode with blocked path
         writeFileSync(join(testHome, '.hermes'), 'blocker-file-hermes');
@@ -140,6 +142,7 @@ describe('emit.ts - Three-tier per-target emission and removal matrix', () => {
         });
         expect(resTranslate.success).toBe(false);
         expect(resTranslate.results.hermes?.success).toBe(false);
+        expect(existsSync(join(testHome, '.agents/skills/err-skill'))).toBe(false);
 
         await rm(testHome, { recursive: true, force: true });
     });

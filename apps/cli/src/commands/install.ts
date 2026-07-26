@@ -10,7 +10,7 @@ import {
     writeFileSync,
 } from 'node:fs';
 import { homedir } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import {
     adaptMagentForTarget,
     adaptSubagentToPi,
@@ -20,6 +20,7 @@ import {
     isClaudeImportStyle,
     listResolvablePlugins,
     listRuleMarkdownFiles,
+    type MapFeature,
     type MarketplaceRegistration,
     type MarketplaceSource,
     magentGlobalDir,
@@ -40,6 +41,7 @@ import {
 } from '@gobing-ai/superskill-core';
 import { echo } from '@gobing-ai/ts-utils';
 import type { Command } from 'commander';
+import { loadConfig } from '../config';
 import {
     type EmitHooksResult,
     emitHermesHooks,
@@ -71,15 +73,26 @@ export function registerInstall(program: Command): void {
         .option('--dry-run', 'Preview without writing files', false)
         .option('--verbose', 'Print each step and file copy', false)
         .action(async (plugin, options) => {
-            const targets = parseTargets(options.targets);
-            const global = options.global !== false;
-            const dryRun = options.dryRun === true;
-            const verbose = options.verbose === true;
-            const marketplaceSource = options.marketplaceSource as MarketplaceSource | undefined;
-
             try {
+                const config = loadConfig();
+                const targets =
+                    options.targets !== undefined
+                        ? parseTargets(options.targets)
+                        : config.targets.length > 0
+                          ? [...config.targets]
+                          : parseTargets(undefined);
+                const global = options.global !== false;
+                const dryRun = options.dryRun === true;
+                const verbose = options.verbose === true;
+                const marketplaceSource = options.marketplaceSource as MarketplaceSource | undefined;
+                const configuredPlugin = config.plugins.find((entry) => entry.name === plugin);
                 await executeInstall(plugin, targets, {
                     marketplacePath: options.marketplace,
+                    pluginPath:
+                        options.marketplace === undefined && configuredPlugin
+                            ? resolve(configuredPlugin.path)
+                            : undefined,
+                    features: config.features,
                     global,
                     dryRun,
                     verbose,
@@ -93,8 +106,13 @@ export function registerInstall(program: Command): void {
         });
 }
 
-interface InstallOptions {
+/** Resolved execution options for one plugin installation. */
+export interface InstallOptions {
     marketplacePath?: string;
+    /** Direct plugin root from `superskill.jsonc`; explicit `--marketplace` takes precedence. */
+    pluginPath?: string;
+    /** Configured artifact classes; omitted means all. */
+    features?: readonly MapFeature[];
     global: boolean;
     dryRun: boolean;
     verbose: boolean;
@@ -158,11 +176,26 @@ export async function executeInstall(
     const runClaudeInstallImpl = dependencies.runClaudeInstall ?? defaultRunClaudeInstall;
     const runOmpInstallImpl = dependencies.runOmpInstall ?? defaultRunOmpInstall;
     const runGrokInstallImpl = dependencies.runGrokInstall ?? defaultRunGrokInstall;
+    const configuredFeatures = new Set<MapFeature>(
+        options.features ?? ['skills', 'commands', 'subagents', 'hooks', 'mcp'],
+    );
+    const hasAllFeatures = (['skills', 'commands', 'subagents', 'hooks', 'mcp'] as const).every((feature) =>
+        configuredFeatures.has(feature),
+    );
+    const incompatibleNativeTargets = targets.filter(
+        (target) => target === 'claude' || target === 'omp' || target === 'grok',
+    );
+    if (!hasAllFeatures && incompatibleNativeTargets.length > 0) {
+        throw new Error(
+            `Feature filtering is not supported by native plugin targets: ${incompatibleNativeTargets.join(', ')}. ` +
+                'Use all features or select rulesync/hermes/pi targets.',
+        );
+    }
 
     if (options.verbose) echo(`Resolving plugin '${plugin}'...`);
 
     // Step 1: Resolve plugin root (+ marketplace metadata for Claude target)
-    const resolution = resolvePluginRoot(plugin, options.marketplacePath);
+    const resolution = resolvePluginRoot(plugin, options.marketplacePath, options.pluginPath);
     const pluginRoot = resolution.pluginRoot;
 
     if (options.verbose) echo(`Plugin root: ${pluginRoot}`);
@@ -170,7 +203,7 @@ export async function executeInstall(
     // Step 2: Map plugin → .rulesync/ canonical
     const outputDir = '.rulesync';
     if (options.verbose) echo('Mapping plugin to .rulesync/ canonical layout...');
-    const mapResult = mapPluginToRulesync(pluginRoot, plugin, outputDir);
+    const mapResult = mapPluginToRulesync(pluginRoot, plugin, outputDir, { features: options.features });
     if (options.verbose) {
         echo(
             `  Skills: ${mapResult.skills}, Commands: ${mapResult.commands}, Subagents: ${mapResult.subagents}, Magents: ${mapResult.magents}, Hooks: ${mapResult.hooks}, MCP: ${mapResult.mcp}, Scripts: ${mapResult.scripts}`,
@@ -208,7 +241,9 @@ export async function executeInstall(
     // (marketplace add + plugin install — see dispatch loop); hermes reuses
     // opencode's rulesync output (see ADR-010).
     // Only request features the mapper actually produced — requesting 'mcp' when
-    const rulesyncFeatures = ['skills', ...(mapResult.mcp ? (['mcp'] as const) : [])] as const;
+    const rulesyncFeatures: Array<'skills' | 'mcp'> = [];
+    if (mapResult.skills + mapResult.commands + mapResult.subagents > 0) rulesyncFeatures.push('skills');
+    if (mapResult.mcp) rulesyncFeatures.push('mcp');
     const rulesyncTargets = targets.filter((t) => t !== 'claude' && t !== 'hermes' && t !== 'omp' && t !== 'grok');
     if (targets.includes('hermes') && !targets.includes('opencode')) {
         if (!targetInputRoots.has('opencode')) {
@@ -250,41 +285,34 @@ export async function executeInstall(
             }
         }
         if (options.verbose) echo(`Running rulesync for ${rulesyncTargets.join(', ')}...`);
-        for (const target of rulesyncTargets) {
-            const result = await runRulesyncImpl(
-                [target],
-                [...rulesyncFeatures],
-                targetInputRoots.get(target) ?? outputDir,
-                {
-                    global: options.global,
-                    dryRun: options.dryRun,
-                    verbose: options.verbose,
-                    outputRoot: options.outputRoot,
-                },
-            );
-            resultCounts.skillsCount += result.skillsCount;
-            resultCounts.commandsCount += result.commandsCount;
-            resultCounts.subagentsCount += result.subagentsCount;
-            resultCounts.hooksCount += result.hooksCount;
-            // Per-target summary in verbose mode. Surfaces the 5 rulesync-supported
-            // targets (codex / pi / opencode / antigravity-cli / antigravity-ide) that
-            // were previously silent on success — only the surrogate hooks for pi/omp/
-            // hermes appeared. Helps the user verify with `ls` that each target's
-            // skills landed in the directory its consumer reads.
-            //
-            // We count the actual entries on disk (directories containing SKILL.md)
-            // rather than reporting the rulesync diff count, which is 0 on a no-op
-            // re-install. The user wants to see "how many skills are at this path NOW",
-            // not "how many files did this run touch". In dry-run mode the dir doesn't
-            // exist yet, so we fall back to the diff count.
-            if (options.verbose) {
-                const reldir = options.global
-                    ? (TARGET_GLOBAL_SKILLS_RELDIR[target] ?? TARGET_SKILLS_RELDIR[target])
-                    : TARGET_SKILLS_RELDIR[target];
-                if (reldir) {
-                    const skillsDir = options.global ? join(resolveHomeDir(), reldir) : join(process.cwd(), reldir);
-                    const total = options.dryRun ? result.skillsCount : countSkillsInDir(skillsDir);
-                    echo(`  ${target}: ${total} skill(s) at ${skillsDir}`);
+        if (rulesyncFeatures.length > 0) {
+            for (const target of rulesyncTargets) {
+                const result = await runRulesyncImpl(
+                    [target],
+                    rulesyncFeatures,
+                    targetInputRoots.get(target) ?? outputDir,
+                    {
+                        global: options.global,
+                        dryRun: options.dryRun,
+                        verbose: options.verbose,
+                        outputRoot: options.outputRoot,
+                    },
+                );
+                resultCounts.skillsCount += result.skillsCount;
+                resultCounts.commandsCount += result.commandsCount;
+                resultCounts.subagentsCount += result.subagentsCount;
+                resultCounts.hooksCount += result.hooksCount;
+                // Per-target summary surfaces the targets that were previously silent on success.
+                // Count actual installed skills outside dry-run; rulesync's diff count can be zero on reinstall.
+                if (options.verbose) {
+                    const reldir = options.global
+                        ? (TARGET_GLOBAL_SKILLS_RELDIR[target] ?? TARGET_SKILLS_RELDIR[target])
+                        : TARGET_SKILLS_RELDIR[target];
+                    if (reldir) {
+                        const skillsDir = options.global ? join(resolveHomeDir(), reldir) : join(process.cwd(), reldir);
+                        const total = options.dryRun ? result.skillsCount : countSkillsInDir(skillsDir);
+                        echo(`  ${target}: ${total} skill(s) at ${skillsDir}`);
+                    }
                 }
             }
         }
@@ -354,6 +382,7 @@ export async function executeInstall(
                     rulesyncSourceRoot(targetInputRoots.get(srcTarget), outputDir),
                     outputRoot,
                     { dryRun: options.dryRun, global: options.global },
+                    plugin,
                 );
                 hookEmitResults.push(hookResult);
                 if (options.verbose) echo(`  ${hookResult.message}`);
@@ -423,7 +452,7 @@ export async function executeInstall(
 
             // Pi native agent dispatch: adapt each subagent to Pi format → ~/.pi/agent/agents/
             const agentsDir = join(pluginRoot, 'agents');
-            if (existsSync(agentsDir) && !options.dryRun) {
+            if (configuredFeatures.has('subagents') && existsSync(agentsDir) && !options.dryRun) {
                 const piAgentsDir = join(outputRoot, '.pi', 'agent', 'agents');
                 mkdirSync(piAgentsDir, { recursive: true });
                 for (const entry of readdirSync(agentsDir)) {
@@ -991,12 +1020,29 @@ export function parseTargets(raw: string | undefined): Target[] {
  * `marketplaceName` when resolved via a marketplace manifest — needed by the
  * Claude target to register the local marketplace before installing.
  */
-export function resolvePluginRoot(plugin: string, marketplacePath?: string): PluginResolution {
+export function resolvePluginRoot(
+    plugin: string,
+    marketplacePath?: string,
+    configuredPluginPath?: string,
+): PluginResolution {
     // Fail before any FS probe: join('plugins', plugin) normalizes `../x` out of
     // plugins/ and would resolve a sibling/ancestor tree that happens to look like
     // a plugin. mapPluginToRulesync also asserts, but resolvePluginRoot is public
     // and must not return an escaped pluginRoot on its own.
     assertSafePathSegment(plugin, 'plugin name');
+    if (configuredPluginPath && !marketplacePath) {
+        const pluginRoot = resolve(configuredPluginPath);
+        if (
+            existsSync(pluginRoot) &&
+            statSync(pluginRoot).isDirectory() &&
+            readdirSync(pluginRoot).some((entry) =>
+                ['skills', 'commands', 'agents', 'hooks', 'hooks.json', 'plugin.json'].includes(entry),
+            )
+        ) {
+            return { pluginRoot };
+        }
+        throw new Error(`Configured path for plugin '${plugin}' is not a plugin directory: ${pluginRoot}`);
+    }
     const resolved = resolvePlugin(marketplacePath, plugin);
     if (resolved) {
         const manifestRoot = resolved.marketplaceRoot;
@@ -1079,7 +1125,7 @@ export function emitHooksForSurrogateTarget(
         return emitPiStyleHooks(rulesyncSourceDir, outputRoot, '.omp', 'omp', options, plugin);
     }
     if (target === 'hermes') {
-        return emitHermesHooks(rulesyncSourceDir, outputRoot, options);
+        return emitHermesHooks(rulesyncSourceDir, outputRoot, options, plugin);
     }
     return null;
 }

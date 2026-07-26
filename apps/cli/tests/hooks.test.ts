@@ -662,7 +662,7 @@ describe('emitHermesHooks', () => {
             sessionStart: [{ type: 'command', command: 'echo hermes', matcher: 'bash' }],
         });
 
-        const result = emitHermesHooks(rulesyncDir, workspace, { dryRun: false, global: false });
+        const result = emitHermesHooks(rulesyncDir, workspace, { dryRun: false, global: false }, 'sp');
         expect(result.emitted).toBe(true);
         expect(result.count).toBe(1);
         expect(result.target).toBe('hermes');
@@ -683,7 +683,7 @@ describe('emitHermesHooks', () => {
             sessionStart: [{ type: 'command', command: 'echo hermes-dry' }],
         });
 
-        const result = emitHermesHooks(rulesyncDir, workspace, { dryRun: true, global: false });
+        const result = emitHermesHooks(rulesyncDir, workspace, { dryRun: true, global: false }, 'sp');
         expect(result.emitted).toBe(true);
         expect(result.count).toBe(1);
         expect(result.message).toContain('rung c');
@@ -698,7 +698,7 @@ describe('emitHermesHooks', () => {
         mkdirSync(rulesyncDir, { recursive: true });
         writeFileSync(join(rulesyncDir, 'hooks.json'), JSON.stringify({ version: 1 }));
 
-        const result = emitHermesHooks(rulesyncDir, workspace, { dryRun: false, global: false });
+        const result = emitHermesHooks(rulesyncDir, workspace, { dryRun: false, global: false }, 'sp');
         expect(result.emitted).toBe(false);
         expect(result.count).toBe(0);
         expect(result.message).toContain('no hooks in plugin');
@@ -706,14 +706,14 @@ describe('emitHermesHooks', () => {
         rmSync(workspace, { recursive: true, force: true });
     });
 
-    it('returns "no hooks to install" when hooks object is empty', () => {
+    it('returns a zero-hook reconciliation result when hooks object is empty', () => {
         const workspace = makeWorkspace();
         const rulesyncDir = makeRulesyncDir(workspace, {});
 
-        const result = emitHermesHooks(rulesyncDir, workspace, { dryRun: false, global: false });
+        const result = emitHermesHooks(rulesyncDir, workspace, { dryRun: false, global: false }, 'sp');
         expect(result.emitted).toBe(false);
         expect(result.count).toBe(0);
-        expect(result.message).toContain('no hooks to install');
+        expect(result.message).toContain('0 hooks emitted after reconciliation');
 
         rmSync(workspace, { recursive: true, force: true });
     });
@@ -723,7 +723,7 @@ describe('emitHermesHooks', () => {
         const rulesyncDir = join(workspace, '.rulesync');
         mkdirSync(rulesyncDir, { recursive: true });
 
-        const result = emitHermesHooks(rulesyncDir, workspace, { dryRun: false, global: false });
+        const result = emitHermesHooks(rulesyncDir, workspace, { dryRun: false, global: false }, 'sp');
         expect(result.emitted).toBe(false);
         expect(result.message).toContain('no hooks in plugin');
 
@@ -755,7 +755,7 @@ describe('emitHermesHooks', () => {
             sessionStart: [{ type: 'command', command: 'echo sp-start', matcher: 'bash' }],
         });
 
-        const result = emitHermesHooks(rulesyncDir, workspace, { dryRun: false, global: false });
+        const result = emitHermesHooks(rulesyncDir, workspace, { dryRun: false, global: false }, 'sp');
         expect(result.emitted).toBe(true);
 
         const written = JSON.parse(readFileSync(join(hermesDir, 'hooks.json'), 'utf-8'));
@@ -775,8 +775,8 @@ describe('emitHermesHooks', () => {
             stop: [{ type: 'command', command: 'echo stop-hook', matcher: '*' }],
         });
 
-        emitHermesHooks(rulesyncDir, workspace, { dryRun: false, global: false });
-        emitHermesHooks(rulesyncDir, workspace, { dryRun: false, global: false });
+        emitHermesHooks(rulesyncDir, workspace, { dryRun: false, global: false }, 'sp');
+        emitHermesHooks(rulesyncDir, workspace, { dryRun: false, global: false }, 'sp');
 
         const written = JSON.parse(readFileSync(join(workspace, '.hermes', 'hooks.json'), 'utf-8'));
         expect(written.hooks.stop).toHaveLength(1);
@@ -795,11 +795,75 @@ describe('emitHermesHooks', () => {
             ],
         });
 
-        emitHermesHooks(rulesyncDir, workspace, { dryRun: false, global: false });
-        emitHermesHooks(rulesyncDir, workspace, { dryRun: false, global: false });
+        emitHermesHooks(rulesyncDir, workspace, { dryRun: false, global: false }, 'sp');
+        emitHermesHooks(rulesyncDir, workspace, { dryRun: false, global: false }, 'sp');
 
         const written = JSON.parse(readFileSync(join(workspace, '.hermes', 'hooks.json'), 'utf-8'));
         expect(written.hooks.stop).toHaveLength(1);
+        rmSync(workspace, { recursive: true, force: true });
+    });
+
+    it('prunes stale owned hooks across events while preserving foreign and mixed user entries', () => {
+        const workspace = makeWorkspace();
+        const hermesDir = join(workspace, '.hermes');
+        mkdirSync(hermesDir, { recursive: true });
+        writeFileSync(
+            join(hermesDir, 'hooks.json'),
+            JSON.stringify({
+                hooks: {
+                    sessionStart: [
+                        { type: 'command', command: 'superskill hook run sp old-flat' },
+                        {
+                            matcher: '*',
+                            hooks: [
+                                { type: 'command', command: 'superskill hook run sp old-nested' },
+                                { type: 'command', command: 'echo user-hook' },
+                            ],
+                        },
+                        { type: 'command', command: 'superskill hook run cc foreign-hook' },
+                    ],
+                },
+            }),
+        );
+        const rulesyncDir = makeRulesyncDir(workspace, {
+            sessionEnd: [{ type: 'command', command: 'superskill hook run sp current-hook' }],
+        });
+
+        emitHermesHooks(rulesyncDir, workspace, { dryRun: false, global: false }, 'sp');
+        const firstPass = readFileSync(join(hermesDir, 'hooks.json'), 'utf-8');
+        const written = JSON.parse(firstPass);
+
+        expect(JSON.stringify(written)).not.toContain('old-flat');
+        expect(JSON.stringify(written)).not.toContain('old-nested');
+        expect(JSON.stringify(written)).toContain('echo user-hook');
+        expect(JSON.stringify(written)).toContain('cc foreign-hook');
+        expect(JSON.stringify(written)).toContain('sp current-hook');
+
+        emitHermesHooks(rulesyncDir, workspace, { dryRun: false, global: false }, 'sp');
+        expect(readFileSync(join(hermesDir, 'hooks.json'), 'utf-8')).toBe(firstPass);
+        rmSync(workspace, { recursive: true, force: true });
+    });
+
+    it('prunes all stale owned hooks when the plugin now emits none', () => {
+        const workspace = makeWorkspace();
+        const hermesDir = join(workspace, '.hermes');
+        mkdirSync(hermesDir, { recursive: true });
+        writeFileSync(
+            join(hermesDir, 'hooks.json'),
+            JSON.stringify({
+                hooks: {
+                    stop: [
+                        { type: 'command', command: 'superskill hook run sp stale-hook' },
+                        { type: 'command', command: 'echo user-hook' },
+                    ],
+                },
+            }),
+        );
+        const rulesyncDir = makeRulesyncDir(workspace, {});
+
+        emitHermesHooks(rulesyncDir, workspace, { dryRun: false, global: false }, 'sp');
+        const written = JSON.parse(readFileSync(join(hermesDir, 'hooks.json'), 'utf-8'));
+        expect(written.hooks.stop).toEqual([{ type: 'command', command: 'echo user-hook' }]);
         rmSync(workspace, { recursive: true, force: true });
     });
 });

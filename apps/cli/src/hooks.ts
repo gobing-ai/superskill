@@ -238,6 +238,49 @@ export interface EmitHooksResult {
     path?: string;
 }
 
+interface OwnedHookReconciler<T> {
+    /** Remove the installing plugin's owned portion; return undefined when nothing remains. */
+    pruneOwned: (entry: T) => T | undefined;
+    /** Stable semantic identity used for cross-plugin/user deduplication. */
+    signature: (entry: T) => string;
+}
+
+/**
+ * Shared ownership-aware hook reconciliation seam (C1).
+ * It first removes the installing plugin's prior state from every event, then merges
+ * the desired state while preserving foreign/user entries and event order.
+ */
+export function reconcileOwnedHookEvents<T>(
+    existing: Record<string, T[]>,
+    desired: Record<string, T[]>,
+    reconciler: OwnedHookReconciler<T>,
+): Record<string, T[]> {
+    const reconciled: Record<string, T[]> = {};
+    for (const [event, entries] of Object.entries(existing)) {
+        if (!Array.isArray(entries)) continue;
+        const kept = entries.flatMap((entry) => {
+            const pruned = reconciler.pruneOwned(entry);
+            return pruned === undefined ? [] : [pruned];
+        });
+        if (kept.length > 0) reconciled[event] = kept;
+    }
+
+    for (const [event, entries] of Object.entries(desired)) {
+        if (!Array.isArray(entries)) continue;
+        const seen = new Set<string>();
+        const merged: T[] = [];
+        for (const entry of [...(reconciled[event] ?? []), ...entries]) {
+            const signature = reconciler.signature(entry);
+            if (seen.has(signature)) continue;
+            seen.add(signature);
+            merged.push(entry);
+        }
+        if (merged.length > 0) reconciled[event] = merged;
+        else delete reconciled[event];
+    }
+    return reconciled;
+}
+
 /**
  * Merge new Pi-style hooks into an existing hooks.json with plugin ownership reconciliation.
  *
@@ -268,35 +311,10 @@ function mergePiHooks(
 
     const commandOf = (entry: PiHookEntry): string => (typeof entry === 'string' ? entry : entry.command);
 
-    // Prune existing entries owned by `plugin` across all events
-    const pruned: Record<string, PiHookEntry[]> = {};
-    for (const [event, entries] of Object.entries(existing)) {
-        if (!Array.isArray(entries)) continue;
-        const kept = entries.filter((entry) => {
-            const cmd = commandOf(entry);
-            const key = hookRunKey(cmd);
-            return !key.startsWith(`${plugin}/`);
-        });
-        if (kept.length > 0) {
-            pruned[event] = kept;
-        }
-    }
-
-    const merged: Record<string, PiHookEntry[]> = { ...pruned };
-    for (const [event, entries] of Object.entries(newHooks)) {
-        if (!Array.isArray(entries)) continue;
-        const ex = merged[event] ?? [];
-        const seen = new Set<string>();
-        const acc: PiHookEntry[] = [];
-        for (const entry of [...ex, ...entries]) {
-            const cmd = commandOf(entry);
-            if (seen.has(cmd)) continue;
-            seen.add(cmd);
-            acc.push(entry);
-        }
-        if (acc.length > 0) merged[event] = acc;
-    }
-    return merged;
+    return reconcileOwnedHookEvents(existing, newHooks, {
+        pruneOwned: (entry) => (hookRunKey(commandOf(entry)).startsWith(`${plugin}/`) ? undefined : entry),
+        signature: commandOf,
+    });
 }
 
 /**
@@ -370,7 +388,7 @@ export function emitPiStyleHooks(
  * cc's hooks. Canonical entries are deduplicated by the (matcher, command)
  * pair so re-installing the same plugin is idempotent.
  */
-function mergeCanonicalHooks(hooksPath: string, newConfig: CanonicalHooksConfig): CanonicalHooksConfig {
+function mergeCanonicalHooks(hooksPath: string, newConfig: CanonicalHooksConfig, plugin: string): CanonicalHooksConfig {
     let existingHooks: Record<string, CanonicalHookDefinition[]> = {};
     if (existsSync(hooksPath)) {
         try {
@@ -390,22 +408,21 @@ function mergeCanonicalHooks(hooksPath: string, newConfig: CanonicalHooksConfig)
         return `${def.matcher ?? '*'}|${entries.sort().join('||')}`;
     };
 
-    const merged: CanonicalHooksConfig['hooks'] = {};
-    const allEvents = new Set([...Object.keys(existingHooks), ...Object.keys(newConfig.hooks ?? {})]);
-    for (const event of allEvents) {
-        const ex = existingHooks[event] ?? [];
-        const nx = newConfig.hooks?.[event] ?? [];
-        const seen = new Set<string>();
-        const acc: CanonicalHookDefinition[] = [];
-        for (const def of [...ex, ...nx]) {
-            const sig = signatureOf(def);
-            if (seen.has(sig)) continue;
-            seen.add(sig);
-            acc.push(def);
+    const isOwned = (command: unknown): boolean => hookRunKey(command).startsWith(`${plugin}/`);
+    const pruneOwned = (def: CanonicalHookDefinition): CanonicalHookDefinition | undefined => {
+        if (Array.isArray(def.hooks) && def.hooks.length > 0) {
+            const hooks = def.hooks.filter((entry) => !isOwned(entry.command));
+            return hooks.length > 0 ? { ...def, hooks } : undefined;
         }
-        if (acc.length > 0) merged[event] = acc;
-    }
-    return { hooks: merged };
+        return isOwned(def.command) ? undefined : def;
+    };
+
+    return {
+        hooks: reconcileOwnedHookEvents(existingHooks, newConfig.hooks ?? {}, {
+            pruneOwned,
+            signature: signatureOf,
+        }),
+    };
 }
 
 /**
@@ -416,9 +433,22 @@ function mergeCanonicalHooks(hooksPath: string, newConfig: CanonicalHooksConfig)
  * `~/.hermes/hooks.json` (global) so multiple plugins accumulate rather than
  * overwrite.
  */
-export function emitHermesHooks(rulesyncDir: string, outputRoot: string, options: EmitHooksOptions): EmitHooksResult {
+export function emitHermesHooks(
+    rulesyncDir: string,
+    outputRoot: string,
+    options: EmitHooksOptions,
+    plugin: string,
+): EmitHooksResult {
     const config = readCanonicalHooks(rulesyncDir);
-    if (!config?.hooks) {
+    if (!config) {
+        return {
+            target: 'hermes',
+            emitted: false,
+            count: 0,
+            message: 'hermes: no hooks in plugin',
+        };
+    }
+    if (!config.hooks) {
         return {
             target: 'hermes',
             emitted: false,
@@ -429,22 +459,23 @@ export function emitHermesHooks(rulesyncDir: string, outputRoot: string, options
 
     const applicable = applyHookTargetPolicy(config, 'hermes');
     const hookCount = Object.values(applicable.hooks ?? {}).reduce((sum, defs) => sum + defs.length, 0);
+    const hooksDir = join(outputRoot, '.hermes');
+    const hooksPath = join(hooksDir, 'hooks.json');
+
+    if (!options.dryRun && (hookCount > 0 || existsSync(hooksPath))) {
+        mkdirSync(hooksDir, { recursive: true });
+        const merged = mergeCanonicalHooks(hooksPath, applicable, plugin);
+        writeFileSync(hooksPath, `${JSON.stringify(merged, null, 2)}\n`);
+    }
+
     if (hookCount === 0) {
         return {
             target: 'hermes',
             emitted: false,
             count: 0,
-            message: 'hermes: no hooks to install',
+            path: hooksPath,
+            message: 'hermes: 0 hooks emitted after reconciliation',
         };
-    }
-
-    const hooksDir = join(outputRoot, '.hermes');
-    const hooksPath = join(hooksDir, 'hooks.json');
-
-    if (!options.dryRun) {
-        mkdirSync(hooksDir, { recursive: true });
-        const merged = mergeCanonicalHooks(hooksPath, applicable);
-        writeFileSync(hooksPath, `${JSON.stringify(merged, null, 2)}\n`);
     }
 
     return {

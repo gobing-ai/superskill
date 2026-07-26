@@ -50,7 +50,9 @@ async function withIsolatedHome(fn: (testHome: string) => Promise<void>): Promis
  * so both streams must be captured to prevent output leaking into the test runner.
  * Returns { output (stdout), stderr, exitCode }.
  */
-async function captureOutput(fn: () => Promise<void>): Promise<{ output: string; stderr: string; exitCode: number | undefined }> {
+async function captureOutput(
+    fn: () => Promise<void>,
+): Promise<{ output: string; stderr: string; exitCode: number | undefined }> {
     let output = '';
     let stderr = '';
     let exitCode: number | undefined;

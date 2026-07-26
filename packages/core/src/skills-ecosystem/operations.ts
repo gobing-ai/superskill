@@ -3,25 +3,46 @@ import { readdir } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { TARGETS, type Target } from '../targets';
 import { discoverSkills, type Skill } from './discovery';
-import { emitSkillForTargets, removeSkillFromTargets } from './emit';
-import { type BlobSkill, cleanupTempDir, cloneRepo, parseGitHubRepoUrl, tryBlobInstall } from './fetch';
-import { EXCLUDE_DIRS, EXCLUDE_FILES, getCanonicalSkillsDir, isPathSafe, sanitizeName } from './installer';
+import { emitSkillForTargets, removeSkillFromTargets, resolveSkillsToRemove } from './emit';
+import { type BlobSkill, cleanupTempDir, cloneRepo, tryBlobInstall } from './fetch';
 import {
-    addSkillToGlobalLock,
-    addSkillToLocalLock,
+    EXCLUDE_DIRS,
+    EXCLUDE_FILES,
+    FilesystemTransaction,
+    getCanonicalSkillsDir,
+    isPathSafe,
+    sanitizeName,
+} from './installer';
+import {
     computeCanonicalSkillFolderHash,
     readGlobalLock,
     readLocalLock,
-    removeSkillFromGlobalLock,
-    removeSkillFromLocalLock,
+    writeGlobalLock,
+    writeLocalLock,
 } from './locks';
+import { getOwnerRepo, parseSource } from './source-parser';
+import type { ParsedSource } from './types';
 
-/** Derive the owner/repo slug and clone URL from a GitHub source string. */
-function deriveRepoInfo(source: string): { ownerRepo: string; repoInfoUrl: string } {
-    const repoInfo = parseGitHubRepoUrl(source);
-    const ownerRepo = repoInfo ? repoInfo.slug : source.replace(/^https:\/\/github\.com\//, '').replace(/\.git$/, '');
-    const repoInfoUrl = repoInfo ? repoInfo.sshUrl : `https://github.com/${ownerRepo}.git`;
-    return { ownerRepo, repoInfoUrl };
+interface ResolvedSource {
+    parsed: ParsedSource;
+    lockSource: string;
+}
+
+/** Parse once at the operation boundary; relative local paths are resolved against the requested cwd. */
+function resolveSource(source: string, cwd: string, global: boolean): ResolvedSource {
+    const resolvedLocal = resolve(cwd, source);
+    const initialParse = parseSource(source);
+    const parsed =
+        existsSync(resolvedLocal) || initialParse.type === 'local' ? parseSource(resolvedLocal) : initialParse;
+    const localPath = parsed.localPath ?? parsed.url;
+    return {
+        parsed,
+        lockSource: global && parsed.type === 'local' ? localPath : source,
+    };
+}
+
+function lockVersionError(warning: string): string {
+    return `Cannot mutate skills because the lock version is incompatible: ${warning}`;
 }
 
 /** Options for adding skills from local directory or remote source. */
@@ -36,6 +57,7 @@ export interface AddSkillsOptions {
     homeDir?: string;
     env?: Record<string, string | undefined>;
     fetchFn?: typeof fetch;
+    cloneRepoFn?: typeof cloneRepo;
 }
 
 /** Item representing an installed skill land output. */
@@ -65,31 +87,63 @@ export async function addSkills(source: string, options: AddSkillsOptions = {}):
     const homeDir = options.homeDir;
     const env = options.env ?? process.env;
     const targetAgents = options.targets ?? [...TARGETS];
-
-    const resolvedLocal = resolve(cwd, source);
-    const isLocal = existsSync(resolvedLocal);
+    const { parsed, lockSource } = resolveSource(source, cwd, global);
+    const isLocal = parsed.type === 'local';
     let discoveredSkills: Array<Skill | BlobSkill> = [];
     let isBlobResult = false;
     let tempDir: string | null = null;
-    // Local sources record themselves as sourceUrl; only remote sources derive a clone URL.
-    const { ownerRepo, repoInfoUrl } = isLocal ? { ownerRepo: source, repoInfoUrl: source } : deriveRepoInfo(source);
+    const globalLock = global ? await readGlobalLock(env, homeDir) : undefined;
+    const localLock = global ? undefined : await readLocalLock(cwd);
+    const lockWarning = globalLock?.warning ?? localLock?.warning;
+
+    if (!options.listOnly && !options.dryRun && lockWarning) {
+        return { success: false, error: lockVersionError(lockWarning) };
+    }
 
     if (isLocal) {
-        discoveredSkills = await discoverSkills(resolvedLocal, undefined, { includeInternal: true });
+        try {
+            discoveredSkills = await discoverSkills(parsed.localPath ?? parsed.url, parsed.subpath, {
+                includeInternal: true,
+            });
+        } catch (error) {
+            return {
+                success: false,
+                error: `Failed to resolve skill source '${source}': ${
+                    error instanceof Error ? error.message : String(error)
+                }`,
+            };
+        }
     } else {
-        const blobRes = await tryBlobInstall(ownerRepo, {
-            fetchFn: options.fetchFn,
-            includeInternal: true,
-        });
+        if (parsed.type === 'well-known') {
+            return {
+                success: false,
+                error: `Unsupported skill source '${source}': well-known providers are not available in this operation`,
+            };
+        }
 
-        if (blobRes && blobRes.skills.length > 0) {
+        const ownerRepo = parsed.type === 'github' ? getOwnerRepo(parsed) : null;
+        const blobRes = ownerRepo
+            ? await tryBlobInstall(ownerRepo, {
+                  subpath: parsed.subpath,
+                  skillFilter: parsed.skillFilter,
+                  ref: parsed.ref,
+                  fetchFn: options.fetchFn,
+                  includeInternal: true,
+              })
+            : null;
+
+        if (blobRes?.skills.length) {
             discoveredSkills = blobRes.skills;
             isBlobResult = true;
         } else {
             try {
-                tempDir = await cloneRepo(repoInfoUrl, undefined, { timeoutMs: 30000 });
-                discoveredSkills = await discoverSkills(tempDir, undefined, { includeInternal: true });
+                tempDir = await (options.cloneRepoFn ?? cloneRepo)(parsed.url, parsed.ref, { timeoutMs: 30000 });
+                discoveredSkills = await discoverSkills(tempDir, parsed.subpath, { includeInternal: true });
             } catch (err) {
+                if (tempDir) {
+                    await cleanupTempDir(tempDir);
+                    tempDir = null;
+                }
                 return {
                     success: false,
                     error: `Failed to resolve skill source '${source}': ${err instanceof Error ? err.message : String(err)}`,
@@ -99,6 +153,11 @@ export async function addSkills(source: string, options: AddSkillsOptions = {}):
     }
 
     try {
+        if (parsed.skillFilter) {
+            const sourceFilter = sanitizeName(parsed.skillFilter);
+            discoveredSkills = discoveredSkills.filter((skill) => sanitizeName(skill.name) === sourceFilter);
+        }
+
         if (discoveredSkills.length === 0) {
             return {
                 success: false,
@@ -124,77 +183,106 @@ export async function addSkills(source: string, options: AddSkillsOptions = {}):
         }
 
         const installedItems: InstalledSkillItem[] = [];
+        const transaction = new FilesystemTransaction();
 
-        for (const skill of discoveredSkills) {
-            const skillName = sanitizeName(skill.name);
-            const skillSourceInput =
-                isBlobResult && 'repoPath' in skill ? skill : 'path' in skill ? skill.path : resolvedLocal;
+        try {
+            for (const skill of discoveredSkills) {
+                const skillName = sanitizeName(skill.name);
+                const skillSourceInput =
+                    isBlobResult && 'repoPath' in skill
+                        ? skill
+                        : 'path' in skill
+                          ? skill.path
+                          : (parsed.localPath ?? parsed.url);
 
-            if (options.dryRun) {
-                const canonicalBase = getCanonicalSkillsDir(global, cwd, homeDir);
+                if (options.dryRun) {
+                    const canonicalBase = getCanonicalSkillsDir(global, cwd, homeDir);
+                    installedItems.push({
+                        name: skillName,
+                        canonicalPath: resolve(canonicalBase, skillName),
+                        targets: targetAgents,
+                    });
+                    continue;
+                }
+
+                const emitRes = await emitSkillForTargets(skillSourceInput, targetAgents, {
+                    global,
+                    cwd,
+                    homeDir,
+                    mode: options.mode,
+                    env,
+                    name: skillName,
+                    transaction,
+                });
+
+                if (!emitRes.success) {
+                    throw new Error(`Failed to emit skill '${skillName}': ${emitRes.error || 'Unknown error'}`);
+                }
+
+                const canonicalPath = emitRes.canonicalPath;
+                const computedHash = await computeCanonicalSkillFolderHash(canonicalPath);
+
+                if (global && globalLock) {
+                    const now = new Date().toISOString();
+                    const existing = globalLock.skills[skillName];
+                    globalLock.skills[skillName] = {
+                        source: lockSource,
+                        sourceType: parsed.type,
+                        sourceUrl: parsed.url,
+                        ...(parsed.ref ? { ref: parsed.ref } : {}),
+                        ...(parsed.subpath ? { skillPath: parsed.subpath } : {}),
+                        skillFolderHash: computedHash,
+                        installedAt: existing?.installedAt ?? now,
+                        updatedAt: now,
+                    };
+                } else if (localLock) {
+                    localLock.skills[skillName] = {
+                        source: lockSource,
+                        sourceUrl: parsed.url,
+                        sourceType: parsed.type,
+                        ...(parsed.ref ? { ref: parsed.ref } : {}),
+                        ...(parsed.subpath ? { skillPath: parsed.subpath } : {}),
+                        computedHash,
+                    };
+                }
+
                 installedItems.push({
                     name: skillName,
-                    canonicalPath: resolve(canonicalBase, skillName),
+                    canonicalPath,
                     targets: targetAgents,
                 });
-                continue;
             }
 
-            const emitRes = await emitSkillForTargets(skillSourceInput, targetAgents, {
-                global,
-                cwd,
-                homeDir,
-                mode: options.mode,
-                env,
-                name: skillName,
-            });
+            if (!options.dryRun) {
+                if (global && globalLock) {
+                    await writeGlobalLock(globalLock, env, homeDir);
+                } else if (localLock) {
+                    await writeLocalLock(localLock, cwd);
+                }
+            }
+            await transaction.commit();
 
-            if (!emitRes.success) {
+            return {
+                success: true,
+                dryRun: options.dryRun,
+                installed: installedItems,
+            };
+        } catch (error) {
+            try {
+                await transaction.rollback();
+            } catch (rollbackError) {
                 return {
                     success: false,
-                    error: `Failed to emit skill '${skillName}': ${emitRes.error || 'Unknown error'}`,
+                    error: `${error instanceof Error ? error.message : String(error)}; ${
+                        rollbackError instanceof Error ? rollbackError.message : String(rollbackError)
+                    }`,
                 };
             }
-
-            const canonicalPath = emitRes.canonicalPath;
-            const computedHash = await computeCanonicalSkillFolderHash(canonicalPath);
-
-            if (global) {
-                await addSkillToGlobalLock(
-                    skillName,
-                    {
-                        source,
-                        sourceType: isBlobResult ? 'github' : 'local',
-                        sourceUrl: repoInfoUrl,
-                        skillFolderHash: computedHash,
-                    },
-                    { env, homeDir },
-                );
-            } else {
-                await addSkillToLocalLock(
-                    skillName,
-                    {
-                        source,
-                        sourceUrl: repoInfoUrl,
-                        sourceType: isBlobResult ? 'github' : 'local',
-                        computedHash,
-                    },
-                    { cwd },
-                );
-            }
-
-            installedItems.push({
-                name: skillName,
-                canonicalPath,
-                targets: targetAgents,
-            });
+            return {
+                success: false,
+                error: error instanceof Error ? error.message : String(error),
+            };
         }
-
-        return {
-            success: true,
-            dryRun: options.dryRun,
-            installed: installedItems,
-        };
     } finally {
         if (tempDir) {
             await cleanupTempDir(tempDir);
@@ -315,6 +403,7 @@ export interface RemoveSkillsOptions {
 export interface RemoveSkillsResult {
     success: boolean;
     removed: string[];
+    error?: string;
 }
 
 /**
@@ -327,18 +416,67 @@ export async function removeSkills(names: string[], options: RemoveSkillsOptions
     const env = options.env ?? process.env;
     const targets = options.targets ?? [...TARGETS];
 
+    const globalLock = global ? await readGlobalLock(env, homeDir) : undefined;
+    const localLock = global ? undefined : await readLocalLock(cwd);
+    const lock = globalLock ?? localLock;
+    if (!lock) {
+        return { success: false, removed: [], error: 'Failed to load skill lock' };
+    }
+    if (lock.warning) {
+        return { success: false, removed: [], error: lockVersionError(lock.warning) };
+    }
+
+    const lockKeys = Object.keys(lock.skills);
+    const identities = names.map((rawName) => {
+        const matched = resolveSkillsToRemove([rawName], [rawName, ...lockKeys], lockKeys)[0];
+        return matched ?? sanitizeName(rawName);
+    });
+    const transaction = new FilesystemTransaction();
     const removedList: string[] = [];
 
-    for (const rawName of names) {
-        const skillName = sanitizeName(rawName);
-        await removeSkillFromTargets(skillName, targets, { global, cwd, homeDir, env });
+    try {
+        for (const identity of [...new Set(identities)]) {
+            const removeResult = await removeSkillFromTargets(identity, targets, {
+                global,
+                cwd,
+                homeDir,
+                env,
+                lockKeys,
+                transaction,
+            });
+            if (!removeResult.success) {
+                throw new Error(
+                    `Failed to remove skill '${identity}': ${removeResult.error ?? 'filesystem mutation failed'}`,
+                );
+            }
 
-        if (global) {
-            await removeSkillFromGlobalLock(skillName, env, homeDir);
-        } else {
-            await removeSkillFromLocalLock(skillName, cwd);
+            delete lock.skills[removeResult.skillName];
+            removedList.push(removeResult.skillName);
         }
-        removedList.push(skillName);
+
+        if (global && globalLock) {
+            await writeGlobalLock(globalLock, env, homeDir);
+        } else if (localLock) {
+            await writeLocalLock(localLock, cwd);
+        }
+        await transaction.commit();
+    } catch (error) {
+        try {
+            await transaction.rollback();
+        } catch (rollbackError) {
+            return {
+                success: false,
+                removed: [],
+                error: `${error instanceof Error ? error.message : String(error)}; ${
+                    rollbackError instanceof Error ? rollbackError.message : String(rollbackError)
+                }`,
+            };
+        }
+        return {
+            success: false,
+            removed: [],
+            error: error instanceof Error ? error.message : String(error),
+        };
     }
 
     return {
@@ -354,6 +492,7 @@ export interface UpdateSkillsOptions {
     homeDir?: string;
     fetchFn?: typeof fetch;
     env?: Record<string, string | undefined>;
+    cloneRepoFn?: typeof cloneRepo;
 }
 
 /** Item representing update outcome for an installed skill. */
@@ -369,6 +508,7 @@ export interface UpdatedSkillItem {
 export interface UpdateSkillsResult {
     success: boolean;
     updated: UpdatedSkillItem[];
+    error?: string;
 }
 
 /**
@@ -380,10 +520,16 @@ export async function updateSkills(names?: string[], options: UpdateSkillsOption
     const env = options.env ?? process.env;
 
     const lock = global ? await readGlobalLock(env, options.homeDir) : await readLocalLock(cwd);
+    if (lock.warning) {
+        return { success: false, updated: [], error: lockVersionError(lock.warning) };
+    }
 
     const skillNames: string[] = [];
     if (names && names.length > 0) {
-        skillNames.push(...names.map((n) => sanitizeName(n)));
+        const lockKeys = Object.keys(lock.skills);
+        for (const name of names) {
+            skillNames.push(resolveSkillsToRemove([name], lockKeys, lockKeys)[0] ?? sanitizeName(name));
+        }
     } else {
         skillNames.push(...Object.keys(lock.skills));
     }
@@ -416,6 +562,7 @@ export async function updateSkills(names?: string[], options: UpdateSkillsOption
             homeDir: options.homeDir,
             env,
             fetchFn: options.fetchFn,
+            cloneRepoFn: options.cloneRepoFn,
         });
 
         if (!addRes.success || !addRes.installed || addRes.installed.length === 0) {
@@ -457,11 +604,13 @@ async function computeSourceSkillHash(
     skillName: string,
     opts: { cwd: string; fetchFn?: typeof fetch },
 ): Promise<string | undefined> {
-    const resolvedLocal = resolve(opts.cwd, source);
-    if (existsSync(resolvedLocal)) {
+    const { parsed } = resolveSource(source, opts.cwd, false);
+    if (parsed.type === 'local') {
         try {
-            const discovered = await discoverSkills(resolvedLocal, undefined, { includeInternal: true });
-            const match = discovered.find((s) => sanitizeName(s.name) === skillName);
+            const discovered = await discoverSkills(parsed.localPath ?? parsed.url, parsed.subpath, {
+                includeInternal: true,
+            });
+            const match = discovered.find((s) => sanitizeName(s.name) === sanitizeName(skillName));
             if (!match) {
                 return undefined;
             }
@@ -477,13 +626,21 @@ async function computeSourceSkillHash(
     }
 
     try {
-        const { ownerRepo } = deriveRepoInfo(source);
+        if (parsed.type !== 'github') {
+            return undefined;
+        }
+        const ownerRepo = getOwnerRepo(parsed);
+        if (!ownerRepo) {
+            return undefined;
+        }
         const blobRes = await tryBlobInstall(ownerRepo, {
             fetchFn: opts.fetchFn,
             includeInternal: true,
-            skillFilter: skillName,
+            subpath: parsed.subpath,
+            ref: parsed.ref,
+            skillFilter: parsed.skillFilter ?? skillName,
         });
-        const match = blobRes?.skills.find((s) => sanitizeName(s.name) === skillName);
+        const match = blobRes?.skills.find((s) => sanitizeName(s.name) === sanitizeName(skillName));
         return match?.snapshotHash;
     } catch {
         return undefined;

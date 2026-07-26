@@ -419,6 +419,18 @@ cases:
         expect(r.changesApplied).toBe(0);
     });
 
+    it('rejects invalid --from values instead of silently ignoring the filter', async () => {
+        await expect(evolve('skill', 'widget', { adapter, from: 'not-a-date' })).rejects.toThrow(/Invalid --from date/);
+    });
+
+    it('rejects non-finite and out-of-range margins through the operation API', async () => {
+        for (const margin of [Number.NaN, Number.POSITIVE_INFINITY, -0.01, 1.01]) {
+            await expect(evolve('skill', 'widget', { adapter, margin })).rejects.toThrow(
+                /finite number between 0 and 1/,
+            );
+        }
+    });
+
     it('errors (zero result) when no historical evaluations exist', async () => {
         const r = await evolve('skill', 'widget', { adapter });
         expect(r.baselineScore).toBe(0);
@@ -450,7 +462,7 @@ cases:
         // Accept it by proposal_id string (as users see in the proposal file).
         // margin:0 — this test exercises the accept/link mechanics, not the Δ-margin gate (F024).
         const pid = ((draft?.proposal_json as Record<string, unknown>)?.proposal_id as string) ?? '';
-        await evolve('skill', 'widget', { adapter, acceptId: pid, margin: -1 });
+        await evolve('skill', 'widget', { adapter, acceptId: pid, skipDeltaGate: true });
 
         // R9: proposal status updated to accepted with a real applied_at timestamp.
         const after = (await new ProposalDao(adapter).getProposals('skill', 'widget')).find((p) => p.id === draft?.id);
@@ -511,7 +523,7 @@ cases:
             adapter,
             ingest: proposalPath,
             acceptId: 'skill-evolve-authored-001',
-            margin: -1, // gate disabled — test probes apply mechanics, not Δ
+            skipDeltaGate: true, // test probes apply mechanics, not Δ
         });
         const content = readFileSync(join(dir, 'widget.md'), 'utf-8');
         // Authored change must actually modify the content
@@ -546,7 +558,7 @@ cases:
             adapter,
             ingest: proposalPath,
             acceptId: 'skill-evolve-bad-current-001',
-            margin: -1, // gate disabled — test probes the skip-guard, not the Δ gate
+            skipDeltaGate: true, // test probes the skip-guard, not the Δ gate
         });
         // The change targeting nonexistent text is skipped — 0 applied
         expect(r.changesApplied).toBe(0);
@@ -580,7 +592,7 @@ cases:
             },
         });
 
-        const r = await evolve('skill', 'widget', { adapter, acceptId: handPid, margin: -1 });
+        const r = await evolve('skill', 'widget', { adapter, acceptId: handPid, skipDeltaGate: true });
         const content = readFileSync(join(dir, 'widget.md'), 'utf-8');
         expect(r.changesApplied).toBe(2);
         expect(content).toContain('description: A sharper widget skill');
@@ -652,7 +664,7 @@ cases:
         const r = await evolve('skill', 'widget', {
             adapter,
             acceptId: pid,
-            margin: -1,
+            skipDeltaGate: true,
             evalGate: true,
             replayBackend: new ContentSensitiveReplayBackend('empirical better'),
         });
@@ -694,7 +706,7 @@ cases:
         const r = await evolve('skill', 'widget', {
             adapter,
             acceptId: pid,
-            margin: -1,
+            skipDeltaGate: true,
             evalGate: true,
             replayBackend: new ContentSensitiveReplayBackend('Body content here for the widget skill.'),
         });
@@ -736,7 +748,7 @@ cases:
         const r = await evolve('skill', 'widget', {
             adapter,
             acceptId: pid,
-            margin: -1,
+            skipDeltaGate: true,
             evalGate: true,
             replayBackend: new ContentSensitiveReplayBackend('rubric better'),
             judgeBackend: judge,
@@ -778,7 +790,7 @@ cases:
         const r = await evolve('skill', 'widget', {
             adapter,
             acceptId: pid,
-            margin: -1,
+            skipDeltaGate: true,
             evalGate: true,
             replayBackend: new ContentSensitiveReplayBackend('empirical better'),
             judgeBackend: judge,
@@ -814,7 +826,7 @@ cases:
         const r = await evolve('skill', 'widget', {
             adapter,
             acceptId: pid,
-            margin: -1,
+            skipDeltaGate: true,
             evalGate: true,
             replayBackend: new ContentSensitiveReplayBackend('noisy better'),
             judgeBackend: new NoisyJudgeBackend(),
@@ -850,7 +862,7 @@ cases:
         const r = await evolve('skill', 'widget', {
             adapter,
             acceptId: pid,
-            margin: -1,
+            skipDeltaGate: true,
             evalGate: true,
             replayBackend: new ContentSensitiveReplayBackend('within-noise better'),
             judgeBackend: new WithinNoiseJudgeBackend(),
@@ -891,7 +903,7 @@ cases:
         const r = await evolve('skill', 'widget', {
             adapter,
             acceptId: pid,
-            margin: -1,
+            skipDeltaGate: true,
             evalGate: true,
             replayBackend: new ContentSensitiveReplayBackend('budget better'),
             judgeBackend: new PassFailJudgeBackend(),
@@ -978,7 +990,7 @@ cases:
         await evolve('skill', 'widget', { adapter, proposeOnly: true });
         const draft = (await new ProposalDao(adapter).getProposals('skill', 'widget'))[0];
         const pid = ((draft?.proposal_json as Record<string, unknown>)?.proposal_id as string) ?? '';
-        await evolve('skill', 'widget', { adapter, acceptId: pid, margin: -1 });
+        await evolve('skill', 'widget', { adapter, acceptId: pid, skipDeltaGate: true });
 
         // Query history.
         const writes: string[] = [];
@@ -1012,7 +1024,7 @@ cases:
         await evolve('skill', 'widget', { adapter, proposeOnly: true });
         const draft = (await new ProposalDao(adapter).getProposals('skill', 'widget'))[0];
         const pid = ((draft?.proposal_json as Record<string, unknown>)?.proposal_id as string) ?? '';
-        await evolve('skill', 'widget', { adapter, acceptId: pid, margin: -1 });
+        await evolve('skill', 'widget', { adapter, acceptId: pid, skipDeltaGate: true });
 
         // File should now be different from original.
         const modifiedContent = readFileSync(join(dir, 'widget.md'), 'utf-8');
@@ -1122,7 +1134,7 @@ describe('evolve — command type (0053)', () => {
         await evolve('command', 'deploy', { adapter, proposeOnly: true });
         const draft = (await new ProposalDao(adapter).getProposals('command', 'deploy'))[0];
         const pid = ((draft?.proposal_json as Record<string, unknown>)?.proposal_id as string) ?? '';
-        await evolve('command', 'deploy', { adapter, acceptId: pid, margin: -1 });
+        await evolve('command', 'deploy', { adapter, acceptId: pid, skipDeltaGate: true });
 
         const writes: string[] = [];
         const spy = spyOn(process.stdout, 'write').mockImplementation((data) => {
@@ -1144,7 +1156,7 @@ describe('evolve — command type (0053)', () => {
         await evolve('command', 'deploy', { adapter, proposeOnly: true });
         const draft = (await new ProposalDao(adapter).getProposals('command', 'deploy'))[0];
         const pid = ((draft?.proposal_json as Record<string, unknown>)?.proposal_id as string) ?? '';
-        await evolve('command', 'deploy', { adapter, acceptId: pid, margin: -1 });
+        await evolve('command', 'deploy', { adapter, acceptId: pid, skipDeltaGate: true });
 
         const modifiedContent = readFileSync(join(dir, 'deploy.md'), 'utf-8');
         expect(modifiedContent).not.toBe(originalContent);
@@ -1272,7 +1284,7 @@ describe('evolve — magent type, frontmatter-less (0054)', () => {
             return true;
         });
 
-        const result = await evolve('magent', 'AGENTS', { adapter, acceptId: proposalId, margin: -1 });
+        const result = await evolve('magent', 'AGENTS', { adapter, acceptId: proposalId, skipDeltaGate: true });
         stderr.mockRestore();
 
         expect(result.changesApplied).toBe(0);
@@ -1285,7 +1297,7 @@ describe('evolve — magent type, frontmatter-less (0054)', () => {
         await evolve('magent', 'AGENTS', { adapter, proposeOnly: true });
         const draft = (await new ProposalDao(adapter).getProposals('magent', 'AGENTS'))[0];
         const pid = ((draft?.proposal_json as Record<string, unknown>)?.proposal_id as string) ?? '';
-        await evolve('magent', 'AGENTS', { adapter, acceptId: pid, margin: -1 });
+        await evolve('magent', 'AGENTS', { adapter, acceptId: pid, skipDeltaGate: true });
 
         const writes: string[] = [];
         const spy = spyOn(process.stdout, 'write').mockImplementation((data) => {
@@ -1307,7 +1319,7 @@ describe('evolve — magent type, frontmatter-less (0054)', () => {
         await evolve('magent', 'AGENTS', { adapter, proposeOnly: true });
         const draft = (await new ProposalDao(adapter).getProposals('magent', 'AGENTS'))[0];
         const pid = ((draft?.proposal_json as Record<string, unknown>)?.proposal_id as string) ?? '';
-        await evolve('magent', 'AGENTS', { adapter, acceptId: pid, margin: -1 });
+        await evolve('magent', 'AGENTS', { adapter, acceptId: pid, skipDeltaGate: true });
 
         const modifiedContent = readFileSync(join(dir, 'AGENTS.md'), 'utf-8');
         expect(modifiedContent).not.toBe(originalContent);
@@ -1442,7 +1454,7 @@ describe('evolve — skill type, directory-based (0055)', () => {
         await evolve('skill', 'skills/my-skill/SKILL.md', { adapter, proposeOnly: true });
         const draft = (await new ProposalDao(adapter).getProposals('skill', 'my-skill'))[0];
         const pid = ((draft?.proposal_json as Record<string, unknown>)?.proposal_id as string) ?? '';
-        await evolve('skill', 'skills/my-skill/SKILL.md', { adapter, acceptId: pid, margin: -1 });
+        await evolve('skill', 'skills/my-skill/SKILL.md', { adapter, acceptId: pid, skipDeltaGate: true });
 
         const writes: string[] = [];
         const spy = spyOn(process.stdout, 'write').mockImplementation((data) => {
@@ -1465,7 +1477,7 @@ describe('evolve — skill type, directory-based (0055)', () => {
         await evolve('skill', 'skills/my-skill/SKILL.md', { adapter, proposeOnly: true });
         const draft = (await new ProposalDao(adapter).getProposals('skill', 'my-skill'))[0];
         const pid = ((draft?.proposal_json as Record<string, unknown>)?.proposal_id as string) ?? '';
-        await evolve('skill', 'skills/my-skill/SKILL.md', { adapter, acceptId: pid, margin: -1 });
+        await evolve('skill', 'skills/my-skill/SKILL.md', { adapter, acceptId: pid, skipDeltaGate: true });
 
         const modifiedContent = readFileSync(skillPath, 'utf-8');
         expect(modifiedContent).not.toBe(originalContent);
@@ -1586,7 +1598,7 @@ describe('evolve — hook type, analyze-only (0056)', () => {
 
     it('--accept is rejected for hooks (0056 C — analyze-only)', async () => {
         await seedHookHistory(adapter, [0.9, 0.5]);
-        const r = await evolve('hook', 'pre-tool', { adapter, acceptId: 'some-id', margin: -1 });
+        const r = await evolve('hook', 'pre-tool', { adapter, acceptId: 'some-id', skipDeltaGate: true });
         expect(r.proposalPath).toBe('');
         expect(r.changesApplied).toBe(0);
     });
