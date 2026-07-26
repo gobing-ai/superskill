@@ -32,44 +32,51 @@ bootstrap:
 agent:
   default: pi
   executors:
-    - name: omp
-      agent: omp
-    - name: omp-zai
-      agent: omp
-      model: zai/glm-5.2
-    - name: omp-xf
-      agent: omp
-      model: astron-code-latest
-    - name: pi
-      agent: pi
-    - name: pi-xf
-      agent: pi
-      model: astron-code-latest
-    - name: omp-zai-volc
-      agent: omp
-      model: volc/glm-5.2
-    - name: omp-deepseek
-      agent: omp
-      model: deepseek/deepseek-v4-pro
+    # Order within a tier is the stage router's preference order.
     - name: minimax
       agent: omp
       model: minimax/MiniMax-M3
-    - name: codex
-      agent: codex
-    - name: claude
-      agent: claude
+      tier: cheap
+    - name: omp-xf
+      agent: omp
+      model: astron-code-latest
+      tier: standard
+    - name: omp
+      agent: omp
+      tier: standard
+    - name: pi
+      agent: pi
+      tier: standard
+    - name: pi-xf
+      agent: pi
+      model: astron-code-latest
+      tier: standard
     - name: grok
       agent: grok
+      tier: capable
+    - name: codex
+      agent: codex
+      tier: capable
+    - name: claude
+      agent: claude
+      tier: capable
+    - name: omp-zai
+      agent: omp
+      model: zai/glm-5.2
+      tier: capable
+    - name: omp-zai-volc
+      agent: omp
+      model: volc/glm-5.2
+      tier: capable
+    - name: omp-deepseek
+      agent: omp
+      model: deepseek/deepseek-v4-pro
+      tier: capable
+  # Compatibility only: these phases do not have canonical stages in Spur 0.3.23.
   default-by-phase:
-    dev-brainstorm: grok
     dev-fixall: omp-xf
-    dev-plan: grok
-    dev-run: omp-xf
     dev-runall: omp-xf
-    dev-changelog: omp-xf
     dev-gitmsg: minimax
-    dev-review: grok
-    dev-verify: grok
 
 rules:
   paths:
