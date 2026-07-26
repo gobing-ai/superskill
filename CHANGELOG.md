@@ -7,6 +7,42 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
+## [0.3.9] - 2026-07-26
+
+### Added
+
+- **`superskill skill add/list/remove/update` subcommands (`fed97fe`).** The CLI gains full skill-lifecycle management subcommands under `skill`.
+- **Canonical installer and three-tier per-target emission (`66e9407`).** Core gains a canonical installer that emits artifacts through a three-tier per-target dispatch.
+- **Skills-ecosystem fetch fast path, hardened clone, and `SKILL.md` discovery — task 0100 (`0c85e27`, `7a53f95`).** Faster fetch path, safer clone flow, and skill discovery via `SKILL.md`.
+- **Agent registry, Target bridge, and dual lock read/writers (`83d3a26`).** Adds `agents.ts` (target bridge, tier assignment — direct/symlink/translate, env overrides) and `locks.ts` (project `skills-lock.json` v1 + global `.skill-lock.json` v3 read/write); preserves newer lock versions, enforces the canonical-folder-hash invariant, and raises Biome `useNodejsImportProtocol` to error.
+- **Bounded non-blocking stdin reader for hook & script runners (`4b9d5fe`).** Hook and script stdin readers in the CLI hardened with a bounded non-blocking stream reader.
+- **Source parser, sanitizer, and YAML frontmatter ported to skills-ecosystem (`fc791fb`).** Vendor-parity tests guard the port.
+
+### Fixed
+
+- **Command content drift across all 18 slash commands; `ah_guard` and `validate_response` tightened; structure tests expanded — task 0108 (`4a32719`).**
+- **`ah_guard` coupler detection refined; hook examples hardened; structure/hook-examples coverage extended — task 0108 (`b5c6075`).** Tightens `requiresExternalVerification` coupler detection; aligns `validate_response.ts`/`.mjs` guard API contract.
+- **Anti-hallucination guard hardened; hook example scripts fixed; commands/skills/tests synced — task 0108 (`7336c47`).** Defensive path handling and quoting in `load-context`, `validate-bash`, `validate-write` examples; shellcheck violations fixed; new fixture coverage.
+- **Evolve proposal lifecycle and proposals store hardened; tests extended — task 0107 (`52f7102`).** Architecture doc synced.
+- **SECUA and architecture review fixes for 0106 and 0107 (`4080c44`).** skills-ecosystem: hardened `emit.ts` tier dispatch, `installer.ts` path-safety gates, `locks.ts` version-mismatch handling, `operations.ts` error envelopes and update diffing; CLI: extracts `parseCommandArgv` (shell-safe argv split) into `command-argv.ts`, fixes hook-run/install arg handling, tightens config/hooks/omp-hooks/evolve/refine/evaluate; adds `install.test.ts` and `command-argv.test.ts`.
+- **Skills-ecosystem `emit`/`installer`/`locks`/`operations` hardened; test suites extended — task 0106 (`6dfdb20`).**
+- **CLI helper tightness (`2a15373`).** `runOperation`, `script-run` stderr handling, and `skill migrate` guard tightened.
+- **Anti-hallucination lifecycle verb patterns updated (`bd85c5c`).** `ah_guard` patterns and tests updated for new lifecycle verbs.
+
+### Changed
+
+- **Spur config updated (`2308112`).**
+
+### Documentation
+
+- **Feature index and A/B feature docs synced with completed phase 6 status (`53f70ea`).**
+- **`npx` skills round-trip interop verified; ADR-028 recorded (`a6d18bb`).**
+- **Task status updates after implementation (`d60957c`, `e1bad30`, `974066c`).**
+
+### Other
+
+- **Test-only: `echoError` stderr leak suppressed in skill-verbs test helper (`de47876`).**
+
 ## [0.3.8] - 2026-07-22
 
 ### Changed
