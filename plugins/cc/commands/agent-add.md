@@ -1,6 +1,6 @@
 ---
 description: Create a new agent with scaffolding and templates
-argument-hint: "<agent-name> [--description <text>] [--target <platform>] [--output <dir>] [--template <tier>] [--skills <list>] [--tools <list>] [--force]"
+argument-hint: "<agent-name> [--description <text>] [--target <platform>] [--output <dir>] [--template <tier>] [--tools <list>] [--force]"
 allowed-tools: ["Read", "Write", "Glob", "Bash", "Skill"]
 ---
 
@@ -22,10 +22,9 @@ Scaffold a new subagent file from a tiered template. Delegates to **cc:cc-agents
 |----------|-------------|---------|
 | `agent-name` | Name of the agent (hyphen-case) | (required) |
 | `--description` | Free-text description of the agent's purpose | auto-generated |
-| `--target` | Target platform | claude-code |
+| `--target` | Target platform | claude |
 | `--output` | Output directory | ./agents |
 | `--template` | Template tier: `minimal`, `standard`, or `specialist` | standard |
-| `--skills` | Comma-separated skill names to pre-populate frontmatter | (none) |
 | `--tools` | Comma-separated tool names to pre-populate frontmatter | (tier default) |
 | `--force` | Overwrite existing file | false |
 
@@ -46,8 +45,8 @@ A freshly scaffolded agent PASSes the project's own evaluator (`superskill agent
 /cc:agent-add expert-foo --description "Thin wrapper for cc-foo skill"
 # Scaffold a high-autonomy specialist with explicit tools
 /cc:agent-add sec-reviewer --template specialist --tools Read,Grep,Bash,Edit
-# Scaffold a minimal wrapper linked to a skill
-/cc:agent-add router --template minimal --skills cc-router
+# Scaffold a minimal wrapper with explicit tools
+/cc:agent-add router --template minimal --tools Read,Glob
 ```
 
 ## Discovery Discipline

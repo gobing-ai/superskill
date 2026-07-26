@@ -1,6 +1,6 @@
 ---
 description: Create a new slash command with scaffolding and templates
-argument-hint: "<command-name> [--description <text>] [--target <platform>] [--output <dir>] [--template <tier>] [--skills <list>] [--tools <list>] [--force]"
+argument-hint: "<command-name> [--description <text>] [--target <platform>] [--output <dir>] [--template <tier>] [--tools <list>] [--force]"
 allowed-tools: ["Read", "Write", "Glob", "Bash", "Skill"]
 ---
 
@@ -25,7 +25,6 @@ Scaffold a new slash command file from a tiered template. Delegates to **cc:cc-c
 | `--target` | Target platform | claude |
 | `--output` | Output directory | ./commands |
 | `--template` | Template tier: `simple`, `workflow`, or `plugin` | default |
-| `--skills` | Comma-separated skill names to pre-populate frontmatter | (none) |
 | `--tools` | Comma-separated tool names to pre-populate frontmatter | (tier default) |
 | `--force` | Overwrite existing file | false |
 

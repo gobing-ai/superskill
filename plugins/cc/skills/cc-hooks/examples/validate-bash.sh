@@ -10,34 +10,51 @@ input=$(cat)
 # Extract command
 command=$(echo "$input" | jq -r '.tool_input.command // empty')
 
+emit_decision() {
+  local decision=$1
+  local reason=$2
+  jq -cn \
+    --arg decision "$decision" \
+    --arg reason "$reason" \
+    '{
+      hookSpecificOutput: {
+        hookEventName: "PreToolUse",
+        permissionDecision: $decision,
+        permissionDecisionReason: $reason
+      }
+    }'
+  exit 0
+}
+
 # Validate command exists
 if [ -z "$command" ]; then
-  echo '{"continue": true}' # No command to validate
-  exit 0
-fi
-
-# Check for obviously safe commands (quick approval)
-if [[ "$command" =~ ^(ls|pwd|echo|date|whoami)(\s|$) ]]; then
   exit 0
 fi
 
 # Check for destructive operations
-if [[ "$command" == *"rm -rf"* ]] || [[ "$command" == *"rm -fr"* ]]; then
-  echo '{"hookSpecificOutput": {"permissionDecision": "deny"}, "systemMessage": "Dangerous command detected: rm -rf"}' >&2
-  exit 2
+if [[ "$command" == *"rm -rf"* ]] ||
+  [[ "$command" == *"rm -fr"* ]] ||
+  [[ "$command" == *"rm --recursive --force"* ]] ||
+  [[ "$command" == *"rm --force --recursive"* ]]; then
+  emit_decision "deny" "Dangerous recursive forced removal detected"
 fi
 
 # Check for other dangerous commands
 if [[ "$command" == *"dd if="* ]] || [[ "$command" == *"mkfs"* ]] || [[ "$command" == *"> /dev/"* ]]; then
-  echo '{"hookSpecificOutput": {"permissionDecision": "deny"}, "systemMessage": "Dangerous system operation detected"}' >&2
-  exit 2
+  emit_decision "deny" "Dangerous system operation detected"
 fi
 
 # Check for privilege escalation
-if [[ "$command" == sudo* ]] || [[ "$command" == su* ]]; then
-  echo '{"hookSpecificOutput": {"permissionDecision": "ask"}, "systemMessage": "Command requires elevated privileges"}' >&2
-  exit 2
+privileged_pattern='(^|[[:space:];|&])(sudo|su)([[:space:]]|$)'
+if [[ "$command" =~ $privileged_pattern ]]; then
+  emit_decision "ask" "Command requires elevated privileges"
 fi
 
-# Approve the operation
-exit 0
+# Only a deliberately narrow grammar can pass without review. Shell substitutions,
+# redirections, chaining, quoting, and unknown executables all route to human approval.
+safe_pattern='^(pwd|date|whoami)[[:space:]]*$|^(ls|echo)([[:space:]]+[-[:alnum:]_./]+)*[[:space:]]*$'
+if [[ "$command" =~ $safe_pattern ]]; then
+  exit 0
+fi
+
+emit_decision "ask" "Command is outside the example hook's narrow allowlist"

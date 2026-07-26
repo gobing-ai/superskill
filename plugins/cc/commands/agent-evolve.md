@@ -1,6 +1,6 @@
 ---
 description: Analyze agent evolution signals, draft/apply proposals, and rollback versions
-argument-hint: "<agent-name> [--analyze] [--from <date>] [--propose-only] [--accept <id>] [--reject <id>] [--history] [--rollback <id> --confirm] [--ingest <file>] [--json] [--margin <n>] [--target <platform>]"
+argument-hint: "<agent-name> [--analyze] [--from <date>] [--propose-only] [--accept <id>] [--reject <id>] [--history] [--rollback <id> --confirm] [--ingest <file>] [--json] [--margin <n>] [--eval-gate] [--target <platform>]"
 allowed-tools: ["Read", "Write", "Glob", "Bash", "Skill"]
 ---
 
@@ -33,6 +33,7 @@ Analyze agent quality over time, draft heuristic proposals for declining/flat-lo
 | `--ingest <file>` | Agent-authored proposal JSON (ingest-in mode) | - |
 | `--json` | Output machine-readable JSON (envelope-out with `--propose-only`) | false |
 | `--margin <n>` | Δ-margin gate threshold for accept (default 0.05) | 0.05 |
+| `--eval-gate` | Enable the empirical behavior gate when eval cases exist | false |
 | `--target` | Target platform | claude |
 
 ## Examples

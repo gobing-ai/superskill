@@ -56,7 +56,7 @@ The command is a **portable PATH command**, not a plugin-root script path
 and the dispatcher (`apps/cli/src/commands/hook-run.ts`) routes `cc/anti-hallucination` to the guard
 engine. Targets without `superskill` on PATH fail open (the hook is treated as allow). `minCliVersion`
 gates install so an older CLI cannot register a hook whose runtime contract (stdin payload
-resolution + exit-2 block signal) it does not implement.
+resolution + canonical exit-0 decision output) it does not implement.
 
 For platforms without hooks (OpenCode, omp, pi, Grok — no prevent-stop hook), validate a captured answer with `superskill script run cc validate-response` (the primary form — compiled into the CLI, no FS path; see `non-hook-enforcement.md`). A staged `node "$(superskill script path cc anti-hallucination/validate_response.mjs)"` twin is also available as the secondary form.
 

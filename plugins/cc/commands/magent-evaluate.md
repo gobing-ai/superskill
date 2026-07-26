@@ -1,6 +1,6 @@
 ---
 description: Score main agent config across 6 quality dimensions
-argument-hint: "<config-path> [--save] [--target <platform>]"
+argument-hint: "<config-path> [--json] [--target <platform>] [--save] [--rubric <file>] [--ingest <file>]"
 allowed-tools: ["Read", "Write", "Glob", "Bash", "Skill"]
 ---
 
@@ -20,8 +20,11 @@ Score main agent config quality across 6 dimensions. **Evaluate only — make NO
 | Argument | Description | Default |
 |----------|-------------|---------|
 | `config-path` | Path to the config .md file | (required) |
+| `--json` | Output machine-readable JSON; with `--rubric`, emit a scoring work order | false |
+| `--target` | Target platform | claude |
 | `--save` | Persist the evaluation to the evaluation store (enables evolve trend analysis) | false |
-| `--target` | Target platform | claude-code |
+| `--rubric <file>` | Rubric path for envelope-out scoring | built-in |
+| `--ingest <file>` | Agent-scored result JSON to validate and persist | - |
 
 ## Examples
 
@@ -30,6 +33,7 @@ Score main agent config quality across 6 dimensions. **Evaluate only — make NO
 /cc:magent-evaluate ./CLAUDE.md
 # Save results to the evaluation store
 /cc:magent-evaluate ./CLAUDE.md --save
+```
 
 ## Implementation
 

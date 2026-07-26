@@ -48,10 +48,10 @@ Both forms share the same engine, exit codes, and input modes.
 | 0 | Validation passed |
 | 1 | Validation failed |
 
-These are **validation-CLI semantics, not the hook block signal** — hook adapters block with
-exit 2 + reason on stderr (see `guard-implementation.md`). Do not wire `validate_response.ts`
-into `hooks.json`; a host would treat its exit 1 as a non-blocking error. Wire
-`superskill hook run cc anti-hallucination` instead.
+These are **validation-CLI semantics, not the hook block signal** — the hook adapter emits
+canonical `decision:"block"` JSON and exits 0 (see `guard-implementation.md`). Do not wire
+`validate_response.ts` into `hooks.json`; a host would treat its exit 1 as a non-blocking error.
+Wire `superskill hook run cc anti-hallucination` instead.
 
 ## Input Modes
 

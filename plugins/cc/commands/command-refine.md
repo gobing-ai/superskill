@@ -23,7 +23,7 @@ Run evaluation, apply deterministic structural fixes (missing fields, type coerc
 | `--auto` | Skip interactive prompts (auto-apply fixes) | false |
 | `--save` | Persist the evaluation to the evaluation store | false |
 | `--dry-run` | Preview classified fixes and projected delta without writing | false |
-| `--target` | Target platform | claude-code |
+| `--target` | Target platform | claude |
 
 ## Examples
 

@@ -1,6 +1,6 @@
 ---
 description: Analyze magent evolution signals, draft proposals, and rollback applied versions
-argument-hint: "<config-name> [--analyze] [--propose-only] [--accept <id>] [--reject <id>] [--history] [--rollback <id>] [--confirm] [--from <version>] [--target <platform>]"
+argument-hint: "<config-name> [--analyze] [--from <date>] [--propose-only] [--accept <id>] [--reject <id>] [--history] [--rollback <id> --confirm] [--ingest <file>] [--json] [--margin <n>] [--eval-gate] [--target <platform>]"
 allowed-tools: ["Read", "Write", "Glob", "Bash", "Skill"]
 ---
 
@@ -33,6 +33,7 @@ Analyze main agent config quality over time, persist refine-backed proposals, ap
 | `--json` | Output machine-readable JSON (envelope-out with `--propose-only`) | false |
 | `--ingest <file>` | Consume agent-authored proposal JSON (ingest-in mode) | - |
 | `--margin <n>` | Δ-margin gate threshold for accept | 0.05 |
+| `--eval-gate` | Enable the empirical behavior gate when eval cases exist | false |
 | `--target` | Target platform | claude |
 
 ## Examples

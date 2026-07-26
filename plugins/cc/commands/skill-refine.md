@@ -23,7 +23,7 @@ Run evaluation, apply deterministic fixes, then perform LLM content improvement 
 | `--auto` | Skip interactive prompts (auto-apply fixes) | false |
 | `--save` | Save evaluation results to file | false |
 | `--dry-run` | Preview classified fixes and projected score delta without writing | false |
-| `--target` | Target platform | claude-code |
+| `--target` | Target platform | claude |
 
 ## Examples
 

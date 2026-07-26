@@ -146,11 +146,8 @@ superskill skill evaluate ./my-skill --save --json
 
 ### Causes & Solutions
 
-**Migration failures:**
-
-**Missing API key for LLM refinement:**
-```
 **Platform generation failures:**
+
 ```bash
 # Test single platform first
 superskill skill refine ./my-skill --target claude

@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
+import { join } from 'node:path';
 import { isGlobalSilent, setGlobalSilent } from '../logger';
 import { main, readStdinText, validateResponseText } from '../validate_response';
 
@@ -31,39 +32,56 @@ describe('validateResponseText', () => {
 });
 
 describe('readStdinText', () => {
-    it('returns stdin text when provided by the reader', () => {
-        const text = readStdinText((path, encoding) => {
-            expect(path).toBe('/dev/stdin');
-            expect(encoding).toBe('utf-8');
-            return 'stdin response';
-        }, false);
+    it('returns stdin text when provided by the bounded reader', async () => {
+        const text = await readStdinText(async () => 'stdin response', false);
 
         expect(text).toBe('stdin response');
     });
 
-    it('returns undefined for blank stdin', () => {
-        expect(readStdinText(() => '   ', false)).toBeUndefined();
+    it('returns undefined for blank stdin', async () => {
+        expect(await readStdinText(async () => '   ', false)).toBeUndefined();
     });
 
-    it('returns undefined when stdin cannot be read', () => {
+    it('returns undefined when stdin cannot be read', async () => {
         expect(
-            readStdinText(() => {
+            await readStdinText(async () => {
                 throw new Error('boom');
             }, false),
         ).toBeUndefined();
     });
 
-    it('never reads stdin on a TTY, so manual invocation cannot hang', () => {
-        // WHY: `bun validate_response.ts` with nothing piped used to block on /dev/stdin until
-        // EOF — an interactive terminal never sends one, so the CLI hung with no prompt.
+    it('never reads stdin on a TTY, so manual invocation cannot hang', async () => {
         let readAttempted = false;
-        const text = readStdinText(() => {
+        const text = await readStdinText(async () => {
             readAttempted = true;
             return 'should never be read';
         }, true);
 
         expect(text).toBeUndefined();
         expect(readAttempted).toBe(false);
+    });
+});
+
+describe('direct entrypoint stdin', () => {
+    it('exits within the idle budget when stdin stays open and silent', async () => {
+        const proc = Bun.spawn(['bun', join(import.meta.dir, '..', 'validate_response.ts')], {
+            stdin: 'pipe',
+            stdout: 'pipe',
+            stderr: 'pipe',
+        });
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        try {
+            const code = await Promise.race([
+                proc.exited,
+                new Promise<never>((_, reject) => {
+                    timer = setTimeout(() => reject(new Error('validator remained blocked on open stdin')), 1_000);
+                }),
+            ]);
+            expect(code).toBe(0);
+        } finally {
+            if (timer !== undefined) clearTimeout(timer);
+            proc.stdin.end();
+        }
     });
 });
 
@@ -79,12 +97,12 @@ describe('main', () => {
         setGlobalSilent(previousSilentState);
     });
 
-    it('returns 0 when RESPONSE_TEXT is empty', () => {
+    it('returns 0 when RESPONSE_TEXT is empty', async () => {
         const originalResponseText = Bun.env.RESPONSE_TEXT;
         Bun.env.RESPONSE_TEXT = '';
 
         try {
-            expect(main()).toBe(0);
+            expect(await main()).toBe(0);
         } finally {
             if (originalResponseText === undefined) {
                 Bun.env.RESPONSE_TEXT = undefined;
@@ -94,13 +112,13 @@ describe('main', () => {
         }
     });
 
-    it('returns 1 when RESPONSE_TEXT fails validation', () => {
+    it('returns 1 when RESPONSE_TEXT fails validation', async () => {
         const originalResponseText = Bun.env.RESPONSE_TEXT;
         Bun.env.RESPONSE_TEXT =
             'The API method is getUser() which returns a user object and was introduced in version 2.0.';
 
         try {
-            expect(main()).toBe(1);
+            expect(await main()).toBe(1);
         } finally {
             if (originalResponseText === undefined) {
                 Bun.env.RESPONSE_TEXT = undefined;
@@ -110,7 +128,7 @@ describe('main', () => {
         }
     });
 
-    it('returns 0 when RESPONSE_TEXT passes validation', () => {
+    it('returns 0 when RESPONSE_TEXT passes validation', async () => {
         const originalResponseText = Bun.env.RESPONSE_TEXT;
         Bun.env.RESPONSE_TEXT =
             'According to the official documentation at https://api.example.com, ' +
@@ -118,7 +136,7 @@ describe('main', () => {
             '**Confidence**: HIGH. Source: https://api.example.com/docs';
 
         try {
-            expect(main()).toBe(0);
+            expect(await main()).toBe(0);
         } finally {
             if (originalResponseText === undefined) {
                 Bun.env.RESPONSE_TEXT = undefined;

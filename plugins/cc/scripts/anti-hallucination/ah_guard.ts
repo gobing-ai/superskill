@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 /**
- * Anti-Hallucination Guard - Stop Hook for Claude Code
+ * Anti-Hallucination Guard - prevent-stop hook engine
  *
  * This script enforces the anti-hallucination protocol by verifying that
  * responses include proper source citations, confidence levels,
@@ -15,13 +15,11 @@
  *                     - omp agent_end event: `{type: "agent_end", messages: [...]}`
  *
  * Exit Code:
- *     0 - Always. Claude Code processes stdout JSON only at exit 0; exit 2 would discard the JSON
- *         below and surface stderr as a "blocking error" (the misrendering this guard must not
- *         regress to). The `decision` field in the output JSON is the sole block/allow signal.
- *         This hook is wired only in plugins/cc (Claude-Code-only), so no cross-agent exit-2
- *         fallback is needed here.
+ *     0 - Always. Supported hosts consume the canonical stdout decision at exit 0. Claude Code
+ *         would discard that JSON at exit 2 and surface stderr as a "blocking error". The
+ *         `decision` field in the output JSON is the sole block/allow signal.
  *
- * Output Format (stdout) — Claude Code canonical Stop-hook JSON:
+ * Output Format (stdout) — host-canonical prevent-stop JSON:
  *     {"hookSpecificOutput":{"hookEventName":"Stop"}}                          # Allow stop (no feedback)
  *     {"decision":"block","reason":"…","hookSpecificOutput":{"hookEventName":"Stop"}}  # Block stop (clean feedback)
  */
@@ -103,10 +101,10 @@ interface VerificationResult {
  *
  * - `block` — Claude Code `Stop`, Codex `Stop`, and Hermes `pre_verify`. Emits
  *   `{"decision":"block","reason":…}` at exit 0. Hermes `pre_verify` explicitly accepts the
- *   Claude-Code Stop shape (blocking the stop = keep going).
+ *   Claude Code Stop shape (blocking the stop = keep going).
  * - `deny` — Gemini CLI / Antigravity `AfterAgent`. Emits `{"decision":"deny","reason":…}` at
- *   exit 0; `decision:"deny"` rejects the response and feeds `reason` back as a new prompt (exit 2
- *   also forces a retry). Allow omits `decision` so the turn completes.
+ *   exit 0; `decision:"deny"` rejects the response and feeds `reason` back as a new prompt.
+ *   Allow omits `decision` so the turn completes.
  *
  * OpenCode / omp / pi / Grok cannot prevent stop — install gates them out, so they have no profile.
  */
@@ -350,6 +348,16 @@ const CLAIM_COUPLER_PATTERN =
 // own edits. Same lesson as 0077 R1, applied to the verb half: couple it to external vocabulary.
 const LIFECYCLE_VERB_PATTERN = /\b(?:was|were|is|are)\s+(?:introduced|added|deprecated|removed|renamed|released)\b/i;
 
+/** Weak vocabulary and its assertion must occur in the same sentence. */
+function hasWeakExternalClaim(text: string): boolean {
+    const sentences = text.split(/(?<=[.!?])\s+/);
+    return sentences.some(
+        (sentence) =>
+            WEAK_KEYWORD_PATTERN.test(sentence) &&
+            (CLAIM_COUPLER_PATTERN.test(sentence) || LIFECYCLE_VERB_PATTERN.test(sentence)),
+    );
+}
+
 export function requiresExternalVerification(text: string): boolean {
     if (!text) return false;
 
@@ -357,10 +365,10 @@ export function requiresExternalVerification(text: string): boolean {
         if (pattern.test(text)) return true;
     }
 
-    // Weak vocabulary needs an assertion-shaped coupler in the same message — either a capability
+    // Weak vocabulary needs an assertion-shaped coupler in the same sentence — either a capability
     // claim ("the API returns…") or a lifecycle claim ("the endpoint was deprecated"). Either half
     // alone is ordinary implementation talk and passes without demanding citations.
-    return WEAK_KEYWORD_PATTERN.test(text) && (CLAIM_COUPLER_PATTERN.test(text) || LIFECYCLE_VERB_PATTERN.test(text));
+    return hasWeakExternalClaim(text);
 }
 
 export function verifyAntiHallucinationProtocol(text: string): VerificationResult {
@@ -426,12 +434,11 @@ export function verifyAntiHallucinationProtocol(text: string): VerificationResul
 
 /** Result of running the Stop guard end-to-end: canonical Stop JSON (decision is the signal). */
 export interface StopGuardResult {
-    /** Canonical Claude Code Stop-hook JSON (built by {@link buildStopOutput}). */
+    /** Canonical host prevent-stop JSON (built by {@link buildStopOutput}). */
     output: string;
     /**
-     * Always 0. Claude Code processes stdout JSON only at exit 0; exit 2 would discard `output` and
-     * surface stderr as a "blocking error" instead of clean feedback. The `decision` field in
-     * `output` is the sole block/allow signal.
+     * Always 0. Supported hosts consume the canonical decision JSON at exit 0. The `decision`
+     * field in `output` is the sole block/allow signal.
      */
     exitCode: 0;
 }
@@ -474,8 +481,7 @@ export function runStopGuard(
 /**
  * Direct CLI entry: a thin adapter over {@link runStopGuard}. Writes the canonical Stop JSON via
  * `logger.log` and returns the exit code (always 0 — the `decision` field in the JSON is the
- * block/allow signal; this hook is Claude-Code-only). The branch table lives in `runStopGuard` —
- * this surface only translates I/O.
+ * block/allow signal). The branch table lives in `runStopGuard`; this surface only translates I/O.
  */
 export function main(stdinText = ''): number {
     const result = runStopGuard(Bun.env.ARGUMENTS, stdinText);

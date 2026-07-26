@@ -50,21 +50,11 @@ LLM content improvement is embedded in the normal workflow; it is not a separate
 
 ### Task-Backed Execution
 
-When a `cc-skills` workflow is tracked in a task file under `docs/tasks/`, do not mutate the task
-record with isolated `tasks update --section ...` or `tasks update --phase ...` calls when a
-canonical lifecycle operation exists.
-
-Use the predefined `cc:tasks` lifecycle operations:
-
-- `create`
-- `planning`
-- `design`
-- `implementation`
-- `review`
-- `testing`
-
-Each operation defines the required section updates, `impl_progress` target, and `status` target.
-Follow the full command bundle for the operation rather than changing only one field.
+When a `cc-skills` workflow is tracked under `docs/tasks/`, make every task mutation through
+`spur task`. Write body-only section content to a temporary file, then apply it with
+`spur task update <wbs> --section <name> --from-file <path>`. Change lifecycle state with
+`spur task update <wbs> <status>`, and run `spur task check <wbs>` before and after the workflow.
+Never edit task Markdown directly.
 
 ### Workflow Components
 

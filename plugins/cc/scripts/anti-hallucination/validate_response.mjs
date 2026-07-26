@@ -1,9 +1,6 @@
 #!/usr/bin/env node
 // @bun
 
-// plugins/cc/scripts/anti-hallucination/validate_response.ts
-import { readFileSync } from "fs";
-
 // plugins/cc/scripts/anti-hallucination/ah_guard.ts
 var SOURCE_PATTERNS = [
   /\[Source:\s*[^\]]+\]/i,
@@ -91,6 +88,10 @@ var STRONG_CLAIM_PATTERNS = [
 var WEAK_KEYWORD_PATTERN = /\b(?:api|library|framework|sdk|package|endpoint|documentation)\b/i;
 var CLAIM_COUPLER_PATTERN = /\b(?:returns|accepts|expects|supports|requires|provides|exposes|takes|emits|throws|defaults? to)\b/i;
 var LIFECYCLE_VERB_PATTERN = /\b(?:was|were|is|are)\s+(?:introduced|added|deprecated|removed|renamed|released)\b/i;
+function hasWeakExternalClaim(text) {
+  const sentences = text.split(/(?<=[.!?])\s+/);
+  return sentences.some((sentence) => WEAK_KEYWORD_PATTERN.test(sentence) && (CLAIM_COUPLER_PATTERN.test(sentence) || LIFECYCLE_VERB_PATTERN.test(sentence)));
+}
 function requiresExternalVerification(text) {
   if (!text)
     return false;
@@ -98,7 +99,7 @@ function requiresExternalVerification(text) {
     if (pattern.test(text))
       return true;
   }
-  return WEAK_KEYWORD_PATTERN.test(text) && (CLAIM_COUPLER_PATTERN.test(text) || LIFECYCLE_VERB_PATTERN.test(text));
+  return hasWeakExternalClaim(text);
 }
 function verifyAntiHallucinationProtocol(text) {
   if (!text || text.trim().length === 0) {
@@ -132,6 +133,41 @@ function verifyAntiHallucinationProtocol(text) {
   }
   return { ok: true, reason: "Task is complete" };
 }
+function readPipedStdin(idleMs = 250) {
+  if (process.stdin.isTTY)
+    return Promise.resolve("");
+  return new Promise((resolve) => {
+    let data = "";
+    let settled = false;
+    let timer;
+    const settle = () => {
+      if (settled)
+        return;
+      settled = true;
+      if (timer !== undefined)
+        clearTimeout(timer);
+      process.stdin.removeListener("data", onData);
+      process.stdin.removeListener("end", settle);
+      process.stdin.removeListener("error", settle);
+      resolve(data);
+    };
+    const arm = () => {
+      if (timer !== undefined)
+        clearTimeout(timer);
+      timer = setTimeout(settle, idleMs);
+    };
+    function onData(chunk) {
+      data += chunk.toString();
+      arm();
+    }
+    process.stdin.setEncoding("utf-8");
+    process.stdin.on("data", onData);
+    process.stdin.on("end", settle);
+    process.stdin.on("error", settle);
+    process.stdin.resume();
+    arm();
+  });
+}
 if (false) {}
 
 // plugins/cc/scripts/anti-hallucination/logger.ts
@@ -156,24 +192,24 @@ function validateResponseText(text) {
   }
   return verifyAntiHallucinationProtocol(text);
 }
-function readStdinText(readTextFile = readFileSync, isTty = Boolean(process.stdin.isTTY)) {
+async function readStdinText(readStdin = readPipedStdin, isTty = Boolean(process.stdin.isTTY)) {
   if (isTty)
     return;
   try {
-    const input = readTextFile("/dev/stdin", "utf-8");
+    const input = await readStdin();
     return input.trim().length > 0 ? input : undefined;
   } catch {
     return;
   }
 }
-function main() {
-  const responseText = process.env.RESPONSE_TEXT ?? readStdinText();
+async function main() {
+  const responseText = process.env.RESPONSE_TEXT ?? await readStdinText();
   const result = validateResponseText(responseText);
   logger2.log(JSON.stringify(result));
   return result.ok ? 0 : 1;
 }
 {
-  process.exit(main());
+  process.exit(await main());
 }
 export {
   validateResponseText,

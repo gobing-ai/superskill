@@ -1,6 +1,6 @@
 ---
 description: Create a new skill with scaffolding and templates
-argument-hint: "<skill-name> [--description <text>] [--target <platform>] [--output <dir>] [--template <tier>] [--skills <list>] [--tools <list>] [--force]"
+argument-hint: "<skill-name> [--description <text>] [--target <platform>] [--output <dir>] [--template <tier>] [--tools <list>] [--invocation-mode <mode>] [--force]"
 allowed-tools: ["Read", "Write", "Glob", "Bash", "Skill"]
 ---
 
@@ -25,7 +25,6 @@ Scaffold a new skill directory with `SKILL.md` from a tiered template. Delegates
 | `--target` | Target platform | claude |
 | `--output` | Output directory | ./skills |
 | `--template` | Template tier: `technique`, `pattern`, or `reference` | default |
-| `--skills` | Comma-separated skill names to pre-populate frontmatter | (none) |
 | `--tools` | Comma-separated tool names to pre-populate frontmatter | (tier default) |
 | `--invocation-mode` | `user` (emits `disable-model-invocation: true` + one-line human-facing description) or `model` (trigger-rich description) | model |
 | `--force` | Overwrite existing file | false |

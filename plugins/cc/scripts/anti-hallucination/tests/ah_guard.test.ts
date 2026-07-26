@@ -203,6 +203,15 @@ describe('requiresExternalVerification', () => {
         expect(requiresExternalVerification('I added a function that emits a warning on bad input.')).toBe(false);
     });
 
+    it('keeps weak vocabulary and assertion couplers sentence-local', () => {
+        expect(
+            requiresExternalVerification('The API change is local. The helper returns early when the list is empty.'),
+        ).toBe(false);
+        expect(
+            requiresExternalVerification('The library wrapper is internal. A regression test was added for it.'),
+        ).toBe(false);
+    });
+
     it('detects weak vocabulary coupled with a capability assertion', () => {
         expect(requiresExternalVerification('The library provides this feature')).toBe(true);
         expect(requiresExternalVerification('This framework exposes a helper')).toBe(true);

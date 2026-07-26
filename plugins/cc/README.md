@@ -142,8 +142,8 @@ The `Stop` hook fires when the agent is about to stop and checks whether the res
 
 | Script | Role |
 |--------|------|
-| `ah_guard.ts` | Core guard engine — resolves the `Stop` payload from stdin (Claude Code `transcript_path` + `stop_hook_active` loop guard, or omp `agent_end` `messages`) with `ARGUMENTS` env as the legacy/test channel, verifies citations/confidence/tool-usage patterns, exits 0 (allow) or 2 (deny; reason on stderr + canonical block JSON on stdout) |
-| `validate_response.ts` | Standalone validation CLI (NOT a hook adapter — never wire into hooks.json) — reads response text from `RESPONSE_TEXT` env or stdin, runs `validateResponseText()`, exits 0 (protocol followed) / 1 (violation). **Primary install-target form:** `superskill script run cc validate-response` (the engine is deep-imported into the CLI; no FS path, no separate runtime). **Secondary (staged path):** `node "$(superskill script path cc anti-hallucination/validate_response.mjs)"` — the portable `.mjs` twin (generated from the `.ts` by `bun run build:scripts` / `superskill script convert`). Direct `bun` of the source `.ts` path is dev-repo-only. Hook enforcement uses `superskill hook run cc anti-hallucination` with exit 2 = block |
+| `ah_guard.ts` | Core guard engine — resolves the `Stop` payload from stdin (Claude Code `transcript_path` + `stop_hook_active` loop guard, or omp `agent_end` `messages`) with `ARGUMENTS` env as the legacy/test channel, verifies citations/confidence/tool-usage patterns, and always exits 0; canonical `decision:"block"` JSON is the deny signal |
+| `validate_response.ts` | Standalone validation CLI (NOT a hook adapter — never wire into hooks.json) — reads response text from `RESPONSE_TEXT` env or bounded stdin, runs `validateResponseText()`, exits 0 (protocol followed) / 1 (violation). **Primary install-target form:** `superskill script run cc validate-response` (the engine is deep-imported into the CLI; no FS path, no separate runtime). **Secondary (staged path):** `node "$(superskill script path cc anti-hallucination/validate_response.mjs)"` — the portable `.mjs` twin (generated from the `.ts` by `bun run build:scripts` / `superskill script convert`). Direct `bun` of the source `.ts` path is dev-repo-only. Hook enforcement uses `superskill hook run cc anti-hallucination`, whose JSON decision blocks at exit 0 |
 | `logger.ts` | Self-contained minimal logger (migrated verbatim from Spur, task 0041) — avoids depending on host plugin's shared logger |
 | `tests/ah_guard.test.ts` | Unit tests for the guard engine |
 | `tests/validate_response.test.ts` | Unit tests for the CLI entry point |
@@ -279,7 +279,7 @@ Tier 3 — Execution Layer (superskill CLI + Scripts)
 2. **Stop Hook** (`hooks.json`) fires, invoking `superskill hook run cc anti-hallucination`
 3. **Dispatcher** (`hook-run.ts`) routes `cc/anti-hallucination` to the guard engine; `resolveStopContext` reads the `Stop` payload from stdin (Claude Code sends `transcript_path` — the last textual assistant message is read from the transcript JSONL; omp forwards its `agent_end` event with `messages`; the `ARGUMENTS` env var remains the legacy/test channel), then checks citations, confidence levels, and tool-usage evidence
 4. If protocol satisfied → exit 0 (allow stop)
-5. If protocol violated → exit 2 with the reason on stderr (the universal block signal — Claude Code treats exit 1 as non-blocking) plus canonical `decision:"block"` JSON on stdout
+5. If protocol violated → emit canonical `decision:"block"` JSON with the reason on stdout and exit 0; the decision field is the Stop-hook block signal
 6. The **`anti-hallucination` skill** provides the knowledge the agent uses to satisfy the guard on retry
 
 ### Example: Quality Evaluation via Personas

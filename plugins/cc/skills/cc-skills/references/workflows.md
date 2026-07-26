@@ -11,7 +11,7 @@ It is performed by the invoking agent as checklist-driven review/content improve
 
 ## Shared Workflow Framework
 
-This file follows the shared [Meta-Agent Workflow Schema](../../../references/meta-agent-workflow-schema.md).
+This file follows the shared meta-agent workflow conventions documented below.
 
 Shared Phase 1 conventions:
 

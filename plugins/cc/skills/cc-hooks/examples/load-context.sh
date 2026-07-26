@@ -4,6 +4,15 @@
 
 set -euo pipefail
 
+set_context_env() {
+  local key=$1
+  local value=$2
+  local export_line="export $key=$value"
+  if ! grep -qxF -- "$export_line" "$CLAUDE_ENV_FILE" 2>/dev/null; then
+    printf '%s\n' "$export_line" >> "$CLAUDE_ENV_FILE"
+  fi
+}
+
 # Navigate to project directory
 cd "$CLAUDE_PROJECT_DIR" || exit 1
 
@@ -12,43 +21,43 @@ echo "Loading project context..."
 # Detect project type and set environment
 if [ -f "package.json" ]; then
   echo "📦 Node.js project detected"
-  echo "export PROJECT_TYPE=nodejs" >> "$CLAUDE_ENV_FILE"
+  set_context_env PROJECT_TYPE nodejs
 
   # Check if TypeScript
   if [ -f "tsconfig.json" ]; then
-    echo "export USES_TYPESCRIPT=true" >> "$CLAUDE_ENV_FILE"
+    set_context_env USES_TYPESCRIPT true
   fi
 
 elif [ -f "Cargo.toml" ]; then
   echo "🦀 Rust project detected"
-  echo "export PROJECT_TYPE=rust" >> "$CLAUDE_ENV_FILE"
+  set_context_env PROJECT_TYPE rust
 
 elif [ -f "go.mod" ]; then
   echo "🐹 Go project detected"
-  echo "export PROJECT_TYPE=go" >> "$CLAUDE_ENV_FILE"
+  set_context_env PROJECT_TYPE go
 
 elif [ -f "pyproject.toml" ] || [ -f "setup.py" ]; then
   echo "🐍 Python project detected"
-  echo "export PROJECT_TYPE=python" >> "$CLAUDE_ENV_FILE"
+  set_context_env PROJECT_TYPE python
 
 elif [ -f "pom.xml" ]; then
   echo "☕ Java (Maven) project detected"
-  echo "export PROJECT_TYPE=java" >> "$CLAUDE_ENV_FILE"
-  echo "export BUILD_SYSTEM=maven" >> "$CLAUDE_ENV_FILE"
+  set_context_env PROJECT_TYPE java
+  set_context_env BUILD_SYSTEM maven
 
 elif [ -f "build.gradle" ] || [ -f "build.gradle.kts" ]; then
   echo "☕ Java/Kotlin (Gradle) project detected"
-  echo "export PROJECT_TYPE=java" >> "$CLAUDE_ENV_FILE"
-  echo "export BUILD_SYSTEM=gradle" >> "$CLAUDE_ENV_FILE"
+  set_context_env PROJECT_TYPE java
+  set_context_env BUILD_SYSTEM gradle
 
 else
   echo "❓ Unknown project type"
-  echo "export PROJECT_TYPE=unknown" >> "$CLAUDE_ENV_FILE"
+  set_context_env PROJECT_TYPE unknown
 fi
 
 # Check for CI configuration
 if [ -d ".github/workflows" ] || [ -f ".gitlab-ci.yml" ] || [ -f ".circleci/config.yml" ]; then
-  echo "export HAS_CI=true" >> "$CLAUDE_ENV_FILE"
+  set_context_env HAS_CI true
 fi
 
 echo "Project context loaded successfully"

@@ -1,6 +1,6 @@
 ---
 description: Create a new main agent config with scaffolding
-argument-hint: "[--description <text>] [--target <platform>] [--output <dir>] [--template <tier>] [--skills <list>] [--tools <list>] [--force]"
+argument-hint: "<config-name> [--description <text>] [--target <platform>] [--output <dir>] [--template <tier>] [--tools <list>] [--force]"
 allowed-tools: ["Read", "Write", "Glob", "Bash", "Skill"]
 ---
 
@@ -19,11 +19,11 @@ Scaffold a new main agent configuration file. Delegates to **cc:cc-magents** ski
 
 | Argument | Description | Default |
 |----------|-------------|---------|
+| `config-name` | Name of the main-agent configuration | (required) |
 | `--description` | Free-text description of the config's purpose | auto-generated |
 | `--target` | Target platform | claude |
 | `--output` | Output directory | . |
 | `--template` | Template tier (e.g. minimal / standard / specialist) | default |
-| `--skills` | Comma-separated skill names to pre-populate | — |
 | `--tools` | Comma-separated tool names to pre-populate | — |
 | `--force` | Overwrite existing file | false |
 
@@ -32,9 +32,9 @@ Scaffold a new main agent configuration file. Delegates to **cc:cc-magents** ski
 
 ```bash
 # Scaffold a CLAUDE.md for a Node.js project
-/cc:magent-add --target claude-code
+/cc:magent-add project-agent --target claude-code
 # Scaffold with a description and template tier
-/cc:magent-add --description "Dev agent for API service" --template standard
+/cc:magent-add api-agent --description "Dev agent for API service" --template standard
 ```
 
 Delegates to **cc:cc-magents** skill:

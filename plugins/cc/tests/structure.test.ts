@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'bun:test';
-import { readdirSync, readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
+import { dirname, join, resolve } from 'node:path';
 
 /**
  * Structural invariants for the cc plugin (task 0070 R10):
@@ -12,6 +12,7 @@ import { join } from 'node:path';
 
 const PLUGIN_ROOT = join(import.meta.dir, '..');
 const SKILLS_ROOT = join(PLUGIN_ROOT, 'skills');
+const CLI_ENTRY = join(PLUGIN_ROOT, '..', '..', 'apps', 'cli', 'src', 'index.ts');
 
 function walkFiles(dir: string): string[] {
     const out: string[] = [];
@@ -81,9 +82,9 @@ describe('cc plugin structure', () => {
         expect(skill).toContain('references/glossary.md');
     });
 
-    it('hooks.json declares the stdin/exit-2 guard contract floor (minCliVersion >= 0.2.19)', () => {
-        // WHY (0077 R4): the Stop-hook runtime contract (stdin payload resolution + exit-2
-        // block signal) shipped in CLI 0.2.19. Without a floor, an older CLI on PATH would
+    it('hooks.json declares the stdin/decision-output guard contract floor (minCliVersion >= 0.2.19)', () => {
+        // WHY (0077 R4): the Stop-hook runtime contract (stdin payload resolution + canonical
+        // decision output) shipped in CLI 0.2.19. Without a floor, an older CLI on PATH would
         // install hooks whose runtime contract it does not implement. The install-time gate
         // (hooksBlockedByCliVersion) only acts when this floor is declared.
         const hooks = JSON.parse(readFileSync(join(PLUGIN_ROOT, 'hooks', 'hooks.json'), 'utf-8'));
@@ -101,6 +102,77 @@ describe('cc plugin structure', () => {
                 const content = readFileSync(file, 'utf-8');
                 expect(content).not.toContain('cc-skills/references/');
             }
+        }
+    });
+
+    it('keeps every plugin Markdown code fence balanced', () => {
+        const files = walkFiles(PLUGIN_ROOT).filter((file) => file.endsWith('.md'));
+        for (const file of files) {
+            const fences = readFileSync(file, 'utf-8')
+                .split('\n')
+                .filter((line) => /^\s*```/.test(line));
+            expect(`${file}:${fences.length}`).toBe(`${file}:${fences.length - (fences.length % 2)}`);
+        }
+    });
+
+    it('keeps live relative Markdown links resolvable', () => {
+        const files = walkFiles(PLUGIN_ROOT).filter((file) => file.endsWith('.md'));
+        for (const file of files) {
+            let inFence = false;
+            for (const [index, line] of readFileSync(file, 'utf-8').split('\n').entries()) {
+                if (/^\s*```/.test(line)) {
+                    inFence = !inFence;
+                    continue;
+                }
+                if (inFence) continue;
+
+                for (const match of line.matchAll(/\[[^\]]*]\(([^)]+)\)/g)) {
+                    const destination = match[1]?.trim() ?? '';
+                    if (
+                        destination === '' ||
+                        destination.startsWith('#') ||
+                        destination.startsWith('/') ||
+                        /^[a-z][a-z+.-]*:/i.test(destination) ||
+                        /[<>]/.test(destination)
+                    ) {
+                        continue;
+                    }
+                    const path = destination.split('#', 1)[0];
+                    expect(`${file}:${index + 1}:${destination}:${existsSync(resolve(dirname(file), path))}`).toBe(
+                        `${file}:${index + 1}:${destination}:true`,
+                    );
+                }
+            }
+        }
+    });
+
+    it('keeps lifecycle wrapper argument hints aligned with Commander', () => {
+        const wrappers = readdirSync(join(PLUGIN_ROOT, 'commands')).filter((file) =>
+            /^(agent|command|hook|magent|skill)-(add|evaluate|refine|evolve)\.md$/.test(file),
+        );
+
+        for (const file of wrappers) {
+            const [, family = '', wrapperVerb = ''] =
+                file.match(/^(agent|command|hook|magent|skill)-(add|evaluate|refine|evolve)\.md$/) ?? [];
+            const verb = wrapperVerb === 'add' ? 'scaffold' : wrapperVerb;
+            const helpResult = Bun.spawnSync(['bun', CLI_ENTRY, family, verb, '--help'], {
+                stdout: 'pipe',
+                stderr: 'pipe',
+            });
+            expect(`${file}:help-exit:${helpResult.exitCode}`).toBe(`${file}:help-exit:0`);
+            const help = helpResult.stdout.toString();
+
+            const content = readFileSync(join(PLUGIN_ROOT, 'commands', file), 'utf-8');
+            const hint = content.match(/^argument-hint:\s*["'](.+)["']\s*$/m)?.[1] ?? '';
+            const documented = [...new Set(hint.match(/--[a-z][a-z-]*/g) ?? [])].sort();
+            const registered = [...new Set(help.match(/--[a-z][a-z-]*/g) ?? [])]
+                .filter((option) => option !== '--help')
+                .sort();
+
+            expect(`${file}:${documented.join(',')}`).toBe(`${file}:${registered.join(',')}`);
+            expect(`${file}:required-arguments:${hint.startsWith('<')}`).toBe(
+                `${file}:required-arguments:${/^Usage: .+ <[^>]+>/m.test(help)}`,
+            );
         }
     });
 });

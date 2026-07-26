@@ -138,7 +138,7 @@ Two-call seam: the CLI emits generation briefs; Author → Skeptic → (Judge) p
 
 ```bash
 # 1. Envelope-out (no DB write, no model call)
-superskill hook evolve <name> --propose-only --json [--target <platform>] [--from <eval-id>]
+superskill hook evolve <name> --propose-only --json [--target <platform>] [--from <date>]
 
 # 2. Author → Skeptic → (Judge) personas produce proposal.json
 

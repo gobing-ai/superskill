@@ -6,14 +6,13 @@
  * anti-hallucination protocol and prints the `{ok, reason, issues?}` result JSON.
  *
  * Exit contract (validation-CLI semantics): 0 = protocol followed, 1 = violation.
- * This is deliberately NOT the hook block signal (hooks use exit 2 + stderr — see
- * `ah_guard.ts`). Do not wire this script into `hooks.json`; hosts would treat its
- * exit 1 as a non-blocking error, not a block. Use `superskill hook run cc
- * anti-hallucination` for hook enforcement.
+ * This is deliberately NOT the hook block signal (hooks emit canonical decision JSON
+ * at exit 0 — see `ah_guard.ts`). Do not wire this script into `hooks.json`; hosts
+ * would treat its exit 1 as a non-blocking error, not a block. Use
+ * `superskill hook run cc anti-hallucination` for hook enforcement.
  */
 
-import { readFileSync } from 'node:fs';
-import { verifyAntiHallucinationProtocol } from './ah_guard';
+import { readPipedStdin, verifyAntiHallucinationProtocol } from './ah_guard';
 import { logger } from './logger';
 
 interface ValidationResult {
@@ -22,7 +21,7 @@ interface ValidationResult {
     issues?: string[];
 }
 
-type ReadTextFile = (path: string, encoding: 'utf-8') => string;
+type ReadStdin = () => Promise<string>;
 
 export function validateResponseText(text: string | undefined): ValidationResult {
     if (!text || text.trim().length === 0) {
@@ -32,24 +31,23 @@ export function validateResponseText(text: string | undefined): ValidationResult
     return verifyAntiHallucinationProtocol(text);
 }
 
-export function readStdinText(
-    readTextFile: ReadTextFile = readFileSync,
+export async function readStdinText(
+    readStdin: ReadStdin = readPipedStdin,
     isTty: boolean = Boolean(process.stdin.isTTY),
-): string | undefined {
-    // A TTY means no caller piped a payload (manual invocation) — reading /dev/stdin would block
-    // on an interactive terminal until EOF, hanging the CLI with no prompt. Same guard as
-    // `ah_guard.ts`'s entry point.
+): Promise<string | undefined> {
+    // A TTY means no caller piped a payload. Non-TTY reads reuse the engine's bounded,
+    // idle-rearming reader so a host that holds fd 0 open cannot hang this adapter.
     if (isTty) return undefined;
     try {
-        const input = readTextFile('/dev/stdin', 'utf-8');
+        const input = await readStdin();
         return input.trim().length > 0 ? input : undefined;
     } catch {
         return undefined;
     }
 }
 
-export function main(): number {
-    const responseText = process.env.RESPONSE_TEXT ?? readStdinText();
+export async function main(): Promise<number> {
+    const responseText = process.env.RESPONSE_TEXT ?? (await readStdinText());
     const result = validateResponseText(responseText);
 
     logger.log(JSON.stringify(result));
@@ -58,5 +56,5 @@ export function main(): number {
 }
 
 if (import.meta.main) {
-    process.exit(main());
+    process.exit(await main());
 }
