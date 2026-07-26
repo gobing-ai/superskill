@@ -185,6 +185,11 @@ describe('cc plugin structure', () => {
     });
 
     it('keeps lifecycle wrapper argument hints aligned with Commander', () => {
+        // Each wrapper file spawns `bun CLI_ENTRY <family> <verb> --help` to read the registered
+        // Commander options. Bun cold-start (~0.2s) × 17 wrappers runs serially inside this one
+        // `it`, and CI runners are slower than local — the default 5s per-test timeout trips on
+        // the cumulative spawn cost (observed 5.9s on GitHub Actions, run 30222507329). Lift the
+        // ceiling for this test only; assertions are unchanged.
         const wrappers = readdirSync(join(PLUGIN_ROOT, 'commands')).filter((file) =>
             /^(agent|command|hook|magent|skill)-(add|evaluate|refine|evolve)\.md$/.test(file),
         );
@@ -222,7 +227,7 @@ describe('cc plugin structure', () => {
                 `${file}:table-positionals:${registeredPositionals.join(',')}`,
             );
         }
-    });
+    }, 30000);
 
     it('keeps anti-hallucination Stop documentation on the exit-zero JSON decision contract', () => {
         const guide = readFileSync(
