@@ -1,0 +1,10 @@
+id: demo-omp-zai
+name: Implementer — code generation
+type: omp
+workspace: /Users/robin/xprojects/superskill
+purpose: Implementer — code generation
+tags:
+  - team:demo
+  - spur:generated
+config:
+  model: zai/glm-5.2

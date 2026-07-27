@@ -1,0 +1,9 @@
+id: demo-codex
+name: Verifier — second opinion
+type: codex
+workspace: /Users/robin/xprojects/superskill
+purpose: Verifier — second opinion
+tags:
+  - team:demo
+  - spur:generated
+config: {}

@@ -1,0 +1,9 @@
+id: demo-claude
+name: Lead — planning & review
+type: claude
+workspace: /Users/robin/xprojects/superskill
+purpose: Lead — planning & review
+tags:
+  - team:demo
+  - spur:generated
+config: {}
