@@ -10,3 +10,5 @@ extends:
   - structure
   - boundary
   - surface
+disable:
+  - prefer-accessible-role-for-button-queries
