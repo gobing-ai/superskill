@@ -395,3 +395,24 @@ Number burned — same off-sequence jump as ADR-025. Never assigned a decision; 
 **Why.** Unframed `path || content` concatenation permits distinct directory trees to produce the same hash input.
 
 **Detail:** see 04 §Skills-ecosystem module surface and task 0106.
+
+---
+
+## ADR-032: Process execution routes through ts-runtime ProcessExecutor
+
+**Status:** Accepted · **Date:** 2026-07-31
+
+**Decision.** All subprocess spawning in `apps/cli` and `packages/core` goes through
+`@gobing-ai/ts-runtime`'s `ProcessExecutor` (added as a direct dependency of both
+workspaces); direct `node:child_process` imports and `Bun.spawn` call sites are removed.
+ts-runtime offers no sanctioned sync spawn path (`BunSyncProcessExecutor` is deprecated),
+so the hook dispatcher chain (`hookRun` / `HookRunner`) is async. Generated host
+artifacts are exempt by construction: the OMP hook module template lives in an embedded
+text asset (`apps/cli/src/templates/omp-hook-module.txt`) outside app-source rule scope.
+
+**Why.** The spur strict-preset `no-direct-process-spawn` rule mandates the port so
+timeout, cancellation, output capture, and observability semantics converge in one
+audited implementation instead of per-call-site spawn plumbing.
+
+**Detail:** see 04 §Skills-ecosystem module surface; test seam is an injected
+`ProcessExecutor` fake (replaces `Bun.spawn` monkey-patching).

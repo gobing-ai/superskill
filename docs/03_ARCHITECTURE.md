@@ -367,7 +367,7 @@ sequenceDiagram
     CLI->>Rulesync: runRulesync(targets)
     Rulesync->>Upstream: Write files to output roots
     alt Claude Code installation
-        CLI->>Upstream: bun spawn "claude plugin install"
+        CLI->>Upstream: ProcessExecutor.run "claude plugin install" (ts-runtime, ADR-032)
     else Hermes / OMP installation
         CLI->>Upstream: copyDirectory to ~/.hermes or ~/.omp
     end
