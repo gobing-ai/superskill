@@ -1,7 +1,7 @@
-import { spawnSync } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
 import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { NodeProcessExecutor, type ProcessExecutor } from '@gobing-ai/ts-runtime';
 import { echo, echoError } from '@gobing-ai/ts-utils';
 import type { Command } from 'commander';
 import { runStopGuard, type StopProfile } from '../../../../plugins/cc/scripts/anti-hallucination/ah_guard';
@@ -47,8 +47,11 @@ interface HookRunResult {
 }
 
 interface HookRunner {
-    run(env: NodeJS.ProcessEnv, stdinText: string, profile?: StopProfile): HookRunResult;
+    run(env: NodeJS.ProcessEnv, stdinText: string, profile?: StopProfile): Promise<HookRunResult>;
 }
+
+/** Process execution port for hook runners that shell out (no-direct-process-spawn: routed via ts-runtime). */
+const hookProcessExecutor: ProcessExecutor = new NodeProcessExecutor();
 
 // ── sp/task-write-guard ─────────────────────────────────────────────────────
 
@@ -58,7 +61,7 @@ interface ToolPayload {
 }
 
 type TaskOwnership = 'owned' | 'unowned' | 'unknown';
-type ResolveTaskOwnership = (filePath: string, cwd: string) => TaskOwnership;
+type ResolveTaskOwnership = (filePath: string, cwd: string) => Promise<TaskOwnership>;
 /**
  * Build a PreToolUse decision. Allow → empty stdout + exit 0 (both Claude Code and Codex treat
  * empty-output exit-0 as "continue normally"; Codex rejects `permissionDecision:"allow"` JSON, so
@@ -98,18 +101,49 @@ export const parseSpurBinSpec = parseCommandArgv;
  * exit 0 → owned, non-zero → unowned, spawn/timeout failure → unknown (fail open). Honors `SPUR_BIN`
  * for a custom binary (optional args; quote paths that contain spaces).
  */
-export function resolveSpurTaskOwnership(filePath: string, cwd: string): TaskOwnership {
+export async function resolveSpurTaskOwnership(
+    filePath: string,
+    cwd: string,
+    executor: ProcessExecutor = hookProcessExecutor,
+): Promise<TaskOwnership> {
     const spurBin = process.env.SPUR_BIN || 'spur';
     const parts = parseSpurBinSpec(spurBin);
     const cmd = parts[0] ?? 'spur';
     const args = [...parts.slice(1), 'task', 'resolve', filePath, '--strict', '--json'];
-    const res = spawnSync(cmd, args, {
-        cwd,
-        encoding: 'utf-8',
-        timeout: 8000,
-    });
-    if (res.error || typeof res.status !== 'number') return 'unknown';
-    return res.status === 0 ? 'owned' : 'unowned';
+    const result = await executor.run({ command: cmd, args, cwd, timeout: 8000 });
+    if (result.exitCode === null) return 'unknown';
+    return result.exitCode === 0 ? 'owned' : 'unowned';
+}
+/**
+ * Cheap in-process check: could this path plausibly be a Spur task-corpus file?
+ *
+ * Exists purely to avoid a ~2.4 s `spur task resolve` subprocess on paths that cannot be task
+ * files (Spur task 0398 R2). The guard used to spawn on every Write/Edit, so editing `src/foo.ts`
+ * or `package.json` paid the same toll as editing a real task file — ~3.7 s per mutation once the
+ * hook's own ~1.3 s startup is included, on every agent in every repo with the sp plugin installed.
+ *
+ * The convention encoded here is already fixed elsewhere in the corpus tooling (Spur's
+ * `defaultVerdictRunDir` resolves the same `docs/tasks<N>` / flat-`tasks` layout pair): task files
+ * are markdown living under a path segment named `tasks`, optionally digit-suffixed.
+ *
+ * **Fails toward the spawn.** Anything markdown-shaped naming a `tasks*` segment still goes to
+ * `spur task resolve` and lets it decide. A false spawn only costs latency; a false skip would
+ * silently disable the write guard.
+ *
+ * Known limitation: a project that relocates its corpus to a folder not named `tasks*` (via
+ * `spur task create --folder`) is not matched, and its task files stop being guarded. That is the
+ * same convention the rest of the corpus tooling already assumes; widening it needs a real config
+ * surface rather than a guess, which this deliberately does not add.
+ */
+export function couldBeTaskCorpusPath(filePath: string): boolean {
+    // Task corpus files are always markdown.
+    if (!/\.md$/i.test(filePath)) return false;
+    // ...living under a `tasks` / `tasks2` / `tasks3` … path segment. Segment match, not substring:
+    // `docs/tasksfoo/x.md` and `docs/my-tasks/x.md` are NOT candidates.
+    return filePath
+        .replace(/\\/g, '/')
+        .split('/')
+        .some((segment) => /^tasks\d*$/i.test(segment));
 }
 
 /**
@@ -118,11 +152,11 @@ export function resolveSpurTaskOwnership(filePath: string, cwd: string): TaskOwn
  * exit code alone. Fail open on every other condition. `SPUR_WRITE_GUARD=off` short-circuits to allow.
  */
 /** Run the Spur task write guard with an injectable resolver for deterministic tests. */
-export function runSpTaskWriteGuard(
+export async function runSpTaskWriteGuard(
     env: NodeJS.ProcessEnv,
     stdinText: string,
     resolveTaskOwnership: ResolveTaskOwnership = resolveSpurTaskOwnership,
-): HookRunResult {
+): Promise<HookRunResult> {
     if (env.SPUR_WRITE_GUARD === 'off') return preToolUseDecision('allow');
 
     let payload: ToolPayload;
@@ -137,10 +171,12 @@ export function runSpTaskWriteGuard(
 
     const filePath = payload.tool_input?.file_path ?? '';
     if (filePath === '') return preToolUseDecision('allow');
+    // Skip the ~2.4 s ownership spawn for paths that cannot be task files (0398 R2).
+    if (!couldBeTaskCorpusPath(filePath)) return preToolUseDecision('allow');
 
     // Delegate ownership entirely to the globally installed `spur`: owned => deny,
     // unowned/unknown => fail open.
-    const ownership = resolveTaskOwnership(filePath, env.CLAUDE_PROJECT_DIR ?? process.cwd());
+    const ownership = await resolveTaskOwnership(filePath, env.CLAUDE_PROJECT_DIR ?? process.cwd());
     if (ownership === 'owned') {
         return preToolUseDecision(
             'deny',
@@ -173,7 +209,7 @@ const spTaskWriteGuard: HookRunner = {
  * Fails open (allow stop) on empty/invalid payloads or missing content.
  */
 const ccAntiHallucination: HookRunner = {
-    run(env, stdinText, profile) {
+    async run(env, stdinText, profile) {
         const result = runStopGuard(env.ARGUMENTS, stdinText, profile);
         // The guard blocks via the profiled `decision` JSON in `output` at exit 0 — the clean
         // feedback channel for every profiled host (block: Claude/Codex/Hermes; deny:
@@ -246,7 +282,7 @@ function readSpurSession(dir: string, stdinText: string): SpurSession | null {
 
 /** PostToolUse (matcher Read|Write|Edit): append one token-estimate event to the ledger. */
 const spContextPostTool: HookRunner = {
-    run(env, stdinText) {
+    async run(env, stdinText) {
         const dir = spurContextDir(env);
         let payload: unknown;
         try {
@@ -313,7 +349,7 @@ const spContextPostTool: HookRunner = {
 
 /** SessionStart: create a payload-scoped session file and append `session_start`. */
 const spContextSessionStart: HookRunner = {
-    run(env, stdinText) {
+    async run(env, stdinText) {
         const dir = spurContextDir(env);
         try {
             mkdirSync(dir, { recursive: true });
@@ -353,7 +389,7 @@ const spContextSessionStart: HookRunner = {
 
 /** Stop: read O(1) totals from the payload-scoped session file, append `session_end`, then clean up. */
 const spContextSessionStop: HookRunner = {
-    run(env, stdinText) {
+    async run(env, stdinText) {
         const dir = spurContextDir(env);
         const session = readSpurSession(dir, stdinText);
         if (!session) return OK;
@@ -426,13 +462,13 @@ const HOOK_RUNNERS: Record<string, HookRunner> = {
 };
 
 /** Resolve and run a hook runner, writing its output to stdout and returning the exit code. */
-export function hookRun(
+export async function hookRun(
     plugin: string,
     hookId: string,
     env: NodeJS.ProcessEnv,
     stdinText: string,
     profile?: StopProfile,
-): number {
+): Promise<number> {
     const runner = HOOK_RUNNERS[`${plugin}/${hookId}`];
     if (!runner) {
         // Fail open: an unknown hook id signals plugin/CLI version skew (the installed plugin
@@ -445,7 +481,7 @@ export function hookRun(
         );
         return 0;
     }
-    const result = runner.run(env, stdinText, profile);
+    const result = await runner.run(env, stdinText, profile);
     // WHY conditional: echo('') writes '\n' (writeLine always appends a newline). A bare newline
     // on stdout makes Codex try to parse it as JSON and fail open noisily. Only emit when non-empty.
     if (result.output) echo(result.output);
@@ -470,7 +506,7 @@ export function registerHookRun(cmd: Command, readInput?: () => string): void {
                 stdinText = (await readStdinNonBlocking()) ?? '';
             }
             const profile: StopProfile = options.profile === 'deny' ? 'deny' : 'block';
-            const code = hookRun(plugin, hookId, process.env, stdinText, profile);
+            const code = await hookRun(plugin, hookId, process.env, stdinText, profile);
             process.exit(code);
         });
 }
