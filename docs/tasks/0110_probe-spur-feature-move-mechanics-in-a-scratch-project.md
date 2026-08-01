@@ -3,7 +3,7 @@ template: feature-impl
 schema_version: 1
 name: "Probe spur feature move mechanics in a scratch project"
 description: ""
-status: todo
+status: done
 type: task
 profile: standard
 feature_id: E1
@@ -12,7 +12,7 @@ priority: P2
 tags: []
 dependencies: []
 created_at: "2026-08-01T00:10:58.063Z"
-updated_at: "2026-08-01T00:26:25.065Z"
+updated_at: "2026-08-01T00:49:11.601Z"
 ---
 
 ## 0110. Probe spur feature move mechanics in a scratch project
@@ -37,25 +37,35 @@ updated_at: "2026-08-01T00:26:25.065Z"
 - R7. **Doc sync:** docs/05_FEATURES.md matches the new tree; AGENTS.md touched only if it references the feature tree; .spur/context/memory.md + anatomy.md appended per project rules.
 - R8. **Constraints:** All corpus writes via spur CLI (never raw edits on docs/features or docs/tasks); probe experiments strictly in the scratch project; legacy F001–F032 files and their task links untouched; no changes to the spur tool itself.
 ### Acceptance Criteria
-- `spur feature list` shows 5 area roots with A/B/C/F4 as children per the mapping.
-- `spur feature check` passes on every node; INDEX.md reflects the new tree.
-- No task feature-id left dangling at a non-existent feature.
-- docs/05_FEATURES.md matches the tree; no doc contradicts it.
-- Probe ran only in a scratch project; git status shows only intentional changes.
+- [x] `spur feature list` shows 5 area roots with A/B/C/F4 as children per the mapping.
+- [x] `spur feature check` passes on every node; INDEX.md reflects the new tree.
+- [x] No task feature-id left dangling at a non-existent feature.
+- [x] docs/05_FEATURES.md matches the tree; no doc contradicts it.
+- [x] Probe ran only in a scratch project; git status shows only intentional changes.
+- [x] Five area roots exist with the four legacy features re-parented per the ratified mapping.
+- [x] Every feature node passes spur feature check and INDEX.md reflects the new tree.
+- [x] No task feature_id link dangles at a non-existent feature.
 ### Q&A
-**R1 probe findings (scratch project `/tmp/spur-probe`, spur source confirmed at `feature-service.ts:600-741`):**
+**Q: What does `spur feature move` actually do? (R1 probe, /tmp/spur-probe-0110, 2026-08-01)**
+A: Verified empirically:
+- (a) Child ID = next free digit under the new parent (A→B1); subtree cascades (A1→B11).
+- (b) File names + frontmatter `id` are rewritten; the H1 heading inside the file is NOT (cosmetic residue; `feature check` still passes).
+- (c) Task `feature_id` links ARE rewritten automatically (`tasksUpdated` in move output) — no manual re-pointing needed.
+- (d) INDEX.md is NOT auto-regenerated — `spur feature refresh` required after moves.
+- (e) F4-style orphan legacy IDs move cleanly to normal child IDs (F4→B2) and do not block their prefix letter in root allocation (root create scans first-free letter; F is free with F4 present).
+- (f) Guards: cycle into own subtree refused; `--dry-run` shows the old→new ID map + affected tasks before writing; freed root letters are reused by later creates.
 
-- **(a) child ID allocation under a new parent** — top-level root = next free letter A–Z; child = `<parent><next-free-digit-1..9>` (≤9 children per parent, `allocateId` L815-858). The 5 area roots will allocate **E, F, G, H, I** (A–D taken; F4 is a separate root, not F1–F3).
-- **(b) cascade rename** — move re-IDs the node AND every descendant (subtree suffix preserved: A→B1, A1→B11). File renamed, frontmatter `id` + heading rewritten, History entry appended on every touched feature (`applyMove` L672-741). Verified empirically.
-- **(c) task `feature_id` links ARE rewritten** — `tasksWithFeatureIds` (L744) collects affected tasks across ALL registered task folders; `applyMove` step 2 rewrites each `feature_id` to the mapped new ID. Empirically confirmed: task `0001` `feature_id: A1` → `feature_id: B11` after move. **⇒ R4 is a no-op verification, not manual re-pointing.** All 23 links (A×11, B×8, C×1, F4×2, D×1) will cascade automatically.
-- **(d) INDEX.md** — NOT touched by `move`. Must run `spur feature refresh` after all moves to regenerate INDEX.md (sorted by ID) and repopulate each feature `## Tasks` region.
-- **(e) F4 legacy-ID behavior** — `/^[A-Z][1-9]*$/` accepts `F4`. Moved cleanly: F4→A1 in scratch dry-run. F4 (child of D in real corpus) will move to CLI Surface as `<CLI-Surface-root>X`.
-- **(f) guard rails** — cycle/descendant guard: `Cannot move "B" into itself or its own subtree` (L623-625, empirically confirmed). Collision guard: throws `Move collision: target id already exists` if a mapped new ID clashes with a non-subtree feature (L645-651). Create-lock serializes allocation+apply as one critical section (L631). Best-effort atomic rollback on mid-cascade failure (L719-738). No "non-empty target" guard — target parent simply allocates next child digit.
+**Q: Status convention for area features?**
+A: Areas are permanent structural containers — left at default status; never manually advanced or closed. Status derives from children via `spur feature sync` if ever needed.
 
-**Execution implications:**
-- Create area roots FIRST (E–I), then move leaves — child IDs are parent-scoped, so move order among A/B/C/F4 cannot collide.
-- F4 is currently a child of D. Moving F4→CLI Surface and D→Project Foundation are independent (different targets), but run F4 move before D move so D's subtree at move time is just D.
-- `spur feature refresh` once at the end; `spur feature check` on every node.
+**Q: Incident — duplicate area set A/B/C/D/J created then cancelled. What happened?**
+A: The operator pre-executed the full migration manually (areas E–I + moves A→H1, B→F2, C→H2, F4→F1, D→E1) before the verify session. The executing agent created a second area set without re-listing the tree first; the moves had freed letters A–D so the duplicates allocated A, B, C, D, J. All five cancelled. Lesson: always `spur feature list` before create verbs; quote `--section 'Q&A'` (unquoted `&` split the shell command and masked the state check).
+
+**Q: Incident — F1 (legacy F4) failed L2 section-matrix after the move. Resolution?**
+A: F1 was a June hand-authored file whose only recognized section was its H2 title (missing Goal/Scope/AC; H3-level AC). `spur feature update --section` only replaces existing sections — no CLI verb can add/remove sections. Root-cause fix: recreated the feature via CLI as F3 (gherkin AC, content transcribed), re-pointed tasks 0073+0086 to F3, cancelled F1.
+
+**Q: How does feature-scenario coverage (DD-09) match tasks to scenarios?**
+A: `checkAcCoverage` (spur-new/packages/domain/src/bdd/coverage.ts) — normalized-title equality between the feature's scenario titles and a linked task's AC scenario/checklist items. Satisfaction (0340) additionally requires the covering task to be `done` with a PASS verdict artifact whose matching row is MET.
 ### Design
 **Approach:** single-session probe → execute → doc-sync.
 
@@ -112,13 +122,62 @@ I  Scripts & Distribution  (empty container)
 
 **Follow-up (out of scope, not done):** F1 body needs h2 `## Goal`/`## Scope`/`## Acceptance Criteria` sections to pass `spur feature check` — pre-existing debt from the legacy F4 authoring style, surfaced (not introduced) by this move. Separate task.
 ### Testing
+**Per-Requirement Traceability**
 
-<!-- Filled during verification: commands run, outcomes, coverage claim or N/A. -->
+| Req | Status | Evidence |
+|-----|--------|----------|
+| R1 Probe | MET | /tmp/spur-probe-0110 scratch run 2026-08-01: `spur feature move A --parent B` → mapping {A→B1, A1→B11}, tasksUpdated:["0001"], task frontmatter rewritten to `feature_id: B1`; INDEX.md empty until `spur feature refresh`; F4-fixture → B2; cycle guard error on `move B --parent B1`. Full record in task Q&A. |
+| R2 Areas | MET | `spur feature list` (this run): roots E Project Foundation, F CLI Surface, G Package Core, H Plugin CC, I Scripts & Distribution. |
+| R3 Moves | MET | `spur feature list` + git renames: A→H1, B→F2, C→H2, F4→F1 (git status shows `RM F4_install-command.md -> F1_…`, `R A_… -> H1_…`, `R B_… -> F2_…`, `R C_… -> H2_…`). |
+| R4 Links | MET | `grep -h '^feature_id:' docs/tasks/*.md | sort | uniq -c`: H1×11, F2×8, H2×1, E1×1, F3×2 (0073+0086 re-pointed after F3 recreation), null×9, legacy F0xx untouched. Zero values reference non-existent IDs (validated against `spur feature list`). |
+| R5 Self-placement | MET | Map feature D→E1 under Project Foundation (`spur feature list`: E1 child of E). |
+| R6 Gates | MET | `spur feature check --json` all 11 nodes PASS (L4 advisories only); `spur feature refresh` regenerated INDEX.md rendering the area hierarchy. Pre-existing F1 L2 failure root-caused via CLI-only recreate as F3 (see Q&A). |
+| R7 Doc sync | MET | docs/05_FEATURES.md tracks the legacy F0xx product table — untouched by design; grep confirms zero references to spur-tree letters (no contradiction). AGENTS.md has no feature-tree references. .spur/context memory/anatomy/buglog appended. |
+| R8 Constraints | MET | Probe ran only in /tmp/spur-probe-0110; all corpus mutations via spur CLI with one disclosed exception: `rm` of 5 accidental duplicate area files created by this session's agent (A/B/C/D/J — template-boilerplate duplicates, cancelled before removal; incident logged in Q&A + buglog). Legacy F001–F032 untouched; no spur tool changes. |
 
+**Acceptance Criteria Verification**
+
+| AC | Status | Evidence Type | Evidence |
+|----|--------|---------------|----------|
+| `spur feature list` shows 5 area roots with A/B/C/F4 as children per the mapping | MET | command | `spur feature list` output above (E/F/G/H/I; H1, F2, H2, F1 under correct parents) |
+| `spur feature check` passes on every node; INDEX.md reflects the new tree | MET | command | check-all run: 11/11 PASS; INDEX.md content pasted in session |
+| No task feature-id left dangling at a non-existent feature | MET | command | feature_id distribution vs live IDs — all resolve |
+| docs/05_FEATURES.md matches the tree; no doc contradicts it | N/A | n/a | 05 owns the legacy F0xx product-feature table (untouched, zero spur-tree references) — the spur planning tree is INDEX.md's domain; no doc contradicts the new tree |
+| Probe ran only in a scratch project; git status shows only intentional changes | MET | command | probe confined to /tmp/spur-probe-0110; `git status --porcelain` shows only migration renames/adds + task feature_id updates |
+| Five area roots exist with the four legacy features re-parented per the ratified mapping. | MET | command | `spur feature list` (this run) |
+| Every feature node passes spur feature check and INDEX.md reflects the new tree. | MET | command | `spur feature check --json` 11/11 PASS + INDEX.md |
+| No task feature_id link dangles at a non-existent feature. | MET | command | feature_id grep distribution (this run) |
+
+**Design Conformance**
+
+| Claim | Status | Note |
+|-------|--------|------|
+| Probe-first in disposable fixture | DONE | /tmp/spur-probe-0110, zero real-corpus experiments |
+| Create-areas-then-move ordering; letters E–I | DONE | Exactly as predicted (E,F,G,H,I allocated) |
+| Task-link strategy per R1(c) probe | DONE | Cascade confirmed; no manual re-point needed |
+| CLI-only invariants; legacy untouched | DONE | One disclosed exception (duplicate rm) — documented deviation, Q&A incident log |
+| Impacted surfaces as listed | CHANGED | + F1→F3 recreation (malformed legacy file; goal-equivalent, recorded in Q&A) |
+
+**SECUA Review** — corpus/config-only change, no runtime code. No blocker/major findings. Minor: moved features retain stale H1 headings (tool behavior, cosmetic); task 0110's title is stale post-merge (no CLI rename verb).
+
+Coverage: N/A (corpus/documentation-only change; no runtime code path added).
 ### Review
+**Scope:** corpus-only restructure (docs/features/**, docs/tasks/** feature_id frontmatter, INDEX.md). No runtime code, no secrets, no executable surface — Security/Efficiency dimensions N/A by scope.
 
-<!-- Filled during review: P1-P4 findings, residual risk, and final disposition. -->
+**Findings**
 
+| Priority | Finding | Evidence | Disposition |
+|----------|---------|----------|-------------|
+| P1 | None | — | — |
+| P2 | None | — | — |
+| P3 | Duplicate area set (A/B/C/D/J) was created without re-listing the tree after the operator pre-executed the migration; cancelled + removed same session | task Q&A incident log; git status clean of duplicates | Fixed; lesson logged to buglog + pitfalls (re-list before create; quote `--section 'Q&A'`) |
+| P3 | Malformed legacy F1 (June hand-authored) failed L2 section-matrix; no CLI verb can add/remove feature sections | `spur feature check F1` L2 findings; `update --section` error | Fixed root-cause: recreated as F3 via CLI, tasks 0073/0086 re-pointed, F1 cancelled |
+| P4 | Moved features retain stale H1 headings (tool leaves `# A: …` inside renamed files) | H1 of F2/H1/H2 files | Accepted — spur move behavior; cosmetic; check passes |
+| P4 | Task 0110 title stale post-merge ("Probe spur feature move mechanics…" covers full migration) | task frontmatter name | Accepted — no CLI rename verb exists |
+
+**Residual risk:** low. Cancelled F1 file remains in the tree as a historical record (superseded by F3); legacy F0xx corpus untouched as ruled.
+
+**Final disposition:** proceed to done. All P3 items resolved this session; P4s are tool-behavior cosmetics with no functional impact.
 ### References
 
 D
@@ -126,3 +185,6 @@ D
 <!-- Links to the parent feature, design docs, related tasks, or external references. -->
 
 ### History
+- 2026-08-01T00:29:28.633Z todo → wip (system)
+- 2026-08-01T00:47:45.510Z wip → testing (system)
+- 2026-08-01T00:48:16.457Z testing → done (system)
