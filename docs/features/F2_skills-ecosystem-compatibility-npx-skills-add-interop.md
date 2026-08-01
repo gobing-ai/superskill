@@ -1,12 +1,12 @@
 ---
 schema_version: 1
-id: "B"
+id: "F2"
 name: "Skills ecosystem compatibility (npx skills add interop)"
 status: active
 priority: P2
 tags: []
 created_at: "2026-07-24T22:54:40.642Z"
-updated_at: "2026-07-25T07:13:56.620Z"
+updated_at: "2026-08-01T00:24:29.583Z"
 ---
 
 # B: Skills ecosystem compatibility (npx skills add interop)
@@ -68,7 +68,7 @@ Feature: Skills ecosystem compatibility (npx skills add interop)
 | 0101 | skills-ecosystem: installer and three-tier per-target emission reusing the install pipeline | done |
 | 0102 | skills-ecosystem: CLI verbs skill add/list/remove/update with lock writes and dry-run | done |
 | 0103 | skills-ecosystem: npx skills interop round-trip verification and docs sync | done |
-| 0106 | Fix skills-ecosystem SECUA and architecture review findings | testing |
+| 0106 | Fix skills-ecosystem SECUA and architecture review findings | done |
 <!-- END AUTO-GENERATED -->
 
 ## Notes
@@ -79,3 +79,4 @@ Feature: Skills ecosystem compatibility (npx skills add interop)
 - Implementation task: 0097.
 ## History
 - 2026-07-25T07:13:56.620Z backlog → active (system)
+- 2026-08-01T00:24:29.583Z moved B → F2 (system)

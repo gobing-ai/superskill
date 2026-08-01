@@ -6,13 +6,13 @@ description: ""
 status: done
 type: task
 profile: standard
-feature_id: B
+feature_id: F2
 parent_wbs: "0097"
 priority: P1
 tags: ["skills-ecosystem", "fetch", "discovery"]
 dependencies: ["0098"]
 created_at: "2026-07-24T23:58:50.192Z"
-updated_at: "2026-07-25T07:47:20.541Z"
+updated_at: "2026-08-01T00:24:29.583Z"
 ---
 
 ## 0100. skills-ecosystem: fetch (GitHub Trees/Blob fast path + hardened git clone) and SKILL.md discovery

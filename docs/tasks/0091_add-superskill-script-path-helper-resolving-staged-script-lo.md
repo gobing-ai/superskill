@@ -6,13 +6,13 @@ description: ""
 status: done
 type: task
 profile: standard
-feature_id: A
+feature_id: H1
 parent_wbs: null
 priority: P2
 tags: []
 dependencies: ["0090"]
 created_at: "2026-07-17T06:13:58.016Z"
-updated_at: "2026-07-17T17:25:34.749Z"
+updated_at: "2026-08-01T00:24:29.745Z"
 ---
 
 ## 0091. Add superskill script path helper resolving staged script locations

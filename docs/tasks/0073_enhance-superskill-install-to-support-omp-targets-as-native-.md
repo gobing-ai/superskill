@@ -6,13 +6,13 @@ description: "Enable OMP to run superskill plugins natively by registering local
 status: done
 type: task
 profile: standard
-feature_id: F4
+feature_id: F1
 parent_wbs: null
 priority: P2
 tags: []
 dependencies: []
 created_at: "2026-07-09T06:01:02.846Z"
-updated_at: "2026-07-12T18:37:07.409Z"
+updated_at: "2026-08-01T00:24:29.423Z"
 ---
 
 ## 0073. Enhance superskill install to support omp targets as native Claude Code plugins

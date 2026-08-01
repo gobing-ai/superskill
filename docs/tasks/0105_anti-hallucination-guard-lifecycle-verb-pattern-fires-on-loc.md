@@ -6,13 +6,13 @@ description: ""
 status: done
 type: issue
 profile: standard
-feature_id: A
+feature_id: H1
 parent_wbs: null
 priority: P2
 tags: ["bug"]
 dependencies: []
 created_at: "2026-07-25T05:35:25.883Z"
-updated_at: "2026-07-25T06:21:22.337Z"
+updated_at: "2026-08-01T00:24:29.745Z"
 ---
 
 ## 0105. anti-hallucination guard: lifecycle-verb pattern fires on local-change talk, blocking nearly every Stop

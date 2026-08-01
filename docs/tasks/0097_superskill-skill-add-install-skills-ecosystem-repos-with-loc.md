@@ -6,13 +6,13 @@ description: ""
 status: done
 type: task
 profile: standard
-feature_id: B
+feature_id: F2
 parent_wbs: null
 priority: P1
 tags: []
 dependencies: []
 created_at: "2026-07-24T22:54:47.271Z"
-updated_at: "2026-07-25T21:47:24.320Z"
+updated_at: "2026-08-01T00:24:29.583Z"
 ---
 
 ## 0097. superskill skill add: install skills-ecosystem repos with lock-file interop

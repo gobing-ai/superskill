@@ -1,12 +1,12 @@
 ---
 schema_version: 1
-id: "A"
+id: "H1"
 name: "Portable plugin scripts via install-time staging"
 status: backlog
 priority: P2
 tags: []
 created_at: "2026-07-17T06:13:24.436Z"
-updated_at: "2026-07-17T06:15:28.926Z"
+updated_at: "2026-08-01T00:24:29.745Z"
 ---
 
 # A: Portable plugin scripts via install-time staging
@@ -112,3 +112,5 @@ Every agent-skill-related plugin script is delivered by `superskill install` sta
 - Non-script install features (MCP, magents) beyond what staging hooks into.
 
 ## History
+
+- 2026-08-01T00:24:29.745Z moved A → H1 (system)

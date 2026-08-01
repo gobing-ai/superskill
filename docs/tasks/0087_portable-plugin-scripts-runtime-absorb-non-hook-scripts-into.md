@@ -6,13 +6,13 @@ description: ""
 status: blocked
 type: task
 profile: standard
-feature_id: A
+feature_id: H1
 parent_wbs: null
 priority: P2
 tags: []
 dependencies: ["0088", "0089"]
 created_at: "2026-07-17T04:13:41.653Z"
-updated_at: "2026-07-17T06:14:42.379Z"
+updated_at: "2026-08-01T00:24:29.745Z"
 ---
 
 ## 0087. Portable plugin scripts runtime — absorb non-hook scripts into superskill script run dispatcher

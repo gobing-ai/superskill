@@ -6,13 +6,13 @@ description: ""
 status: done
 type: task
 profile: standard
-feature_id: B
+feature_id: F2
 parent_wbs: "0097"
 priority: P1
 tags: ["skills-ecosystem", "interop", "locks"]
 dependencies: ["0098"]
 created_at: "2026-07-24T23:58:50.185Z"
-updated_at: "2026-07-25T07:08:06.364Z"
+updated_at: "2026-08-01T00:24:29.583Z"
 ---
 
 ## 0099. skills-ecosystem: agent registry, Target bridge with tier assignment, and dual lock read/writers

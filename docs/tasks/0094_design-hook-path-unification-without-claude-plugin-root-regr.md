@@ -6,13 +6,13 @@ description: ""
 status: done
 type: brainstorm
 profile: standard
-feature_id: A
+feature_id: H1
 parent_wbs: null
 priority: P2
 tags: []
 dependencies: ["0088", "0089"]
 created_at: "2026-07-17T06:14:02.191Z"
-updated_at: "2026-07-17T22:39:19.112Z"
+updated_at: "2026-08-01T00:24:29.745Z"
 ---
 
 ## 0094. Design hook-path unification without CLAUDE_PLUGIN_ROOT regression

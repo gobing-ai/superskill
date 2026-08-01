@@ -1,6 +1,6 @@
 ---
 schema_version: 1
-id: F4
+id: "F1"
 name: superskill install command + marketplace registration
 status: active
 priority: P1
@@ -8,7 +8,7 @@ tags:
   - install
   - marketplace
 created_at: "2026-06-16T00:00:00.000Z"
-updated_at: "2026-07-17T02:30:00.000Z"
+updated_at: "2026-08-01T00:24:29.423Z"
 ---
 
 ## F4. superskill install command + marketplace registration

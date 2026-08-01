@@ -6,13 +6,13 @@ description: ""
 status: done
 type: task
 profile: standard
-feature_id: A
+feature_id: H1
 parent_wbs: null
 priority: P2
 tags: []
 dependencies: ["0089", "0091"]
 created_at: "2026-07-17T06:14:00.910Z"
-updated_at: "2026-07-17T18:22:07.491Z"
+updated_at: "2026-08-01T00:24:29.745Z"
 ---
 
 ## 0093. Migrate non-hook validate-response docs to path-based invocation

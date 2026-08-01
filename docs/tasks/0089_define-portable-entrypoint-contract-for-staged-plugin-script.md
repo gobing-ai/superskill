@@ -6,13 +6,13 @@ description: ""
 status: done
 type: task
 profile: standard
-feature_id: A
+feature_id: H1
 parent_wbs: null
 priority: P2
 tags: []
 dependencies: []
 created_at: "2026-07-17T06:13:55.464Z"
-updated_at: "2026-07-25T04:52:04.858Z"
+updated_at: "2026-08-01T00:24:29.745Z"
 ---
 
 ## 0089. Define portable entrypoint contract for staged plugin scripts

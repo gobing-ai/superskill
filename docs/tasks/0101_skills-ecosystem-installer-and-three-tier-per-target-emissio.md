@@ -6,13 +6,13 @@ description: ""
 status: done
 type: task
 profile: standard
-feature_id: B
+feature_id: F2
 parent_wbs: "0097"
 priority: P1
 tags: ["skills-ecosystem", "emission", "high-risk"]
 dependencies: ["0099", "0100"]
 created_at: "2026-07-24T23:58:50.199Z"
-updated_at: "2026-07-25T16:29:42.420Z"
+updated_at: "2026-08-01T00:24:29.583Z"
 ---
 
 ## 0101. skills-ecosystem: installer and three-tier per-target emission reusing the install pipeline

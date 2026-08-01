@@ -6,13 +6,13 @@ description: ""
 status: done
 type: task
 profile: standard
-feature_id: A
+feature_id: H1
 parent_wbs: null
 priority: P2
 tags: []
 dependencies: []
 created_at: "2026-07-17T06:13:54.251Z"
-updated_at: "2026-07-17T07:12:43.500Z"
+updated_at: "2026-08-01T00:24:29.745Z"
 ---
 
 ## 0088. Inventory real installed script paths per target (Claude/OMP/Grok/rulesync)

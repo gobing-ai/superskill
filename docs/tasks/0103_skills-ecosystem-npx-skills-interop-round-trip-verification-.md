@@ -6,13 +6,13 @@ description: ""
 status: done
 type: task
 profile: standard
-feature_id: B
+feature_id: F2
 parent_wbs: "0097"
 priority: P1
 tags: ["skills-ecosystem", "interop", "docs"]
 dependencies: ["0102"]
 created_at: "2026-07-24T23:58:50.217Z"
-updated_at: "2026-07-25T21:49:19.060Z"
+updated_at: "2026-08-01T00:24:29.583Z"
 ---
 
 ## 0103. skills-ecosystem: npx skills interop round-trip verification and docs sync

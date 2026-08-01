@@ -6,13 +6,13 @@ description: "Migrate spur/superskill from directory Claude marketplaces to GitH
 status: done
 type: task
 profile: standard
-feature_id: F4
+feature_id: F1
 parent_wbs: null
 priority: P1
 tags: []
 dependencies: []
 created_at: "2026-07-16T22:59:59.416Z"
-updated_at: "2026-07-17T02:30:19.707Z"
+updated_at: "2026-08-01T00:24:29.423Z"
 ---
 
 ## 0086. GitHub marketplace registration for spur/superskill (replace directory marketplaces)

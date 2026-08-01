@@ -6,13 +6,13 @@ description: ""
 status: done
 type: issue
 profile: standard
-feature_id: A
+feature_id: H1
 parent_wbs: null
 priority: P2
 tags: ["bug"]
 dependencies: []
 created_at: "2026-07-25T04:48:53.609Z"
-updated_at: "2026-07-25T06:15:48.966Z"
+updated_at: "2026-08-01T00:24:29.745Z"
 ---
 
 ## 0104. harden hook/script stdin payload read: bounded non-blocking reader replacing blocking readFileSync(0)

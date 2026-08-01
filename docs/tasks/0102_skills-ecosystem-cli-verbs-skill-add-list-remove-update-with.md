@@ -6,13 +6,13 @@ description: ""
 status: done
 type: task
 profile: standard
-feature_id: B
+feature_id: F2
 parent_wbs: "0097"
 priority: P1
 tags: ["skills-ecosystem", "cli"]
 dependencies: ["0101"]
 created_at: "2026-07-24T23:58:50.210Z"
-updated_at: "2026-07-25T17:48:23.880Z"
+updated_at: "2026-08-01T00:24:29.583Z"
 ---
 
 ## 0102. skills-ecosystem: CLI verbs skill add/list/remove/update with lock writes and dry-run

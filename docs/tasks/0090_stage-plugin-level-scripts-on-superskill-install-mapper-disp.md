@@ -6,13 +6,13 @@ description: ""
 status: done
 type: task
 profile: standard
-feature_id: A
+feature_id: H1
 parent_wbs: null
 priority: P2
 tags: []
 dependencies: ["0088", "0089"]
 created_at: "2026-07-17T06:13:56.755Z"
-updated_at: "2026-07-17T07:47:00.492Z"
+updated_at: "2026-08-01T00:24:29.745Z"
 ---
 
 ## 0090. Stage plugin-level scripts on superskill install (mapper + dispatch)
