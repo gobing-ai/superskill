@@ -1,23 +1,10 @@
 ---
+schema_version: 1
 name: Harden install outputRoot threading and project-mode robustness for subagents and slash commands
-description: Harden install outputRoot threading and project-mode robustness for subagents and slash commands
-status: Done
+status: done
+type: task
 created_at: 2026-06-21T04:31:04.959Z
 updated_at: 2026-06-21T04:59:37.795Z
-folder: docs/tasks
-type: task
-feature-id: 
-impl_progress:
-  planning: pending
-  design: pending
-  implementation: pending
-  review: pending
-  testing: pending
-impl_progress.review: done
-impl_progress.implementation: done
-impl_progress.planning: done
-impl_progress.design: done
-impl_progress.testing: done
 ---
 
 ## 0045. Harden install outputRoot threading and project-mode robustness for subagents and slash commands
@@ -248,3 +235,8 @@ Dev-verify 2026-06-21 · Phase 7 (SECU) + Phase 8 (traceability) · channel: cur
 - **Source files:** `packages/core/src/rulesync.ts:64`, `apps/cli/src/commands/install.ts:127,146,169,243`, `packages/core/src/pipeline/adapt-subagent.ts:96-193`, `packages/core/src/pipeline/rewrite-colons.ts`, `packages/core/src/targets.ts`.
 - **Old reference (parity):** `~/projects/cc-agents/scripts/command/subagents.sh:365-383` (skill-existence filter), `lib/common.sh:95-97` (PLUGIN_PREFIX rewrite).
 
+
+
+### History
+
+- Migrated from legacy format (2026-08-01)

@@ -1,20 +1,12 @@
 ---
+schema_version: 1
 name: Make cc agent-refine ready to replace rd3 agent-refine
-description: Make cc agent-refine ready to replace rd3 agent-refine
-status: Done
+status: done
+type: task
+priority: P1
+tags: [cc-agents,refine,dogfood,migration,rd3-parity,dead-code]
 created_at: 2026-06-21T21:05:31.607Z
 updated_at: 2026-06-21T22:53:31.538Z
-folder: docs/tasks
-type: task
-feature-id: ""
-priority: high
-tags: ["cc-agents","refine","dogfood","migration","rd3-parity","dead-code"]
-impl_progress:
-  planning: complete
-  design: complete
-  implementation: complete
-  review: complete
-  testing: complete
 ---
 
 ## 0057. Make cc agent-refine ready to replace rd3 agent-refine
@@ -281,3 +273,8 @@ Security: no new attack surface. `--dry-run` writes nothing; defaults route thro
 ### References
 
 
+
+
+### History
+
+- Migrated from legacy format (2026-08-01)

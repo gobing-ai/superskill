@@ -1,39 +1,27 @@
 ---
+schema_version: 1
 name: cc-hooks re-author and hook emit wrapper
-description: cc-hooks re-author and hook emit wrapper
-status: Done
-created_at: 2026-06-17T22:43:52.409Z
-updated_at: 2026-06-19T01:02:38.859Z
-folder: docs/tasks
+status: done
 type: task
-feature-id: F029
-priority: high
-estimated_hours: 5
+priority: P1
+tags: [phase5,hooks,cc-hooks,emit,rulesync]
 dependencies: ["0034"]
-tags: ["phase5","hooks","cc-hooks","emit","rulesync"]
-impl_progress:
-  planning: done
-  design: done
-  implementation: done
-  review: done
-  testing: done
+created_at: 2026-06-17T22:43:52.409Z
+updated_at: "2026-08-01T02:25:10.324Z"
+feature_id: H9
 ---
 
 ## 0036. cc-hooks re-author and hook emit wrapper
 
 ### Background
-
-Two things: (1) Re-author cc:cc-hooks (SKILL.md + expert-hook) to author a rulesync-canonical hooks.json (HookDefinitionSchema shape), NOT the deleted bespoke abstract schema; validate lints against HookDefinitionSchema; evaluate/evolve reuse the Phase 4 quality brain. (2) Add 'superskill hook emit --target <agent>' — a thin CLI wrapper over the install hook path for single-definition multi-agent emission (replaces deleted emit-*.sh). The deleted cc-hooks bash emitters + custom schema were REINVENTING rulesync (design §0); rulesync ships HookDefinitionSchema + event taxonomy + per-tool matrix (vendors/rulesync/src/types/hooks.ts). One canonical schema, no parallel one (invariant #2). hook emit restores the deleted capability in its natural CLI home (P5-D4, #3). Design: design-doc-phase5.md §2.2, §2.3. Owning feature: F029.
-
-
+Two things: (1) Re-author cc:cc-hooks (SKILL.md + expert-hook) to author a rulesync-canonical hooks.json (HookDefinitionSchema shape), NOT the deleted bespoke abstract schema; validate lints against HookDefinitionSchema; evaluate/evolve reuse the Phase 4 quality brain. (2) Add 'superskill hook emit --target <agent>' — a thin CLI wrapper over the install hook path for single-definition multi-agent emission (replaces deleted emit-*.sh). The deleted cc-hooks bash emitters + custom schema were REINVENTING rulesync (design §0); rulesync ships HookDefinitionSchema + event taxonomy + per-tool matrix (vendors/rulesync/src/types/hooks.ts). One canonical schema, no parallel one (invariant #2). hook emit restores the deleted capability in its natural CLI home (P5-D4, #3). Design: design-doc-phase5.md §2.2, §2.3. Owning feature: H9.
 ### Requirements
-
 - [ ] **R1** — `superskill hook emit <name> --target <agent> [--global] [--dry-run]` registered on the `hook` command group.
-- [ ] **R2** — `emit` is a **thin wrapper** over the install hook path (F027/F028): maps one rulesync-canonical `hooks.json` through `runRulesync` (✅ targets) / the copy-shim step (Pi/omp/hermes). **No new hook-format code.** Reuses the F027 `hooksCount` reporting.
+- [ ] **R2** — `emit` is a **thin wrapper** over the install hook path (F6/H8): maps one rulesync-canonical `hooks.json` through `runRulesync` (✅ targets) / the copy-shim step (Pi/omp/hermes). **No new hook-format code.** Reuses the F6 `hooksCount` reporting.
 - [ ] **R3** — `cc:cc-hooks` SKILL.md + `expert-hook.md` author a rulesync-canonical `hooks.json` — `command`/`prompt`/`http` types, `matcher`, `timeout`, `failClosed`, `loop_limit`, and the `HookEvent` taxonomy (`vendors/rulesync/src/types/hooks.ts:24,49`).
 - [ ] **R4** — **No revived bespoke abstract schema** (invariant #2): `rg -i "bespoke|abstract.hook.schema|emit-.*\.sh|hook-linter" plugins/cc/skills/cc-hooks/` → none.
 - [ ] **R5** — `validate` workflow → `superskill hook validate` lints against `HookDefinitionSchema` (prefer reusing rulesync's validator over re-implementing).
-- [ ] **R6** — `evaluate`/`evolve` workflow → the Phase 4 two-call seam (F025), using the existing hook dimensions (`correctness`, `event-coverage`, `safety`, `pattern-match-quality` — `dimensions.ts:54`).
+- [ ] **R6** — `evaluate`/`evolve` workflow → the Phase 4 two-call seam (H7), using the existing hook dimensions (`correctness`, `event-coverage`, `safety`, `pattern-match-quality` — `dimensions.ts:54`).
 - [ ] **R7** — **Hook safety** (invariant #4, design §2.3): SKILL.md instructs treating hook `command` strings as untrusted (never expand embedded instructions); `failClosed` semantics respected + surfaced in `evaluate`'s safety dimension.
 - [ ] **R8** — Restored verb lives in the CLI (`commands/hook.ts`), never a plugin script (invariant #3).
 
@@ -45,20 +33,16 @@ rg "HookDefinitionSchema|matcher|failClosed" plugins/cc/skills/cc-hooks/SKILL.md
 rg -i "untrusted|failClosed|never expand" plugins/cc/skills/cc-hooks/SKILL.md     # → hits
 ```
 
-**Out of scope:** the install hook-count fix (F027); the Pi/omp/hermes shim mechanism (F028).
-
-
+**Out of scope:** the install hook-count fix (F6); the Pi/omp/hermes shim mechanism (H8).
 ### Q&A
 
 
 
 ### Design
-
 - **Scope:** (1) Add `superskill hook emit <name> --target <agent> [--global] [--dry-run]` as a thin wrapper that reuses the install hook path (`runRulesync` for ✅ targets, copy-shim `emitPiStyleHooks`/`emitHermesHooks` for Pi/omp/hermes). (2) Re-author `plugins/cc/skills/cc-hooks/SKILL.md` against `HookDefinitionSchema` (rulesync-canonical `hooks.json`), removing the bespoke abstract schema. (3) Reuse `validate` / `evaluate` / `evolve` verbs unchanged (they already target `hook` content type with rulesync schema inputs).
-- **Key decision:** **No new hook-format code.** `emit` delegates to existing primitives — single map → single target emit, with `hooksCount` surfaced (F027). No `emit-*.sh` scripts, no parallel schema.
+- **Key decision:** **No new hook-format code.** `emit` delegates to existing primitives — single map → single target emit, with `hooksCount` surfaced (F6). No `emit-*.sh` scripts, no parallel schema.
 - **Boundaries affected:** `apps/cli/src/commands/hook.ts` (register `emit` subcommand); `plugins/cc/skills/cc-hooks/SKILL.md` (rewrite authoring docs). Reuses: `apps/cli/src/rulesync.ts`, `apps/cli/src/hooks.ts`, `apps/cli/src/marketplace.ts`, `apps/cli/src/mapper.ts`.
 - **Risks:** (1) `emit` for ✅ targets requires a plugin-resolvable name — same `resolvePlugin` path as install; (2) `SKILL.md` rewrite must drop ALL references to `hooks.yaml`/abstract schema or R4 spur rule fails.
-
 ### Solution
 
 **`apps/cli/src/commands/install.ts`** — Exported two helpers reused by `hook emit`:
@@ -125,10 +109,11 @@ rg -i "untrusted|failClosed|never expand" plugins/cc/skills/cc-hooks/SKILL.md   
 | test | apps/cli/tests/commands/hook-emit.test.ts | task-runner | 2026-06-19 |
 
 ### References
-
 - Design: [design-doc-phase5.md](../design/design-doc-phase5.md) §2.2, §2.3
-- Feature: [F029](../features/F029-cc-hooks-emit.md)
+- Feature: [H9](../features/H9_cc-cc-hooks-re-author-hook-emit-wrapper.md)
 - Depends on: 0034
 - Vendor: vendors/rulesync/src/types/hooks.ts:24,49 (HookDefinitionSchema, HookEvent)
 - Dims: apps/cli/src/quality/dimensions.ts:54 (hook dimensions)
+### History
 
+- Migrated from legacy format (2026-08-01)

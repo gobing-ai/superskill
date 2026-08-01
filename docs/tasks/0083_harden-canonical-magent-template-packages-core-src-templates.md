@@ -1,18 +1,17 @@
 ---
 template: standard
 schema_version: 1
-name: "Harden canonical magent template (packages/core/src/templates/magent/default.md) with Harness Infrastructure section, tool-selection discipline, verification loops, platform-padding notes"
+name: Harden canonical magent template (packages/core/src/templates/magent/default.md) with Harness Infrastructure section, tool-selection discipline, verification loops, platform-padding notes
 description: ""
 status: done
 type: task
 profile: standard
-feature_id: null
 parent_wbs: "0080"
 priority: P2
 tags: []
 dependencies: []
-created_at: "2026-07-15T17:53:11.132Z"
-updated_at: "2026-07-15T19:10:06.357Z"
+created_at: 2026-07-15T17:53:11.132Z
+updated_at: 2026-07-15T19:10:06.357Z
 ---
 
 ## 0083. Harden canonical magent template (packages/core/src/templates/magent/default.md) with Harness Infrastructure section, tool-selection discipline, verification loops, platform-padding notes

@@ -4,15 +4,15 @@ schema_version: 1
 name: "anti-hallucination guard: lifecycle-verb pattern fires on local-change talk, blocking nearly every Stop"
 description: ""
 status: done
-type: issue
+type: task
 profile: standard
 feature_id: H1
 parent_wbs: null
 priority: P2
-tags: ["bug"]
+tags: [bug]
 dependencies: []
-created_at: "2026-07-25T05:35:25.883Z"
-updated_at: "2026-08-01T00:24:29.745Z"
+created_at: 2026-07-25T05:35:25.883Z
+updated_at: 2026-08-01T00:24:29.745Z
 ---
 
 ## 0105. anti-hallucination guard: lifecycle-verb pattern fires on local-change talk, blocking nearly every Stop

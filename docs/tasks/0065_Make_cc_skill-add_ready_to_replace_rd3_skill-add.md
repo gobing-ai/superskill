@@ -1,20 +1,12 @@
 ---
+schema_version: 1
 name: Make cc skill-add ready to replace rd3 skill-add
-description: Make cc skill-add ready to replace rd3 skill-add
-status: Done
+status: done
+type: task
+priority: P1
+tags: [cc-skills,add,scaffold,dogfood,migration,rd3-parity,dir-structure]
 created_at: 2026-06-21T21:14:21.112Z
 updated_at: 2026-06-22T03:56:05.985Z
-folder: docs/tasks
-type: task
-feature-id: ""
-priority: high
-tags: ["cc-skills","add","scaffold","dogfood","migration","rd3-parity","dir-structure"]
-impl_progress:
-  planning: completed
-  design: completed
-  implementation: completed
-  review: completed
-  testing: completed
 ---
 
 ## 0065. Make cc skill-add ready to replace rd3 skill-add
@@ -181,3 +173,8 @@ superskill agent scaffold flat-agent --output /tmp/x
 ### References
 
 
+
+
+### History
+
+- Migrated from legacy format (2026-08-01)

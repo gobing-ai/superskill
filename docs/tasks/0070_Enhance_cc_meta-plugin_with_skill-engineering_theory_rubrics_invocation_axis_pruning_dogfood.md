@@ -1,18 +1,17 @@
 ---
 template: standard
 schema_version: 1
-name: "Enhance cc meta-plugin with skill-engineering theory — rubrics, invocation axis, pruning, dogfood"
+name: Enhance cc meta-plugin with skill-engineering theory — rubrics, invocation axis, pruning, dogfood
 description: ""
 status: done
 type: task
 profile: standard
-feature_id: null
 parent_wbs: null
 priority: P2
 tags: []
 dependencies: []
-created_at: "2026-07-03T16:26:12.000Z"
-updated_at: "2026-07-04T15:57:32.895Z"
+created_at: 2026-07-03T16:26:12.000Z
+updated_at: 2026-07-04T15:57:32.895Z
 ---
 
 ## 0070. Enhance cc meta-plugin with skill-engineering theory — rubrics, invocation axis, pruning, dogfood

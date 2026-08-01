@@ -1,35 +1,23 @@
 ---
+schema_version: 1
 name: Restore skill package verb
-description: Restore skill package verb
-status: Done
-created_at: 2026-06-17T22:44:05.182Z
-updated_at: 2026-06-19T02:00:09.649Z
-folder: docs/tasks
+status: done
 type: task
-feature-id: F030
-priority: medium
-estimated_hours: 4
-tags: ["phase5","skill","package","verb-restore"]
-impl_progress:
-  planning: pending
-  design: pending
-  implementation: pending
-  review: pending
-  testing: pending
+priority: P2
+tags: [phase5,skill,package,verb-restore]
+created_at: 2026-06-17T22:44:05.182Z
+updated_at: "2026-08-01T02:25:15.155Z"
+feature_id: G41
 ---
 
 ## 0037. Restore skill package verb
 
 ### Background
-
-Restore 'superskill skill package <name>' — bundle a skill plus its companions for distribution. Re-spec the behavior of the deleted cc-skills/scripts/package.ts against the current content-IO layer (Phase 2 content/*). Deterministic — no model involvement, no Phase 4 dependency. skill package was deleted in Phase 3 §2.1 (D3) because the CLI had no package verb; tracked as a Phase 5 follow-up (§7). P5-D4 restores it in its natural CLI home, never as a revived plugin script (invariant #3). Design: design-doc-phase5.md §3, P5-D4. Owning feature: F030.
-
-
+Restore 'superskill skill package <name>' — bundle a skill plus its companions for distribution. Re-spec the behavior of the deleted cc-skills/scripts/package.ts against the current content-IO layer (Phase 2 content/*). Deterministic — no model involvement, no Phase 4 dependency. skill package was deleted in Phase 3 §2.1 (D3) because the CLI had no package verb; tracked as a Phase 5 follow-up (§7). P5-D4 restores it in its natural CLI home, never as a revived plugin script (invariant #3). Design: design-doc-phase5.md §3, P5-D4. Owning feature: G41.
 ### Requirements
-
 - [x] **R1** — `superskill skill package <name> [--output <dir>] [--include-companions]` registered on the `skill` command group.
 - [x] **R2** — `operations/package.ts` exports `packageSkill(name, opts): Promise<string>` returning the bundle path.
-- [x] **R3** — Re-spec the deleted `package.ts` intent (recover from git history) onto the current content-IO: resolve via `resolveContentPath` (F007); bundle `SKILL.md` + `references/` + companion configs (`metadata.openclaw`, `agents/openai.yaml`).
+- [x] **R3** — Re-spec the deleted `package.ts` intent (recover from git history) onto the current content-IO: resolve via `resolveContentPath` (G21); bundle `SKILL.md` + `references/` + companion configs (`metadata.openclaw`, `agents/openai.yaml`).
 - [x] **R4** — **Reuse content-IO primitives** (`content/frontmatter.ts`, `content/identity.ts`, `content/paths.ts`) — no bespoke frontmatter parsing or path resolution.
 - [x] **R5** — Output: bundle at `--output` (default cwd); path returned + printed via `process.stdout.write`.
 - [x] **R6** — Missing skill → exit 2 (content-not-found convention).
@@ -43,9 +31,7 @@ superskill skill package my-skill --include-companions --output ./dist  # → co
 superskill skill package does-not-exist                      # → exit 2
 ```
 
-**Out of scope:** `skill migrate` (F031); refinement (Phase 4).
-
-
+**Out of scope:** `skill migrate` (G42); refinement (Phase 4).
 ### Q&A
 
 
@@ -61,15 +47,12 @@ superskill skill package does-not-exist                      # → exit 2
 
 commands/skill.ts: register package subcommand. operations/package.ts: packageSkill resolves skill via content/identity.ts, gathers SKILL.md+references/+companions, writes a distributable bundle/archive to --output. Reuse content/frontmatter.ts, content/identity.ts, content/paths.ts. Read the deleted package.ts from git history to recover the original bundling intent, then map onto content-IO.
 ### Plan
-
-- [x] Review task requirements, design doc P5-D4, feature F030, and existing code patterns
+- [x] Review task requirements, design doc P5-D4, feature G41, and existing code patterns
 - [x] Create `operations/package.ts` with `packageSkill(name, opts)` reusing `resolveContentPath`
 - [x] Register `package` subcommand on `skill` command group with `--output` and `--include-companions`
 - [x] Create `tests/operations/skill-package.test.ts` (7 tests, 100% coverage on package.ts)
 - [x] Update `content-command-modules.test.ts` for new subcommand
 - [x] Verify: lint, typecheck, 640 tests pass, build succeeds, CLI smoke test
-
-
 ### Review
 
 
@@ -105,8 +88,9 @@ commands/skill.ts: register package subcommand. operations/package.ts: packageSk
 
 
 ### References
-
 - Design: [design-doc-phase5.md](../design/design-doc-phase5.md) §3, P5-D4
-- Feature: [F030](../features/F030-skill-package.md)
+- Feature: [G41](../features/G41_restore-skill-package.md)
 - Code: apps/cli/src/content/{identity,frontmatter,paths}.ts (reuse); git history of deleted cc-skills/scripts/package.ts
+### History
 
+- Migrated from legacy format (2026-08-01)

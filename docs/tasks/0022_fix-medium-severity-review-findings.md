@@ -1,22 +1,13 @@
 ---
+schema_version: 1
 name: fix-medium-severity-review-findings
-description: fix-medium-severity-review-findings
-status: Done
+status: done
+type: task
+profile: standard
+priority: P2
+tags: [install,marketplace,bin,M1-M4,medium]
 created_at: 2026-06-17T00:09:03.159Z
 updated_at: 2026-06-17T00:31:08.201Z
-folder: docs/tasks
-type: task
-feature-id: ""
-priority: medium
-estimated_hours: 5
-tags: ["install","marketplace","bin","M1-M4","medium"]
-preset: standard
-impl_progress:
-  planning: pending
-  design: pending
-  implementation: pending
-  review: pending
-  testing: pending
 ---
 
 ## 0022. fix-medium-severity-review-findings
@@ -75,3 +66,8 @@ M1-M4 findings from Phase 1 & 2 review: M1: --global flag defaults to true, Comm
 ### References
 
 
+
+
+### History
+
+- Migrated from legacy format (2026-08-01)

@@ -1,22 +1,14 @@
 ---
+schema_version: 1
 name: Phase 2 — spur-agent pairwise rubric judge for behavior gate (open-ended cases)
-description: Phase 2 — spur-agent pairwise rubric judge for behavior gate (open-ended cases)
-status: Done
-created_at: 2026-06-22T23:57:22.642Z
-updated_at: 2026-06-24T01:02:02.364Z
-folder: docs/tasks
+status: done
 type: task
-feature-id: ""
-priority: high
-estimated_hours: 64
+priority: P1
+tags: [evolve,behavior-gate,llm-judge,spur-agent,spur-workflow,pairwise,non-determinism,core,cli]
 dependencies: ["0068"]
-tags: ["evolve","behavior-gate","llm-judge","spur-agent","spur-workflow","pairwise","non-determinism","core","cli"]
-impl_progress:
-  planning: pending
-  design: pending
-  implementation: pending
-  review: pending
-  testing: pending
+created_at: 2026-06-22T23:57:22.642Z
+updated_at: "2026-08-01T02:17:41.353Z"
+feature_id: G35
 ---
 
 ## 0069. Phase 2 — spur-agent pairwise rubric judge for behavior gate (open-ended cases)
@@ -215,3 +207,8 @@ Full gates to run before Done:
 ### References
 
 
+
+
+### History
+
+- Migrated from legacy format (2026-08-01)

@@ -1,20 +1,12 @@
 ---
+schema_version: 1
 name: Decide cc hook-refine strategy (no rd3 equivalent exists)
-description: Decide cc hook-refine strategy (no rd3 equivalent exists)
-status: Done
+status: done
+type: task
+priority: P2
+tags: [cc-hooks,refine,dogfood,design-decision,missing-command]
 created_at: 2026-06-21T21:06:05.280Z
 updated_at: 2026-06-22T05:15:26.496Z
-folder: docs/tasks
-type: task
-feature-id: ""
-priority: medium
-tags: ["cc-hooks","refine","dogfood","design-decision","missing-command"]
-impl_progress:
-  planning: done
-  design: done
-  implementation: done
-  review: done
-  testing: done
 ---
 
 ## 0061. Decide cc hook-refine strategy (no rd3 equivalent exists)
@@ -203,3 +195,8 @@ git diff plugins/cc/hooks/hooks.json         → (empty)
 ### References
 
 
+
+
+### History
+
+- Migrated from legacy format (2026-08-01)

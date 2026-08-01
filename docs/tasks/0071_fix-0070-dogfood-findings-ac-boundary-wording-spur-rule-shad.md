@@ -1,10 +1,11 @@
 ---
-schema_version: 1
-name: "Fix 0070 dogfood findings — AC boundary wording, .spur rule shadow, spur-new cross-repo handoff"
-status: done
 template: standard
+schema_version: 1
+name: Fix 0070 dogfood findings — AC boundary wording, .spur rule shadow, spur-new cross-repo handoff
+status: done
+type: task
 created_at: 2026-07-04T15:30:57.233Z
-updated_at: "2026-07-05T05:33:15.569Z"
+updated_at: 2026-07-05T05:33:15.569Z
 ---
 
 ## 0071. Fix 0070 dogfood findings — AC boundary wording, .spur rule shadow, spur-new cross-repo handoff

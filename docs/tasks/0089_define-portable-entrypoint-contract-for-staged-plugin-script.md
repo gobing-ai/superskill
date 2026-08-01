@@ -1,7 +1,7 @@
 ---
 template: standard
 schema_version: 1
-name: "Define portable entrypoint contract for staged plugin scripts"
+name: Define portable entrypoint contract for staged plugin scripts
 description: ""
 status: done
 type: task
@@ -11,8 +11,8 @@ parent_wbs: null
 priority: P2
 tags: []
 dependencies: []
-created_at: "2026-07-17T06:13:55.464Z"
-updated_at: "2026-08-01T00:24:29.745Z"
+created_at: 2026-07-17T06:13:55.464Z
+updated_at: 2026-08-01T00:24:29.745Z
 ---
 
 ## 0089. Define portable entrypoint contract for staged plugin scripts

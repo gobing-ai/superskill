@@ -1,18 +1,17 @@
 ---
 template: standard
 schema_version: 1
-name: "Produce reference hardened main-agent artifacts per major target family, dogfood via superskill magent evaluate, update docs and changelog"
+name: Produce reference hardened main-agent artifacts per major target family, dogfood via superskill magent evaluate, update docs and changelog
 description: ""
 status: done
 type: task
 profile: standard
-feature_id: null
 parent_wbs: "0080"
 priority: P2
 tags: []
-dependencies: ["0082", "0083"]
-created_at: "2026-07-15T17:54:05.286Z"
-updated_at: "2026-07-15T22:59:56.644Z"
+dependencies: ["0082","0083"]
+created_at: 2026-07-15T17:54:05.286Z
+updated_at: 2026-07-15T22:59:56.644Z
 ---
 
 ## 0084. Produce reference hardened main-agent artifacts per major target family, dogfood via superskill magent evaluate, update docs and changelog

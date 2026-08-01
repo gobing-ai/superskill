@@ -1,18 +1,17 @@
 ---
 template: standard
 schema_version: 1
-name: "Optimize superskill install for main agent (magent) customization, per-target shimming, and fallback logic"
+name: Optimize superskill install for main agent (magent) customization, per-target shimming, and fallback logic
 description: ""
 status: done
 type: task
 profile: standard
-feature_id: null
 parent_wbs: null
 priority: P2
 tags: []
 dependencies: []
-created_at: "2026-07-15T17:22:16.945Z"
-updated_at: "2026-07-15T22:33:10.722Z"
+created_at: 2026-07-15T17:22:16.945Z
+updated_at: 2026-07-15T22:33:10.722Z
 ---
 
 ## 0081. Optimize superskill install for main agent (magent) customization, per-target shimming, and fallback logic

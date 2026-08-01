@@ -1,72 +1,49 @@
 ---
+schema_version: 1
 name: Tests + verification
-description: Tests + verification
-status: Done
-created_at: 2026-06-16T05:43:29.877Z
-updated_at: 2026-06-16T16:01:54.462Z
-folder: docs/tasks
+status: done
 type: task
-feature-id: F005
-priority: high
-estimated_hours: 3
+priority: P1
+tags: [testing,verification,coverage,smoke-test]
 dependencies: ["0001","0002","0003","0004","0006"]
-tags: ["testing","verification","coverage","smoke-test"]
-impl_progress:
-  planning: pending
-  design: pending
-  implementation: pending
-  review: pending
-  testing: pending
+created_at: 2026-06-16T05:43:29.877Z
+updated_at: "2026-08-01T02:22:41.129Z"
+feature_id: E2
 ---
 
 ## 0005. Tests + verification
 
 ### Background
-
-F001–F004 deliver the code; F005 proves it works and stays working. Gate requirement: ≥90% line + function coverage. Smoke test with real plugin data.
-
-
+G11–F3 deliver the code; E2 proves it works and stays working. Gate requirement: ≥90% line + function coverage. Smoke test with real plugin data.
 ### Requirements
-
-Unit tests cover F001-F004 surfaces: targets and `TARGET_TO_AGENT_NAME`, config, marketplace resolution, mapper output, pipeline transforms, rulesync dispatch, and install orchestration. Integration coverage lives in `apps/cli/tests/commands/install.integration.test.ts` and uses the hermetic fixture at `apps/cli/tests/fixtures/plugin-min/`.
+Unit tests cover G11-F3 surfaces: targets and `TARGET_TO_AGENT_NAME`, config, marketplace resolution, mapper output, pipeline transforms, rulesync dispatch, and install orchestration. Integration coverage lives in `apps/cli/tests/commands/install.integration.test.ts` and uses the hermetic fixture at `apps/cli/tests/fixtures/plugin-min/`.
 
 The install integration suite asserts mapped target dispatch, ADR-010 `global`/`dryRun` option propagation into `runRulesync`, target filtering for non-rulesync targets, transformed per-target input roots, slash bridge conversion before generic colon rewriting, dry-run output, missing-plugin errors, and direct copy dispatch for Superskill-owned targets (`hermes`, `omp`). Pi edge cases remain covered in the pipeline tests: tool expansion, prose skill extraction, and runtime-note conversion.
 
 Verification gate: `bun run autofix && bun run spur-check && bun run build` must pass; aggregate coverage must stay above 90% function and 90% line. Smoke gate: a built binary running `superskill install demo --targets pi,codex --dry-run` against the `plugin-min` fixture must exit 0.
-
-
 ### Q&A
 
 
 
 ### Design
-
-Tests use the `plugin-min` fixture (F002), not a real corpus. Integration tests exercise `executeInstall()` with an injected `runRulesync` dependency so they can assert target mapping, feature dispatch, ADR-010 option propagation, and transformed target-specific input roots without writing to real user agent directories.
+Tests use the `plugin-min` fixture (G12), not a real corpus. Integration tests exercise `executeInstall()` with an injected `runRulesync` dependency so they can assert target mapping, feature dispatch, ADR-010 option propagation, and transformed target-specific input roots without writing to real user agent directories.
 
 The production install pipeline maps the plugin into canonical `.rulesync/`, then creates one project-shaped rulesync input root per target at `.rulesync/.targets/<target>/.rulesync`. This lets target-specific transforms run before `rulesync.generate()` while preserving the input-root contract expected by `rulesync`.
 
 Gate: `bun run spur-check` (lint + pre-check + test + post-check) + `bun run build`; coverage >=90/90 per `bunfig.toml`. Smoke: built binary running `superskill install demo --targets pi,codex --dry-run` against a fresh `plugin-min` fixture exits 0.
-
-
 ### Solution
-
-Added/verified unit and integration coverage for the F001-F004 install path. The integration suite now includes seven cases against `plugin-min`: marketplace resolution and `.rulesync` mapping, full feature dispatch, target filtering, transformed target-specific input roots, Superskill-owned target copy dispatch, missing plugin errors, and dry-run output.
+Added/verified unit and integration coverage for the G11-F3 install path. The integration suite now includes seven cases against `plugin-min`: marketplace resolution and `.rulesync` mapping, full feature dispatch, target filtering, transformed target-specific input roots, Superskill-owned target copy dispatch, missing plugin errors, and dry-run output.
 
 Fixed a verification regression found by the binary smoke test: target-specific `rulesync` inputs were previously created as `.rulesync/.targets/<target>` containing canonical files directly, but `rulesync.generate()` expects the input root to contain a child `.rulesync` directory. `executeInstall()` now builds project-shaped target roots at `.rulesync/.targets/<target>/.rulesync`, passes `.rulesync/.targets/<target>` to `runRulesync`, and copies `hermes`/`omp` skills from the nested canonical directory.
 
 Current verified result: 111 tests across 14 files, aggregate coverage 99.17% functions / 98.52% lines, build succeeds, and the requested fixture smoke exits 0.
-
-
 ### Plan
-
-1. Verify existing F001-F004 test coverage and task requirements.
+1. Verify existing G11-F3 test coverage and task requirements.
 2. Run the required gates: `bun run autofix`, `bun run spur-check`, and `bun run build`.
 3. Run the built-binary smoke against a fresh `plugin-min` fixture copy.
 4. Fix the smoke-discovered target input-root mismatch.
 5. Re-run the gates and smoke command after the fix.
 6. Record the final verification outcome in task 0005.
-
-
 ### Review
 
 Verification verdict: PASS after fix.
@@ -102,3 +79,8 @@ Smoke note: `rulesync` prints warnings for missing optional `.rulesync/mcp.json`
 ### References
 
 
+
+
+### History
+
+- Migrated from legacy format (2026-08-01)

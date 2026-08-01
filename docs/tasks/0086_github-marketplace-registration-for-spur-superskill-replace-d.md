@@ -1,8 +1,8 @@
 ---
 template: feature-impl
 schema_version: 1
-name: "GitHub marketplace registration for spur/superskill (replace directory marketplaces)"
-description: "Migrate spur/superskill from directory Claude marketplaces to GitHub; teach superskill install a marketplace-source mode so installs do not re-register local paths."
+name: GitHub marketplace registration for spur/superskill (replace directory marketplaces)
+description: Migrate spur/superskill from directory Claude marketplaces to GitHub; teach superskill install a marketplace-source mode so installs do not re-register local paths.
 status: done
 type: task
 profile: standard
@@ -11,8 +11,8 @@ parent_wbs: null
 priority: P1
 tags: []
 dependencies: []
-created_at: "2026-07-16T22:59:59.416Z"
-updated_at: "2026-08-01T00:41:03.020Z"
+created_at: 2026-07-16T22:59:59.416Z
+updated_at: 2026-08-01T00:41:03.020Z
 ---
 
 ## 0086. GitHub marketplace registration for spur/superskill (replace directory marketplaces)

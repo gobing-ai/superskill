@@ -1,35 +1,23 @@
 ---
+schema_version: 1
 name: Namespace migration rd3 to cc
-description: Namespace migration rd3 to cc
-status: Done
-created_at: 2026-06-17T22:28:04.408Z
-updated_at: 2026-06-18T00:06:08.612Z
-folder: docs/tasks
+status: done
 type: task
-feature-id: F016
-priority: high
-estimated_hours: 3
-tags: ["phase3","namespace","plugin","cleanup"]
-impl_progress:
-  planning: done
-  design: done
-  implementation: done
-  review: done
-  testing: done
+priority: P1
+tags: [phase3,namespace,plugin,cleanup]
+created_at: 2026-06-17T22:28:04.408Z
+updated_at: "2026-08-01T02:23:45.489Z"
+feature_id: H3
 ---
 
 ## 0023. Namespace migration rd3 to cc
 
 ### Background
-
-The cc plugin (registered as 'cc' in .claude-plugin/marketplace.json: name='cc', source='./plugins/cc') still carries the old 'rd3' namespace across ~123 files inherited from the source corpus (cc-agents/plugins/rd3/). User-facing prompts referencing /rd3:agent-add or rd3:cc-agents are broken — those skills resolve under the 'cc' plugin now. This task performs a pure global string migration rd3->cc across plugins/cc/. Skill DIRECTORY names stay (cc-agents/, cc-skills/, cc-commands/, cc-hooks/, cc-magents/ — design D4); only references change. Must land FIRST: every downstream rewrite (F017 SKILL.md, F018 commands) targets the final cc:cc-* names. Design: design-doc-phase3.md §1, §6 invariant #1. Owning feature: F016.
-
-
+The cc plugin (registered as 'cc' in .claude-plugin/marketplace.json: name='cc', source='./plugins/cc') still carries the old 'rd3' namespace across ~123 files inherited from the source corpus (cc-agents/plugins/rd3/). User-facing prompts referencing /rd3:agent-add or rd3:cc-agents are broken — those skills resolve under the 'cc' plugin now. This task performs a pure global string migration rd3->cc across plugins/cc/. Skill DIRECTORY names stay (cc-agents/, cc-skills/, cc-commands/, cc-hooks/, cc-magents/ — design D4); only references change. Must land FIRST: every downstream rewrite (H4 SKILL.md, H5 commands) targets the final cc:cc-* names. Design: design-doc-phase3.md §1, §6 invariant #1. Owning feature: H3.
 ### Requirements
-
 - [x] **R1** — `rg "rd3" plugins/cc/` returns **zero** hits (design §6 invariant #1, the regression target).
 - [x] **R2** — Skill-invocation refs migrated: `rd3:cc-<type>` → `cc:cc-<type>` in all SKILL.md, expert agents, command bodies.
-- [x] **R3** — Slash-prefix refs migrated: `/rd3:<cmd>` → `/cc:<cmd>` (filename-preserving — the verb/disposition is F018's concern, not this task's).
+- [x] **R3** — Slash-prefix refs migrated: `/rd3:<cmd>` → `/cc:<cmd>` (filename-preserving — the verb/disposition is H5's concern, not this task's).
 - [x] **R4** — Path refs migrated: `plugins/rd3/...` → `plugins/cc/...` (notably in `agents/expert-*.md`).
 - [x] **R5** — Companion configs migrated: `metadata.openclaw` blocks and `agents/openai.yaml` files — their `rd3`-bearing description/version values renamed to `cc` in lockstep.
 - [x] **R6** — SKILL.md `metadata` frontmatter (`author:`, version strings) aligned to `cc`.
@@ -47,11 +35,9 @@ git diff --name-only apps/cli/         # → empty
 ```
 
 **Out of scope (do NOT do here):**
-- Slash-command verb mapping / body delegation → F018.
-- SKILL.md operation-table rewrites to call `superskill` → F017.
-- Any file deletion → F019.
-
-
+- Slash-command verb mapping / body delegation → H5.
+- SKILL.md operation-table rewrites to call `superskill` → H4.
+- Any file deletion → H6.
 ### Q&A
 
 
@@ -151,8 +137,10 @@ No new automated tests were added during this verification pass.
 | ---- | ---- | ----- | ---- |
 
 ### References
-
 - Design: [design-doc-phase3.md](../design/design-doc-phase3.md) §1, §6
-- Feature: [F016](../features/F016-namespace-migration.md)
+- Feature: [H3](../features/H3_namespace-migration-rd3-cc-companion-configs.md)
 - Authority: docs/00_ADR.md (D4 — keep skill dir names); design-doc-phase3 §0 locked decisions
 - Unblocks: 0024, 0025 (downstream rewrites target the final cc:cc-* names)
+### History
+
+- Migrated from legacy format (2026-08-01)

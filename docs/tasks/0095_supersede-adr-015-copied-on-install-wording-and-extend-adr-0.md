@@ -1,7 +1,7 @@
 ---
 template: standard
 schema_version: 1
-name: "Supersede ADR-015 copied-on-install wording and extend ADR-022 scope"
+name: Supersede ADR-015 copied-on-install wording and extend ADR-022 scope
 description: ""
 status: done
 type: task
@@ -10,9 +10,9 @@ feature_id: H1
 parent_wbs: null
 priority: P2
 tags: []
-dependencies: ["0089", "0090", "0091", "0094"]
-created_at: "2026-07-17T06:14:03.790Z"
-updated_at: "2026-08-01T00:24:29.745Z"
+dependencies: ["0089","0090","0091","0094"]
+created_at: 2026-07-17T06:14:03.790Z
+updated_at: 2026-08-01T00:24:29.745Z
 ---
 
 ## 0095. Supersede ADR-015 copied-on-install wording and extend ADR-022 scope

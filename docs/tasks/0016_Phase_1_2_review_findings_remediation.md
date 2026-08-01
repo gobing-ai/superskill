@@ -1,21 +1,13 @@
 ---
-name: "Phase 1 & 2 review findings remediation"
-description: "Phase 1 & 2 review findings remediation"
-status: Done
+schema_version: 1
+name: Phase 1 & 2 review findings remediation
+status: done
+type: task
+profile: complex
+priority: P1
+tags: [review,remediation,phase1,phase2,bugfix]
 created_at: 2026-06-16T23:58:10.492Z
 updated_at: 2026-06-17T00:33:32.069Z
-folder: docs/tasks
-type: task
-feature-id: ""
-priority: high
-tags: ["review","remediation","phase1","phase2","bugfix"]
-preset: complex
-impl_progress:
-  planning: pending
-  design: pending
-  implementation: pending
-  review: pending
-  testing: pending
 ---
 
 ## 0016. "Phase 1 & 2 review findings remediation"
@@ -229,3 +221,8 @@ All 14 findings from the Phase 1 & 2 review have been fixed across 6 subtasks:
   - install: --no-global flag (M1)
   - marketplace: ../ guard (M3)
   - install integration: surrogate targets for omp/hermes (M2)
+
+
+### History
+
+- Migrated from legacy format (2026-08-01)

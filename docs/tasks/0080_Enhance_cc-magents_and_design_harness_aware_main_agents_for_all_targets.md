@@ -1,12 +1,12 @@
 ---
-schema_version: 1
-name: "Enhance cc-magents meta-skill and design first-class main-agent definitions for all supported coding agents, treating spur and superskill as default infrastructure"
-status: done
 template: standard
-created_at: 2026-07-15T00:00:00.000Z
-updated_at: "2026-07-15T21:38:31.033Z"
+schema_version: 1
+name: Enhance cc-magents meta-skill and design first-class main-agent definitions for all supported coding agents, treating spur and superskill as default infrastructure
+status: done
+type: task
 priority: P1
-feature-id: 
+created_at: 2026-07-15T00:00:00.000Z
+updated_at: 2026-07-15T21:38:31.033Z
 ---
 
 ## 0080. Enhance cc-magents meta-skill and design first-class main-agent definitions for all supported coding agents, treating spur and superskill as default infrastructure

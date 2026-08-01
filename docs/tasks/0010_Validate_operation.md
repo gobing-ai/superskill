@@ -1,36 +1,26 @@
 ---
+schema_version: 1
 name: Validate operation
 description: Structural + schema validation for all 5 content types — frontmatter, required fields, field types, format compliance, link validity
-status: Done
-created_at: 2026-06-16T00:00:00.000Z
-updated_at: 2026-06-16T21:15:58.799Z
-folder: docs/tasks
+status: done
 type: task
-feature-id: F010
-priority: high
-estimated_hours: 4
-tags: ["operations","quality","validation"]
-impl_progress:
-  planning: done
-  design: done
-  implementation: done
-  review: done
-  testing: done
+priority: P1
+tags: [operations,quality,validation]
+created_at: 2026-06-16T00:00:00.000Z
+updated_at: "2026-08-01T02:23:12.857Z"
+feature_id: G23
 ---
 
 ## 0010. Validate operation
 
 ### Background
+The validate operation is the first quality gate in the Phase 2 authoring pipeline. It performs structural and schema validation on content files for all five content types (skill, command, agent, hook, magent). Every downstream operation — evaluate (G24), refine (G25), evolve (G26) — depends on knowing whether content is structurally valid before scoring quality or applying fixes. Validate catches schema violations early so evaluate operates on well-formed input and refine knows what structural fixes to apply.
 
-The validate operation is the first quality gate in the Phase 2 authoring pipeline. It performs structural and schema validation on content files for all five content types (skill, command, agent, hook, magent). Every downstream operation — evaluate (F011), refine (F012), evolve (F013) — depends on knowing whether content is structurally valid before scoring quality or applying fixes. Validate catches schema violations early so evaluate operates on well-formed input and refine knows what structural fixes to apply.
-
-Validate is a **pure function**: it reads a file, parses its YAML frontmatter, checks required fields, field types, format compliance, and link validity, then returns a `ValidationResult`. The operation never calls `process.exit` — exit code mapping is done by the F014 command layer (0 = no errors, 1 = one or more error findings, 2 = file not found or unreadable).
+Validate is a **pure function**: it reads a file, parses its YAML frontmatter, checks required fields, field types, format compliance, and link validity, then returns a `ValidationResult`. The operation never calls `process.exit` — exit code mapping is done by the F5 command layer (0 = no errors, 1 = one or more error findings, 2 = file not found or unreadable).
 
 Output is either structured JSON (`--json`) or a human-readable list of findings, each with a severity (`error` | `warning`), affected field name, and human-readable message.
-
 ### Requirements
-
-**R1** — Export `validate(type: ContentType, nameOrPath: string, opts?: ValidateOptions): Promise<ValidationResult>`. The function reads the resolved file path, parses frontmatter via `parseFrontmatter` (F007), and runs all check categories. It never throws for validation failures — all failures become `Finding` entries with `severity: 'error'`.
+**R1** — Export `validate(type: ContentType, nameOrPath: string, opts?: ValidateOptions): Promise<ValidationResult>`. The function reads the resolved file path, parses frontmatter via `parseFrontmatter` (G21), and runs all check categories. It never throws for validation failures — all failures become `Finding` entries with `severity: 'error'`.
 
 **R2** — `ValidateOptions` type: `{ strict?: boolean, target?: Target }`. `strict` enables optional/warning-level checks (recommended minimum field lengths, best-practice patterns). `target` validates against a specific agent's format requirements (e.g. Pi frontmatter structure).
 
@@ -38,9 +28,9 @@ Output is either structured JSON (`--json`) or a human-readable list of findings
 
 **R4** — `Finding` type: `{ severity: 'error' | 'warning', field: string, message: string }`. `field` is the frontmatter key or `'frontmatter'` for parse failures. `message` is a human-readable sentence.
 
-**R5** — **Frontmatter presence check**: file reads successfully; YAML frontmatter delimited by `---` exists and parses without error. Uses `parseFrontmatter` from `content/frontmatter.ts` (F007). A `FrontmatterError` becomes a single `error` finding on `field: 'frontmatter'` — validate does not throw out.
+**R5** — **Frontmatter presence check**: file reads successfully; YAML frontmatter delimited by `---` exists and parses without error. Uses `parseFrontmatter` from `content/frontmatter.ts` (G21). A `FrontmatterError` becomes a single `error` finding on `field: 'frontmatter'` — validate does not throw out.
 
-**R6** — **Required fields check**: `name` and `description` are required for all content types. Type-specific required fields come from `REQUIRED_FIELDS: Record<ContentType, string[]>` in `quality/dimensions.ts` (F009). Examples: `agent` requires `['name', 'description', 'model']`; `hook` requires `['name', 'description', 'event']`; `skill` requires `['name', 'description']`. Each missing required field becomes an `error` finding.
+**R6** — **Required fields check**: `name` and `description` are required for all content types. Type-specific required fields come from `REQUIRED_FIELDS: Record<ContentType, string[]>` in `quality/dimensions.ts` (G22). Examples: `agent` requires `['name', 'description', 'model']`; `hook` requires `['name', 'description', 'event']`; `skill` requires `['name', 'description']`. Each missing required field becomes an `error` finding.
 
 **R7** — **Field type check**: validates that frontmatter values match expected types. `allowed-tools` must be an array (not a string or object). `model` must be a recognized value from a known-model list. `platforms` must be an array of valid `Target` strings. Boolean fields (`enabled`, `autoTrigger`) must be actual booleans, not `"true"` / `"false"` strings. Type mismatches generate `error` findings.
 
@@ -50,24 +40,22 @@ Output is either structured JSON (`--json`) or a human-readable list of findings
 
 **R10** — **`--strict` mode**: enables additional optional checks beyond the baseline. Includes: minimum description length (≥ 40 characters recommended), minimum body content length after frontmatter, check for trailing whitespace issues in frontmatter values, check for deprecated field names. These generate `warning` findings only.
 
-**R11** — **File path resolution** via `resolveContentPath(type, nameOrPath, opts?)` from `content/identity.ts` (F007). Logic: if `nameOrPath` is a bare name (no extension, no path separator `/` or `\`), look for `<nameOrPath>.md` in cwd; if it contains `.md` extension, treat as a path; if it contains `/` or `\`, treat as a path. If the resolved path does not exist or is unreadable, validate must signal this to the caller so F014 can map it to exit code 2. The recommended design: return a sentinel `ValidationResult` with `valid: false` and a single finding with `field: '_file'` and `message` indicating the file was not found — the F014 command layer checks for this specific pattern and emits exit 2.
+**R11** — **File path resolution** via `resolveContentPath(type, nameOrPath, opts?)` from `content/identity.ts` (G21). Logic: if `nameOrPath` is a bare name (no extension, no path separator `/` or `\`), look for `<nameOrPath>.md` in cwd; if it contains `.md` extension, treat as a path; if it contains `/` or `\`, treat as a path. If the resolved path does not exist or is unreadable, validate must signal this to the caller so F5 can map it to exit code 2. The recommended design: return a sentinel `ValidationResult` with `valid: false` and a single finding with `field: '_file'` and `message` indicating the file was not found — the F5 command layer checks for this specific pattern and emits exit 2.
 
-**R12** — **Content type coverage**: works for all 5 content types. The `REQUIRED_FIELDS` map and schema definitions in `quality/dimensions.ts` (F009) are the single source of truth — validate imports them, never duplicates.
+**R12** — **Content type coverage**: works for all 5 content types. The `REQUIRED_FIELDS` map and schema definitions in `quality/dimensions.ts` (G22) are the single source of truth — validate imports them, never duplicates.
 
 **R13** — **Output formatting**: without `--json`, each finding is printed as `[SEVERITY] field: message` via `process.stdout.write`. With `--json`, the full `ValidationResult` is `JSON.stringify`-ed. The output function is exported separately (`formatValidationResult(result, json?)`) so the CLI layer can call it without re-implementing formatting.
-
 ### Q&A
 
 
 
 ### Design
-
 **Module location**: `apps/cli/src/operations/validate.ts`.
 
 **Imports**:
-- `parseFrontmatter` from `content/frontmatter.ts` (F007) — for YAML frontmatter extraction
-- `resolveContentPath` from `content/identity.ts` (F007) — for file path resolution
-- `ContentType`, `REQUIRED_FIELDS` from `quality/dimensions.ts` (F009) — type definitions and required field lists
+- `parseFrontmatter` from `content/frontmatter.ts` (G21) — for YAML frontmatter extraction
+- `resolveContentPath` from `content/identity.ts` (G21) — for file path resolution
+- `ContentType`, `REQUIRED_FIELDS` from `quality/dimensions.ts` (G22) — type definitions and required field lists
 - `Target` from `targets.ts` — for `--target` option type
 - `yaml` (`^2.9.0`, ADR-012) — for re-parsing frontmatter to validate YAML structure beyond what `parseFrontmatter` returns
 
@@ -192,15 +180,12 @@ export function formatValidationResult(result: ValidationResult, json?: boolean)
         .join('\n');
 }
 ```
-
 ### Solution
-
 - `apps/cli/src/operations/validate.ts` — exports `validate()`, `formatValidationResult()`, and types `ValidateOptions`, `Finding`, `ValidationResult`
-- Imports `parseFrontmatter` from `content/frontmatter.ts` (F007), `resolveContentPath` from `content/identity.ts` (F007), `ContentType` and `REQUIRED_FIELDS` from `quality/dimensions.ts` (F009), `Target` from `targets.ts`
-- Schema definitions (`FIELD_TYPES`, `KNOWN_HOOK_EVENTS`) are inline in `validate.ts` — not duplicating F009, but extending it with type-check metadata that is validate's domain
+- Imports `parseFrontmatter` from `content/frontmatter.ts` (G21), `resolveContentPath` from `content/identity.ts` (G21), `ContentType` and `REQUIRED_FIELDS` from `quality/dimensions.ts` (G22), `Target` from `targets.ts`
+- Schema definitions (`FIELD_TYPES`, `KNOWN_HOOK_EVENTS`) are inline in `validate.ts` — not duplicating G22, but extending it with type-check metadata that is validate's domain
 - Pure function design: validate returns a `ValidationResult` without side effects; file I/O is internal but the function is testable by mocking `Bun.file` or by passing pre-read content via an internal parameter (for unit testing, expose a `_validateContent(type, content, opts?)` internal function that takes a string instead of a path)
-- Exit code mapping is NOT in this module — F014's command layer (`commands/helpers.ts`) maps `ValidationResult` to exit codes
-
+- Exit code mapping is NOT in this module — F5's command layer (`commands/helpers.ts`) maps `ValidationResult` to exit codes
 ### Plan
 
 1. Add `yaml` dependency to `apps/cli/package.json` if not already present (per ADR-012; check if it's already in the tree via `bun.lock`)
@@ -217,7 +202,6 @@ export function formatValidationResult(result: ValidationResult, json?: boolean)
 
 
 ### Review
-
 **Verdict:** PASS
 
 #### Re-verification — 2026-06-16 (`/rd3:dev-verify 0010 --force --fix all`)
@@ -236,16 +220,15 @@ export function formatValidationResult(result: ValidationResult, json?: boolean)
 | 1 | Generic "YAML parse error:" prefix for non-YAML frontmatter failures | Usability | apps/cli/src/operations/validate.ts:160 | Optionally branch on `FrontmatterError` subtype to surface "Missing frontmatter" vs "YAML parse error" distinctly. Cosmetic. |
 
 - **R1–R4 (API):** `validate(type, nameOrPath, opts?)`, `_validateContent(type, content, opts?)`, `formatValidationResult(result, json?)`, `ValidateOptions`, `Finding`, `ValidationResult` — all exported.
-- **R5 (Frontmatter):** Uses `parseFrontmatter` from F007. `FrontmatterError` becomes `error` finding on `field: 'frontmatter'` — never throws.
-- **R6 (Required fields):** Imports `REQUIRED_FIELDS` from F009. Each missing required field → `error` finding.
+- **R5 (Frontmatter):** Uses `parseFrontmatter` from G21. `FrontmatterError` becomes `error` finding on `field: 'frontmatter'` — never throws.
+- **R6 (Required fields):** Imports `REQUIRED_FIELDS` from G22. Each missing required field → `error` finding.
 - **R7 (Field types):** `FIELD_TYPES` map + `validateFieldType()` checks string/array/enum/boolean with meaningful error messages. Model accepts aliases + claude-* full ids.
 - **R8 (Format compliance):** Pi target warns on `tools:` (plural vs singular). Codex target warns on leading `/` in command names.
 - **R9 (Link validity):** `KNOWN_HOOK_EVENTS` validate hook events. Model alias validation. Reference format check (lowercase alphanumeric + dashes).
 - **R10 (Strict mode):** Description < 40 chars, body < 20 chars, deprecated field detection — all `warning` severity only.
-- **R11 (File path):** Delegates to `resolveContentPath` (F007). Returns sentinel `{ valid: false, field: '_file' }` on missing/unreadable files.
+- **R11 (File path):** Delegates to `resolveContentPath` (G21). Returns sentinel `{ valid: false, field: '_file' }` on missing/unreadable files.
 - **R12 (Content types):** All 5 types validated. `REQUIRED_FIELDS` is SSOT.
 - **R13 (Output):** `formatValidationResult` — text mode (`[SEVERITY] field: message`) or JSON mode.
-
 ### Testing
 
 - **Command:** `bun run test`
@@ -279,12 +262,14 @@ export function formatValidationResult(result: ValidationResult, json?: boolean)
 | ---- | ---- | ----- | ---- |
 
 ### References
-
-- `docs/features/F010-validate-operation.md` — feature spec
+- `docs/features/G23_validate-operation.md` — feature spec
 - `docs/design/design-doc-phase2.md` §2.2 — validate operation design
-- `docs/design/design-doc-phase2.md` §9 — shared foundation (F007 content/* modules)
-- `docs/features/F009-quality-dimensions.md` — REQUIRED_FIELDS, ContentType
-- `docs/features/F007-template-scaffold.md` — parseFrontmatter, resolveContentPath
+- `docs/design/design-doc-phase2.md` §9 — shared foundation (G21 content/* modules)
+- `docs/features/G22_quality-dimension-definitions.md` — REQUIRED_FIELDS, ContentType
+- `docs/features/G21_template-content-io-foundation-scaffold-operation.md` — parseFrontmatter, resolveContentPath
 - `docs/design/design-doc-phase2.md` §7 — yaml dependency (ADR-012)
-- `apps/cli/src/pipeline/frontmatter.ts` — existing frontmatter parser (to be superseded by F007's content/frontmatter.ts)
+- `apps/cli/src/pipeline/frontmatter.ts` — existing frontmatter parser (to be superseded by G21's content/frontmatter.ts)
 - `apps/cli/src/targets.ts` — Target type
+### History
+
+- Migrated from legacy format (2026-08-01)

@@ -1,20 +1,12 @@
 ---
+schema_version: 1
 name: Migrate anti-hallucination skill from Spur and re-develop its launchers as a spur workflow + spur agent solution
-description: Migrate anti-hallucination skill from Spur and re-develop its launchers as a spur workflow + spur agent solution
-status: Done
+status: done
+type: task
+priority: P1
+tags: [migration,anti-hallucination,workflow,dogfood,cross-repo]
 created_at: 2026-06-18T06:47:35.813Z
 updated_at: 2026-06-21T04:21:39.862Z
-folder: docs/tasks
-type: task
-feature-id: ""
-priority: high
-tags: ["migration","anti-hallucination","workflow","dogfood","cross-repo"]
-impl_progress:
-  planning: complete
-  design: complete
-  implementation: complete
-  review: complete
-  testing: complete
 ---
 
 ## 0041. Migrate anti-hallucination skill from Spur and re-develop its launchers as a spur workflow + spur agent solution
@@ -619,3 +611,8 @@ Post-flight gate failed at 2026-06-19T22:35. Task not transitioned to `Done`.
   - **Reason:** git diff is empty — changes are uncommitted/untracked
   - **Evidence:** `git status` shows ` M docs/00_ADR.md`, ` M docs/04_DESIGN.md`, ` M docs/05_FEATURES.md`, ` M plugins/cc/hooks/hooks.json`, `?? plugins/cc/scripts/`, `?? plugins/cc/skills/anti-hallucination/`. The git probe (`git diff <start>..HEAD`) only sees committed changes.
   - **Remediation:** Commit the Phase 1–2 changes. The changes are real on disk (verified by `git status` and the passing test gate).
+
+
+### History
+
+- Migrated from legacy format (2026-08-01)

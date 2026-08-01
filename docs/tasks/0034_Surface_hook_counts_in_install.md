@@ -1,32 +1,20 @@
 ---
+schema_version: 1
 name: Surface hook counts in install
-description: Surface hook counts in install
-status: Done
-created_at: 2026-06-17T22:43:20.823Z
-updated_at: 2026-06-18T23:02:43.221Z
-folder: docs/tasks
+status: done
 type: task
-feature-id: F027
-priority: high
-estimated_hours: 2
-tags: ["phase5","install","hooks","reporting"]
-impl_progress:
-  planning: pending
-  design: pending
-  implementation: pending
-  review: pending
-  testing: pending
+priority: P1
+tags: [phase5,install,hooks,reporting]
+created_at: 2026-06-17T22:43:20.823Z
+updated_at: "2026-08-01T02:25:00.633Z"
+feature_id: F6
 ---
 
 ## 0034. Surface hook counts in install
 
 ### Background
-
-Make superskill install REPORT the hook configs it already emits. Hooks already generate for the 4 rulesync-hook-supported targets — runRulesync forwards 'hooks' to generate() (rulesync.ts:60, install.ts:151). The reporting path drops the count: InstallResultCounts (install.ts:72) has no hooksCount field and the aggregation loop (install.ts:159-161) sums only skills/commands/subagents. CORRECTED FINDING (design §0): the earlier 'rulesync.ts:51 hardcodes hooksCount:0, hooks mapped but not emitted' was a MISREAD — line 51 is the no-target early-return, not a stub. The genuine defect is reporting, not emission. Add the field, accumulate result.hooksCount, print it. Plus a validation checklist: confirm rulesync HookEvent maps to each ✅ target's native events; confirm pinned rulesync accepts hooks in generate({features}). Design: design-doc-phase5.md §0, §1.1, §2.1. Owning feature: F027.
-
-
+Make superskill install REPORT the hook configs it already emits. Hooks already generate for the 4 rulesync-hook-supported targets — runRulesync forwards 'hooks' to generate() (rulesync.ts:60, install.ts:151). The reporting path drops the count: InstallResultCounts (install.ts:72) has no hooksCount field and the aggregation loop (install.ts:159-161) sums only skills/commands/subagents. CORRECTED FINDING (design §0): the earlier 'rulesync.ts:51 hardcodes hooksCount:0, hooks mapped but not emitted' was a MISREAD — line 51 is the no-target early-return, not a stub. The genuine defect is reporting, not emission. Add the field, accumulate result.hooksCount, print it. Plus a validation checklist: confirm rulesync HookEvent maps to each ✅ target's native events; confirm pinned rulesync accepts hooks in generate({features}). Design: design-doc-phase5.md §0, §1.1, §2.1. Owning feature: F6.
 ### Requirements
-
 - [x] **R1** — hooksCount field + init 0 → **MET** | install.ts:76,145
 - [x] **R2** — Accumulate in rulesync loop → **MET** | install.ts:163
 - [x] **R3** — Hooks in verbose summary + result → **MET** | install.ts:167; 5 tests
@@ -36,9 +24,7 @@ Make superskill install REPORT the hook configs it already emits. Hooks already 
 
 **Acceptance:** hooksCount field+accumulation+print present; rulesync.ts diff empty; 594 pass / 0 fail.
 
-**Out of scope:** Pi/omp/hermes uncovered-target emission (F028); hook emit verb (F029).
-
-
+**Out of scope:** Pi/omp/hermes uncovered-target emission (H8); hook emit verb (H9).
 ### Q&A
 
 
@@ -65,10 +51,7 @@ Make superskill install REPORT the hook configs it already emits. Hooks already 
 
 
 ### Solution
-
-install.ts: add hooksCount:number to InstallResultCounts (line 72), init 0 (line 144), accumulate in loop (159-161), print in verbose summary (165) + result. result.hooksCount already returned by runRulesync->generate(). Record the §1.1 validation checklist findings in a fixture/note; the test for this ships in this task (see ### Testing). Pi/omp/hermes uncovered targets are F028, not here.
-
-
+install.ts: add hooksCount:number to InstallResultCounts (line 72), init 0 (line 144), accumulate in loop (159-161), print in verbose summary (165) + result. result.hooksCount already returned by runRulesync->generate(). Record the §1.1 validation checklist findings in a fixture/note; the test for this ships in this task (see ### Testing). Pi/omp/hermes uncovered targets are H8, not here.
 ### Plan
 
 - [x] Add `hooksCount: number` to `InstallResultCounts` interface (install.ts:72) — R1
@@ -139,9 +122,10 @@ Tests ship **in this task** (design rule: each task owns its tests — no separa
 | ---- | ---- | ----- | ---- |
 
 ### References
-
 - Design: [design-doc-phase5.md](../design/design-doc-phase5.md) §0 (correction), §1.1, §2.1
-- Feature: [F027](../features/F027-install-hook-counts.md)
+- Feature: [F6](../features/F6_surface-hook-counts-in-install-validation-checklist.md)
 - Code: apps/cli/src/commands/install.ts:72,144,159-165; rulesync.ts:60 (already emits)
 - Vendor: vendors/rulesync/src/types/hooks.ts (*_HOOK_EVENTS)
+### History
 
+- Migrated from legacy format (2026-08-01)

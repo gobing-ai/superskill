@@ -1,10 +1,11 @@
 ---
+template: standard
 schema_version: 1
 name: "hook-run: heal plugin/CLI hook version skew — unknown-hook degradation policy, compat contract, release 0.2.14"
 status: done
-template: standard
+type: task
 created_at: 2026-07-10T21:50:04.430Z
-updated_at: "2026-07-10T22:46:41.011Z"
+updated_at: 2026-07-10T22:46:41.011Z
 ---
 
 ## 0074. hook-run: heal plugin/CLI hook version skew — unknown-hook degradation policy, compat contract, release 0.2.14

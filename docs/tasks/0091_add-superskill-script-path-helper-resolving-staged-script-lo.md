@@ -1,7 +1,7 @@
 ---
 template: feature-impl
 schema_version: 1
-name: "Add superskill script path helper resolving staged script locations"
+name: Add superskill script path helper resolving staged script locations
 description: ""
 status: done
 type: task
@@ -11,8 +11,8 @@ parent_wbs: null
 priority: P2
 tags: []
 dependencies: ["0090"]
-created_at: "2026-07-17T06:13:58.016Z"
-updated_at: "2026-08-01T00:24:29.745Z"
+created_at: 2026-07-17T06:13:58.016Z
+updated_at: 2026-08-01T00:24:29.745Z
 ---
 
 ## 0091. Add superskill script path helper resolving staged script locations

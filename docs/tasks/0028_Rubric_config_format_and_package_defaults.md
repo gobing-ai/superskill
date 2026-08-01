@@ -1,32 +1,20 @@
 ---
+schema_version: 1
 name: Rubric config format and package defaults
-description: Rubric config format and package defaults
-status: Done
-created_at: 2026-06-17T22:36:48.912Z
-updated_at: 2026-06-18T05:09:29.821Z
-folder: docs/tasks
+status: done
 type: task
-feature-id: F021
-priority: high
-estimated_hours: 5
-tags: ["phase4","rubric","quality","config"]
-impl_progress:
-  planning: pending
-  design: pending
-  implementation: pending
-  review: pending
-  testing: pending
+priority: P1
+tags: [phase4,rubric,quality,config]
+created_at: 2026-06-17T22:36:48.912Z
+updated_at: "2026-08-01T02:24:21.166Z"
+feature_id: G31
 ---
 
 ## 0028. Rubric config format and package defaults
 
 ### Background
-
-A versioned, upgradeable rubric config — config NOT CLI code — so scoring criteria iterate without re-releasing the binary (design §3, invariant #3). One unified YAML shape for all 5 types, package-default rubrics shipped with npm, user-overridable at ~/.superskill/rubrics/<type>.yaml. Plus a loader/validator module (quality/rubric.ts) and per-type dimension weights. The rubric is the FITNESS FUNCTION the quality brain scores against; both the scorer seam (F022) and generation seam (F023) read it. Must be data (rubric edit changes scores with no rebuild — §7 exit #2) and versioned (a rubric change must not look like a quality regression — invariant #4). Foundation for all of Phase 4. Design: design-doc-phase4.md §3. Owning feature: F021.
-
-
+A versioned, upgradeable rubric config — config NOT CLI code — so scoring criteria iterate without re-releasing the binary (design §3, invariant #3). One unified YAML shape for all 5 types, package-default rubrics shipped with npm, user-overridable at ~/.superskill/rubrics/<type>.yaml. Plus a loader/validator module (quality/rubric.ts) and per-type dimension weights. The rubric is the FITNESS FUNCTION the quality brain scores against; both the scorer seam (G32) and generation seam (G33) read it. Must be data (rubric edit changes scores with no rebuild — §7 exit #2) and versioned (a rubric change must not look like a quality regression — invariant #4). Foundation for all of Phase 4. Design: design-doc-phase4.md §3. Owning feature: G31.
 ### Requirements
-
 - [x] **R1** — Unified rubric YAML shape → **MET** | `RubricSchema` rubric.ts:36-54
 - [x] **R2** — Dimension names in DIMENSION_REGISTRY → **MET** | live check: all 5 = true
 - [x] **R3** — Weights sum to 1.0 (±0.001) → **MET** | all 5 sum 1.0000, validated rubric.ts:184
@@ -42,16 +30,13 @@ A versioned, upgradeable rubric config — config NOT CLI code — so scoring cr
 for t in agent skill command hook magent; do bun -e "import {loadRubric} from './apps/cli/src/quality/rubric'; loadRubric('$t')"; done  # → all succeed
 ```
 
-**Out of scope:** scorer seam I/O (F022), generation briefs (F023).
-
-
+**Out of scope:** scorer seam I/O (G32), generation briefs (G33).
 ### Q&A
 
 
 
 ### Design
-
-**Design: Rubric config format + loader (F021)**
+**Design: Rubric config format + loader (G31)**
 
 **Architecture** (design-doc-phase4.md §3, invariant #3 — rubric is config, not code):
 
@@ -72,7 +57,7 @@ dimensions:
       poor: "…0.2–0.4 example…"
 ```
 
-**Resolution order** (`loadRubric(type, { path? })`), mirroring F007 scaffold template precedence:
+**Resolution order** (`loadRubric(type, { path? })`), mirroring G21 scaffold template precedence:
 1. Explicit `--rubric <file>` (opts.path) — highest priority
 2. User override `~/.superskill/rubrics/<type>.yaml`
 3. Dev: `src/rubrics/<type>.yaml` (relative to quality/rubric.ts → `../rubrics/`)
@@ -93,7 +78,7 @@ Exports:
 3. Weights sum to 1.0 ± 0.001 → else `RubricError(field: 'weights.sum', actual: <sum>)`
 4. `version` present → enforced by zod schema (int ≥ 1)
 
-**Heuristic path stays equal-weighted** (R8): `computeAggregate` in dimensions.ts is unchanged. Rubric weights apply ONLY to rubric-mode aggregate (the `scorer:rubric` store marker disambiguates — F022's concern, not this task). This task ships the rubric data + loader; the scorer seam (F022) consumes it.
+**Heuristic path stays equal-weighted** (R8): `computeAggregate` in dimensions.ts is unchanged. Rubric weights apply ONLY to rubric-mode aggregate (the `scorer:rubric` store marker disambiguates — G32's concern, not this task). This task ships the rubric data + loader; the scorer seam (G32) consumes it.
 
 **Package defaults** (R4): 5 YAML files in `apps/cli/src/rubrics/`:
 - `agent.yaml` — 5 dims: completeness(0.20), role-clarity(0.25), tool-selection(0.20), skill-linkage(0.20), model-fit(0.15)
@@ -106,16 +91,10 @@ All weights sum to exactly 1.0. Dimension names match `DIMENSION_REGISTRY` keys 
 
 **Packaging** (R9): Add `"rubrics/"` to `apps/cli/package.json` `files` array (alongside `"templates/"`). Update `prepublishOnly` to copy `src/rubrics` → `rubrics/` (mirrors the templates copy step).
 
-**Out of scope:** scorer seam I/O (F022), generation briefs (F023), rubric version stamping on evaluation rows (F022), trend version-boundary logic (F022).
-
-
+**Out of scope:** scorer seam I/O (G32), generation briefs (G33), rubric version stamping on evaluation rows (G32), trend version-boundary logic (G32).
 ### Solution
-
-Mirror F007 scaffold's template-resolution precedence (user->built-in). Ship rubrics/<type>.yaml as package defaults. quality/rubric.ts exports RubricSchema, loadRubric, Rubric type. Prefer rubric-only weights (one source) — heuristic stays equal-weighted, the scorer:rubric store marker disambiguates aggregation (design §3.1). Validate every name against DIMENSION_REGISTRY[type].
-
-
+Mirror G21 scaffold's template-resolution precedence (user->built-in). Ship rubrics/<type>.yaml as package defaults. quality/rubric.ts exports RubricSchema, loadRubric, Rubric type. Prefer rubric-only weights (one source) — heuristic stays equal-weighted, the scorer:rubric store marker disambiguates aggregation (design §3.1). Validate every name against DIMENSION_REGISTRY[type].
 ### Plan
-
 **Plan**
 
 **Step 1 — Create rubric YAML defaults** (`apps/cli/src/rubrics/<type>.yaml`)
@@ -162,9 +141,7 @@ Mirror F007 scaffold's template-resolution precedence (user->built-in). Ship rub
 **Files to modify:**
 - `apps/cli/package.json` (files array + prepublishOnly)
 
-**No changes to:** dimensions.ts (heuristic path unchanged — R8), evaluate.ts, evolve.ts (those are F022/F023).
-
-
+**No changes to:** dimensions.ts (heuristic path unchanged — R8), evaluate.ts, evolve.ts (those are G32/G33).
 ### Review
 
 ## Re-Verification — 2026-06-17 (--force --fix all)
@@ -254,9 +231,10 @@ Result: all 5 succeed. Each loads with version=1, correct dimension count (agent
 | ---- | ---- | ----- | ---- |
 
 ### References
-
 - Design: [design-doc-phase4.md](../design/design-doc-phase4.md) §3
-- Feature: [F021](../features/F021-rubric-config.md)
+- Feature: [G31](../features/G31_rubric-config-format-package-defaults-override-resolution.md)
 - Code: apps/cli/src/quality/dimensions.ts:50 (DIMENSION_REGISTRY keys)
-- Pattern ref: F007 scaffold template resolution (user -> built-in)
+- Pattern ref: G21 scaffold template resolution (user -> built-in)
+### History
 
+- Migrated from legacy format (2026-08-01)

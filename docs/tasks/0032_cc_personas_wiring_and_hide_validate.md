@@ -1,33 +1,21 @@
 ---
+schema_version: 1
 name: cc personas wiring and hide validate
-description: cc personas wiring and hide validate
-status: Done
-created_at: 2026-06-17T22:37:43.652Z
-updated_at: 2026-06-18T22:21:30.764Z
-folder: docs/tasks
+status: done
 type: task
-feature-id: F025
-priority: high
-estimated_hours: 5
+priority: P1
+tags: [phase4,plugin,personas,spur,validate-hide]
 dependencies: ["0029","0030","0031"]
-tags: ["phase4","plugin","personas","spur","validate-hide"]
-impl_progress:
-  planning: pending
-  design: pending
-  implementation: pending
-  review: pending
-  testing: pending
+created_at: 2026-06-17T22:37:43.652Z
+updated_at: "2026-08-01T02:24:53.515Z"
+feature_id: H7
 ---
 
 ## 0032. cc personas wiring and hide validate
 
 ### Background
-
-Wire the cc:cc-<type> skill workflows (re-authored thin in Phase 3) to DRIVE the Phase 4 seams via four Spur agent personas — Scorer, Author, Skeptic, Judge — and remove the deterministic-only framing from SKILL.md. Also implement P4-D3: hide validate behind evaluate/refine/evolve — delete hook-validate.md, ensure no *-validate slash command exists, confirm operations gate on validate internally. F022-F024 added the CLI seams but the CLI does no scoring/generation itself (P4-D2); the cc skill is where the non-determinism is orchestrated. Without this wiring the seams have no driver. P4-D3 resolves the Phase 3 §3.3 validate-surface gap by HIDING it, not by adding four commands. Design: design-doc-phase4.md §1, §4, §5.1, D3. Owning feature: F025.
-
-
+Wire the cc:cc-<type> skill workflows (re-authored thin in Phase 3) to DRIVE the Phase 4 seams via four Spur agent personas — Scorer, Author, Skeptic, Judge — and remove the deterministic-only framing from SKILL.md. Also implement P4-D3: hide validate behind evaluate/refine/evolve — delete hook-validate.md, ensure no *-validate slash command exists, confirm operations gate on validate internally. G32-G34 added the CLI seams but the CLI does no scoring/generation itself (P4-D2); the cc skill is where the non-determinism is orchestrated. Without this wiring the seams have no driver. P4-D3 resolves the Phase 3 §3.3 validate-surface gap by HIDING it, not by adding four commands. Design: design-doc-phase4.md §1, §4, §5.1, D3. Owning feature: H7.
 ### Requirements
-
 - [x] **R1** — Two-call seam pattern in all 5 SKILL.md → **MET** | evaluate --rubric --json + evolve --propose-only --json/--ingest (5 each)
 - [x] **R2** — Four personas with exact I/O contracts → **MET** | Scorer/Author/Skeptic/Judge in 5 expert-*.md
 - [x] **R3** — Deterministic-only framing removed → **MET** | seam is primary; heuristic = fallback
@@ -35,34 +23,26 @@ Wire the cc:cc-<type> skill workflows (re-authored thin in Phase 3) to DRIVE the
 - [x] **R5** — hook-validate.md deleted, no *-validate command → **MET** | git D; ls commands = 16
 - [x] **R6** — validate is internal-only gate → **MET** | evolve.ts:314, refine.ts:248
 - [x] **R7** — Command surface = 16 → **MET** | ls plugins/cc/commands/ = 16
-- [x] **R8** — No invented flags/verbs → **MET** | only F022/F023 seam flags + existing verbs
+- [x] **R8** — No invented flags/verbs → **MET** | only G32/G33 seam flags + existing verbs
 
 **Acceptance:** all 6 grep commands pass. Phase 4 closing gate: 589 pass / 0 fail, 99.56%/98.32% coverage, zero model calls.
 
-**Out of scope:** CLI seam/gate implementation (F022–F024).
-
-
+**Out of scope:** CLI seam/gate implementation (G32–G34).
 ### Q&A
 
 
 
 ### Design
-
-- **Scope:** Plugin-side wiring only — rewrite 5 `cc:cc-<type>` SKILL.md evaluate/evolve workflows to the two-call seam pattern; define 4 personas (Scorer/Author/Skeptic/Judge) in the 5 `expert-*.md` agents; delete `hook-validate.md`. No CLI code changes (seams from F022–F024).
+- **Scope:** Plugin-side wiring only — rewrite 5 `cc:cc-<type>` SKILL.md evaluate/evolve workflows to the two-call seam pattern; define 4 personas (Scorer/Author/Skeptic/Judge) in the 5 `expert-*.md` agents; delete `hook-validate.md`. No CLI code changes (seams from G32–G34).
 - **Key decision:** Personas defined in expert agents (not separate Spur prompt files) — keeps the persona knowledge co-located with the type specialist that invokes it. Each expert agent gains a `## Personas` section documenting the four roles and their I/O contracts.
 - **Two-call seam pattern (R1):**
   - **Evaluate:** `superskill <type> evaluate <name> --rubric <file> --json` → Scorer persona scores offline → `superskill <type> evaluate <name> --ingest <scores.json> --save`
   - **Evolve:** `superskill <type> evolve <name> --propose-only --json` → Author persona rewrites from briefs → Skeptic persona refutes → Judge persona selects (if multiple candidates) → `superskill <type> evolve <name> --ingest <proposal.json> --accept <id>`
-- **Goal-anchor discipline (R4):** SKILL.md workflow text instructs the agent to pass original frontmatter + negative constraints **verbatim** to Skeptic/Judge; no compaction. The CLI gate (F024) enforces via `anchor_hash` — the skill must not strip it pre-call.
+- **Goal-anchor discipline (R4):** SKILL.md workflow text instructs the agent to pass original frontmatter + negative constraints **verbatim** to Skeptic/Judge; no compaction. The CLI gate (G34) enforces via `anchor_hash` — the skill must not strip it pre-call.
 - **Boundaries affected:** `plugins/cc/skills/cc-{agents,commands,hooks,magents,skills}/SKILL.md`, `plugins/cc/agents/expert-{agent,command,hook,magent,skill}.md`, `plugins/cc/commands/hook-validate.md` (deleted).
 - **Risks:** SKILL.md restructuring must stay additive (extend workflow sections, don't restructure per Solution). Persona definitions must match the exact I/O contracts the CLI seams expect (Scorer → `{ rubric_version, dimensions }`, Author → `ProposedChange[]` + `anchor_hash`, Skeptic → `{ ok, violations[] }`, Judge → pairwise selector).
-
-
 ### Solution
-
-Per cc:cc-<type>: rewrite evaluate->'<type> evaluate --rubric --json' (Scorer) then '--ingest --save'; evolve->'<type> evolve --propose-only --json' (Author from briefs -> Skeptic refutes -> Judge selects if multiple) then '--ingest --accept' (CLI gate F024 decides). Define personas in expert-*.md or referenced Spur prompts. Remove heuristic-only framing. Persona prompts pass original instructions + negative constraints verbatim (CLI gate enforces via anchor_hash but skill must not strip pre-call). Delete hook-validate.md. Match Phase 3 thin SKILL.md structure — extend workflow sections, don't restructure.
-
-
+Per cc:cc-<type>: rewrite evaluate->'<type> evaluate --rubric --json' (Scorer) then '--ingest --save'; evolve->'<type> evolve --propose-only --json' (Author from briefs -> Skeptic refutes -> Judge selects if multiple) then '--ingest --accept' (CLI gate G34 decides). Define personas in expert-*.md or referenced Spur prompts. Remove heuristic-only framing. Persona prompts pass original instructions + negative constraints verbatim (CLI gate enforces via anchor_hash but skill must not strip pre-call). Delete hook-validate.md. Match Phase 3 thin SKILL.md structure — extend workflow sections, don't restructure.
 ### Plan
 
 - [x] Delete `plugins/cc/commands/hook-validate.md` (R5)
@@ -114,7 +94,6 @@ Plugin-side markdown + tests only — no code execution, no secrets, no network.
 
 
 ### Testing
-
 Tests ship **in this task** (design rule: each task owns its tests — no separate pure-test task). Last run: 2026-06-18T18:45:00Z.
 
 - [x] Plugin-side wiring assertions (the §Acceptance commands in this task): `hook-validate.md` deleted; command surface = 16; SKILL.md drives the two-call seam; personas defined; goal anchor passed verbatim. — `apps/cli/tests/plugin-wiring.test.ts` (72 tests, 0 fail)
@@ -130,19 +109,18 @@ Tests ship **in this task** (design rule: each task owns its tests — no separa
 
 **Full suite:** `bun test --coverage` → 589 pass, 0 fail, 1456 expect() calls, 99.56% funcs / 98.32% lines aggregate.
 
-This task carries the cross-feature gate the dissolved pure-test feature (former F026) used to hold; per-feature tests live in 0028–0031.
-
-
+This task carries the cross-feature gate the dissolved pure-test feature (former G35) used to hold; per-feature tests live in 0028–0031.
 ### Artifacts
 
 | Type | Path | Agent | Date |
 | ---- | ---- | ----- | ---- |
 
 ### References
-
 - Design: [design-doc-phase4.md](../design/design-doc-phase4.md) §1, §4, §5.1, P4-D3
-- Feature: [F025](../features/F025-cc-personas-hide-validate.md)
+- Feature: [H7](../features/H7_cc-skill-spur-personas-hide-validate-p4-d3.md)
 - Depends on: 0029, 0030, 0031
 - Owns: Phase 4 closing gate (full suite + >=90% coverage + zero model calls)
 - Carries the gate formerly held by canceled task 0033
+### History
 
+- Migrated from legacy format (2026-08-01)

@@ -1,20 +1,12 @@
 ---
+schema_version: 1
 name: Make cc magent-evaluate ready to replace rd3 magent-evaluate
-description: Make cc magent-evaluate ready to replace rd3 magent-evaluate
-status: Done
+status: done
+type: task
+priority: P1
+tags: [cc-magents,evaluate,dogfood,migration,rd3-parity,schema-bug,resolver-bug]
 created_at: 2026-06-21T18:17:40.675Z
 updated_at: 2026-06-21T18:48:04.811Z
-folder: docs/tasks
-type: task
-feature-id: ""
-priority: high
-tags: ["cc-magents","evaluate","dogfood","migration","rd3-parity","schema-bug","resolver-bug"]
-impl_progress:
-  planning: done
-  design: done
-  implementation: done
-  review: done
-  testing: done
 ---
 
 ## 0050. Make cc magent-evaluate ready to replace rd3 magent-evaluate
@@ -336,3 +328,8 @@ malformed frontmatter             → completeness 0.17 "Frontmatter parse error
 
 
 
+
+
+### History
+
+- Migrated from legacy format (2026-08-01)

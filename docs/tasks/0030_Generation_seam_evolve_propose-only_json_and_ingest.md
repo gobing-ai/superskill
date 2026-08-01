@@ -1,33 +1,21 @@
 ---
+schema_version: 1
 name: Generation seam evolve propose-only json and ingest
-description: Generation seam evolve propose-only json and ingest
-status: Done
-created_at: 2026-06-17T22:37:16.802Z
-updated_at: 2026-06-18T18:09:49.580Z
-folder: docs/tasks
+status: done
 type: task
-feature-id: F023
-priority: high
-estimated_hours: 6
+priority: P1
+tags: [phase4,generation,evolve,seam,anti-drift]
 dependencies: ["0028"]
-tags: ["phase4","generation","evolve","seam","anti-drift"]
-impl_progress:
-  planning: pending
-  design: pending
-  implementation: pending
-  review: pending
-  testing: pending
+created_at: 2026-06-17T22:37:16.802Z
+updated_at: "2026-08-01T02:24:37.317Z"
+feature_id: G33
 ---
 
 ## 0030. Generation seam evolve propose-only json and ingest
 
 ### Background
-
-Replace the generateChanges placeholder (evolve.ts ~line 118, emits '[Improve <dim>]: review and enhance the description…') with a real generation seam. The CLI contributes envelope-out (evolve --propose-only --json) emitting per-dimension generation BRIEFS, and ingest-in (evolve --ingest <proposal.json>) accepting agent-authored ProposedChange[], persisting, and applying on accept through existing machinery. ProposedChange already carries {location,current,proposed,reason} and applyChange already does real text replacement — the ONLY fake part is where 'proposed' comes from (design §2.2). Today evolve runs a real loop around fake content (a TODO note prepended to the description). GOAL ANCHORING (anti-drift): every brief includes the IMMUTABLE goal anchor (original frontmatter + rubric criteria + DON'T rules) emitted VERBATIM; the CLI must not summarise/drop them. CLI never calls a model (invariant #1). Design: design-doc-phase4.md §2.2. Owning feature: F023.
-
-
+Replace the generateChanges placeholder (evolve.ts ~line 118, emits '[Improve <dim>]: review and enhance the description…') with a real generation seam. The CLI contributes envelope-out (evolve --propose-only --json) emitting per-dimension generation BRIEFS, and ingest-in (evolve --ingest <proposal.json>) accepting agent-authored ProposedChange[], persisting, and applying on accept through existing machinery. ProposedChange already carries {location,current,proposed,reason} and applyChange already does real text replacement — the ONLY fake part is where 'proposed' comes from (design §2.2). Today evolve runs a real loop around fake content (a TODO note prepended to the description). GOAL ANCHORING (anti-drift): every brief includes the IMMUTABLE goal anchor (original frontmatter + rubric criteria + DON'T rules) emitted VERBATIM; the CLI must not summarise/drop them. CLI never calls a model (invariant #1). Design: design-doc-phase4.md §2.2. Owning feature: G33.
 ### Requirements
-
 - [x] **R1** — Envelope `{trends,baseline,rubric,briefs[]}` → **MET** | live: 5 briefs, correct shape
 - [x] **R2** — Anchor verbatim (frontmatter+criteria+DON'T) → **MET** | live: anchor keys present, frontmatter verbatim
 - [x] **R3** — Ingest authored ProposedChange[] → **MET** | ingestProposal evolve.ts:292
@@ -39,18 +27,15 @@ Replace the generateChanges placeholder (evolve.ts ~line 118, emits '[Improve <d
 
 **Acceptance:** `--propose-only --json | rg "\[Improve"` → no match; briefs[] verbatim anchor; ingest+accept → real text. All verified live.
 
-**Out of scope:** gate decision (F024).
-
-
+**Out of scope:** gate decision (G34).
 ### Q&A
 
 
 
 ### Design
-
 **Architecture** (design-doc-phase4.md §2.2, invariant #1 — CLI is deterministic, #6 — goal anchor immutable):
 
-The generation seam replaces the fake `generateChanges` placeholder with two CLI I/O modes, mirroring the scorer seam (F022) pattern in `evaluate.ts:emitEnvelope` / `ingestScores`.
+The generation seam replaces the fake `generateChanges` placeholder with two CLI I/O modes, mirroring the scorer seam (G32) pattern in `evaluate.ts:emitEnvelope` / `ingestScores`.
 
 **New type: `GenerationBrief`**
 
@@ -69,7 +54,7 @@ interface GenerationBrief {
 
 **Envelope-out** — `evolve <name> --propose-only --json`:
 - After stepAnalyze + baseline heuristic report, build briefs for every dimension in the report (not just declining ones — the Author persona decides what to rewrite).
-- Load rubric via `loadRubric(type)` (F021) to get criteria per dimension.
+- Load rubric via `loadRubric(type)` (G31) to get criteria per dimension.
 - Parse frontmatter via `parseFrontmatter(content)` (existing) to get the verbatim anchor.
 - Extract negative constraints: scan frontmatter for `description` DON'T rules (lines starting with "DON'T" or "NEVER" in the description). If none, empty array.
 - Emit `{ trends, baseline, rubric, briefs: GenerationBrief[] }` as JSON to stdout. No DB write, no model call.
@@ -96,11 +81,8 @@ interface GenerationBrief {
 **Invariants honored:**
 - CLI makes no model API call (R8) — the rewrite enters only as ingested JSON.
 - Goal anchor is immutable (#6) — frontmatter + rubric criteria + negative constraints emitted verbatim.
-
 ### Solution
-
-evolve.ts: envelope path emits briefs (work orders), NOT changes. Build GenerationBrief = {dimension,current_text,target_criterion,anchor}; the anchor is emitted verbatim (the same data Skeptic/Judge receive in F024). Ingest path consumes authored ProposedChange[], persists proposal, on accept applies via applyChange (content/edit.ts) + runs stepVerify (the F024 gate plugs in here — F023 wires the path, F024 adds the decision). Remove generateChanges from default path; placeholder string must be unreachable. helpers.ts: ensure --json accepted on evolve + add --ingest <file>.
-
+evolve.ts: envelope path emits briefs (work orders), NOT changes. Build GenerationBrief = {dimension,current_text,target_criterion,anchor}; the anchor is emitted verbatim (the same data Skeptic/Judge receive in G34). Ingest path consumes authored ProposedChange[], persists proposal, on accept applies via applyChange (content/edit.ts) + runs stepVerify (the G34 gate plugs in here — G33 wires the path, G34 adds the decision). Remove generateChanges from default path; placeholder string must be unreachable. helpers.ts: ensure --json accepted on evolve + add --ingest <file>.
 ### Plan
 
 **Step 1 — Add types to `evolve.ts`**
@@ -243,9 +225,10 @@ Fixture: `apps/cli/tests/fixtures/phase4/proposal-good.json`. Spy on `process.st
 | ---- | ---- | ----- | ---- |
 
 ### References
-
 - Design: [design-doc-phase4.md](../design/design-doc-phase4.md) §2.2
-- Feature: [F023](../features/F023-generation-seam.md)
+- Feature: [G33](../features/G33_generation-seam-evolve-propose-only-json-ingest.md)
 - Depends on: 0028
 - Code: apps/cli/src/operations/evolve.ts (generateChanges ~118, stepApply ~377)
+### History
 
+- Migrated from legacy format (2026-08-01)

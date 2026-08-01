@@ -1,20 +1,12 @@
 ---
+schema_version: 1
 name: Make cc magent-evolve ready to replace rd3 magent-evolve
-description: Make cc magent-evolve ready to replace rd3 magent-evolve
-status: Done
+status: done
+type: task
+priority: P1
+tags: [cc-magents,evolve,dogfood,migration,rd3-parity]
 created_at: 2026-06-21T20:56:07.146Z
 updated_at: 2026-06-22T00:35:06.255Z
-folder: docs/tasks
-type: task
-feature-id: ""
-priority: high
-tags: ["cc-magents","evolve","dogfood","migration","rd3-parity"]
-impl_progress:
-  planning: completed
-  design: completed
-  implementation: completed
-  review: completed
-  testing: completed
 ---
 
 ## 0054. Make cc magent-evolve ready to replace rd3 magent-evolve
@@ -197,3 +189,8 @@ No engine rewrite beyond the additive frontmatter-less guard. Reused F024 (runGa
 
 ### References
 
+
+
+### History
+
+- Migrated from legacy format (2026-08-01)

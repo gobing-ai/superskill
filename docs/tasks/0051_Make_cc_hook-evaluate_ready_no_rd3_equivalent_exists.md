@@ -1,20 +1,12 @@
 ---
+schema_version: 1
 name: Make cc hook-evaluate ready (no rd3 equivalent exists)
-description: Make cc hook-evaluate ready (no rd3 equivalent exists)
-status: Done
+status: done
+type: task
+priority: P2
+tags: [cc-hooks,evaluate,dogfood,design-decision,schema-bug,missing-command]
 created_at: 2026-06-21T18:20:51.691Z
 updated_at: 2026-06-21T19:01:43.648Z
-folder: docs/tasks
-type: task
-feature-id: ""
-priority: medium
-tags: ["cc-hooks","evaluate","dogfood","design-decision","schema-bug","missing-command"]
-impl_progress:
-  planning: done
-  design: done
-  implementation: done
-  review: done
-  testing: done
 ---
 
 ## 0051. Make cc hook-evaluate ready (no rd3 equivalent exists)
@@ -378,3 +370,8 @@ absolute path + no timeout                 → pattern-match-quality 0.30
 ### References
 
 
+
+
+### History
+
+- Migrated from legacy format (2026-08-01)

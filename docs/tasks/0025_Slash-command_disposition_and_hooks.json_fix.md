@@ -1,33 +1,21 @@
 ---
+schema_version: 1
 name: Slash-command disposition and hooks.json fix
-description: Slash-command disposition and hooks.json fix
-status: Done
-created_at: 2026-06-17T22:28:49.200Z
-updated_at: 2026-06-18T01:26:36.000Z
-folder: docs/tasks
+status: done
 type: task
-feature-id: F018
-priority: high
-estimated_hours: 4
+priority: P1
+tags: [phase3,commands,hooks,plugin,cleanup]
 dependencies: ["0023"]
-tags: ["phase3","commands","hooks","plugin","cleanup"]
-impl_progress:
-  planning: done
-  design: done
-  implementation: done
-  review: done
-  testing: done
+created_at: 2026-06-17T22:28:49.200Z
+updated_at: "2026-08-01T02:23:58.649Z"
+feature_id: H5
 ---
 
 ## 0025. Slash-command disposition and hooks.json fix
 
 ### Background
-
-Two things: (1) Disposition of all 25 slash commands (design §3) — rewrite the 17 that map to a CLI verb so their body delegates to bare 'superskill <type> <op>'; delete the 8 orphans that map to no CLI verb. (2) Fix plugins/cc/hooks/hooks.json (design §4.4): it wires SessionStart/PreToolUse/Stop hooks to skills/{indexed-context,tasks,anti-hallucination} — none of which exist in plugins/cc/, so a fresh session start fails a hook. Strip the dangling entries. There is NO add/adapt/emit/package/migrate CLI verb (verified: rg over apps/cli/src/commands/*.ts -> no hits), so *-add rewrites to scaffold and the orphans are deleted. The broken hooks.json is a critical install defect. Depends on F016. Design: design-doc-phase3.md §3, §4.4. Owning feature: F018.
-
-
+Two things: (1) Disposition of all 25 slash commands (design §3) — rewrite the 17 that map to a CLI verb so their body delegates to bare 'superskill <type> <op>'; delete the 8 orphans that map to no CLI verb. (2) Fix plugins/cc/hooks/hooks.json (design §4.4): it wires SessionStart/PreToolUse/Stop hooks to skills/{indexed-context,tasks,anti-hallucination} — none of which exist in plugins/cc/, so a fresh session start fails a hook. Strip the dangling entries. There is NO add/adapt/emit/package/migrate CLI verb (verified: rg over apps/cli/src/commands/*.ts -> no hits), so *-add rewrites to scaffold and the orphans are deleted. The broken hooks.json is a critical install defect. Depends on H3. Design: design-doc-phase3.md §3, §4.4. Owning feature: H5.
 ### Requirements
-
 - [x] **R1** — 17 commands rewritten to delegate (keep filename, body calls bare `superskill`):
   - `agent-add`, `command-add`, `magent-add`, `skill-add` → `<type> scaffold`.
   - `agent-evaluate`, `command-evaluate`, `magent-evaluate`, `skill-evaluate` → `<type> evaluate`.
@@ -51,16 +39,13 @@ bun -e 'JSON.parse(require("fs").readFileSync("plugins/cc/hooks/hooks.json","utf
 rg "indexed-context|anti-hallucination" plugins/cc/hooks/hooks.json  # → none
 ```
 
-**Out of scope:** SKILL.md/agent rewrites (F017), deleting `scripts/`/`tests/` dirs (F019).
-
-
+**Out of scope:** SKILL.md/agent rewrites (H4), deleting `scripts/`/`tests/` dirs (H6).
 ### Q&A
 
 
 
 ### Design
-
-**Scope:** 25 slash commands in `plugins/cc/commands/` + `plugins/cc/hooks/hooks.json`. No CLI code changes. No SKILL.md/agent changes (F017 done in 0024). No scripts/tests deletion (F019).
+**Scope:** 25 slash commands in `plugins/cc/commands/` + `plugins/cc/hooks/hooks.json`. No CLI code changes. No SKILL.md/agent changes (H4 done in 0024). No scripts/tests deletion (H6).
 
 **§3.1 — 17 rewrites (keep filename, rewrite body to delegate to bare `superskill <type> <op>`):**
 
@@ -105,8 +90,6 @@ Replace entire file with `{ "hooks": {} }` — minimal valid JSON, no dangling r
 **R3 — hook-validate transitional:** Rewritten to delegate to `superskill hook validate`, but flagged as transitional in a note (Phase 4 P4-D3 deletes it). Do NOT add `agent-validate`, `command-validate`, `magent-validate`, `skill-validate`.
 
 **R4 — type from prefix:** `agent-*`→`agent`, `skill-*`→`skill`, `command-*`→`command`, `hook-*`→`hook`, `magent-*`→`magent`.
-
-
 ### Solution
 
 Rewrite mapping (§3.1): *-add->'<type> scaffold', *-evaluate->'<type> evaluate', *-refine->'<type> refine', *-evolve->'<type> evolve', hook-validate->'hook validate'. Type from file prefix (agent-*->agent etc). Delete 8 orphans (§3.2). hooks.json (§4.4): ship option (a) STRIP dangling entries -> empty/minimal valid file ({} or {hooks:{}} matching current schema); option (b) re-point only if those 3 skills are vendored (they are not). Read agent-evaluate.md before rewriting to match command-file structure (frontmatter+argument-hint+allowed-tools+body). Only emit registered flags: evolve(--from/--propose-only/--accept/--reject/--target), evaluate(--json/--save/--target), scaffold(--description/--target/--output/--force), refine(--auto/--save/--target), validate(--strict/--json/--target).
@@ -146,7 +129,6 @@ Run the 5 acceptance commands from the task file. Verify `bun run lint` clean.
 
 
 ### Review
-
 **Verdict: PASS**
 
 **Requirements Traceability**
@@ -164,7 +146,7 @@ Run the 5 acceptance commands from the task file. Verify `bun run lint` clean.
 
 **SECU Review**
 
-Scope: Rewrite 17 slash command files + delete 8 orphan command files + fix `plugins/cc/hooks/hooks.json` in `plugins/cc/`. No CLI code changed. No SKILL.md/agent changes (F017 done in 0024). No scripts/tests deletion (F019).
+Scope: Rewrite 17 slash command files + delete 8 orphan command files + fix `plugins/cc/hooks/hooks.json` in `plugins/cc/`. No CLI code changed. No SKILL.md/agent changes (H4 done in 0024). No scripts/tests deletion (H6).
 
 - **Security:** No security-relevant change. No new inputs, outputs, or auth/secret handling. The hooks.json fix *removes* a security-adjacent defect (dangling hook refs that would fail on session start), reducing attack surface by removing non-functional hook execution.
 - **Architecture:** No boundary changes. Plugin structure unchanged. No new dependencies. `apps/cli/` explicitly excluded (no CLI source touched).
@@ -173,13 +155,11 @@ Scope: Rewrite 17 slash command files + delete 8 orphan command files + fix `plu
 
 **Out-of-Scope Compliance**
 
-- SKILL.md/agent rewrites (F017) → done in 0024, not touched
-- File deletion (F019) → not touched; scripts/tests dirs still exist
-- Namespace swap (F016) → already done in 0023
+- SKILL.md/agent rewrites (H4) → done in 0024, not touched
+- File deletion (H6) → not touched; scripts/tests dirs still exist
+- Namespace swap (H3) → already done in 0023
 
 **Overall Verdict: PASS** — All 8 requirements verified with evidence. SECU review clean. Root gates pass. Critical hooks.json install defect fixed.
-
-
 ### Testing
 
 Verification gate for this task (run all; each maps to a Requirement). Command-disposition + hooks.json fix — verified by the checks below.
@@ -207,8 +187,10 @@ No new automated tests (plugin markdown + JSON). Command outputs recorded as evi
 | ---- | ---- | ----- | ---- |
 
 ### References
-
 - Design: [design-doc-phase3.md](../design/design-doc-phase3.md) §3, §4.4
-- Feature: [F018](../features/F018-command-disposition-hooks.md)
+- Feature: [H5](../features/H5_slash-command-disposition-hooks-json-fix.md)
 - Depends on: 0023
 - Cross-phase: hook-validate removed in Phase 4 (0032 / P4-D3)
+### History
+
+- Migrated from legacy format (2026-08-01)

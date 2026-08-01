@@ -1,22 +1,14 @@
 ---
+schema_version: 1
 name: Phase 5 tests
-description: Phase 5 tests
-status: Canceled
-created_at: 2026-06-17T22:44:45.234Z
-updated_at: 2026-06-17T23:20:56.235Z
-folder: docs/tasks
+status: cancelled
 type: task
-feature-id: F032
-priority: high
-estimated_hours: 5
+priority: P1
+tags: [phase5,tests,fixtures,coverage]
 dependencies: ["0034","0035","0036","0037","0038","0039"]
-tags: ["phase5","tests","fixtures","coverage"]
-impl_progress:
-  planning: pending
-  design: pending
-  implementation: pending
-  review: pending
-  testing: pending
+created_at: 2026-06-17T22:44:45.234Z
+updated_at: "2026-08-01T02:15:59.960Z"
+feature_id: G43
 ---
 
 ## 0040. Phase 5 tests
@@ -81,3 +73,8 @@ bun:test, tests next to code. fixtures/phase5/: hooks-bearing sample plugin, per
 ### References
 
 
+
+
+### History
+
+- Migrated from legacy format (2026-08-01)

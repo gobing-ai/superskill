@@ -1,27 +1,19 @@
 ---
+schema_version: 1
 name: Refine operation
 description: Evaluate → fix pipeline — classifies findings into auto-apply/suggest/flag strategies, applies structural fixes automatically or interactively, re-evaluates and shows score delta
-status: Done
-created_at: 2026-06-16T00:00:00.000Z
-updated_at: 2026-06-16T21:46:16.506Z
-folder: docs/tasks
+status: done
 type: task
-feature-id: F012
-priority: high
-estimated_hours: 5
-tags: ["operations","quality","refinement","fix-strategy"]
-impl_progress:
-  planning: done
-  design: done
-  implementation: done
-  review: done
-  testing: done
+priority: P1
+tags: [operations,quality,refinement,fix-strategy]
+created_at: 2026-06-16T00:00:00.000Z
+updated_at: "2026-08-01T02:23:28.553Z"
+feature_id: G25
 ---
 
 ## 0012. Refine operation
 
 ### Background
-
 The refine operation closes the fast-feedback loop of the Phase 2 quality pipeline. Instead of requiring the user to evaluate → manually fix → re-evaluate in separate steps, refine does it in one operation: evaluate the content, classify every finding into a fix strategy bucket, apply corrections, then re-evaluate to show the score delta. This makes the quality pipeline self-correcting for mechanical problems and tightens the authoring iteration cycle.
 
 Three fix strategies govern what happens to each finding:
@@ -29,10 +21,8 @@ Three fix strategies govern what happens to each finding:
 - **Suggest**: content improvements that benefit from human review — rewrite ambiguous descriptions, de-duplicate trigger phrases, improve section naming. Shown in interactive mode; skipped in `--auto` mode.
 - **Flag**: issues requiring human judgment beyond what the tool can decide — architecture-level changes, scope decisions, model selection. Always shown but never auto-applied; user must handle manually.
 
-Refine calls `validate` (F010) first to catch structural problems that block evaluation, then `evaluate` (F011) for baseline scores, classifies findings, applies fixes via `applyChange` from `content/edit.ts` (F007), re-evaluates, and displays the score delta.
-
+Refine calls `validate` (G23) first to catch structural problems that block evaluation, then `evaluate` (G24) for baseline scores, classifies findings, applies fixes via `applyChange` from `content/edit.ts` (G21), re-evaluates, and displays the score delta.
 ### Requirements
-
 **R1** — Export `refine(type: ContentType, nameOrPath: string, opts?: RefineOptions): Promise<RefineResult>`. Runs the full evaluate → classify → fix → re-evaluate pipeline.
 
 **R2** — `RefineOptions` type: `{ target?: Target, auto?: boolean, save?: boolean }`. `auto` applies only auto-apply fixes without user interaction. `save` persists both pre and post evaluation results. `target` forwards to both validate and evaluate.
@@ -41,7 +31,7 @@ Refine calls `validate` (F010) first to catch structural problems that block eva
 
 **R4** — `FixRecord` type: `{ severity: string, field: string, message: string, strategy: 'auto-apply' | 'suggest' | 'flag', applied: boolean }`. Records what was attempted and whether it was applied.
 
-**R5** — **Fix strategy classification**: each finding from validate (F010) and each dimension note from evaluate (F011) is classified into one of three strategies:
+**R5** — **Fix strategy classification**: each finding from validate (G23) and each dimension note from evaluate (G24) is classified into one of three strategies:
 - **Auto-apply**: structural issues — missing frontmatter fields, wrong field types (string→array, number→string), YAML indentation problems, missing required fields with known defaults
 - **Suggest**: content quality issues — ambiguous/short descriptions, duplicate trigger phrases, poor section naming, lacking verification language
 - **Flag**: architectural concerns — "merge this skill with sibling", scope expansions, model selection changes, decisions requiring domain context
@@ -59,7 +49,7 @@ Classification logic:
 - **YAML indentation normalization**: re-serialize the frontmatter block via `yaml.stringify(yaml.parse(frontmatterRaw))` for clean, consistent formatting.
 - **Missing required field with known default**: add the field with a sensible default. Example: missing `model` for agent → add `model: default`.
 
-All auto-apply fixes mutate content through `applyChange` from `content/edit.ts` (F007). The change format for frontmatter edits is `{ kind: 'frontmatter', key: string, value: unknown }`. For body text edits, `{ kind: 'text', current: string, proposed: string }`. No bespoke string manipulation or regex replacements live in refine.ts — all mutation goes through `applyChange`.
+All auto-apply fixes mutate content through `applyChange` from `content/edit.ts` (G21). The change format for frontmatter edits is `{ kind: 'frontmatter', key: string, value: unknown }`. For body text edits, `{ kind: 'text', current: string, proposed: string }`. No bespoke string manipulation or regex replacements live in refine.ts — all mutation goes through `applyChange`.
 
 **R7** — **Suggest fix implementations**: generate proposed changes from dimension notes. The note text is the suggestion. Example: dimension note `"Trigger phrases overlap with rd3-code-review"` produces a suggestion: "Consider updating trigger phrases to be more specific and distinct from rd3-code-review". Suggestions are presented to the user (interactive mode) but never applied without confirmation. In `--auto` mode, suggestions are recorded in `fixesSkipped` but not applied.
 
@@ -96,12 +86,12 @@ Score: 0.72 → 0.85 (+0.13, +18.1%)
 ```
 The percentage is computed as `(delta / preScore) * 100`; if `preScore` is 0, omit the percentage. Output via `process.stdout.write`.
 
-**R14** — **`--save` flag**: persists the post-refine evaluation. Calls evaluate's `--save` path by invoking `evaluate(type, resolvedPath, { target, save: true, operation: 'refine' })`. The `operation` value `'refine'` is passed through to `insertEvaluation` — the store never defaults it (see F008, F011). Does NOT separately save the pre-refine evaluation; only the post-refine result is persisted (the pre score is transient). If the user also wants the pre score stored, they should run `evaluate --save` before `refine`.
+**R14** — **`--save` flag**: persists the post-refine evaluation. Calls evaluate's `--save` path by invoking `evaluate(type, resolvedPath, { target, save: true, operation: 'refine' })`. The `operation` value `'refine'` is passed through to `insertEvaluation` — the store never defaults it (see F4, G24). Does NOT separately save the pre-refine evaluation; only the post-refine result is persisted (the pre score is transient). If the user also wants the pre score stored, they should run `evaluate --save` before `refine`.
 
 **R15** — **`--target` passthrough**: the target option is forwarded to both `validate(type, resolvedPath, { target })` and `evaluate(type, resolvedPath, { target, ... })`. This ensures target-specific validation rules and evaluation dimensions are applied.
 
 **R16** — **Pipeline ordering**:
-1. `validate()` → if errors exist, display them and exit (do not proceed to evaluate — structural problems must be fixed first). Exit with the validation failure message and return `{ preScore: 0, postScore: 0, delta: 0, fixesApplied: [], fixesSkipped: [] }` so the F014 layer can map to exit 1.
+1. `validate()` → if errors exist, display them and exit (do not proceed to evaluate — structural problems must be fixed first). Exit with the validation failure message and return `{ preScore: 0, postScore: 0, delta: 0, fixesApplied: [], fixesSkipped: [] }` so the F5 layer can map to exit 1.
 2. `evaluate()` → get baseline `QualityReport` with `preScore = report.aggregate`
 3. Classify findings
 4. Apply fixes (auto or interactive)
@@ -111,22 +101,20 @@ The percentage is computed as `(delta / preScore) * 100`; if `preScore` is 0, om
 
 **R17** — **Content type coverage**: works for all 5 content types. The validate and evaluate dispatches handle type-specific logic internally; refine only orchestrates.
 
-**R18** — **Edit mechanism**: all content mutations go through `applyChange` from `content/edit.ts` (F007). The function signature is `applyChange(content: string, change: Change): string` where `Change` is `{ kind: 'frontmatter', key: string, value: unknown } | { kind: 'text', current: string, proposed: string }`. Frontmatter changes round-trip through `yaml.parseDocument` so comments and key order survive. Body text changes locate the nearest match of `current` and replace with `proposed`. Refine.ts uses only `applyChange` for all edits — no ad-hoc regex or string replacement.
-
+**R18** — **Edit mechanism**: all content mutations go through `applyChange` from `content/edit.ts` (G21). The function signature is `applyChange(content: string, change: Change): string` where `Change` is `{ kind: 'frontmatter', key: string, value: unknown } | { kind: 'text', current: string, proposed: string }`. Frontmatter changes round-trip through `yaml.parseDocument` so comments and key order survive. Body text changes locate the nearest match of `current` and replace with `proposed`. Refine.ts uses only `applyChange` for all edits — no ad-hoc regex or string replacement.
 ### Q&A
 
 
 
 ### Design
-
 **Module location**: `apps/cli/src/operations/refine.ts`.
 
 **Imports**:
-- `validate` from `operations/validate.ts` (F010) — structural validation
-- `evaluate` from `operations/evaluate.ts` (F011) — quality scoring
-- `applyChange`, `Change` from `content/edit.ts` (F007) — content mutation primitive
-- `resolveContentPath`, `resolveContentName` from `content/identity.ts` (F007) — path resolution
-- `ContentType` from `quality/dimensions.ts` (F009) — type union
+- `validate` from `operations/validate.ts` (G23) — structural validation
+- `evaluate` from `operations/evaluate.ts` (G24) — quality scoring
+- `applyChange`, `Change` from `content/edit.ts` (G21) — content mutation primitive
+- `resolveContentPath`, `resolveContentName` from `content/identity.ts` (G21) — path resolution
+- `ContentType` from `quality/dimensions.ts` (G22) — type union
 - `Target` from `targets.ts` — target type
 - `* as readline` from `node:readline` — interactive prompting
 
@@ -171,7 +159,7 @@ export async function refine(
 ```typescript
 type FixStrategy = 'auto-apply' | 'suggest' | 'flag';
 
-// Classification rules from design doc §2.4 and F012 feature spec
+// Classification rules from design doc §2.4 and G25 feature spec
 function classifyFix(finding: Finding): FixStrategy {
     // Structural errors → auto-apply
     if (finding.severity === 'error') {
@@ -493,18 +481,15 @@ export async function refine(
 - **No findings to fix**: if both validate and evaluate produce zero findings, display "No issues found. Score: X.XX" and exit with delta 0. This is a valid success case.
 - **User quits on first prompt**: restore backup, return `preScore` for both pre and post, delta 0, empty fix arrays.
 - **Concurrent refine sessions**: no locking mechanism in v1. Two concurrent refine sessions on the same file may produce interleaved writes. Acceptable for v1; warn in docs.
-
 ### Solution
-
 - `apps/cli/src/operations/refine.ts` — exports `refine()`, `classifyFix()`, `generateAutoChange()`, `RefineOptions`, `FixRecord`, `RefineResult`
-- Orchestrates validate (F010) + evaluate (F011) in a pipeline with fix classification and application
-- All content mutations go through `applyChange` from `content/edit.ts` (F007) — no ad-hoc string manipulation
+- Orchestrates validate (G23) + evaluate (G24) in a pipeline with fix classification and application
+- All content mutations go through `applyChange` from `content/edit.ts` (G21) — no ad-hoc string manipulation
 - Backup/restore for safety: original saved to `<file>.md.bak` before any edits
 - Interactive mode via `node:readline` with accept/reject/skip/quit per finding
 - `--auto` mode applies structural fixes silently, skips suggest and flag
 - `--save` persists post-refine evaluation with `operation: 'refine'`
 - Score delta displayed as absolute change and percentage
-
 ### Plan
 
 1. Create `apps/cli/src/operations/refine.ts` with the full `refine()` function
@@ -521,7 +506,6 @@ export async function refine(
 
 
 ### Review
-
 **Verdict:** PASS
 
 #### Re-verification — 2026-06-16 (`/rd3:dev-verify 0012 --force --fix all`)
@@ -542,7 +526,7 @@ export async function refine(
 
 - **R1–R4 (API):** `refine()`, `classifyFix()`, `generateAutoChange()`, `RefineOptions`, `FixRecord`, `RefineResult`, `RefineAbortedError` — all exported.
 - **R5 (Classification):** `classifyFix` — error→auto-apply, content quality→suggest, architecture→flag. 10 classification tests pass.
-- **R6 (Auto-apply):** `generateAutoChange` generates frontmatter changes for missing fields, array conversion, and string conversion via `applyChange` from F007.
+- **R6 (Auto-apply):** `generateAutoChange` generates frontmatter changes for missing fields, array conversion, and string conversion via `applyChange` from G21.
 - **R7 (Suggest):** Dimension notes become findings; suggestions recorded in `fixesSkipped` in auto mode.
 - **R8 (Flag):** Flag findings always in `fixesSkipped` with `applied: false` — never auto-applied.
 - **R9 (--auto):** Full pipeline — validate→evaluate→classify→auto-fix→re-evaluate→delta display. All content mutations via `applyChange`.
@@ -555,7 +539,6 @@ export async function refine(
 - **R16 (Pipeline order):** Validate → evaluate → classify → fix → re-evaluate → delta → save.
 - **R17 (Coverage):** Works for all 5 content types via dispatcher.
 - **R18 (Edit mechanism):** All mutations via `applyChange` — no ad-hoc string manipulation.
-
 ### Testing
 
 - **Command:** `bun run test`
@@ -589,13 +572,15 @@ export async function refine(
 | ---- | ---- | ----- | ---- |
 
 ### References
-
-- `docs/features/F012-refine-operation.md` — feature spec
+- `docs/features/G25_refine-operation.md` — feature spec
 - `docs/design/design-doc-phase2.md` §2.4 — refine operation design
-- `docs/design/design-doc-phase2.md` §9 — shared foundation (F007 content/*, especially `content/edit.ts` `applyChange`)
+- `docs/design/design-doc-phase2.md` §9 — shared foundation (G21 content/*, especially `content/edit.ts` `applyChange`)
 - `docs/design/design-doc-phase2.md` §10 — storage + identity conventions (ADR-013)
-- `docs/features/F010-validate-operation.md` — validate (structural findings source)
-- `docs/features/F011-evaluate-operation.md` — evaluate (quality scoring, --save with operation override)
-- `docs/features/F007-template-scaffold.md` — applyChange, resolveContentPath, resolveContentName
-- `docs/features/F009-quality-dimensions.md` — ContentType, dimension names for classification
+- `docs/features/G23_validate-operation.md` — validate (structural findings source)
+- `docs/features/G24_evaluate-operation.md` — evaluate (quality scoring, --save with operation override)
+- `docs/features/G21_template-content-io-foundation-scaffold-operation.md` — applyChange, resolveContentPath, resolveContentName
+- `docs/features/G22_quality-dimension-definitions.md` — ContentType, dimension names for classification
 - `apps/cli/src/targets.ts` — Target type
+### History
+
+- Migrated from legacy format (2026-08-01)

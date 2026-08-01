@@ -1,22 +1,13 @@
 ---
+schema_version: 1
 name: fix-low-priority-review-findings
-description: fix-low-priority-review-findings
-status: Done
+status: done
+type: task
+profile: standard
+priority: P3
+tags: [low-priority,nitpick,L1-L6]
 created_at: 2026-06-17T00:09:03.147Z
 updated_at: 2026-06-17T00:21:30.892Z
-folder: docs/tasks
-type: task
-feature-id: ""
-priority: low
-estimated_hours: 4
-tags: ["low-priority","nitpick","L1-L6"]
-preset: standard
-impl_progress:
-  planning: pending
-  design: pending
-  implementation: pending
-  review: pending
-  testing: pending
 ---
 
 ## 0021. fix-low-priority-review-findings
@@ -82,3 +73,8 @@ L6: Changed insertProposal to return full Proposal (via deserializeProposal) ins
 ### References
 
 
+
+
+### History
+
+- Migrated from legacy format (2026-08-01)

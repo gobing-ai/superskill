@@ -1,10 +1,11 @@
 ---
-schema_version: 1
-name: "Fix dev-review residual findings in packages/core (minors, advisories, architecture deepening C1-C4)"
-status: done
 template: standard
+schema_version: 1
+name: Fix dev-review residual findings in packages/core (minors, advisories, architecture deepening C1-C4)
+status: done
+type: task
 created_at: 2026-07-11T22:37:58.941Z
-updated_at: "2026-07-12T00:07:35.431Z"
+updated_at: 2026-07-12T00:07:35.431Z
 ---
 
 ## 0075. Fix dev-review residual findings in packages/core (minors, advisories, architecture deepening C1-C4)

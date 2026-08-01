@@ -1,21 +1,13 @@
 ---
-name: "Phase 1 — checkable-reference behavior gate for evolve (empirical gate, no LLM judge)"
-description: "Phase 1 — checkable-reference behavior gate for evolve (empirical gate, no LLM judge)"
-status: Done
-created_at: 2026-06-22T23:56:53.190Z
-updated_at: 2026-06-22T23:56:53.190Z
-folder: docs/tasks
+schema_version: 1
+name: Phase 1 — checkable-reference behavior gate for evolve (empirical gate, no LLM judge)
+status: done
 type: task
-feature-id: ""
-priority: high
-estimated_hours: 52
-tags: ["evolve","behavior-gate","empirical","eval-cases","replay","core","cli"]
-impl_progress:
-  planning: completed
-  design: completed
-  implementation: completed
-  review: completed
-  testing: completed
+priority: P1
+tags: [evolve,behavior-gate,empirical,eval-cases,replay,core,cli]
+created_at: 2026-06-22T23:56:53.190Z
+updated_at: "2026-08-01T02:17:39.881Z"
+feature_id: G35
 ---
 
 ## 0068. "Phase 1 — checkable-reference behavior gate for evolve (empirical gate, no LLM judge)"
@@ -279,3 +271,8 @@ green; `git status` shows only intentional changes.
 | ---- | ---- | ----- | ---- |
 
 ### References
+
+
+### History
+
+- Migrated from legacy format (2026-08-01)

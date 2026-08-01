@@ -2,10 +2,10 @@
 doc: 05_FEATURES
 owns: STATUS — feature decomposition + state (✅ done / 🔶 partial / ⏳ planned / 💤 deferred)
 authority: derived
-version: 5.0.0
+version: 6.0.0
 derived_from: [01_PRD, 02_ROADMAP]
 owner: Robin Min
-updated_at: 2026-06-23
+updated_at: 2026-08-01
 read_before: finding a feature's state; edit when a feature's status changes
 edit_rules: 99 §6.6
 sync: [T4]
@@ -15,6 +15,15 @@ sync: [T4]
 
 Status legend: ✅ done · 🔶 partial · ⏳ planned · 💤 deferred
 
+> **Legacy ID conversion (2026-08-01).** The spur-managed feature tree
+> ([docs/features/INDEX.md](features/INDEX.md)) is now the live feature structure. All F0xx IDs
+> below were converted to tree nodes: F001–F006 → G11–G14/E2/F3 (install pipeline, Phase 1),
+> F007–F015 → G21–G26/F4/F5/E3 (authoring, Phase 2), F016–F020 → H3–H6/I1 (plugin consolidation,
+> Phase 3), F021–F026 → G31–G35/H7 (quality brain, Phase 4), F027–F032 → F6/H8/H9/G41–G43
+> (hooks + restored verbs, Phase 5). The phase tables and graphs below use the new IDs; the
+> narrative is preserved as historical record. Backticked task-plan names retain the original
+> planning-era labels.
+
 ## Phase 1: Distribution — `superskill install`
 
 Design: [design-doc-phase1.md](design/design-doc-phase1.md)
@@ -23,12 +32,12 @@ Design: [design-doc-phase1.md](design/design-doc-phase1.md)
 
 | ID | Feature | Deps | Status | Files |
 |----|---------|------|--------|-------|
-| F001 | [Target taxonomy + config schema](features/F001-target-taxonomy-config.md) | — | ✅ | `targets.ts`, `config.ts` |
-| F002 | [Plugin → .rulesync/ mapper](features/F002-plugin-mapper.md) | — | ✅ | `mapper.ts` |
-| F003 | [Conversion pipeline + rulesync integration](features/F003-conversion-pipeline.md) | F001 | ✅ | `pipeline/*`, `rulesync.ts` |
-| F004 | [superskill install command + target dispatch](features/F004-install-command.md) | F001, F002, F003, F006 | ✅ | `commands/install.ts` |
-| F005 | [Tests + verification](features/F005-tests-verification.md) | F001–F004, F006 | ✅ | `tests/*` |
-| F006 | [Marketplace manifest resolver](features/F006-marketplace-resolver.md) | — | ✅ | `marketplace.ts` |
+| G11 | [Target taxonomy + config schema](features/G11_target-taxonomy-config-schema.md) | — | ✅ | `targets.ts`, `config.ts` |
+| G12 | [Plugin → .rulesync/ mapper](features/G12_plugin-rulesync-mapper.md) | — | ✅ | `mapper.ts` |
+| G13 | [Conversion pipeline + rulesync integration](features/G13_conversion-pipeline-rulesync-integration.md) | G11 | ✅ | `pipeline/*`, `rulesync.ts` |
+| F3 | [superskill install command + target dispatch](features/F3_superskill-install-command-marketplace-registration.md) | G11, G12, G13, G14 | ✅ | `commands/install.ts` |
+| E2 | [Tests + verification](features/E2_tests-verification.md) | G11–F3, G14 | ✅ | `tests/*` |
+| G14 | [Marketplace manifest resolver](features/G14_marketplace-manifest-resolver.md) | — | ✅ | `marketplace.ts` |
 
 ### Foundation (already done)
 
@@ -44,11 +53,11 @@ Design: [design-doc-phase1.md](design/design-doc-phase1.md)
 ### Dependency graph
 
 ```
-F001 ──┐
-       ├──► F003 ──┐
-F002 ──┘           ├──► F004 ──► F005
-F006 ──────────────┘
-(F001, F002, F006 have no deps — parallelizable)
+G11 ──┐
+       ├──► G13 ──┐
+G12 ──┘           ├──► F3 ──► E2
+G14 ──────────────┘
+(G11, G12, G14 have no deps — parallelizable)
 ```
 
 ## Task creation plan
@@ -57,14 +66,14 @@ Each feature becomes one task file. Recommended order and granularity:
 
 | Order | Feature | Task | Size | Rationale |
 |-------|---------|------|------|-----------|
-| 1 | F001 | `F001-target-taxonomy-config` | S (1 file + tests) | Foundation — unblocks F003. Smallest possible increment. |
-| 2 | F002 | `F002-plugin-mapper` | S (1 file + tests) | Independent of F001. Can run in parallel. |
-| 3 | F006 | `F006-marketplace-resolver` | S (1 file + tests) | Independent. Resolves plugin roots; unblocks F004. |
-| 4 | F003 | `F003-conversion-pipeline` | M (3–4 files + tests) | Depends on F001. Pipeline stages + rulesync wrapper. |
-| 5 | F004 | `F004-install-command` | M (1–2 files + tests) | Depends on F001–F003 + F006. Integration point. |
-| 6 | F005 | `F005-tests-verification` | S (test files) | Depends on F004. Covers everything. |
+| 1 | G11 | `F001-target-taxonomy-config` | S (1 file + tests) | Foundation — unblocks G13. Smallest possible increment. |
+| 2 | G12 | `F002-plugin-mapper` | S (1 file + tests) | Independent of G11. Can run in parallel. |
+| 3 | G14 | `F006-marketplace-resolver` | S (1 file + tests) | Independent. Resolves plugin roots; unblocks F3. |
+| 4 | G13 | `F003-conversion-pipeline` | M (3–4 files + tests) | Depends on G11. Pipeline stages + rulesync wrapper. |
+| 5 | F3 | `F004-install-command` | M (1–2 files + tests) | Depends on G11–G13 + G14. Integration point. |
+| 6 | E2 | `F005-tests-verification` | S (test files) | Depends on F3. Covers everything. |
 
-**Parallelization**: F001, F002, and F006 have no shared dependencies — they can be implemented concurrently in separate sessions. F003 must wait for F001. F004 gates on F001+F002+F003+F006. F005 runs last.
+**Parallelization**: G11, G12, and G14 have no shared dependencies — they can be implemented concurrently in separate sessions. G13 must wait for G11. F3 gates on G11+G12+G13+G14. E2 runs last.
 
 **Size key**: S = ≤2 files + tests, completable in one session. M = 3–5 files + tests, may span sessions.
 
@@ -78,31 +87,31 @@ Design: [design-doc-phase2.md](design/design-doc-phase2.md)
 
 | ID | Feature | Deps | Size | Status | Files |
 |----|---------|------|------|--------|-------|
-| F007 | [Template + content-IO foundation + scaffold](features/F007-template-scaffold.md) | — | M | ✅ | `content/*` (5), `templates/*/default.md` (5), `operations/scaffold.ts` |
-| F008 | [SQLite data store (via @gobing-ai/ts-db)](features/F008-sqlite-store.md) | F007 | M | ✅ | `store/schema.ts`, `store/db.ts`, `store/evaluations.ts`, `store/proposals.ts` |
-| F009 | [Quality dimension definitions](features/F009-quality-dimensions.md) | F007 | M | ✅ | `quality/dimensions.ts` + 5 type-specific evaluators |
-| F010 | [Validate operation](features/F010-validate-operation.md) | F007, F009 | S | ✅ | `operations/validate.ts` |
-| F011 | [Evaluate operation](features/F011-evaluate-operation.md) | F007, F008, F009 | S | ✅ | `operations/evaluate.ts` |
-| F012 | [Refine operation](features/F012-refine-operation.md) | F007, F010, F011 | S | ✅ | `operations/refine.ts` |
-| F013 | [Evolve operation](features/F013-evolve-operation.md) | F007, F008, F011 | M | ✅ | `operations/evolve.ts` |
-| F014 | [Five type command files](features/F014-type-commands.md) | F007–F013 | M | ✅ | `commands/helpers.ts` + `commands/{agent,skill,command,hook,magent}.ts` + `cli.ts` |
-| F015 | [Phase 2 tests](features/F015-phase2-tests.md) | F007–F014 | M | ✅ | `apps/cli/tests/{content,scaffold,validate,evaluate,refine,evolve,store,commands}.test.ts` |
+| G21 | [Template + content-IO foundation + scaffold](features/G21_template-content-io-foundation-scaffold-operation.md) | — | M | ✅ | `content/*` (5), `templates/*/default.md` (5), `operations/scaffold.ts` |
+| F4 | [SQLite data store (via @gobing-ai/ts-db)](features/F4_sqlite-data-store.md) | G21 | M | ✅ | `store/schema.ts`, `store/db.ts`, `store/evaluations.ts`, `store/proposals.ts` |
+| G22 | [Quality dimension definitions](features/G22_quality-dimension-definitions.md) | G21 | M | ✅ | `quality/dimensions.ts` + 5 type-specific evaluators |
+| G23 | [Validate operation](features/G23_validate-operation.md) | G21, G22 | S | ✅ | `operations/validate.ts` |
+| G24 | [Evaluate operation](features/G24_evaluate-operation.md) | G21, F4, G22 | S | ✅ | `operations/evaluate.ts` |
+| G25 | [Refine operation](features/G25_refine-operation.md) | G21, G23, G24 | S | ✅ | `operations/refine.ts` |
+| G26 | [Evolve operation](features/G26_evolve-operation.md) | G21, F4, G24 | M | ✅ | `operations/evolve.ts` |
+| F5 | [Five type command files](features/F5_five-type-command-files.md) | G21–G26 | M | ✅ | `commands/helpers.ts` + `commands/{agent,skill,command,hook,magent}.ts` + `cli.ts` |
+| E3 | [Phase 2 tests](features/E3_phase-2-tests.md) | G21–F5 | M | ✅ | `apps/cli/tests/{content,scaffold,validate,evaluate,refine,evolve,store,commands}.test.ts` |
 ### Dependency graph
 
 ```
-F007 (content-IO + templates + scaffold)   ← foundation; everything below imports content/*
+G21 (content-IO + templates + scaffold)   ← foundation; everything below imports content/*
   │
-  ├──► F008 (SQLite store)      ─┐
-  ├──► F009 (quality dims)      ─┤
-  │                              ├──► F010 (validate) ──┐
-  │                              ├──► F011 (evaluate) ──┤
-  │                              │                       ├──► F012 (refine) ──┐
-  │                              │                       ├──► F013 (evolve) ──┤
+  ├──► F4 (SQLite store)      ─┐
+  ├──► G22 (quality dims)      ─┤
+  │                              ├──► G23 (validate) ──┐
+  │                              ├──► G24 (evaluate) ──┤
+  │                              │                       ├──► G25 (refine) ──┐
+  │                              │                       ├──► G26 (evolve) ──┤
   │                              │                       │                    │
-  └──────────────────────────────┴───────────────────────┴────────────────────┼──► F014 (commands) ──► F015 (tests)
+  └──────────────────────────────┴───────────────────────┴────────────────────┼──► F5 (commands) ──► E3 (tests)
 ```
 
-F007 is no longer parallel with F008/F009 — it owns the shared `content/*` primitives (frontmatter parse/edit, name resolution, hashing, the single change-apply, data-root/path rules) that F008–F013 all import. F008 and F009 parallelize **after** F007 lands.
+G21 is no longer parallel with F4/G22 — it owns the shared `content/*` primitives (frontmatter parse/edit, name resolution, hashing, the single change-apply, data-root/path rules) that F4–G26 all import. F4 and G22 parallelize **after** G21 lands.
 
 ### Foundation (carried forward from Phase 1)
 
@@ -118,17 +127,17 @@ F007 is no longer parallel with F008/F009 — it owns the shared `content/*` pri
 
 | Order | Feature | Task | Rationale |
 |-------|---------|------|-----------|
-| 1 | F007 | `F007-template-scaffold` | **Foundation, must land first.** `content/*` primitives + templates + scaffold. F008–F013 import it. Adds the `yaml` dep (ADR-012). |
-| 2 | F008 | `F008-sqlite-store` | Depends on F007 (`content/paths.ts`). DB open/migration, evaluations CRUD, proposals CRUD. Foundation for F011/F013. |
-| 3 | F009 | `F009-quality-dimensions` | Depends on F007 (`parseFrontmatter`, `ContentType`, `REQUIRED_FIELDS`). Dimension schemas + scoring for all 5 types. Foundation for F010/F011. |
-| 4 | F010 | `F010-validate-operation` | Depends on F007+F009. Pure structural validation (exit codes mapped in F014). First user-visible operation. |
-| 5 | F011 | `F011-evaluate-operation` | Depends on F007+F008+F009. Quality scoring with `--json --save`; `operation`/`target_agent`/`file_hash` per ADR-013. |
-| 6 | F012 | `F012-refine-operation` | Depends on F007+F010+F011. Evaluate → fix via shared `applyChange`. |
-| 7 | F013 | `F013-evolve-operation` | Depends on F007+F008+F011. Longitudinal analysis + proposal workflow via shared `applyChange`/`getProposalsDir`. Most complex. |
-| 8 | F014 | `F014-type-commands` | Depends on F007–F013. `helpers.ts` (exit-code mapping, `resolveTarget` default) + Commander wiring for 5 types × 5 ops. |
-| 9 | F015 | `F015-phase2-tests` | Depends on F007–F014. `content.test.ts` + per-operation + integration tests, ≥90% line/function coverage. |
+| 1 | G21 | `F007-template-scaffold` | **Foundation, must land first.** `content/*` primitives + templates + scaffold. F4–G26 import it. Adds the `yaml` dep (ADR-012). |
+| 2 | F4 | `F008-sqlite-store` | Depends on G21 (`content/paths.ts`). DB open/migration, evaluations CRUD, proposals CRUD. Foundation for G24/G26. |
+| 3 | G22 | `F009-quality-dimensions` | Depends on G21 (`parseFrontmatter`, `ContentType`, `REQUIRED_FIELDS`). Dimension schemas + scoring for all 5 types. Foundation for G23/G24. |
+| 4 | G23 | `F010-validate-operation` | Depends on G21+G22. Pure structural validation (exit codes mapped in F5). First user-visible operation. |
+| 5 | G24 | `F011-evaluate-operation` | Depends on G21+F4+G22. Quality scoring with `--json --save`; `operation`/`target_agent`/`file_hash` per ADR-013. |
+| 6 | G25 | `F012-refine-operation` | Depends on G21+G23+G24. Evaluate → fix via shared `applyChange`. |
+| 7 | G26 | `F013-evolve-operation` | Depends on G21+F4+G24. Longitudinal analysis + proposal workflow via shared `applyChange`/`getProposalsDir`. Most complex. |
+| 8 | F5 | `F014-type-commands` | Depends on G21–G26. `helpers.ts` (exit-code mapping, `resolveTarget` default) + Commander wiring for 5 types × 5 ops. |
+| 9 | E3 | `F015-phase2-tests` | Depends on G21–F5. `content.test.ts` + per-operation + integration tests, ≥90% line/function coverage. |
 
-**Parallelization**: F007 must land first (it owns `content/*`). After F007, F008 and F009 parallelize. F010 and F011 run in parallel after F009/F008. F012 and F013 run in parallel after F010+F011.
+**Parallelization**: G21 must land first (it owns `content/*`). After G21, F4 and G22 parallelize. G23 and G24 run in parallel after G22/F4. G25 and G26 run in parallel after G23+G24.
 
 ### Content type to quality dimensions
 
@@ -154,21 +163,21 @@ Cleanup/consolidation only — touches `plugins/cc/`, not the CLI. Renames `rd3`
 
 | ID | Feature | Deps | Size | Status | Files |
 |----|---------|------|------|--------|-------|
-| F016 | [Namespace migration (`rd3`→`cc`) + companion configs](features/F016-namespace-migration.md) | — | M | ✅ | `plugins/cc/**` (~123 files w/ `rd3`) |
-| F017 | [Skill + expert-subagent rewrite → `superskill`](features/F017-skill-subagent-rewrite.md) | F016 | M | ✅ | `plugins/cc/skills/*/SKILL.md` (5), `plugins/cc/agents/expert-*.md` (5) |
-| F018 | [Slash-command disposition + `hooks.json` fix](features/F018-command-disposition-hooks.md) | F016 | M | ✅ | `plugins/cc/commands/*.md` (17), `plugins/cc/hooks/hooks.json` |
-| F019 | [Embedded-code deletion](features/F019-embedded-code-deletion.md) | F017, F018 | S | ✅ | delete `plugins/cc/skills/*/{scripts,templates,tests}/`, `cc-hooks/{emitters,schema}/`, `references/scripts-usage.md` |
-| F020 | [Binary-on-PATH + Phase 3 verification](features/F020-binary-path-verification.md) | F016–F019 | S | ✅ | `apps/cli/package.json` (verify bin), docs/runbook; no plugin code |
+| H3 | [Namespace migration (`rd3`→`cc`) + companion configs](features/H3_namespace-migration-rd3-cc-companion-configs.md) | — | M | ✅ | `plugins/cc/**` (~123 files w/ `rd3`) |
+| H4 | [Skill + expert-subagent rewrite → `superskill`](features/H4_skill-expert-subagent-rewrite-superskill.md) | H3 | M | ✅ | `plugins/cc/skills/*/SKILL.md` (5), `plugins/cc/agents/expert-*.md` (5) |
+| H5 | [Slash-command disposition + `hooks.json` fix](features/H5_slash-command-disposition-hooks-json-fix.md) | H3 | M | ✅ | `plugins/cc/commands/*.md` (17), `plugins/cc/hooks/hooks.json` |
+| H6 | [Embedded-code deletion](features/H6_embedded-code-deletion.md) | H4, H5 | S | ✅ | delete `plugins/cc/skills/*/{scripts,templates,tests}/`, `cc-hooks/{emitters,schema}/`, `references/scripts-usage.md` |
+| I1 | [Binary-on-PATH + Phase 3 verification](features/I1_binary-on-path-phase-3-verification.md) | H3–H6 | S | ✅ | `apps/cli/package.json` (verify bin), docs/runbook; no plugin code |
 ```
-F016 (rename rd3→cc)   ← must land first; every ref-bearing file depends on the final names
+H3 (rename rd3→cc)   ← must land first; every ref-bearing file depends on the final names
   │
-  ├──► F017 (SKILL.md + expert-*.md rewrite) ─┐
-  ├──► F018 (commands + hooks.json)           ─┤
-  │                                            ├──► F019 (delete embedded code) ──► F020 (binary + verify)
+  ├──► H4 (SKILL.md + expert-*.md rewrite) ─┐
+  ├──► H5 (commands + hooks.json)           ─┤
+  │                                            ├──► H6 (delete embedded code) ──► I1 (binary + verify)
   └────────────────────────────────────────────┘
 ```
 
-> **Ordering invariant (design §5):** F019 deletion runs **only after** F017+F018 stop referencing the deleted paths (`rg "scripts/" plugins/cc/` and `rg "bun .*\.ts" plugins/cc/` both empty). F020's PATH gate (`bun run build` + `bun link`) must be exercised before the rewritten commands are claimed functional.
+> **Ordering invariant (design §5):** H6 deletion runs **only after** H4+H5 stop referencing the deleted paths (`rg "scripts/" plugins/cc/` and `rg "bun .*\.ts" plugins/cc/` both empty). I1's PATH gate (`bun run build` + `bun link`) must be exercised before the rewritten commands are claimed functional.
 
 ### Foundation (carried forward)
 
@@ -181,13 +190,13 @@ F016 (rename rd3→cc)   ← must land first; every ref-bearing file depends on 
 
 | Order | Feature | Task | Rationale |
 |-------|---------|------|-----------|
-| 1 | F016 | `F016-namespace-migration` | **Must land first.** Global `rd3`→`cc` string migration (skill dir names kept; refs → `cc:cc-*`). Companion configs (`metadata.openclaw`, `agents/openai.yaml`) renamed in lockstep. Invariant: `rg rd3 plugins/cc/` → 0. |
-| 2 | F017 | `F017-skill-subagent-rewrite` | Depends on F016 (final names). Rewrite 5 `SKILL.md` + 5 `expert-*.md` to call bare `superskill <type> <op>`; fix hardcoded `plugins/rd3/...` paths; drop deleted-op rows. |
-| 3 | F018 | `F018-command-disposition-hooks` | Depends on F016. Rewrite 17 commands → `superskill` verb; delete 8 orphans; strip dangling `hooks.json` entries (ship empty/minimal). Runs parallel to F017. |
-| 4 | F019 | `F019-embedded-code-deletion` | Depends on F017+F018 (ordering invariant). Delete `scripts/`, `templates/`, `tests/`, `cc-hooks/{emitters,schema}/`, `references/scripts-usage.md`. Gate: zero `scripts/`/`bun .*.ts` refs. |
-| 5 | F020 | `F020-binary-path-verification` | Depends on F016–F019. Establish + exercise `bun run build` + `bun link` (dev), document `npm i -g @gobing-ai/superskill` (consumers); run the §6 exit gate. |
+| 1 | H3 | `F016-namespace-migration` | **Must land first.** Global `rd3`→`cc` string migration (skill dir names kept; refs → `cc:cc-*`). Companion configs (`metadata.openclaw`, `agents/openai.yaml`) renamed in lockstep. Invariant: `rg rd3 plugins/cc/` → 0. |
+| 2 | H4 | `F017-skill-subagent-rewrite` | Depends on H3 (final names). Rewrite 5 `SKILL.md` + 5 `expert-*.md` to call bare `superskill <type> <op>`; fix hardcoded `plugins/rd3/...` paths; drop deleted-op rows. |
+| 3 | H5 | `F018-command-disposition-hooks` | Depends on H3. Rewrite 17 commands → `superskill` verb; delete 8 orphans; strip dangling `hooks.json` entries (ship empty/minimal). Runs parallel to H4. |
+| 4 | H6 | `F019-embedded-code-deletion` | Depends on H4+H5 (ordering invariant). Delete `scripts/`, `templates/`, `tests/`, `cc-hooks/{emitters,schema}/`, `references/scripts-usage.md`. Gate: zero `scripts/`/`bun .*.ts` refs. |
+| 5 | I1 | `F020-binary-path-verification` | Depends on H3–H6. Establish + exercise `bun run build` + `bun link` (dev), document `npm i -g @gobing-ai/superskill` (consumers); run the §6 exit gate. |
 
-**Parallelization**: F016 first. After it, F017 and F018 parallelize. F019 gates on both. F020 last.
+**Parallelization**: H3 first. After it, H4 and H5 parallelize. H6 gates on both. I1 last.
 
 ---
 
@@ -205,22 +214,22 @@ drive the non-determinism through clean I/O seams (P4-D2). Touches the CLI (`ope
 
 | ID | Feature | Deps | Size | Status | Files |
 |----|---------|------|------|--------|-------|
-| F021 | [Rubric config format + package defaults + override resolution](features/F021-rubric-config.md) | — | M | ✅ | `quality/rubric.ts`, `rubrics/<type>.yaml` (5), `quality/dimensions.ts` (weights) |
-| F022 | [Scorer seam (`evaluate --rubric`/`--ingest`)](features/F022-scorer-seam.md) | F021 | M | ✅ | `operations/evaluate.ts`, `store/schema.ts` (rubric_version), `commands/helpers.ts` |
-| F023 | [Generation seam (`evolve --propose-only --json`/`--ingest`)](features/F023-generation-seam.md) | F021 | M | ✅ | `operations/evolve.ts` (replace `generateChanges` placeholder), `commands/helpers.ts` |
-| F024 | [Double-loop gate (validate + Δ-margin + anchor)](features/F024-double-loop-gate.md) | F022, F023 | M | ✅ | `operations/evolve.ts` (gate on ingest), `operations/validate.ts` (precondition) |
-| F025 | [`cc` skill + Spur personas + hide `validate` (P4-D3)](features/F025-cc-personas-hide-validate.md) | F022, F023, F024 | M | ✅ | `plugins/cc/skills/cc-*/SKILL.md`, `plugins/cc/agents/expert-*.md`, delete `commands/hook-validate.md` |
-| F026 | [Empirical behavior gate (`evolve --eval-gate`)](features/F026-empirical-behavior-gate.md) | F024 | M | ✅ | `quality/eval-cases.ts`, `quality/replay.ts`, `operations/{replay-runner,pairwise-judge,noise-floor}.ts`, `operations/evolve.ts` (gate + persistence), `commands/helpers.ts` |
+| G31 | [Rubric config format + package defaults + override resolution](features/G31_rubric-config-format-package-defaults-override-resolution.md) | — | M | ✅ | `quality/rubric.ts`, `rubrics/<type>.yaml` (5), `quality/dimensions.ts` (weights) |
+| G32 | [Scorer seam (`evaluate --rubric`/`--ingest`)](features/G32_scorer-seam-evaluate-rubric-ingest.md) | G31 | M | ✅ | `operations/evaluate.ts`, `store/schema.ts` (rubric_version), `commands/helpers.ts` |
+| G33 | [Generation seam (`evolve --propose-only --json`/`--ingest`)](features/G33_generation-seam-evolve-propose-only-json-ingest.md) | G31 | M | ✅ | `operations/evolve.ts` (replace `generateChanges` placeholder), `commands/helpers.ts` |
+| G34 | [Double-loop gate (validate + Δ-margin + anchor)](features/G34_double-loop-gate-adversarial-safeguards.md) | G32, G33 | M | ✅ | `operations/evolve.ts` (gate on ingest), `operations/validate.ts` (precondition) |
+| H7 | [`cc` skill + Spur personas + hide `validate` (P4-D3)](features/H7_cc-skill-spur-personas-hide-validate-p4-d3.md) | G32, G33, G34 | M | ✅ | `plugins/cc/skills/cc-*/SKILL.md`, `plugins/cc/agents/expert-*.md`, delete `commands/hook-validate.md` |
+| G35 | [Empirical behavior gate (`evolve --eval-gate`)](features/G35_empirical-behavior-gate-evolve-eval-gate.md) | G34 | M | ✅ | `quality/eval-cases.ts`, `quality/replay.ts`, `operations/{replay-runner,pairwise-judge,noise-floor}.ts`, `operations/evolve.ts` (gate + persistence), `commands/helpers.ts` |
 ```
-F021 (rubric config)   ← fitness function; both seams read it
+G31 (rubric config)   ← fitness function; both seams read it
   │
-  ├──► F022 (scorer seam)     ─┐
-  ├──► F023 (generation seam) ─┤
-  │                            ├──► F024 (double-loop gate) ──► F025 (cc skill + personas + phase gate)
+  ├──► G32 (scorer seam)     ─┐
+  ├──► G33 (generation seam) ─┤
+  │                            ├──► G34 (double-loop gate) ──► H7 (cc skill + personas + phase gate)
   └─────────────────────────────┘
 ```
 
-> **Invariant (design §8 #1, carried from ADR/03):** the CLI **never** calls a model API. F022/F023
+> **Invariant (design §8 #1, carried from ADR/03):** the CLI **never** calls a model API. G32/G33
 > add envelope-out / ingest-in seams; intelligence enters only as ingested JSON. The fixture-replay
 > tests (record agent score/proposal JSON, replay through CLI ingest — written per-feature) are how
 > the non-deterministic layer is tested with **zero** live model calls.
@@ -229,25 +238,25 @@ F021 (rubric config)   ← fitness function; both seams read it
 
 | Item | Status |
 |------|--------|
-| `evaluate`/`evolve` machinery (F011/F013) | ✅ (the seams extend these, not replace) |
-| `ProposedChange`/`applyChange`/`computeTrends`/`stepVerify` | ✅ (reused by F023/F024) |
-| SQLite store + DAOs (F008) | ✅ (F022 adds `rubric_version` stamping) |
-| Phase 3 thin `cc` plugin | ✅ (F025 re-wires its SKILL.md to drive the seams) |
+| `evaluate`/`evolve` machinery (G24/G26) | ✅ (the seams extend these, not replace) |
+| `ProposedChange`/`applyChange`/`computeTrends`/`stepVerify` | ✅ (reused by G33/G34) |
+| SQLite store + DAOs (F4) | ✅ (G32 adds `rubric_version` stamping) |
+| Phase 3 thin `cc` plugin | ✅ (H7 re-wires its SKILL.md to drive the seams) |
 
 ### Task creation plan
 
 | Order | Feature | Task | Rationale |
 |-------|---------|------|-----------|
-| 1 | F021 | `F021-rubric-config` | **Foundation.** Versioned, user-overridable rubric YAML (unified shape) + 5 package defaults + override resolution. Dimension names reuse `DIMENSION_REGISTRY` keys; weights make rubric aggregate weighted. |
-| 2 | F022 | `F022-scorer-seam` | Depends on F021. `evaluate --rubric <file> --json` emits the score envelope; `evaluate --ingest <scores.json> --save` validates against rubric schema + persists with `scorer: rubric` marker + `rubric_version`. Trends compare same-version only. |
-| 3 | F023 | `F023-generation-seam` | Depends on F021. Replace `generateChanges` placeholder; `evolve --propose-only --json` emits per-dimension generation briefs (with immutable goal anchor); `evolve --ingest <proposal.json>` accepts authored `ProposedChange[]`. Parallel to F022. |
-| 4 | F024 | `F024-double-loop-gate` | Depends on F022+F023. Gate on ingest: validate-zero-errors **and** post-aggregate − baseline ≥ Δ (default 0.05) **and** no anchor violation → else proposal stays `draft`, file restored. Extends `stepVerify`. |
-| 5 | F025 | `F025-cc-personas-hide-validate` | Depends on F022–F024. Wire `cc:cc-<type>` SKILL.md to drive Scorer/Author/Skeptic/Judge personas through the seams; remove deterministic-only framing; **hide `validate`** (P4-D3) — delete `hook-validate.md`, no `*-validate` command. Also owns the **phase closing gate** (full suite + ≥90% coverage + zero model calls). |
+| 1 | G31 | `F021-rubric-config` | **Foundation.** Versioned, user-overridable rubric YAML (unified shape) + 5 package defaults + override resolution. Dimension names reuse `DIMENSION_REGISTRY` keys; weights make rubric aggregate weighted. |
+| 2 | G32 | `F022-scorer-seam` | Depends on G31. `evaluate --rubric <file> --json` emits the score envelope; `evaluate --ingest <scores.json> --save` validates against rubric schema + persists with `scorer: rubric` marker + `rubric_version`. Trends compare same-version only. |
+| 3 | G33 | `F023-generation-seam` | Depends on G31. Replace `generateChanges` placeholder; `evolve --propose-only --json` emits per-dimension generation briefs (with immutable goal anchor); `evolve --ingest <proposal.json>` accepts authored `ProposedChange[]`. Parallel to G32. |
+| 4 | G34 | `F024-double-loop-gate` | Depends on G32+G33. Gate on ingest: validate-zero-errors **and** post-aggregate − baseline ≥ Δ (default 0.05) **and** no anchor violation → else proposal stays `draft`, file restored. Extends `stepVerify`. |
+| 5 | H7 | `F025-cc-personas-hide-validate` | Depends on G32–G34. Wire `cc:cc-<type>` SKILL.md to drive Scorer/Author/Skeptic/Judge personas through the seams; remove deterministic-only framing; **hide `validate`** (P4-D3) — delete `hook-validate.md`, no `*-validate` command. Also owns the **phase closing gate** (full suite + ≥90% coverage + zero model calls). |
 
 > Per-feature tests live in each task's `### Testing` section (fixture-replay, no model calls); there
 > is **no** standalone test task.
 
-**Parallelization**: F021 first. After it, F022 and F023 parallelize. F024 gates on both seams. F025 is last (skill wiring + the phase closing gate). Each feature's tests ship in its own task.
+**Parallelization**: G31 first. After it, G32 and G33 parallelize. G34 gates on both seams. H7 is last (skill wiring + the phase closing gate). Each feature's tests ship in its own task.
 
 ---
 
@@ -266,34 +275,34 @@ targets (codex, opencode, antigravity-cli/ide) — `runRulesync` already forward
 
 | ID | Feature | Deps | Size | Status | Files |
 |----|---------|------|------|--------|-------|
-| F027 | [Surface hook counts in install + validation checklist](features/F027-install-hook-counts.md) | — | S | ✅ | `commands/install.ts` (`InstallResultCounts` + accumulate) |
-| F028 | [Pi/omp/hermes hook enablement (shim/copy)](features/F028-pi-omp-hook-shim.md) | F027 | M | ✅ | `commands/install.ts` (copy/shim step), shim assets |
-| F029 | [`cc:cc-hooks` re-author + `hook emit` wrapper](features/F029-cc-hooks-emit.md) | F027 | M | ✅ | `commands/hook.ts` (`emit`), `plugins/cc/skills/cc-hooks/SKILL.md`, `plugins/cc/agents/expert-hook.md` |
-| F030 | [Restore `skill package`](features/F030-skill-package.md) | — | M | ✅ | `commands/skill.ts` (`package`), `operations/package.ts` |
-| F031 | [Restore `skill migrate` (refinement via Phase 4)](features/F031-skill-migrate.md) | F023, F030 | M | ✅ | `commands/skill.ts` (`migrate`), `operations/migrate.ts` |
-| F032 | [Confirm/close `adapt` gap inside `install`](features/F032-adapt-gap.md) | — | S | ✅ | `pipeline/convert.ts` (add only what's missing) |
+| F6 | [Surface hook counts in install + validation checklist](features/F6_surface-hook-counts-in-install-validation-checklist.md) | — | S | ✅ | `commands/install.ts` (`InstallResultCounts` + accumulate) |
+| H8 | [Pi/omp/hermes hook enablement (shim/copy)](features/H8_pi-omp-hermes-hook-enablement.md) | F6 | M | ✅ | `commands/install.ts` (copy/shim step), shim assets |
+| H9 | [`cc:cc-hooks` re-author + `hook emit` wrapper](features/H9_cc-cc-hooks-re-author-hook-emit-wrapper.md) | F6 | M | ✅ | `commands/hook.ts` (`emit`), `plugins/cc/skills/cc-hooks/SKILL.md`, `plugins/cc/agents/expert-hook.md` |
+| G41 | [Restore `skill package`](features/G41_restore-skill-package.md) | — | M | ✅ | `commands/skill.ts` (`package`), `operations/package.ts` |
+| G42 | [Restore `skill migrate` (refinement via Phase 4)](features/G42_restore-skill-migrate.md) | G33, G41 | M | ✅ | `commands/skill.ts` (`migrate`), `operations/migrate.ts` |
+| G43 | [Confirm/close `adapt` gap inside `install`](features/G43_confirm-close-the-adapt-gap-inside-install.md) | — | S | ✅ | `pipeline/convert.ts` (add only what's missing) |
 
 **Size key**: S = ≤2 files + tests, one session. M = 3–6 files + tests, may span sessions.
 
 > **Tests live inside each feature** (design rule — no pure-test feature/task). Per-feature tests:
-> `install-hooks.test.ts` split across F027 (✅-target counts) + F028 (Pi/omp/hermes shim);
-> `hook-emit.test.ts` in F029; `skill-package.test.ts` in F030; `skill-migrate.test.ts` in F031;
-> the `adapt` parity test in F032. The whole-phase closing gate (full suite green, ≥90% coverage) is
-> owned by **F032** (independent, lands late).
+> `install-hooks.test.ts` split across F6 (✅-target counts) + H8 (Pi/omp/hermes shim);
+> `hook-emit.test.ts` in H9; `skill-package.test.ts` in G41; `skill-migrate.test.ts` in G42;
+> the `adapt` parity test in G43. The whole-phase closing gate (full suite green, ≥90% coverage) is
+> owned by **G43** (independent, lands late).
 
 ### Dependency graph
 
 ```
-F027 (surface hook counts) ──► F028 (Pi/omp/hermes shim)
-        └───────────────────► F029 (cc:cc-hooks re-author + hook emit)
+F6 (surface hook counts) ──► H8 (Pi/omp/hermes shim)
+        └───────────────────► H9 (cc:cc-hooks re-author + hook emit)
 
-F030 (skill package) ──► F031 (skill migrate)  ◄── F023 (Phase 4 generation seam)
+G41 (skill package) ──► G42 (skill migrate)  ◄── G33 (Phase 4 generation seam)
 
-F032 (adapt gap + phase closing gate) ── independent
+G43 (adapt gap + phase closing gate) ── independent
 ```
 
-> **Cross-phase dependency:** F031 (`skill migrate`)'s content refinement is non-deterministic →
-> routes through the **Phase 4 generation seam (F023)**. It cannot ship its refinement layer before
+> **Cross-phase dependency:** G42 (`skill migrate`)'s content refinement is non-deterministic →
+> routes through the **Phase 4 generation seam (G33)**. It cannot ship its refinement layer before
 > Phase 4; a deterministic merge core can land first, refinement layered after (design §3 NOTE).
 
 > **Invariants (design §7):** rulesync owns hook format knowledge — superskill never hardcodes a
@@ -305,26 +314,26 @@ F032 (adapt gap + phase closing gate) ── independent
 
 | Item | Status |
 |------|--------|
-| Phase 4 generation seam (F023) | ✅ (F031 refinement depends on it) |
-| rulesync `HookDefinitionSchema` + per-tool matrix | ✅ (vendored; F029 authors against it) |
-| Phase 3 thin `cc:cc-hooks` skill | ✅ (F029 re-authors it) |
+| Phase 4 generation seam (G33) | ✅ (G42 refinement depends on it) |
+| rulesync `HookDefinitionSchema` + per-tool matrix | ✅ (vendored; H9 authors against it) |
+| Phase 3 thin `cc:cc-hooks` skill | ✅ (H9 re-authors it) |
 
 ### Task creation plan
 
 | Order | Feature | Task | Rationale |
 |-------|---------|------|-----------|
-| 1 | F027 | `F027-install-hook-counts` | **Smallest, foundational.** Add `hooksCount` to `InstallResultCounts`, accumulate `result.hooksCount`, print it. Validation checklist (event-name fidelity for 4 ✅ targets). No `rulesync.ts` change. |
-| 2 | F032 | `F032-adapt-gap` | Independent + small. Confirm the deleted `adapt` adapters' behavior is covered by `pipeline/convert.ts`; add only the missing transform. Closes a Phase 3 deletion debt. |
-| 3 | F030 | `F030-skill-package` | Independent. Restore `superskill skill package <name>` — re-spec the deleted `package.ts` against the content-IO layer. Deterministic. |
-| 4 | F028 | `F028-pi-omp-hook-shim` | Depends on F027. Research the Pi/omp extension/shim mechanism (§1.2 — the one genuine research item), implement the chosen rung; hermes via copy-step. |
-| 5 | F029 | `F029-cc-hooks-emit` | Depends on F027. Re-author `cc:cc-hooks` SKILL.md + expert-hook against `HookDefinitionSchema`; add `superskill hook emit --target` thin wrapper over the install hook path. |
-| 6 | F031 | `F031-skill-migrate` | Depends on F030 + F023 (Phase 4). Restore `superskill skill migrate <sources...> <dest>` — deterministic merge core; refinement routes through the generation seam. |
+| 1 | F6 | `F027-install-hook-counts` | **Smallest, foundational.** Add `hooksCount` to `InstallResultCounts`, accumulate `result.hooksCount`, print it. Validation checklist (event-name fidelity for 4 ✅ targets). No `rulesync.ts` change. |
+| 2 | G43 | `F032-adapt-gap` | Independent + small. Confirm the deleted `adapt` adapters' behavior is covered by `pipeline/convert.ts`; add only the missing transform. Closes a Phase 3 deletion debt. |
+| 3 | G41 | `F030-skill-package` | Independent. Restore `superskill skill package <name>` — re-spec the deleted `package.ts` against the content-IO layer. Deterministic. |
+| 4 | H8 | `F028-pi-omp-hook-shim` | Depends on F6. Research the Pi/omp extension/shim mechanism (§1.2 — the one genuine research item), implement the chosen rung; hermes via copy-step. |
+| 5 | H9 | `F029-cc-hooks-emit` | Depends on F6. Re-author `cc:cc-hooks` SKILL.md + expert-hook against `HookDefinitionSchema`; add `superskill hook emit --target` thin wrapper over the install hook path. |
+| 6 | G42 | `F031-skill-migrate` | Depends on G41 + G33 (Phase 4). Restore `superskill skill migrate <sources...> <dest>` — deterministic merge core; refinement routes through the generation seam. |
 
 > Per-feature tests live in each task's `### Testing` section (per-target hook-emission fixtures,
 > verb-restoration tests); there is **no** standalone test task. The phase closing gate (full suite +
-> ≥90% coverage) is owned by F032.
+> ≥90% coverage) is owned by G43.
 
-**Parallelization**: F027, F030, F032 are independent and can start together. F028/F029 follow F027. F031 follows F030 **and** Phase 4's F023.
+**Parallelization**: F6, G41, G43 are independent and can start together. H8/H9 follow F6. G42 follows G41 **and** Phase 4's G33.
 
 ## Cross-repo: anti-hallucination migration (task 0041)
 

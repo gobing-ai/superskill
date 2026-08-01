@@ -1,21 +1,14 @@
 ---
+schema_version: 1
 name: Phase 2 tests
 description: Comprehensive unit + integration tests for all Phase 2 modules — store, scaffold, validate, evaluate, refine, evolve, and CLI commands. Coverage ≥90% line and function.
-status: Done
-created_at: 2026-06-16T00:00:00.000Z
-updated_at: 2026-06-16T23:35:50.000Z
-folder: docs/tasks
+status: done
 type: task
-feature-id: F015
-priority: high
-estimated_hours: 5
-tags: ["testing","quality","coverage","verification"]
-impl_progress:
-  planning: pending
-  design: pending
-  implementation: pending
-  review: pending
-  testing: pending
+priority: P1
+tags: [testing,quality,coverage,verification]
+created_at: 2026-06-16T00:00:00.000Z
+updated_at: "2026-08-01T02:23:41.996Z"
+feature_id: E3
 ---
 
 ## 0015. Phase 2 tests
@@ -27,11 +20,10 @@ Phase 2 has significant complexity: 5 content types, 5 operations each, a persis
 Tests use `bun:test` with `describe`/`it`/`expect`. The in-memory SQLite adapter (`:memory:`) isolates store tests from the filesystem. Temporary directories (`os.tmpdir()`) isolate file-output tests. No test file uses `.skip`, `.todo`, or commented-out tests — every test runs on every `bun run test` invocation. The aggregate coverage across all Phase 2 source files must reach ≥90% line and ≥90% function (matching `bunfig.toml` thresholds).
 
 ### Requirements
-
 **R1** — **`store.test.ts`** — Store DAO tests using in-memory SQLite (ts-db `bun-sqlite` adapter with `:memory:`). All DAO calls are `await`ed. Never import `bun:sqlite` directly.
 
 Tests:
-1. **Store creation and migration**: `await openStore({ url: ':memory:' })` creates both `evaluations` and `proposals` tables by running each `createTableSql` through the adapter's DDL method — **not** `applyMigrations` (see F008 R4). A second `openStore` on the same `:memory:` URL is idempotent (`CREATE TABLE IF NOT EXISTS` → no duplicate-table error).
+1. **Store creation and migration**: `await openStore({ url: ':memory:' })` creates both `evaluations` and `proposals` tables by running each `createTableSql` through the adapter's DDL method — **not** `applyMigrations` (see F4 R4). A second `openStore` on the same `:memory:` URL is idempotent (`CREATE TABLE IF NOT EXISTS` → no duplicate-table error).
 2. **`EvaluationDao.insertEvaluation`**: Returns a numeric `id`. Stores all fields including JSON `dimensions`. Rejects a malformed record (e.g. missing `content_type` — derived zod `insertSchema` should throw).
 3. **`EvaluationDao.getEvaluations`**: Returns rows ordered by `created_at` DESC. Returns empty array `[]` when no matches exist for the given `(content_type, content_name)`.
 4. **`EvaluationDao.getLatestEvaluation`**: Returns the most recent row by `created_at`. Returns `null` when no matches exist.
@@ -51,7 +43,7 @@ Tests:
 2. **Scaffold with description**: `scaffold('skill', 'test-skill', { description: 'Does X' })` fills the `<!-- DESCRIPTION -->` placeholder with `'Does X'`.
 3. **Template resolution — user template wins**: Create a mock user template at `~/.superskill/templates/skill/default.md` (or a path resolvable in tests). Scaffold picks the user template over the built-in one. Verify the output matches the user template content.
 4. **Template resolution — built-in fallback**: When no user template exists, the built-in `templates/skill/default.md` is used.
-5. **Output directory respected**: `scaffold('skill', 'test-skill', { output: '/tmp/test-out' })` writes to `/tmp/test-out/test-skill.md`. (The option is `output`, not `outputDir` — see F007.)
+5. **Output directory respected**: `scaffold('skill', 'test-skill', { output: '/tmp/test-out' })` writes to `/tmp/test-out/test-skill.md`. (The option is `output`, not `outputDir` — see G21.)
 6. **Error on existing file**: Scaffolding where the output path already exists throws or returns an error. Error message mentions `--force` as the workaround.
 7. **Force flag overwrites**: `scaffold('skill', 'test-skill', { force: true })` succeeds even when the file exists, replacing it.
 8. **Template not found**: Scaffolding a type with no template (neither user nor built-in) throws with a clear error message including the type name.
@@ -176,7 +168,6 @@ Tests:
 **R10** — **Coverage targets**: Aggregate across all Phase 2 source files: ≥90% line coverage, ≥90% function coverage. The Phase 2 source dirs — `content/`, `store/`, `quality/`, `operations/`, `commands/`, and updated `cli.ts` — fall under the root `bunfig.toml` coverage scope. Template `.md` files are data, not executable lines — they do not count toward coverage.
 
 **R11** — All tests pass with `bun run test` (which runs `NODE_ENV=test bun test --reporter=dots` per `apps/cli/package.json` scripts).
-
 ### Q&A
 
 
@@ -376,8 +367,7 @@ const exitSpy = spyOn(process, 'exit').mockImplementation(((c?: number) => {
 | ---- | ---- | ----- | ---- |
 
 ### References
-
-- `docs/features/F015-phase2-tests.md` — feature spec
+- `docs/features/E3_phase-2-tests.md` — feature spec
 - `docs/design/design-doc-phase2.md` §4 — data store schema (for store tests)
 - `docs/design/design-doc-phase2.md` §5 — template system (for scaffold tests)
 - `docs/design/design-doc-phase2.md` §2.2 — validate operation (for validate tests)
@@ -391,10 +381,13 @@ const exitSpy = spyOn(process, 'exit').mockImplementation(((c?: number) => {
 - `apps/cli/tests/targets.test.ts` — existing test conventions (bun:test, describe/it/expect)
 - `apps/cli/tests/config.test.ts` — existing test conventions with temp dirs
 - `bunfig.toml` — coverage thresholds (lines ≥ 0.9, functions ≥ 0.9)
-- `docs/features/F008-sqlite-store.md` — store DAO interfaces (EvaluationDao, ProposalDao)
-- `docs/features/F007-template-scaffold.md` — scaffold operation + content utilities
-- `docs/features/F010-validate-operation.md` — validate operation API
-- `docs/features/F011-evaluate-operation.md` — evaluate operation API
-- `docs/features/F012-refine-operation.md` — refine operation API
-- `docs/features/F013-evolve-operation.md` — evolve operation API
-- `docs/features/F014-type-commands.md` — CLI command surface
+- `docs/features/F4_sqlite-data-store.md` — store DAO interfaces (EvaluationDao, ProposalDao)
+- `docs/features/G21_template-content-io-foundation-scaffold-operation.md` — scaffold operation + content utilities
+- `docs/features/G23_validate-operation.md` — validate operation API
+- `docs/features/G24_evaluate-operation.md` — evaluate operation API
+- `docs/features/G25_refine-operation.md` — refine operation API
+- `docs/features/G26_evolve-operation.md` — evolve operation API
+- `docs/features/F5_five-type-command-files.md` — CLI command surface
+### History
+
+- Migrated from legacy format (2026-08-01)

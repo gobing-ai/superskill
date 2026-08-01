@@ -1,17 +1,16 @@
 ---
 template: issue
 schema_version: 1
-name: "Fix antigravity-cli / antigravity-ide target routing — skills written to ~/.agents/skills/ instead of ~/.gemini/antigravity-cli/skills/ (agy) / ~/.gemini/config/skills/ (IDE)"
-description: "After `superskill install`, the antigravity-cli (`agy`) `/skills` UI and the Antigravity IDE miss ~25 of 60 freshly installed skills (e.g. /sp-dev-brainstorm, /sp-super-coder) because superskill routes antigravity-cli and antigravity-ide through the codexcli rulesync target, which writes global skills to ~/.agents/skills/. agy reads global skills from ~/.gemini/antigravity-cli/skills/, and the Antigravity IDE reads from ~/.gemini/config/skills/. Same skills, wrong directory."
+name: Fix antigravity-cli / antigravity-ide target routing — skills written to ~/.agents/skills/ instead of ~/.gemini/antigravity-cli/skills/ (agy) / ~/.gemini/config/skills/ (IDE)
+description: After `superskill install`, the antigravity-cli (`agy`) `/skills` UI and the Antigravity IDE miss ~25 of 60 freshly installed skills (e.g. /sp-dev-brainstorm, /sp-super-coder) because superskill routes antigravity-cli and antigravity-ide through the codexcli rulesync target, which writes global skills to ~/.agents/skills/. agy reads global skills from ~/.gemini/antigravity-cli/skills/, and the Antigravity IDE reads from ~/.gemini/config/skills/. Same skills, wrong directory.
 status: done
-type: issue
+type: task
 profile: standard
-feature_id: null
 parent_wbs: null
-tags: ["bug", "install", "antigravity-cli", "agy", "antigravity-ide", "rulesync", "targets", "regression"]
-dependencies: ["0044", "0045"]
-created_at: "2026-07-07T07:15:46.276Z"
-updated_at: "2026-07-07T08:11:52.478Z"
+tags: [bug,install,antigravity-cli,agy,antigravity-ide,rulesync,targets,regression]
+dependencies: ["0044","0045"]
+created_at: 2026-07-07T07:15:46.276Z
+updated_at: 2026-07-07T08:11:52.478Z
 ---
 
 ## 0072. Fix antigravity-cli / antigravity-ide routing — superskill writes skills to ~/.agents/skills/ but agy reads ~/.gemini/antigravity-cli/skills/

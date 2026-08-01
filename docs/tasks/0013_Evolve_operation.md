@@ -1,21 +1,14 @@
 ---
+schema_version: 1
 name: Evolve operation
 description: Self-evolution loop — analyze historical evaluations, propose data-backed improvements, review/apply, verify post-score delta. The key enhancement over origin Claude Code skills.
-status: Done
-created_at: 2026-06-16T00:00:00.000Z
-updated_at: 2026-06-16T22:19:17.043Z
-folder: docs/tasks
+status: done
 type: task
-feature-id: F013
-priority: high
-estimated_hours: 6
-tags: ["operations","evolve","self-improvement","longitudinal"]
-impl_progress:
-  planning: done
-  design: done
-  implementation: done
-  review: done
-  testing: done
+priority: P1
+tags: [operations,evolve,self-improvement,longitudinal]
+created_at: 2026-06-16T00:00:00.000Z
+updated_at: "2026-08-01T02:23:35.937Z"
+feature_id: G26
 ---
 
 ## 0013. Evolve operation
@@ -27,14 +20,13 @@ The self-evolution loop is the unique capability that makes superskill more than
 Unlike validate/evaluate/refine — which work on a single snapshot — evolve is longitudinal. It reads the evaluation history for a given `(type, name)` pair, computes per-dimension trends, and generates proposals that are themselves tracked in the store (proposals table). This closes the loop: evaluate → evolve → apply → re-evaluate → evolve again.
 
 ### Requirements
+**R1** — Export `evolve(type: ContentType, name: string, opts?: EvolveOptions): Promise<EvolveResult>`. The `name` is a bare content name (not a file path — evolve resolves the path via `resolveContentPath` from G21, same as other operations). Returns `{ baselineScore, postScore, delta, changesApplied, proposalPath }`.
 
-**R1** — Export `evolve(type: ContentType, name: string, opts?: EvolveOptions): Promise<EvolveResult>`. The `name` is a bare content name (not a file path — evolve resolves the path via `resolveContentPath` from F007, same as other operations). Returns `{ baselineScore, postScore, delta, changesApplied, proposalPath }`.
-
-**R2** — `EvolveOptions` type: `{ target?: Target, from?: string, proposeOnly?: boolean, acceptId?: string, rejectId?: string, adapter?: DbAdapter }`. `from` is an ISO date string filtering evaluations to those after that date. `adapter` allows test injection of an in-memory DB. Store access is via ts-db DAOs (F008, ADR-014): `const db = opts.adapter ?? await openStore()`, then `new EvaluationDao(db)` / `new ProposalDao(db)`. No `bun:sqlite` import in evolve.ts.
+**R2** — `EvolveOptions` type: `{ target?: Target, from?: string, proposeOnly?: boolean, acceptId?: string, rejectId?: string, adapter?: DbAdapter }`. `from` is an ISO date string filtering evaluations to those after that date. `adapter` allows test injection of an in-memory DB. Store access is via ts-db DAOs (F4, ADR-014): `const db = opts.adapter ?? await openStore()`, then `new EvaluationDao(db)` / `new ProposalDao(db)`. No `bun:sqlite` import in evolve.ts.
 
 **R3** — `EvolveResult` type: `{ baselineScore: number, postScore: number, delta: number, changesApplied: number, proposalPath: string }`. `baselineScore` is the aggregate of the most recent pre-evolution evaluation. `postScore` is the aggregate after changes are applied and re-evaluated. `delta = postScore - baselineScore`. `changesApplied` counts how many of the proposal's changes were accepted and applied.
 
-**R4** — **Step 1 — ANALYZE**: Query evaluations via `await evalDao.getEvaluations(type, name)`. If `opts.from` is set (an ISO date string), filter evaluations where `created_at >= Date.parse(opts.from)` — **`created_at` is an epoch-millis `number`** (ts-db `appendOnlyColumns`, see F008), so compare numerically; do not string-compare against the ISO `from`. If fewer than 2 evaluations exist after filtering → error: "No historical evaluations found for <type>/<name>. Run `superskill <type> evaluate <name> --save` first to build evaluation history." Exit with message (do not crash; return a result that the command layer maps to exit 1).
+**R4** — **Step 1 — ANALYZE**: Query evaluations via `await evalDao.getEvaluations(type, name)`. If `opts.from` is set (an ISO date string), filter evaluations where `created_at >= Date.parse(opts.from)` — **`created_at` is an epoch-millis `number`** (ts-db `appendOnlyColumns`, see F4), so compare numerically; do not string-compare against the ISO `from`. If fewer than 2 evaluations exist after filtering → error: "No historical evaluations found for <type>/<name>. Run `superskill <type> evaluate <name> --save` first to build evaluation history." Exit with message (do not crash; return a result that the command layer maps to exit 1).
 
 Compute trend per dimension:
 - Group evaluations by dimension. For each dimension:
@@ -66,7 +58,7 @@ interface ProposedChange {
 }
 ```
 
-`location` should reference a specific frontmatter field (like `frontmatter.skill:`) or a body section heading. `current` and `proposed` are exact text strings for the text-based `applyChange` (F007 `content/edit.ts`).
+`location` should reference a specific frontmatter field (like `frontmatter.skill:`) or a body section heading. `current` and `proposed` are exact text strings for the text-based `applyChange` (G21 `content/edit.ts`).
 
 Generate `ProposalRecord`:
 ```typescript
@@ -83,9 +75,9 @@ interface ProposalRecord {
 Insert via `await proposalDao.insertProposal(record)` — returns the numeric id.
 
 Generate proposal file at `<proposalsDir>/<type>/<name>/YYYY-MM-DD-<id>.md` where:
-- `<proposalsDir>` = `getProposalsDir()` (F007 `content/paths.ts`) — resolves to `<data-root>/.superskill/proposals/`
+- `<proposalsDir>` = `getProposalsDir()` (G21 `content/paths.ts`) — resolves to `<data-root>/.superskill/proposals/`
 - `<type>` = the content type segment (always included, per ADR-013)
-- `<name>` = `resolveContentName` result (F007)
+- `<name>` = `resolveContentName` result (G21)
 - `<id>` = `proposal_id` format: `<type>-evolve-<YYYY-MM-DD>-<NNN>` where NNN is zero-padded sequence number
 - Sequence number: count existing proposals for this `(content_type, content_name)` in the store + 1
 
@@ -109,69 +101,6 @@ from_evaluations: <count of evaluations analyzed>
 | <dim>     | <earliest> | <latest> | <↑ improving / ↓ declining / → flat> |
 
 ## Proposed changes
-
-### 1. Fix declining <dimension> (score: <earliest> → <latest>)
-**Location:** <change.location>
-**Current:** <change.current>
-**Proposed:** <change.proposed>
-**Reason:** <change.reason>
-```
-
-Write the proposal file via `Bun.write()` (or `writeFileSync` from `node:fs`). Create parent directories if needed (`mkdirSync` with `recursive: true`).
-
-**R7** — `generateProposalId(type, name, existingIds: number[]): string` — exported helper. Formats as `<type>-evolve-<YYYY-MM-DD>-<NNN>` where NNN = max(existingIds) + 1, zero-padded to 3 digits.
-
-**R8** — **Step 3 — REVIEW**: Three modes controlled by `opts`:
-- **`--propose-only`** (`opts.proposeOnly === true`): Write the proposal file only. Do not apply any changes. Proposal status remains `'draft'` in the store. Return with `changesApplied: 0` and `postScore: baselineScore` (no delta).
-- **`--accept <id>`** (`opts.acceptId`): Load the proposal by `proposal_id` from the store via `await proposalDao.getProposals(type, name)` filtered by `proposal_id`. Mark all changes in `proposal_json.changes` as accepted. Jump to Step 4 (APPLY).
-- **`--reject <id>`** (`opts.rejectId`): Load the proposal by `proposal_id`. Call `await proposalDao.updateProposalStatus(id, 'rejected')`. No content changes. Return immediately.
-- **Interactive mode** (default — none of the above flags set): Display the trend table. For each proposed change, show:
-  ```
-  Change 1/2: <dimension> (score: <earliest> → <latest>)
-  Location: <location>
-  Current:  <current>
-  Proposed: <proposed>
-  Reason:   <reason>
-
-  (a)ccept / (r)eject / (e)dit / (q)uit
-  ```
-  Read user input via `process.stdin` with `bun:readline` (or `node:readline`). On `a` → mark accepted. On `r` → mark rejected. On `e` → prompt for new proposed text, then mark accepted with edited text. On `q` → save accepted changes so far (if any), reject remaining, proceed to apply.
-
-**R9** — **Step 4 — APPLY**: For each accepted change, call `applyChange` from `content/edit.ts` (F007) — the **same** mutation primitive that refine (F012) uses:
-- Frontmatter changes: `{ kind: 'frontmatter', key: resolvedKey, value: newValue }` — `resolvedKey` is extracted from `change.location` (e.g. `"frontmatter.skill:"` → key `"skill"`)
-- Body changes: `{ kind: 'text', current: change.current, proposed: change.proposed }` — `applyChange` (F007) locates the first exact occurrence of `current` and replaces it with `proposed`. **`applyChange` does no fuzzy matching** (0007 R5: it throws when `current` is not found). So evolve must guard: before calling `applyChange`, check `content.includes(change.current)`; if absent, record the change as skipped (manual-intervention-needed, log a warning) and continue — do **not** rely on `applyChange` to fuzzy-match. Generating exact `current` strings is the proposer's responsibility (Step 2).
-
-Read the content file once (via `Bun.file(path).text()`), apply all accepted changes sequentially to the string, then write back with `Bun.write(path, modifiedContent)`. The `applyChange` function takes `(content: string, change: Change) => string` — apply them in order: `acceptedChanges.reduce((content, change) => applyChange(content, change), originalContent)`.
-
-After applying, call `await proposalDao.updateProposalStatus(proposalId, 'accepted', { appliedAt: new Date().toISOString() })`.
-
-**R10** — **Step 5 — VERIFY**: Run `evaluate(type, name, { target, adapter: db })` (F011) to get the post-evolution `QualityReport`. Compute `delta = postScore - baselineScore`. Display prominently via `process.stdout.write`:
-```
-Score: <baselineScore> → <postScore> (<sign><delta>, <sign><percentage>%)
-```
-Save the post-evolution evaluation via `await evalDao.insertEvaluation({ ...evalRecord, operation: 'evolve', file_hash: hashContent(resolvedPath), target_agent: resolvedTarget ?? 'claude' })`. Link back to the proposal: `await proposalDao.updateProposalStatus(proposalId, 'accepted', { verifyId: newEvalId })`.
-
-Return `{ baselineScore, postScore, delta, changesApplied, proposalPath }`.
-
-**R11** — **Error handling**:
-- No historical evaluations found → error: "No historical evaluations found for <type>/<name>. Run `superskill <type> evaluate <name> --save` first to build evaluation history." Return a result the command layer maps to exit 1. Do NOT throw.
-- Content file not found → exit 2 (same convention as validate). `resolveContentPath` returns a path; check existence before reading.
-- Store unavailable (DB error on `openStore`) → error: "Could not open the evaluation store at <dbPath>. Run `superskill init` to initialize it, or check file permissions." Exit 1.
-- Empty content body after applying changes → warning but continue (evaluate will catch it).
-- Proposal ID collision → increment sequence number (defense in depth — the sequence is derived from store count, so collisions should not occur).
-
-**R12** — **Content type coverage**: Works for all 5 content types: `skill`, `command`, `agent`, `hook`, `magent`. The type is passed to `evaluate()` for re-scoring and to `resolveContentPath` for file resolution. Dimension names come from the evaluation records, not hard-coded per type.
-
-**R13** — **Pure helper functions** (exported for unit testing — testable without DB or filesystem):
-- `computeTrends(evaluations: EvaluationRecord[]): TrendTable` — pure: evaluations array → trend table. Evaluations must be sorted by `created_at` ascending (caller's responsibility).
-- `generateChanges(report: QualityReport, trends: TrendTable): ProposedChange[]` — pure: quality report + trend table → proposed changes array. Uses the dimension notes from the latest evaluation's report as hints for change generation.
-- `applyChange(content: string, change: Change): string` — re-exported from `content/edit.ts` (F007) — but evolve imports it, does not re-implement it.
-
-**R14** — **Trend edge cases**:
-- Single evaluation → no trend can be computed (no delta). Skip trend analysis entirely, emit message: "Only one evaluation found — need at least two for trend analysis. Running evaluation-based proposal instead." Generate changes based solely on the current evaluation's lowest-scoring dimensions (< 0.7).
-- Two evaluations with same scores → all trends `'flat'` with `delta: 0`. Still propose changes for flat-and-low dimensions (< 0.7).
-- Evaluation with missing dimension → skip that dimension in trend computation (the dimension may not exist in all evaluations if the quality schema evolved).
-
 ### Q&A
 
 
@@ -451,3 +380,237 @@ const postScore = postReport.aggregate;
 - `docs/features/F008-sqlite-store.md` — store DAOs (EvaluationDao, ProposalDao)
 - `docs/features/F007-template-scaffold.md` — content utilities (resolveContentPath, resolveContentName, hashContent, applyChange)
 - `docs/features/F012-refine-operation.md` — refine operation (shares applyChange primitive)
+
+
+### History
+
+- Migrated from legacy format (2026-08-01)
+### Design
+
+**Module location**: `apps/cli/src/operations/evolve.ts`.
+
+**Imports**:
+- `ContentType`, `QualityReport` from `quality/dimensions.ts` (G22)
+- `Target` from `targets.ts`
+- `evaluate` from `operations/evaluate.ts` (G24)
+- `resolveContentPath`, `resolveContentName` from `content/identity.ts` (G21)
+- `hashContent` from `content/hash.ts` (G21)
+- `applyChange`, `Change` from `content/edit.ts` (G21)
+- `getProposalsDir` from `content/paths.ts` (G21)
+- `openStore`, `EvaluationDao`, `ProposalDao`, and the `Evaluation` + `Proposal` types from `store/` (F4). **Note:** F4 names these types `Evaluation` and `Proposal` (not `EvaluationRecord`/`ProposalRecord`). Use those names consistently — replace every `EvaluationRecord`/`ProposalRecord` reference in this task with `Evaluation`/`Proposal`.
+- `DbAdapter` from `@gobing-ai/ts-db`
+- `yaml` (`^2.9.0`, ADR-012) — for reading/writing proposal frontmatter
+- `node:fs` (`existsSync`, `mkdirSync`, `writeFileSync`, `readFileSync`)
+- `node:path` (`join`, `dirname`)
+
+**Core function signature**:
+```typescript
+import type { ContentType, QualityReport } from '../quality/dimensions';
+import type { Target } from '../targets';
+import type { DbAdapter } from '@gobing-ai/ts-db';
+
+export interface EvolveOptions {
+    target?: Target;
+    from?: string;
+    proposeOnly?: boolean;
+    acceptId?: string;
+    rejectId?: string;
+    adapter?: DbAdapter;
+}
+
+export interface TrendEntry {
+    dimension: string;
+    earliest: number;
+    latest: number;
+    delta: number;
+    trend: 'improving' | 'declining' | 'flat';
+}
+
+export interface ProposedChange {
+    dimension: string;
+    location: string;
+    current: string;
+    proposed: string;
+    reason: string;
+}
+
+export interface EvolveResult {
+    baselineScore: number;
+    postScore: number;
+    delta: number;
+    changesApplied: number;
+    proposalPath: string;
+}
+
+export function computeTrends(evaluations: EvaluationRecord[]): TrendEntry[];
+export function generateChanges(report: QualityReport, trends: TrendEntry[]): ProposedChange[];
+export function generateProposalId(type: ContentType, name: string, existingProposals: ProposalRecord[]): string;
+export async function evolve(
+    type: ContentType,
+    name: string,
+    opts?: EvolveOptions,
+): Promise<EvolveResult>;
+```
+
+**Architecture**: The `evolve()` orchestrator wires steps together with DB and file I/O. Each step is a separate internal function for testability:
+- `stepAnalyze(db, type, name, from?)` → `{ evaluations, trends, baselineScore, baselineDate }`
+- `stepPropose(report, trends, type, name, db)` → `{ proposalId, proposalPath, changes }`
+- `stepReview(changes, opts)` → `{ acceptedChanges, rejectedChanges }`
+- `stepApply(acceptedChanges, filePath, proposalId, db)` → `number` (changes applied count)
+- `stepVerify(type, name, filePath, baselineScore, opts, db)` → `{ postScore, delta }`
+
+**Proposal path construction**:
+```typescript
+import { getProposalsDir } from '../content/paths';
+import { resolveContentName } from '../content/identity';
+
+const proposalsRoot = getProposalsDir(opts);
+const contentName = resolveContentName(name);
+const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
+const proposalId = generateProposalId(type, contentName, existingProposals);
+const proposalPath = join(proposalsRoot, type, contentName, `${today}-${proposalId}.md`);
+```
+
+**Trend computation detail**:
+```typescript
+export function computeTrends(evaluations: EvaluationRecord[]): TrendEntry[] {
+    if (evaluations.length < 2) return [];
+
+    // `getEvaluations` returns DESC (newest first, F4). Sort ASC here so "earliest"
+    // is genuinely the oldest. `created_at` is an epoch-millis number — compare numerically.
+    // NOTE: `eval` is a reserved identifier in strict mode (all ESM/TS) — use `record`.
+    const ordered = [...evaluations].sort((a, b) => a.created_at - b.created_at);
+
+    const dims = new Map<string, { earliest: number; earliestDate: number; latest: number; latestDate: number }>();
+    for (const record of ordered) {
+        const parsed = JSON.parse(record.dimensions) as Record<string, { score: number; note: string }>;
+        for (const [dim, { score }] of Object.entries(parsed)) {
+            const existing = dims.get(dim);
+            if (!existing) {
+                dims.set(dim, { earliest: score, earliestDate: record.created_at, latest: score, latestDate: record.created_at });
+            } else if (record.created_at > existing.latestDate) {
+                existing.latest = score;
+                existing.latestDate = record.created_at;
+            }
+            // earliest stays as the first seen (now genuinely oldest after ASC sort)
+        }
+    }
+
+    const trends: TrendEntry[] = [];
+    for (const [dimension, { earliest, latest }] of dims) {
+        const delta = earliest === latest ? 0 : latest - earliest; // avoid floating errors on identical
+        const trend = delta >= 0.05 ? 'improving' : delta <= -0.05 ? 'declining' : 'flat';
+        trends.push({ dimension, earliest, latest, delta, trend });
+    }
+
+    // Sort: declining first, then flat+low, then improving
+    trends.sort((a, b) => {
+        const rank = (t: TrendEntry) => (t.trend === 'declining' ? 0 : t.trend === 'flat' ? 1 : 2);
+        const r = rank(a) - rank(b);
+        if (r !== 0) return r;
+        return a.latest - b.latest; // lower score first within same trend
+    });
+
+    return trends;
+}
+```
+
+**Change generation logic**:
+```typescript
+export function generateChanges(report: QualityReport, trends: TrendEntry[]): ProposedChange[] {
+    const changes: ProposedChange[] = [];
+    const dimMap = new Map(Object.entries(report.dimensions));
+
+    for (const trend of trends) {
+        if (trend.trend === 'declining' || (trend.trend === 'flat' && trend.latest < 0.7)) {
+            const dimData = dimMap.get(trend.dimension);
+            const note = dimData?.note ?? '';
+            changes.push({
+                dimension: trend.dimension,
+                location: `dimension: ${trend.dimension}`,
+                current: `Score: ${trend.latest.toFixed(2)}`,
+                proposed: `Improve ${trend.dimension} from ${trend.latest.toFixed(2)} toward 1.0`,
+                reason: note
+                    ? `Latest evaluation note: "${note}". Trend: ${trend.trend} (Δ${trend.delta >= 0 ? '+' : ''}${trend.delta.toFixed(2)}).`
+                    : `Trend: ${trend.trend} (Δ${trend.delta >= 0 ? '+' : ''}${trend.delta.toFixed(2)}). Score below threshold.`,
+            });
+        }
+    }
+
+    return changes;
+}
+```
+
+**Interactive review implementation**:
+- Use `readline.createInterface({ input: process.stdin, output: process.stdout })`.
+- Display trend table first (formatted as ASCII table).
+- For each change, prompt: `(a)ccept / (r)eject / (e)dit / (q)uit`.
+- `a` → push to accepted array.
+- `r` → push to rejected array.
+- `e` → prompt `New proposed text:` → read line → update `change.proposed` → push to accepted.
+- `q` → reject remaining unprompted changes; proceed to apply with what's accepted so far.
+- Wrap in a promise that resolves when all changes are processed or user quits.
+
+**Post-evolution evaluate call**:
+```typescript
+import { evaluate } from './evaluate';
+const postReport = await evaluate(type, resolvedName, { target: opts?.target, adapter: db });
+const postScore = postReport.aggregate;
+```
+
+### Solution
+
+- `apps/cli/src/operations/evolve.ts` — exports `evolve()`, `computeTrends()`, `generateChanges()`, `generateProposalId()`, and types `EvolveOptions`, `EvolveResult`, `TrendEntry`, `ProposedChange`
+- Imports store DAOs from `store/evaluations` and `store/proposals` (F4); `evaluate` from `operations/evaluate` (G24); content utilities from `content/` (G21)
+- Modular design: each step is a separate internal function for testability
+- Trend analysis: pure function (`EvaluationRecord[] → TrendEntry[]`), testable without DB
+- Change generation: pure function (`QualityReport + TrendEntry[] → ProposedChange[]`), testable without DB
+- The `evolve()` orchestrator wires steps together with DB and file I/O
+- Proposal file writing uses `mkdirSync({ recursive: true })` + `writeFileSync`
+- Interactive review uses `node:readline`
+- Post-evolution verify calls evaluate, saves result, links back via `verifyId`
+
+### Review
+
+**Verdict:** PASS
+
+#### Re-verification — 2026-06-16 (`/rd3:dev-verify 0013 --force --fix all`)
+
+**Verdict:** PASS (after fix pass — initial verdict **FAIL**: 2× P2 functional bugs + a third hidden by the untested orchestrator).
+
+- Gate: `bun run lint` clean (Biome + typecheck, 74 files). `bun test evolve.test.ts` → 26 pass / 0 fail; evolve.ts 96.15% funcs / 90.39% lines (was 42.86% / 16.51%). Full suite: 392 pass / 0 fail across 29 files.
+- Root cause: the **entire orchestration layer was untested** (only the 3 pure functions had tests). That masked three real bugs. SECU otherwise clean: parameterized DAOs, no injection/secrets, `applyChange` for all mutations, guarded `JSON.parse`.
+
+**Bugs found & fixed (initial P2/FAIL → resolved):**
+| # | Title | Dimension | Location | Fix |
+|---|-------|-----------|----------|-----|
+| 1 | R9: `updateProposalStatus(Number(proposalId))` where `proposalId` is the string `<type>-evolve-…` → always `NaN`; proposal status never marked accepted | Correctness | evolve.ts `stepApply` | Thread the numeric DB id from `stepPropose` (`proposalDbId`) into `stepApply`. |
+| 2 | R10: `stepVerify` re-evaluated for display only — no `save:true`, no `operation:'evolve'` persisted, no `verify_id` link back to the proposal | Correctness | evolve.ts `stepVerify` | Call `evaluate(..., {save:true, operation:'evolve', adapter:db})`, then link `verify_id` via `getLatestEvaluation`. |
+| 3 | R8: `--accept <id>` / `--reject <id>` still ran `stepPropose` (creating a *new* proposal) and applied/verified against that new id, so the *named* proposal was never marked accepted/rejected | Correctness | evolve.ts core | Short-circuit accept/reject **before** PROPOSE; apply & verify against the target proposal's own id. |
+
+- Tests added: in-memory-adapter orchestrator suite (propose-only, accept→R9+R10 assertions, reject, not-found, file-missing, no-history) + injectable-readline `interactiveReview` suite (accept/reject/edit/quit) — matching the `_createRl` seam refine (G25) uses. 16 → 26 tests.
+- Post-fix Phase 8: **14/14 MET**, no unmet, no partial, no scope drift.
+
+- **R1–R3 (API):** `evolve()`, `EvolveOptions`, `EvolveResult`, `TrendEntry`, `ProposedChange` — all exported. `computeTrends`, `generateChanges`, `generateProposalId` exported as pure functions.
+- **R4 (ANALYZE):** `stepAnalyze` queries evaluations via `EvaluationDao.getEvaluations`, filters by `opts.from` (epoch-millis comparison), computes trends via `computeTrends`. Throws with `code: 1` when no evaluations found.
+- **R5 (TrendTable):** `computeTrends(evaluations)` — ascending sort by `created_at`, per-dimension earliest/latest/delta/trend. Declining first, flat second, improving last; lowest latest first within group. Handles single eval, missing dimensions.
+- **R6 (PROPOSE):** `generateChanges` — proposes for declining OR flat-below-0.7 dimensions. `stepPropose` writes proposal file to `<proposalsDir>/<type>/<name>/<date>-<id>.md`.
+- **R7 (Proposal ID):** `generateProposalId` — `<type>-evolve-<date>-<NNN>`, NNN = existing count + 1, zero-padded.
+- **R8 (REVIEW):** `--propose-only`, `--accept <id>`, `--reject <id>`, interactive mode with trend display and accept/reject/edit/quit per change.
+- **R9 (APPLY):** `stepApply` — reads content, applies accepted changes via `applyChange` (G21), guards `content.includes(change.current)` before text changes.
+- **R10 (VERIFY):** `stepVerify` — re-evaluates via `evaluate()` (G24), displays score delta with percentage.
+- **R11–R14 (Edge cases):** No evaluations → error with guidance. Single evaluation → warn + proceed. File not found → exit 2. Store unavailable → error. Content read failure → warn. Proposal ID collision → sequence increment.
+
+### References
+
+- `docs/features/G26_evolve-operation.md` — feature spec
+- `docs/design/design-doc-phase2.md` §2.5 — evolve operation design (5-step workflow)
+- `docs/design/design-doc-phase2.md` §4 — data store (evaluations + proposals schema)
+- `docs/design/design-doc-phase2.md` §6 — code layout (operations/evolve.ts)
+- `docs/design/design-doc-phase2.md` §8 — acceptance criteria
+- `docs/design/design-doc-phase2.md` §9 — shared foundation (G21 content/*, store/*)
+- `docs/features/G24_evaluate-operation.md` — evaluate operation (called in step 5)
+- `docs/features/F4_sqlite-data-store.md` — store DAOs (EvaluationDao, ProposalDao)
+- `docs/features/G21_template-content-io-foundation-scaffold-operation.md` — content utilities (resolveContentPath, resolveContentName, hashContent, applyChange)
+- `docs/features/G25_refine-operation.md` — refine operation (shares applyChange primitive)
+

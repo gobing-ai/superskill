@@ -1,20 +1,12 @@
 ---
+schema_version: 1
 name: Decide cc hook-evolve strategy (no rd3 equivalent exists)
-description: Decide cc hook-evolve strategy (no rd3 equivalent exists)
-status: Done
+status: done
+type: task
+priority: P2
+tags: [cc-hooks,evolve,dogfood,design-decision,missing-command]
 created_at: 2026-06-21T20:57:07.001Z
 updated_at: 2026-06-22T04:35:42.169Z
-folder: docs/tasks
-type: task
-feature-id: ""
-priority: medium
-tags: ["cc-hooks","evolve","dogfood","design-decision","missing-command"]
-impl_progress:
-  planning: pending
-  design: pending
-  implementation: pending
-  review: pending
-  testing: pending
 ---
 
 ## 0056. Decide cc hook-evolve strategy (no rd3 equivalent exists)
@@ -186,3 +178,8 @@ Updated test (`apps/cli/tests/commands/content-command-modules.test.ts`):
 ### References
 
 
+
+
+### History
+
+- Migrated from legacy format (2026-08-01)

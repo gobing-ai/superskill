@@ -1,10 +1,11 @@
 ---
-schema_version: 1
-name: "Guard heuristics, hook-seam follow-ups, and writing-great-skills extraction into cc meta-skills"
-status: done
 template: feature-impl
+schema_version: 1
+name: Guard heuristics, hook-seam follow-ups, and writing-great-skills extraction into cc meta-skills
+status: done
+type: task
 created_at: 2026-07-12T04:23:59.752Z
-updated_at: "2026-07-12T17:32:04.088Z"
+updated_at: 2026-07-12T17:32:04.088Z
 ---
 
 ## 0077. Guard heuristics, hook-seam follow-ups, and writing-great-skills extraction into cc meta-skills

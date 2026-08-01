@@ -1,7 +1,7 @@
 ---
 template: feature-impl
 schema_version: 1
-name: "Probe spur feature move mechanics in a scratch project"
+name: Probe spur feature move mechanics in a scratch project
 description: ""
 status: done
 type: task
@@ -11,8 +11,8 @@ parent_wbs: null
 priority: P2
 tags: []
 dependencies: []
-created_at: "2026-08-01T00:10:58.063Z"
-updated_at: "2026-08-01T00:49:11.601Z"
+created_at: 2026-08-01T00:10:58.063Z
+updated_at: 2026-08-01T00:49:11.601Z
 ---
 
 ## 0110. Probe spur feature move mechanics in a scratch project

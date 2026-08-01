@@ -1,33 +1,21 @@
 ---
+schema_version: 1
 name: Skill and expert-subagent rewrite to superskill
-description: Skill and expert-subagent rewrite to superskill
-status: Done
-created_at: 2026-06-17T22:28:36.077Z
-updated_at: 2026-06-18T01:26:36.000Z
-folder: docs/tasks
+status: done
 type: task
-feature-id: F017
-priority: high
-estimated_hours: 5
+priority: P1
+tags: [phase3,skills,subagents,plugin,cleanup]
 dependencies: ["0023"]
-tags: ["phase3","skills","subagents","plugin","cleanup"]
-impl_progress:
-  planning: done
-  design: done
-  implementation: done
-  review: done
-  testing: done
+created_at: 2026-06-17T22:28:36.077Z
+updated_at: "2026-08-01T02:23:51.751Z"
+feature_id: H4
 ---
 
 ## 0024. Skill and expert-subagent rewrite to superskill
 
 ### Background
-
-Rewrite the 5 SKILL.md files and 5 expert-*.md subagent definitions in plugins/cc/ so every lifecycle operation invokes the global 'superskill <type> <op>' binary (design D2) instead of 'bun scripts/*.ts'. Remove the 'Hybrid Workflow Architecture / scripts' framing and the adapt/package/migrate operation rows (deleted in Phase 3 per D3; restored in Phase 5). The plugin is being converted from a self-contained bundle of embedded scripts into a thin plugin that delegates to the CLI built in Phases 1-2. Until these instructions call superskill instead of bun scripts/scaffold.ts, the plugin still depends on embedded code that F019 deletes. Invocation is BARE superskill (no path, no bun run; D2 locked: dev resolves via 'bun link', consumers via 'npm i -g @gobing-ai/superskill'). Depends on F016 (final cc:cc-* names). Design: design-doc-phase3.md §2, §4.1, §4.2. Owning feature: F017.
-
-
+Rewrite the 5 SKILL.md files and 5 expert-*.md subagent definitions in plugins/cc/ so every lifecycle operation invokes the global 'superskill <type> <op>' binary (design D2) instead of 'bun scripts/*.ts'. Remove the 'Hybrid Workflow Architecture / scripts' framing and the adapt/package/migrate operation rows (deleted in Phase 3 per D3; restored in Phase 5). The plugin is being converted from a self-contained bundle of embedded scripts into a thin plugin that delegates to the CLI built in Phases 1-2. Until these instructions call superskill instead of bun scripts/scaffold.ts, the plugin still depends on embedded code that H6 deletes. Invocation is BARE superskill (no path, no bun run; D2 locked: dev resolves via 'bun link', consumers via 'npm i -g @gobing-ai/superskill'). Depends on H3 (final cc:cc-* names). Design: design-doc-phase3.md §2, §4.1, §4.2. Owning feature: H4.
 ### Requirements
-
 - [x] **R1** — All 5 `SKILL.md` (`cc-agents`, `cc-skills`, `cc-commands`, `cc-hooks`, `cc-magents`) rewrite Quick Start / Operations / Operation Workflow to invoke bare `superskill <type> <op>`.
 - [x] **R2** — Invocation mapping applied exactly (design §2):
   - `scaffold.ts … --path … --template` → `superskill <type> scaffold <name> --output <dir>` (drop `--template` — no CLI flag).
@@ -37,7 +25,7 @@ Rewrite the 5 SKILL.md files and 5 expert-*.md subagent definitions in plugins/c
   - `evolve … --propose` → `… evolve <name> --propose-only`; `evolve … --apply <id>` → `… evolve <name> --accept <id>`.
 - [x] **R3** — "Hybrid Workflow Architecture / scripts" framing and all `scripts/*.ts` references removed from SKILL.md.
 - [x] **R4** — `adapt`/`package`/`migrate` operation rows removed **entirely** (no "coming soon" stub). `cc-hooks` `emit`/schema/lint operation rows removed.
-- [x] **R5** — `references/` link lines pointing at F019-deleted files (e.g. `scripts-usage.md`) removed.
+- [x] **R5** — `references/` link lines pointing at H6-deleted files (e.g. `scripts-usage.md`) removed.
 - [x] **R6** — `<type>` correctly mapped per skill: `cc-agents`→`agent`, `cc-skills`→`skill`, `cc-commands`→`command`, `cc-hooks`→`hook`, `cc-magents`→`magent`.
 - [x] **R7** — All 5 `expert-*.md`: Skill Invocation table + routing tables reference `cc:cc-<type>` and `superskill <type> <op>`.
 - [x] **R8** — `expert-*.md` `skills:` frontmatter references `cc:cc-<type>`; routing rows for deleted ops removed.
@@ -54,9 +42,7 @@ rg "plugins/rd3/" plugins/cc/agents/                              # → none
 rg "cc:cc-(agents|skills|commands|hooks|magents)" plugins/cc/agents/  # → hits
 ```
 
-**Out of scope:** command-file rewrites (F018), file deletion (F019), namespace swap (F016 — already done).
-
-
+**Out of scope:** command-file rewrites (H5), file deletion (H6), namespace swap (H3 — already done).
 ### Q&A
 
 
@@ -149,7 +135,6 @@ bun run lint                                                        # clean
 
 
 ### Review
-
 **Verdict: PASS**
 
 **Requirements Traceability**
@@ -159,8 +144,8 @@ bun run lint                                                        # clean
 | R1 | All 5 SKILL.md rewrite Quick Start/Operations/Operation Workflow to invoke bare `superskill <type> <op>` | PASS | `rg "superskill (agent\|skill\|command\|hook\|magent) (scaffold\|validate\|evaluate\|refine\|evolve)"` → hits in all 5 SKILL.md |
 | R2 | Invocation mapping applied exactly (design §2) | PASS | scaffold→`--output`, validate→`--target`, evaluate→`--save` (no `--scope`), refine→`--auto --save` (no `--eval`), evolve→`--propose-only`/`--accept` |
 | R3 | "Hybrid Workflow Architecture / scripts" framing and all `scripts/*.ts` references removed from SKILL.md | PASS | Direct scan confirms removal; `rg "bun .*scripts/.*\.ts" plugins/cc/skills/` → exit 1 |
-| R4 | `adapt`/`package`/`migrate` operation rows removed entirely; cc-hooks `emit`/schema/lint sections removed | PASS | SKILL.md operation tables cleaned; reference docs cleaned. Remaining R4 hits only in cc-hooks emitters/tests/scripts (F019 scope) |
-| R5 | `references/` link lines pointing at F019-deleted files removed | PASS | scripts-usage.md link lines removed from SKILL.md |
+| R4 | `adapt`/`package`/`migrate` operation rows removed entirely; cc-hooks `emit`/schema/lint sections removed | PASS | SKILL.md operation tables cleaned; reference docs cleaned. Remaining R4 hits only in cc-hooks emitters/tests/scripts (H6 scope) |
+| R5 | `references/` link lines pointing at H6-deleted files removed | PASS | scripts-usage.md link lines removed from SKILL.md |
 | R6 | `<type>` correctly mapped per skill | PASS | cc-agents→agent, cc-skills→skill, cc-commands→command, cc-hooks→hook, cc-magents→magent |
 | R7 | All 5 expert-*.md: Skill Invocation table + routing tables reference `cc:cc-<type>` and `superskill <type> <op>` | PASS | `rg "cc:cc-(agents\|skills\|commands\|hooks\|magents)" plugins/cc/agents/` → hits in all 5; `rg "superskill"` → hits in all 5 |
 | R8 | expert-*.md `skills:` frontmatter references `cc:cc-<type>`; routing rows for deleted ops removed | PASS | All 5 expert files have `skills: [cc:cc-<type>]`; adapt/package/migrate routing rows removed |
@@ -181,43 +166,40 @@ Scope: Content rewrite of 5 SKILL.md files and 5 expert-*.md subagent definition
 
 **Out-of-Scope Compliance**
 
-- Command-file rewrites (F018) → not touched
-- File deletion (F019) → not touched; emitters/tests/scripts dirs still exist (R4 hits limited to these)
-- Namespace swap (F016) → already done in 0023
+- Command-file rewrites (H5) → not touched
+- File deletion (H6) → not touched; emitters/tests/scripts dirs still exist (R4 hits limited to these)
+- Namespace swap (H3) → already done in 0023
 
 **Overall Verdict: PASS** — All 11 requirements verified with evidence. SECU review clean. Root gates pass.
-
-
 ### Testing
-
 Verification gate for this task (run all; each maps to a Requirement). Plugin-content rewrite — verified by the invariant checks below, recorded as the executing agent runs them.
 
 - [x] **R10** — `rg "bun .*scripts/.*\.ts" plugins/cc/skills/ plugins/cc/agents/` → no output (no script-runner invocations). **PASS** — exit 1 (no matches)
 - [x] **R1/R2** — `rg "superskill (agent|skill|command|hook|magent) (scaffold|validate|evaluate|refine|evolve)" plugins/cc/skills/ plugins/cc/agents/` → hits in each of the 5 SKILL.md + 5 expert files. **PASS** — exit 0, hits in all 10 files + references
 - [x] **R9** — `rg "plugins/rd3/" plugins/cc/agents/` → no output (stale paths fixed). **PASS** — exit 1 (no matches)
 - [x] **R7/R8** — `rg "cc:cc-(agents|skills|commands|hooks|magents)" plugins/cc/agents/` → hits. **PASS** — exit 0, hits in all 5 expert files
-- [x] **R4** — `rg -i "\b(adapt|package|migrate)\b.*operation|emit-.*\.sh|hook-linter" plugins/cc/skills/` → none in SKILL.md or reference docs. **PASS** for user-facing content. Embedded cc-hooks code/test files are F019 deletion scope and are not lifecycle operation rows in this task.
+- [x] **R4** — `rg -i "\b(adapt|package|migrate)\b.*operation|emit-.*\.sh|hook-linter" plugins/cc/skills/` → none in SKILL.md or reference docs. **PASS** for user-facing content. Embedded cc-hooks code/test files are H6 deletion scope and are not lifecycle operation rows in this task.
 - [x] **R10 (flag check)** — every flag in the rewritten bodies exists in `apps/cli/src/commands/*.ts`. Verified CLI surface: scaffold (--description, --target, --output, --force), validate (--target, --strict, --json), evaluate (--target, --json, --save), refine (--target, --auto, --save), evolve (--target, --from, --propose-only, --accept, --reject). No --template, --scope, --eval, --best-practices, --migrate flags remain.
 - [x] Root gates: `bun run lint`, `bun run test`, and `bun run build` clean.
 
 No new automated tests (plugin markdown, no CLI code). Command outputs recorded as evidence above.
 
 **R3** — "Hybrid Workflow Architecture / scripts" framing removed from all 5 SKILL.md (verified by direct scan).
-**R5** — references/ link lines pointing at F019-deleted files removed from SKILL.md (scripts-usage.md links removed).
+**R5** — references/ link lines pointing at H6-deleted files removed from SKILL.md (scripts-usage.md links removed).
 **R6** — Type mapping verified: cc-agents→agent, cc-skills→skill, cc-commands→command, cc-hooks→hook, cc-magents→magent.
 **R11** — Surgical: only invocation/routing/deleted-op lines changed; prose, section order, and wording in untouched sections preserved.
 
 **Timestamp:** 2026-06-18T01:26:36Z
-
-
 ### Artifacts
 
 | Type | Path | Agent | Date |
 | ---- | ---- | ----- | ---- |
 
 ### References
-
 - Design: [design-doc-phase3.md](../design/design-doc-phase3.md) §2, §4.1, §4.2
-- Feature: [F017](../features/F017-skill-subagent-rewrite.md)
+- Feature: [H4](../features/H4_skill-expert-subagent-rewrite-superskill.md)
 - Depends on: 0023 (final cc:cc-* names)
 - CLI surface ref: apps/cli/src/commands/*.ts (verify every flag exists)
+### History
+
+- Migrated from legacy format (2026-08-01)

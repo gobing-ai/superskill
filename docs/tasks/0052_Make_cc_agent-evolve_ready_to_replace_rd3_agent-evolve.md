@@ -1,20 +1,12 @@
 ---
+schema_version: 1
 name: Make cc agent-evolve ready to replace rd3 agent-evolve
-description: Make cc agent-evolve ready to replace rd3 agent-evolve
-status: Done
+status: done
+type: task
+priority: P1
+tags: [cc-agents,evolve,dogfood,migration,rd3-parity]
 created_at: 2026-06-21T20:55:48.410Z
 updated_at: 2026-06-21T22:05:57.978Z
-folder: docs/tasks
-type: task
-feature-id: ""
-priority: high
-tags: ["cc-agents","evolve","dogfood","migration","rd3-parity"]
-impl_progress:
-  planning: pending
-  design: pending
-  implementation: pending
-  review: pending
-  testing: pending
 ---
 
 ## 0052. Make cc agent-evolve ready to replace rd3 agent-evolve
@@ -295,3 +287,8 @@ All work items MET with code + test evidence:
 ### References
 
 
+
+
+### History
+
+- Migrated from legacy format (2026-08-01)

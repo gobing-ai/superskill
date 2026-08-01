@@ -1,20 +1,12 @@
 ---
+schema_version: 1
 name: Decide cc hook-add strategy (no rd3 equivalent exists)
-description: Decide cc hook-add strategy (no rd3 equivalent exists)
-status: Done
+status: done
+type: task
+priority: P2
+tags: [cc-hooks,add,scaffold,dogfood,design-decision,missing-command]
 created_at: 2026-06-21T21:15:15.292Z
 updated_at: 2026-06-22T05:44:55.398Z
-folder: docs/tasks
-type: task
-feature-id: ""
-priority: medium
-tags: ["cc-hooks","add","scaffold","dogfood","design-decision","missing-command"]
-impl_progress:
-  planning: done
-  design: done
-  implementation: done
-  review: done
-  testing: done
 ---
 
 ## 0066. Decide cc hook-add strategy (no rd3 equivalent exists)
@@ -196,3 +188,8 @@ hook refine plugins/cc/hooks/hooks.json   → works (suggest-only, [SUGGEST] fin
 ### References
 
 
+
+
+### History
+
+- Migrated from legacy format (2026-08-01)

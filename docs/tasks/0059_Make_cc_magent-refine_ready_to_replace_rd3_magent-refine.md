@@ -1,20 +1,12 @@
 ---
+schema_version: 1
 name: Make cc magent-refine ready to replace rd3 magent-refine
-description: Make cc magent-refine ready to replace rd3 magent-refine
-status: Done
+status: done
+type: task
+priority: P1
+tags: [cc-magents,refine,dogfood,migration,rd3-parity]
 created_at: 2026-06-21T21:05:49.494Z
 updated_at: 2026-06-22T00:45:01.434Z
-folder: docs/tasks
-type: task
-feature-id: ""
-priority: high
-tags: ["cc-magents","refine","dogfood","migration","rd3-parity"]
-impl_progress:
-  planning: completed
-  design: completed
-  implementation: completed
-  review: completed
-  testing: completed
 ---
 
 ## 0059. Make cc magent-refine ready to replace rd3 magent-refine
@@ -132,3 +124,8 @@ M4 adds regression coverage.
 
 
 ### References
+
+
+### History
+
+- Migrated from legacy format (2026-08-01)

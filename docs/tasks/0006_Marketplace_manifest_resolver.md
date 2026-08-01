@@ -1,30 +1,19 @@
 ---
+schema_version: 1
 name: Marketplace manifest resolver
-description: Marketplace manifest resolver
-status: Done
-created_at: 2026-06-16T06:20:41.483Z
-updated_at: 2026-06-16T07:22:55.427Z
-folder: docs/tasks
+status: done
 type: task
-feature-id: F006
-priority: high
-estimated_hours: 2
-tags: ["marketplace","resolver","plugin","foundation"]
-impl_progress:
-  planning: pending
-  design: pending
-  implementation: pending
-  review: pending
-  testing: pending
+priority: P1
+tags: [marketplace,resolver,plugin,foundation]
+created_at: 2026-06-16T06:20:41.483Z
+updated_at: "2026-08-01T02:22:44.891Z"
+feature_id: G14
 ---
 
 ## 0006. Marketplace manifest resolver
 
 ### Background
-
-superskill install must resolve a <plugin> name to its root dir. Claude Code's marketplace.json (plugins[].source + metadata.pluginRoot) is the canonical locator. Backs the --marketplace flag (ADR-011). Independent of F001/F002; unblocks F004.
-
-
+superskill install must resolve a <plugin> name to its root dir. Claude Code's marketplace.json (plugins[].source + metadata.pluginRoot) is the canonical locator. Backs the --marketplace flag (ADR-011). Independent of G11/G12; unblocks F3.
 ### Requirements
 
 - [x] **R1**: `marketplace.ts` defines a Zod marketplace schema for `{ name, owner?, metadata?: { pluginRoot? }, plugins: [{ name, source }] }` and allows forward-compatible unknown fields. → **MET** | Evidence: `apps/cli/src/marketplace.ts:5` plugin entry schema, `apps/cli/src/marketplace.ts:13` marketplace schema; test evidence `apps/cli/tests/marketplace.test.ts:13`.
@@ -42,11 +31,7 @@ superskill install must resolve a <plugin> name to its root dir. Claude Code's m
 
 
 ### Design
-
-
-Resolution order: `--marketplace <path>` (file or its dir) → `.claude-plugin/marketplace.json` in CWD → signal fall-through so F004 can use the `plugins/<name>/` scan. Marketplace **root** = the dir containing `.claude-plugin/`, NOT `.claude-plugin/` itself — `cc-agents/.claude-plugin/marketplace.json` + `"source":"./plugins/rd3"` → `cc-agents/plugins/rd3`. `pluginRoot = join(root, metadata.pluginRoot ?? '', source)`. Phase 1 accepts string relative-path `source` only; object sources and `../`-escapes throw with distinct messages (invariant 7, ADR-011). Validate `<pluginRoot>/plugin.json`. Schema (zod, passthrough) verified vs Claude Code docs (code.claude.com/docs/en/plugin-marketplaces) and `/Users/robin/projects/cc-agents/.claude-plugin/marketplace.json`. Test fixture: a minimal `.claude-plugin/marketplace.json` under `apps/cli/tests/fixtures/`.
-
-
+Resolution order: `--marketplace <path>` (file or its dir) → `.claude-plugin/marketplace.json` in CWD → signal fall-through so F3 can use the `plugins/<name>/` scan. Marketplace **root** = the dir containing `.claude-plugin/`, NOT `.claude-plugin/` itself — `cc-agents/.claude-plugin/marketplace.json` + `"source":"./plugins/rd3"` → `cc-agents/plugins/rd3`. `pluginRoot = join(root, metadata.pluginRoot ?? '', source)`. Phase 1 accepts string relative-path `source` only; object sources and `../`-escapes throw with distinct messages (invariant 7, ADR-011). Validate `<pluginRoot>/plugin.json`. Schema (zod, passthrough) verified vs Claude Code docs (code.claude.com/docs/en/plugin-marketplaces) and `/Users/robin/projects/cc-agents/.claude-plugin/marketplace.json`. Test fixture: a minimal `.claude-plugin/marketplace.json` under `apps/cli/tests/fixtures/`.
 ### Solution
 
 Implemented and verified the marketplace resolver contract in `apps/cli/src/marketplace.ts`.
@@ -67,7 +52,6 @@ Regression tests were added in `apps/cli/tests/marketplace.test.ts` for absolute
 
 
 ### Review
-
 Verification verdict: PASS after fix.
 
 #### Fixed Finding P2: Object marketplace sources failed before the required remote-source error
@@ -78,9 +62,7 @@ Fix: `pluginEntrySchema` now accepts `source: string | object`, while `resolvePl
 
 Regression coverage: `apps/cli/tests/marketplace.test.ts` now covers object-source rejection, `metadata.pluginRoot` prefixing, absolute plugin root evidence, and passthrough-compatible marketplace fields.
 
-SECU review found no remaining P1/P2 issues in the F006 scope.
-
-
+SECU review found no remaining P1/P2 issues in the G14 scope.
 ### Testing
 
 Passed:
@@ -101,3 +83,8 @@ Passed:
 ### References
 
 
+
+
+### History
+
+- Migrated from legacy format (2026-08-01)

@@ -1,22 +1,13 @@
 ---
+schema_version: 1
 name: align-agent-completeness-scoring
-description: align-agent-completeness-scoring
-status: Done
+status: done
+type: task
+profile: standard
+priority: P1
+tags: [quality,agent,completeness,H2,high]
 created_at: 2026-06-17T00:09:03.131Z
 updated_at: 2026-06-17T00:20:08.532Z
-folder: docs/tasks
-type: task
-feature-id: ""
-priority: high
-estimated_hours: 3
-tags: ["quality","agent","completeness","H2","high"]
-preset: standard
-impl_progress:
-  planning: pending
-  design: pending
-  implementation: pending
-  review: pending
-  testing: pending
 ---
 
 ## 0020. align-agent-completeness-scoring
@@ -119,3 +110,8 @@ bun test apps/cli/tests/quality/evaluators.test.ts \
 ### References
 
 
+
+
+### History
+
+- Migrated from legacy format (2026-08-01)

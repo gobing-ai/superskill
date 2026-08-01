@@ -1,33 +1,23 @@
 ---
+schema_version: 1
 name: Five type command files
 description: Wire all 5 content types (agent, skill, command, hook, magent) into Commander subcommands — each with scaffold, validate, evaluate, refine, and evolve operations. Plus shared option helpers and cli.ts registration.
-status: Done
-created_at: 2026-06-16T00:00:00.000Z
-updated_at: 2026-06-16T23:27:06.000Z
-folder: docs/tasks
+status: done
 type: task
-feature-id: F014
-priority: high
-estimated_hours: 4
-tags: ["cli","commands","commander","user-interface"]
-impl_progress:
-  planning: pending
-  design: pending
-  implementation: pending
-  review: pending
-  testing: pending
+priority: P1
+tags: [cli,commands,commander,user-interface]
+created_at: 2026-06-16T00:00:00.000Z
+updated_at: "2026-08-01T02:23:39.394Z"
+feature_id: F5
 ---
 
 ## 0014. Five type command files
 
 ### Background
-
-This task wires every Phase 2 operation (F007–F013) into the user-facing CLI surface. Five Commander subcommand files — one per content type — register the complete `superskill <type> <operation>` command hierarchy. Each command file is structurally identical: a `register<Type>(program: Command)` function that registers a type-level subcommand with 5 operation sub-subcommands (scaffold, validate, evaluate, refine, evolve).
+This task wires every Phase 2 operation (G21–G26) into the user-facing CLI surface. Five Commander subcommand files — one per content type — register the complete `superskill <type> <operation>` command hierarchy. Each command file is structurally identical: a `register<Type>(program: Command)` function that registers a type-level subcommand with 5 operation sub-subcommands (scaffold, validate, evaluate, refine, evolve).
 
 A shared `helpers.ts` extracts common option definitions, target resolution, path resolution, and exit-code mapping so all five command files behave identically. The `cli.ts` entry point is updated to import and call all five registration functions.
-
 ### Requirements
-
 **R1** — Each `commands/<type>.ts` exports a single function: `registerAgent(program: Command): void`, `registerSkill(program: Command): void`, `registerCommand(program: Command): void`, `registerHook(program: Command): void`, `registerMagent(program: Command): void`. Each registers a type-level subcommand with 5 operation sub-subcommands.
 
 **R2** — `superskill agent scaffold|validate|evaluate|refine|evolve` — all 5 operations registered. Each operation subcommand wires to the corresponding function from `operations/`:
@@ -174,7 +164,7 @@ skill
         await runOperation(async () => {
             const resolvedTarget = resolveTarget(opts);
             // NOTE: scaffold's opt is `output` (not `outputDir`) and it returns the
-            // created path as a string (not `{ path }`) — see F007/0007.
+            // created path as a string (not `{ path }`) — see G21/0007.
             const createdPath = await scaffold('skill', name, {
                 description: opts.description,
                 target: resolvedTarget,
@@ -210,7 +200,6 @@ The variable name `cmd` (instead of `command`) avoids shadowing the Commander me
 - Default (human-readable) → formatted text via `process.stdout.write`
 - Errors → `process.stderr.write` (reserved for errors only)
 - `--save` → silent persistence behind normal output; errors surfaced
-
 ### Requirements Traceability — 2026-06-16
 
 - [x] **R1**: All five command modules export the required `register<Type>(program)` functions and register 5 subcommands → **MET** | Evidence: `apps/cli/src/commands/agent.ts:155 registerAgent()`, `apps/cli/src/commands/skill.ts:141 registerSkill()`, `apps/cli/src/commands/command.ts:155 registerCommand()`, `apps/cli/src/commands/hook.ts:133 registerHook()`, `apps/cli/src/commands/magent.ts:155 registerMagent()`, `apps/cli/tests/commands/content-command-modules.test.ts:43`
@@ -436,8 +425,7 @@ Fixed findings:
 | ---- | ---- | ----- | ---- |
 
 ### References
-
-- `docs/features/F014-type-commands.md` — feature spec
+- `docs/features/F5_five-type-command-files.md` — feature spec
 - `docs/design/design-doc-phase2.md` §2 — command surface (scaffold, validate, evaluate, refine, evolve)
 - `docs/design/design-doc-phase2.md` §6 — code layout (commands/*.ts, cli.ts)
 - `docs/design/design-doc-phase2.md` §8 — acceptance criteria
@@ -446,8 +434,11 @@ Fixed findings:
 - `apps/cli/src/commands/install.ts` — existing Commander registration pattern (reference for conventions)
 - `apps/cli/src/cli.ts` — entry point to be updated
 - `apps/cli/src/targets.ts` — TARGETS array, Target type
-- `docs/features/F007-template-scaffold.md` — scaffold operation
-- `docs/features/F010-validate-operation.md` — validate operation
-- `docs/features/F011-evaluate-operation.md` — evaluate operation
-- `docs/features/F012-refine-operation.md` — refine operation
-- `docs/features/F013-evolve-operation.md` — evolve operation
+- `docs/features/G21_template-content-io-foundation-scaffold-operation.md` — scaffold operation
+- `docs/features/G23_validate-operation.md` — validate operation
+- `docs/features/G24_evaluate-operation.md` — evaluate operation
+- `docs/features/G25_refine-operation.md` — refine operation
+- `docs/features/G26_evolve-operation.md` — evolve operation
+### History
+
+- Migrated from legacy format (2026-08-01)

@@ -1,19 +1,11 @@
 ---
+schema_version: 1
 name: Refactor CLI core into workspace packages
-description: Refactor CLI core into workspace packages
-status: Done
+status: done
+type: task
+profile: standard
 created_at: 2026-06-19T23:56:43.959Z
 updated_at: 2026-06-20T01:06:25.772Z
-folder: docs/tasks
-type: task
-feature-id: ""
-preset: standard
-impl_progress:
-  planning: completed
-  design: completed
-  implementation: completed
-  review: completed
-  testing: completed
 ---
 
 ## 0043. Refactor CLI core into workspace packages
@@ -264,3 +256,8 @@ Failures fixed during this completion pass:
 - `packages/core/src/` — reusable package implementation.
 - `apps/cli/src/` — CLI command surface, adapters, persistence, and store-backed workflows.
 
+
+
+### History
+
+- Migrated from legacy format (2026-08-01)

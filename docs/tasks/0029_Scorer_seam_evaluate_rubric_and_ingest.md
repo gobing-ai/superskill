@@ -1,33 +1,21 @@
 ---
+schema_version: 1
 name: Scorer seam evaluate rubric and ingest
-description: Scorer seam evaluate rubric and ingest
-status: Done
-created_at: 2026-06-17T22:37:02.101Z
-updated_at: 2026-06-18T10:18:09.714Z
-folder: docs/tasks
+status: done
 type: task
-feature-id: F022
-priority: high
-estimated_hours: 6
+priority: P1
+tags: [phase4,scorer,evaluate,seam,store]
 dependencies: ["0028"]
-tags: ["phase4","scorer","evaluate","seam","store"]
-impl_progress:
-  planning: pending
-  design: pending
-  implementation: pending
-  review: pending
-  testing: pending
+created_at: 2026-06-17T22:37:02.101Z
+updated_at: "2026-08-01T02:24:30.085Z"
+feature_id: G32
 ---
 
 ## 0029. Scorer seam evaluate rubric and ingest
 
 ### Background
-
-Add a scorer mode to evaluate producing the SAME QualityReport shape as the heuristic path, sourced from LLM-judged rubric scoring done by the agent (design §2.1). The CLI contributes two deterministic halves: envelope-out (--rubric --json) hands the agent everything to score; ingest-in (--ingest <scores.json> --save) validates against the rubric schema and persists. Today EVALUATORS (evaluate.ts:34) is pure heuristics — no semantic judgment. The envelope-not-direct-call design keeps determinism, lets the rubric version travel with the score, and makes the agent step replayable from fixtures. DECISION LOCKED 2026-06-17: rubric version stamped via a NEW nullable rubric_version COLUMN via ts-db defineTable (ADR-014), not JSON-embedded, not raw ALTER. CLI never calls a model (invariant #1). Design: design-doc-phase4.md §2.1, §3.2. Owning feature: F022.
-
-
+Add a scorer mode to evaluate producing the SAME QualityReport shape as the heuristic path, sourced from LLM-judged rubric scoring done by the agent (design §2.1). The CLI contributes two deterministic halves: envelope-out (--rubric --json) hands the agent everything to score; ingest-in (--ingest <scores.json> --save) validates against the rubric schema and persists. Today EVALUATORS (evaluate.ts:34) is pure heuristics — no semantic judgment. The envelope-not-direct-call design keeps determinism, lets the rubric version travel with the score, and makes the agent step replayable from fixtures. DECISION LOCKED 2026-06-17: rubric version stamped via a NEW nullable rubric_version COLUMN via ts-db defineTable (ADR-014), not JSON-embedded, not raw ALTER. CLI never calls a model (invariant #1). Design: design-doc-phase4.md §2.1, §3.2. Owning feature: G32.
 ### Requirements
-
 - [x] **R1** — EvaluateOptions `{rubric?, ingest?}` → **MET** | evaluate.ts:32-35
 - [x] **R2** — Envelope-out emits work-order JSON, no DB/scoring/model → **MET** | emitEnvelope:129 (live: 6 keys)
 - [x] **R3** — Ingest reads `{rubric_version, dimensions{score,note}}` → **MET** | ScoresJson:108
@@ -41,16 +29,13 @@ Add a scorer mode to evaluate producing the SAME QualityReport shape as the heur
 
 **Acceptance:** envelope-out emits JSON (no row); ingest --save → scorer='rubric' row; bad scores → exit 1, no row. All verified live.
 
-**Out of scope:** generation seam (F023), gate (F024).
-
-
+**Out of scope:** generation seam (G33), gate (G34).
 ### Q&A
 
 
 
 ### Design
-
-**Design: Scorer seam — evaluate --rubric / --ingest (F022)**
+**Design: Scorer seam — evaluate --rubric / --ingest (G32)**
 
 **Architecture** (design-doc-phase4.md §2.1, §3.2; invariant #1 CLI deterministic, #2 one report shape, #4 version-aware trends):
 
@@ -77,7 +62,7 @@ export interface EvaluateOptions {
 
 When `opts.rubric` is set (and `opts.ingest` is not):
 1. Resolve content path + read content (existing steps 1-2 in `evaluate()`)
-2. Load rubric via `loadRubric(type, { path: opts.rubric })` (F021)
+2. Load rubric via `loadRubric(type, { path: opts.rubric })` (G31)
 3. Compute baseline heuristic QualityReport (existing `EVALUATORS[type]`)
 4. Emit envelope JSON via `process.stdout.write`:
    ```json
@@ -112,7 +97,7 @@ When `opts.ingest` is set:
 
 `store/schema.ts` — add two nullable columns to `evaluations` via `defineTable`:
 ```ts
-scorer: text('scorer'),                    // 'heuristic' | 'rubric'; null for pre-F022 rows
+scorer: text('scorer'),                    // 'heuristic' | 'rubric'; null for pre-G32 rows
 rubric_version: integer('rubric_version'),  // rubric version int; null for heuristic rows
 ```
 Both nullable (no `.notNull()`). Heuristic rows: `scorer='heuristic'`, `rubric_version=null`. Rubric rows: `scorer='rubric'`, `rubric_version=<version>`.
@@ -135,18 +120,12 @@ Concretely: `computeTrends` already receives `Evaluation[]`. It will partition b
 
 The two-call workflow documented in the `evaluate` command description: "Evaluate content quality. Use --rubric --json to emit a scoring envelope for an agent, then --ingest <scores.json> --save to persist agent-scored results."
 
-**No model API call** (R10): `evaluate.ts` makes no model API call. No `bun:sqlite` import (store via ts-db DAO). The only new imports are `loadRubric` from `quality/rubric` (F021) and `readFileSync` for the ingest file.
+**No model API call** (R10): `evaluate.ts` makes no model API call. No `bun:sqlite` import (store via ts-db DAO). The only new imports are `loadRubric` from `quality/rubric` (G31) and `readFileSync` for the ingest file.
 
-**Out of scope:** generation seam (F023), double-loop gate (F024), Spur Scorer persona.
-
-
+**Out of scope:** generation seam (G33), double-loop gate (G34), Spur Scorer persona.
 ### Solution
-
-Extend evaluate.ts EvaluateOptions; envelope path loads rubric via loadRubric(type,{path}) (F021) and emits the work-order JSON envelope. Ingest path reads scores.json, validates against rubric schema, computes weighted aggregate, persists via EvaluationDao with scorer marker + rubric_version. store/schema.ts: add nullable rubric_version column through defineTable (single source for drizzle table+zod+DDL per ADR-014); register migration. store/evaluations.ts: add scorer marker. Adjust computeTrends (used by F013 evolve) to filter/flag by rubric_version. helpers.ts: add --rubric <file> + --ingest <file> to evaluate option group; document two-call workflow.
-
-
+Extend evaluate.ts EvaluateOptions; envelope path loads rubric via loadRubric(type,{path}) (G31) and emits the work-order JSON envelope. Ingest path reads scores.json, validates against rubric schema, computes weighted aggregate, persists via EvaluationDao with scorer marker + rubric_version. store/schema.ts: add nullable rubric_version column through defineTable (single source for drizzle table+zod+DDL per ADR-014); register migration. store/evaluations.ts: add scorer marker. Adjust computeTrends (used by G26 evolve) to filter/flag by rubric_version. helpers.ts: add --rubric <file> + --ingest <file> to evaluate option group; document two-call workflow.
 ### Plan
-
 **Plan**
 
 **Step 1 — Schema: add `scorer` + `rubric_version` columns** (`store/schema.ts`)
@@ -163,7 +142,7 @@ Extend evaluate.ts EvaluateOptions; envelope path loads rubric via loadRubric(ty
 - `Evaluation`: add `scorer?: string`, `rubric_version?: number`
 - `insertEvaluation`: pass `scorer` and `rubric_version` to `this.create()`
 - `deserializeEvaluation`: read `scorer` and `rubric_version` from row
-- `EvaluationFilter`: no change (no new filter columns needed for F022)
+- `EvaluationFilter`: no change (no new filter columns needed for G32)
 
 **Step 4 — EvaluateOptions + envelope-out + ingest-in** (`operations/evaluate.ts`)
 - Add `rubric?: string` and `ingest?: string` to `EvaluateOptions`
@@ -227,9 +206,7 @@ Extend evaluate.ts EvaluateOptions; envelope path loads rubric via loadRubric(ty
 - `apps/cli/tests/fixtures/phase4/scores-agent.json`
 - `apps/cli/tests/fixtures/phase4/scores-skill.json`
 
-**No changes to:** `dimensions.ts` (heuristic path unchanged — R5), rubric.ts (F021 complete), generateChanges (F023).
-
-
+**No changes to:** `dimensions.ts` (heuristic path unchanged — R5), rubric.ts (G31 complete), generateChanges (G33).
 ### Review
 
 ## Re-Verification — 2026-06-18 (--force --fix all)
@@ -321,10 +298,11 @@ Extend evaluate.ts EvaluateOptions; envelope path loads rubric via loadRubric(ty
 | ---- | ---- | ----- | ---- |
 
 ### References
-
 - Design: [design-doc-phase4.md](../design/design-doc-phase4.md) §2.1, §3.2
-- Feature: [F022](../features/F022-scorer-seam.md)
+- Feature: [G32](../features/G32_scorer-seam-evaluate-rubric-ingest.md)
 - Depends on: 0028 (loadRubric)
 - Authority: docs/00_ADR.md ADR-014 (ts-db defineTable; rubric_version column locked 2026-06-17)
 - Code: apps/cli/src/operations/evaluate.ts (EVALUATORS ~line 34), store/schema.ts
+### History
 
+- Migrated from legacy format (2026-08-01)

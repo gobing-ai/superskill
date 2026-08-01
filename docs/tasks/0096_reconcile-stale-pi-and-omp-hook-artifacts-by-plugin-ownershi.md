@@ -1,18 +1,17 @@
 ---
 template: standard
 schema_version: 1
-name: "Reconcile stale Pi and OMP hook artifacts by plugin ownership"
+name: Reconcile stale Pi and OMP hook artifacts by plugin ownership
 description: ""
 status: done
 type: task
 profile: standard
-feature_id: null
 parent_wbs: null
 priority: P1
 tags: []
 dependencies: []
-created_at: "2026-07-22T17:21:19.491Z"
-updated_at: "2026-07-22T17:49:43.411Z"
+created_at: 2026-07-22T17:21:19.491Z
+updated_at: 2026-07-22T17:49:43.411Z
 ---
 
 ## 0096. Reconcile stale Pi and OMP hook artifacts by plugin ownership

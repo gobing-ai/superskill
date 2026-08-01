@@ -1,21 +1,13 @@
 ---
+schema_version: 1
 name: Target taxonomy + config schema
-description: Target taxonomy + config schema
-status: Done
-created_at: 2026-06-16T05:43:00.903Z
-updated_at: 2026-06-16T06:51:12.257Z
-folder: docs/tasks
+status: done
 type: task
-feature-id: F001
-priority: high
-estimated_hours: 2
-tags: ["foundation","types","config"]
-impl_progress:
-  planning: pending
-  design: pending
-  implementation: pending
-  review: pending
-  testing: pending
+priority: P1
+tags: [foundation,types,config]
+created_at: 2026-06-16T05:43:00.903Z
+updated_at: "2026-08-01T02:15:17.951Z"
+feature_id: G11
 ---
 
 ## 0001. Target taxonomy + config schema
@@ -121,3 +113,8 @@ TARGETS enum covers 8 agents; TARGET_TO_RULESYNC maps non-Claude targets to rule
 ### References
 
 
+
+
+### History
+
+- Migrated from legacy format (2026-08-01)

@@ -1,18 +1,17 @@
 ---
 template: issue
 schema_version: 1
-name: "Fix apps CLI SECUA and architecture review findings"
+name: Fix apps CLI SECUA and architecture review findings
 description: ""
 status: done
-type: issue
+type: task
 profile: standard
-feature_id: null
 parent_wbs: null
 priority: P2
-tags: ["bug"]
+tags: [bug]
 dependencies: []
-created_at: "2026-07-26T07:44:06.236Z"
-updated_at: "2026-07-26T20:28:55.711Z"
+created_at: 2026-07-26T07:44:06.236Z
+updated_at: 2026-07-26T20:28:55.711Z
 ---
 
 ## 0107. Fix apps CLI SECUA and architecture review findings

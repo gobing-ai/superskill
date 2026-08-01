@@ -6,13 +6,12 @@ description: ""
 status: done
 type: task
 profile: standard
-feature_id: null
 parent_wbs: "0080"
 priority: P2
 tags: []
 dependencies: []
-created_at: "2026-07-15T17:52:21.692Z"
-updated_at: "2026-07-15T18:33:14.229Z"
+created_at: 2026-07-15T17:52:21.692Z
+updated_at: 2026-07-15T18:33:14.229Z
 ---
 
 ## 0082. Enhance cc-magents meta-skill: platform-compatibility matrix, workflows harness-usage, SKILL.md rubric/eval for spur+superskill awareness

@@ -1,33 +1,21 @@
 ---
+schema_version: 1
 name: Pi omp hermes hook enablement shim
-description: Pi omp hermes hook enablement shim
-status: Done
-created_at: 2026-06-17T22:43:35.628Z
-updated_at: 2026-06-19T00:12:35.333Z
-folder: docs/tasks
+status: done
 type: task
-feature-id: F028
-priority: medium
-estimated_hours: 5
+priority: P2
+tags: [phase5,hooks,pi,omp,hermes,shim,research]
 dependencies: ["0034"]
-tags: ["phase5","hooks","pi","omp","hermes","shim","research"]
-impl_progress:
-  planning: done
-  design: done
-  implementation: done
-  review: done
-  testing: done
+created_at: 2026-06-17T22:43:35.628Z
+updated_at: "2026-08-01T02:25:05.482Z"
+feature_id: H8
 ---
 
 ## 0035. Pi omp hermes hook enablement shim
 
 ### Background
-
-Give the 3 targets rulesync can't emit hooks for — Pi (maps to rulesync but hooks column blank), omp + hermes (absent from rulesync tool set) — a hook lifecycle as close to Claude Code's as the agent supports. THE ONE GENUINE RESEARCH ITEM in Phase 5 (design §1.2): a mechanism question, not coverage. The §1 coverage table (from vendors/rulesync/README.md:77-107 + TARGET_TO_RULESYNC) shows these uncovered. Closes the gap so 'one hooks.json installs correct native hook config for every supported target' (§6 exit #1) holds — shimmed or documented, NO silent drop (#2). Research before shims (invariant #5). Design: design-doc-phase5.md §1.2, §2.1. Owning feature: F028.
-
-
+Give the 3 targets rulesync can't emit hooks for — Pi (maps to rulesync but hooks column blank), omp + hermes (absent from rulesync tool set) — a hook lifecycle as close to Claude Code's as the agent supports. THE ONE GENUINE RESEARCH ITEM in Phase 5 (design §1.2): a mechanism question, not coverage. The §1 coverage table (from vendors/rulesync/README.md:77-107 + TARGET_TO_RULESYNC) shows these uncovered. Closes the gap so 'one hooks.json installs correct native hook config for every supported target' (§6 exit #1) holds — shimmed or documented, NO silent drop (#2). Research before shims (invariant #5). Design: design-doc-phase5.md §1.2, §2.1. Owning feature: H8.
 ### Requirements
-
 - [x] **R1** — Research note (rung + source + date) for Pi/omp → **MET** | design §1.2, 2026-06-18, @vahor/pi-hooks v0.0.11
 - [x] **R2** — Fallback ladder, highest supported rung → **MET** | Pi/omp rung (b), hermes rung (c)
 - [x] **R3** — install.ts copy/shim extended → **MET** | install.ts:195-233; hooks.ts emit functions
@@ -37,9 +25,7 @@ Give the 3 targets rulesync can't emit hooks for — Pi (maps to rulesync but ho
 
 **Acceptance:** pi/omp/hermes hook config emitted with explicit per-target message; research note has source+date; rulesync.ts unchanged. 625 pass / 0 fail.
 
-**Out of scope:** 4 ✅ targets (F027); hook emit verb (F029).
-
-
+**Out of scope:** 4 ✅ targets (F6); hook emit verb (H9).
 ### Q&A
 
 
@@ -133,13 +119,12 @@ Test count is 625 (task claimed 607) — external sync added tests since authori
 lint exit 0 · 607 pass / 0 fail · build exit 0 · hooks.ts 100% func / 100% line · aggregate 99.57% func / 98.37% line.
 
 ### Testing
-
 Tests ship **in this task** (design rule: each task owns its tests — no separate pure-test task).
 Last run: 2026-06-18T23:45:00Z.
 
 - [x] `tests/commands/install-hooks.test.ts` (the Pi/omp/hermes half): — 13 tests, 0 fail
   - hermes → hook config emitted via the copy-step (assert present at the expected hermes location). — `emitHermesHooks` test: canonical hooks.json copied to `.hermes/hooks.json`
-  - Pi / omp → hook config emitted per the chosen rung (F028 research) **or** the output explicitly states unsupported (rung d) — **no silent drop** (design §6 exit #2). — `emitPiStyleHooks` tests: `.pi/hooks.json` and `.omp/hooks.json` in `@vahor/pi-hooks` format; "no silent drop" test asserts explicit message for all 3 targets
+  - Pi / omp → hook config emitted per the chosen rung (H8 research) **or** the output explicitly states unsupported (rung d) — **no silent drop** (design §6 exit #2). — `emitPiStyleHooks` tests: `.pi/hooks.json` and `.omp/hooks.json` in `@vahor/pi-hooks` format; "no silent drop" test asserts explicit message for all 3 targets
   - The shim never evaluates embedded instructions from external content (invariant #4) — assert a hook `command` carrying instruction-like text is treated as data, not executed/expanded. — "hook content untrusted" test: instruction-like text preserved verbatim, no command substitution
 - [x] Fixtures: the shared `tests/fixtures/phase5/` hooks-bearing plugin + expected per-target output for the chosen rung. — `createPluginWithHooks` helper in test file creates hooks-bearing plugin inline
 - [x] Coverage for the copy/shim branch contributes to the ≥90% gate. — hooks.ts: 100% funcs / 100% lines; aggregate: 99.57% funcs / 98.37% lines
@@ -151,8 +136,6 @@ Last run: 2026-06-18T23:45:00Z.
 - `apps/cli/tests/commands/install-hooks.test.ts` — 13 new tests (pi emission, omp emission, hermes copy, no silent drop, untrusted content, event mapping, edge cases)
 - `apps/cli/src/hooks.ts` — new module (event mapping, conversion, emission)
 **Full suite:** `bun test --coverage` → 607 pass, 0 fail, 1520 expect() calls, Coverage: 98.37% lines / 99.57% funcs aggregate.
-
-
 ### Artifacts
 
 | Type | Path | Agent | Date |
@@ -163,10 +146,11 @@ Last run: 2026-06-18T23:45:00Z.
 | doc | docs/design/design-doc-phase5.md §1.2 (research note) | task-runner | 2026-06-18 |
 
 ### References
-
 - Design: [design-doc-phase5.md](../design/design-doc-phase5.md) §1.2, §2.1
-- Feature: [F028](../features/F028-pi-omp-hook-shim.md)
+- Feature: [H8](../features/H8_pi-omp-hermes-hook-enablement.md)
 - Depends on: 0034
 - Code: apps/cli/src/commands/install.ts:132-143 (surrogate/copy step)
 - Research note destination: design-doc-phase5 §1.2
+### History
 
+- Migrated from legacy format (2026-08-01)

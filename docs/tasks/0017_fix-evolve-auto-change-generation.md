@@ -1,22 +1,13 @@
 ---
+schema_version: 1
 name: fix-evolve-auto-change-generation
-description: fix-evolve-auto-change-generation
-status: Done
+status: done
+type: task
+profile: complex
+priority: P1
+tags: [evolve,auto-change,C1,critical]
 created_at: 2026-06-17T00:09:03.102Z
 updated_at: 2026-06-17T00:12:51.321Z
-folder: docs/tasks
-type: task
-feature-id: ""
-priority: high
-estimated_hours: 6
-tags: ["evolve","auto-change","C1","critical"]
-preset: complex
-impl_progress:
-  planning: pending
-  design: pending
-  implementation: pending
-  review: pending
-  testing: pending
 ---
 
 ## 0017. fix-evolve-auto-change-generation
@@ -82,3 +73,8 @@ C1 finding: evolve.ts generateChanges emits dimension: locations with Score: N.N
 ### References
 
 
+
+
+### History
+
+- Migrated from legacy format (2026-08-01)

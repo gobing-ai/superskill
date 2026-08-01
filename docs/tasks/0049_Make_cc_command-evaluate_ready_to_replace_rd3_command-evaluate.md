@@ -1,20 +1,12 @@
 ---
+schema_version: 1
 name: Make cc command-evaluate ready to replace rd3 command-evaluate
-description: Make cc command-evaluate ready to replace rd3 command-evaluate
-status: Done
+status: done
+type: task
+priority: P1
+tags: [cc-commands,evaluate,dogfood,migration,rd3-parity,schema-bug]
 created_at: 2026-06-21T18:15:31.834Z
 updated_at: 2026-06-21T18:37:03.595Z
-folder: docs/tasks
-type: task
-feature-id: ""
-priority: high
-tags: ["cc-commands","evaluate","dogfood","migration","rd3-parity","schema-bug"]
-impl_progress:
-  planning: done
-  design: done
-  implementation: done
-  review: done
-  testing: done
 ---
 
 ## 0049. Make cc command-evaluate ready to replace rd3 command-evaluate
@@ -371,3 +363,8 @@ AGGREGATE 0.88  →  Verdict: PASS  Grade: B   (was 0.43 FAIL Grade F)
 
 
 
+
+
+### History
+
+- Migrated from legacy format (2026-08-01)

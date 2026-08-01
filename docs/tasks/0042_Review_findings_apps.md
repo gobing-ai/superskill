@@ -1,19 +1,11 @@
 ---
+schema_version: 1
 name: "Review findings: apps"
-description: "Review findings: apps"
-status: Done
+status: done
+type: task
+profile: simple
 created_at: 2026-06-19T23:20:57.793Z
 updated_at: 2026-06-19T23:21:34.322Z
-folder: docs/tasks
-type: task
-feature-id: ""
-preset: simple
-impl_progress:
-  planning: complete
-  design: complete
-  implementation: complete
-  review: complete
-  testing: complete
 ---
 
 ## 0042. "Review findings: apps"
@@ -106,3 +98,8 @@ Fixed two findings:
 | Review | `apps/` | rd3-dev-review | 2026-06-19 |
 
 ### References
+
+
+### History
+
+- Migrated from legacy format (2026-08-01)

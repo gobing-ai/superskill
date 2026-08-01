@@ -1,18 +1,10 @@
 ---
+schema_version: 1
 name: SECU review — packages source-oriented (dev-review)
-description: SECU review — packages source-oriented (dev-review)
-status: Done
+status: done
+type: task
 created_at: 2026-06-21T05:22:21.162Z
 updated_at: 2026-06-21T06:30:55.320Z
-folder: docs/tasks
-type: task
-feature-id: ""
-impl_progress:
-  planning: complete
-  design: complete
-  implementation: complete
-  review: complete
-  testing: complete
 ---
 
 ## 0046. SECU review — packages source-oriented (dev-review)
@@ -121,3 +113,8 @@ _(none)_
 ### References
 
 
+
+
+### History
+
+- Migrated from legacy format (2026-08-01)

@@ -1,18 +1,17 @@
 ---
 template: issue
 schema_version: 1
-name: "Prefilter the sp task-write-guard before the spur task resolve spawn"
+name: Prefilter the sp task-write-guard before the spur task resolve spawn
 description: ""
 status: done
-type: issue
+type: task
 profile: standard
-feature_id: null
 parent_wbs: null
 priority: P1
-tags: ["bug"]
+tags: [bug]
 dependencies: []
-created_at: "2026-07-31T06:12:24.754Z"
-updated_at: "2026-07-31T23:56:25.229Z"
+created_at: 2026-07-31T06:12:24.754Z
+updated_at: 2026-07-31T23:56:25.229Z
 ---
 
 ## 0109. Prefilter the sp task-write-guard before the spur task resolve spawn

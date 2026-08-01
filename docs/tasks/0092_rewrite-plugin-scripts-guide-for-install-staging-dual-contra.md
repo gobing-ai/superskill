@@ -1,7 +1,7 @@
 ---
 template: standard
 schema_version: 1
-name: "Rewrite plugin-scripts guide for install-staging dual contract"
+name: Rewrite plugin-scripts guide for install-staging dual contract
 description: ""
 status: done
 type: task
@@ -10,9 +10,9 @@ feature_id: H1
 parent_wbs: null
 priority: P2
 tags: []
-dependencies: ["0089", "0091"]
-created_at: "2026-07-17T06:13:59.316Z"
-updated_at: "2026-08-01T00:24:29.745Z"
+dependencies: ["0089","0091"]
+created_at: 2026-07-17T06:13:59.316Z
+updated_at: 2026-08-01T00:24:29.745Z
 ---
 
 ## 0092. Rewrite plugin-scripts guide for install-staging dual contract

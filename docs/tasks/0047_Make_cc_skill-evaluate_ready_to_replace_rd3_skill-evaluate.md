@@ -1,20 +1,12 @@
 ---
+schema_version: 1
 name: Make cc skill-evaluate ready to replace rd3 skill-evaluate
-description: Make cc skill-evaluate ready to replace rd3 skill-evaluate
-status: Done
+status: done
+type: task
+priority: P1
+tags: [cc-skills,evaluate,dogfood,migration,rd3-parity]
 created_at: 2026-06-21T17:11:19.182Z
 updated_at: 2026-06-21T17:30:28.026Z
-folder: docs/tasks
-type: task
-feature-id: ""
-priority: high
-tags: ["cc-skills","evaluate","dogfood","migration","rd3-parity"]
-impl_progress:
-  planning: pending
-  design: pending
-  implementation: pending
-  review: pending
-  testing: pending
 ---
 
 ## 0047. Make cc skill-evaluate ready to replace rd3 skill-evaluate
@@ -497,3 +489,8 @@ means the user-facing `/cc:skill-evaluate` still fails until the binary is rebui
 ### References
 
 
+
+
+### History
+
+- Migrated from legacy format (2026-08-01)

@@ -1,11 +1,12 @@
 ---
-schema_version: 1
-name: "Consolidate anti-hallucination guard entry points (3→1) and harden heuristic test fixtures against serial residuals"
-status: done
 template: standard
-created_at: 2026-07-15T23:30:00.000Z
-updated_at: "2026-07-16T01:18:44.057Z"
+schema_version: 1
+name: Consolidate anti-hallucination guard entry points (3→1) and harden heuristic test fixtures against serial residuals
+status: done
+type: task
 priority: P2
+created_at: 2026-07-15T23:30:00.000Z
+updated_at: 2026-07-16T01:18:44.057Z
 ---
 
 ## 0085. Consolidate anti-hallucination guard entry points (3→1) and harden heuristic test fixtures against serial residuals

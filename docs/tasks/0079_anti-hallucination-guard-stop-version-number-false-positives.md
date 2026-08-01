@@ -1,11 +1,12 @@
 ---
+template: standard
 schema_version: 1
 name: "Anti-hallucination guard: stop version-number false positives on metrics and credit file:line / command evidence as citations"
 status: done
-template: standard
-created_at: 2026-07-13T17:50:57.936Z
-updated_at: "2026-07-13T21:36:31.937Z"
+type: task
 priority: P2
+created_at: 2026-07-13T17:50:57.936Z
+updated_at: 2026-07-13T21:36:31.937Z
 ---
 
 ## 0079. Anti-hallucination guard: stop version-number false positives on metrics and credit file:line / command evidence as citations

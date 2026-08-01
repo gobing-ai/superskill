@@ -1,21 +1,13 @@
 ---
+schema_version: 1
 name: Plugin to rulesync mapper
-description: Plugin to rulesync mapper
-status: Done
-created_at: 2026-06-16T05:43:07.021Z
-updated_at: 2026-06-16T06:54:06.640Z
-folder: docs/tasks
+status: done
 type: task
-feature-id: F002
-priority: high
-estimated_hours: 2
-tags: ["mapper","canonical","plugin"]
-impl_progress:
-  planning: pending
-  design: pending
-  implementation: pending
-  review: pending
-  testing: pending
+priority: P1
+tags: [mapper,canonical,plugin]
+created_at: 2026-06-16T05:43:07.021Z
+updated_at: "2026-08-01T02:15:19.538Z"
+feature_id: G12
 ---
 
 ## 0002. Plugin to rulesync mapper
@@ -98,3 +90,8 @@ Maps the **hermetic fixture** `apps/cli/tests/fixtures/plugin-min/` (create it h
 
 ### References
 
+
+
+### History
+
+- Migrated from legacy format (2026-08-01)

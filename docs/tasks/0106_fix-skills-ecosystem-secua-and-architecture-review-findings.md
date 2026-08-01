@@ -1,18 +1,18 @@
 ---
 template: review
 schema_version: 1
-name: "Fix skills-ecosystem SECUA and architecture review findings"
+name: Fix skills-ecosystem SECUA and architecture review findings
 description: ""
 status: done
-type: review
+type: task
 profile: standard
 feature_id: F2
 parent_wbs: null
 priority: P2
-tags: ["review"]
+tags: [review]
 dependencies: []
-created_at: "2026-07-26T00:26:35.312Z"
-updated_at: "2026-08-01T00:24:29.583Z"
+created_at: 2026-07-26T00:26:35.312Z
+updated_at: 2026-08-01T00:24:29.583Z
 ---
 
 ## 0106. Fix skills-ecosystem SECUA and architecture review findings

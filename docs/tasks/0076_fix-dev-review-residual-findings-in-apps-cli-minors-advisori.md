@@ -1,10 +1,11 @@
 ---
-schema_version: 1
-name: "Fix dev-review residual findings in apps/cli (minors, advisories, architecture deepening C1-C3)"
-status: done
 template: standard
+schema_version: 1
+name: Fix dev-review residual findings in apps/cli (minors, advisories, architecture deepening C1-C3)
+status: done
+type: task
 created_at: 2026-07-11T23:08:28.183Z
-updated_at: "2026-07-12T00:36:56.395Z"
+updated_at: 2026-07-12T00:36:56.395Z
 ---
 
 ## 0076. Fix dev-review residual findings in apps/cli (minors, advisories, architecture deepening C1-C3)

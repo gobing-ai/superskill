@@ -1,7 +1,7 @@
 ---
 template: standard
 schema_version: 1
-name: "Inventory real installed script paths per target (Claude/OMP/Grok/rulesync)"
+name: Inventory real installed script paths per target (Claude/OMP/Grok/rulesync)
 description: ""
 status: done
 type: task
@@ -11,8 +11,8 @@ parent_wbs: null
 priority: P2
 tags: []
 dependencies: []
-created_at: "2026-07-17T06:13:54.251Z"
-updated_at: "2026-08-01T00:24:29.745Z"
+created_at: 2026-07-17T06:13:54.251Z
+updated_at: 2026-08-01T00:24:29.745Z
 ---
 
 ## 0088. Inventory real installed script paths per target (Claude/OMP/Grok/rulesync)

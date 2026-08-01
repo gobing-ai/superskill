@@ -1,33 +1,21 @@
 ---
+schema_version: 1
 name: Double-loop gate validate delta-margin and anchor
-description: Double-loop gate validate delta-margin and anchor
-status: Done
-created_at: 2026-06-17T22:37:29.054Z
-updated_at: 2026-06-18T19:35:59.222Z
-folder: docs/tasks
+status: done
 type: task
-feature-id: F024
-priority: high
-estimated_hours: 5
+priority: P1
+tags: [phase4,gate,safety,evolve,adversarial]
 dependencies: ["0029","0030"]
-tags: ["phase4","gate","safety","evolve","adversarial"]
-impl_progress:
-  planning: pending
-  design: pending
-  implementation: pending
-  review: pending
-  testing: pending
+created_at: 2026-06-17T22:37:29.054Z
+updated_at: "2026-08-01T02:24:43.485Z"
+feature_id: G34
 ---
 
 ## 0031. Double-loop gate validate delta-margin and anchor
 
 ### Background
-
-A gate enforced by the CLI on the evolve ingest path (F023): an authored proposal is applied only if it passes BOTH a deterministic gate (validate, zero errors) AND a non-deterministic gate (post-aggregate exceeds baseline by a margin AND no anchor violation reported by the Skeptic). Failing either -> proposal stays draft, file restored, no silent acceptance (design §4). Self-evolution without a gate can regress quality or drift from the original goal; the gate makes the closed evolve loop SAFE to run autonomously. The personas (Skeptic, Judge) run in the agent/Spur layer (P4-D2); the CLI only gates on their structured output. Design: design-doc-phase4.md §4, §8 #5. Owning feature: F024.
-
-
+A gate enforced by the CLI on the evolve ingest path (G33): an authored proposal is applied only if it passes BOTH a deterministic gate (validate, zero errors) AND a non-deterministic gate (post-aggregate exceeds baseline by a margin AND no anchor violation reported by the Skeptic). Failing either -> proposal stays draft, file restored, no silent acceptance (design §4). Self-evolution without a gate can regress quality or drift from the original goal; the gate makes the closed evolve loop SAFE to run autonomously. The personas (Skeptic, Judge) run in the agent/Spur layer (P4-D2); the CLI only gates on their structured output. Design: design-doc-phase4.md §4, §8 #5. Owning feature: G34.
 ### Requirements
-
 - [x] **R1** — Deterministic gate (validate, 0 errors) → **MET** | runGate evolve.ts:312
 - [x] **R2** — Δ-margin gate (--margin, default 0.05) → **MET** | runGate:329, helpers.ts:30
 - [x] **R3** — Anchor gate (anchor_hash match) → **MET** | computeAnchorHash + brief anchor_hash
@@ -39,15 +27,12 @@ A gate enforced by the CLI on the evolve ingest path (F023): an authored proposa
 
 **Acceptance:** 5 gate.test.ts scenarios (Δ-margin / deterministic / anchor / skeptic reject + good pass) + 5 updated mechanics tests. 514 pass / 0 fail.
 
-**Out of scope:** persona definitions / skill wiring (F025), phase closing gate (F025).
-
-
+**Out of scope:** persona definitions / skill wiring (H7), phase closing gate (H7).
 ### Q&A
 
 
 
 ### Design
-
 The gate is a pure function `runGate(...)` invoked inside `stepVerify` **before** the existing verify-row write (R8: extend, not parallel). It returns `{ ok, reason?, failedGate? }`. On `ok=false`, `stepVerify` restores the file from a pre-apply backup, marks the proposal `'draft'` (not `'accepted'`), and returns the rejection reason. On `ok=true`, the existing accept + verify-id linkage runs unchanged (R7 — gate sits on top of the closed loop, invariant #6).
 
 **Gate inputs (all computed at ingest time, no new I/O):**
@@ -73,10 +58,9 @@ The gate is a pure function `runGate(...)` invoked inside `stepVerify` **before*
 **Callers of `stepVerify` (3 paths):**
 1. `ingestProposal` (opts.acceptId) — passes `backupPath` + `ingestedAnchorHash` + `skeptic` + `margin`. **This is the primary gate path.**
 2. `evolve()` `--acceptId` path (line 791-792) — passes `backupPath` + reads `anchor_hash`/`skeptic` from the stored proposal JSON + `margin`. Same gate applies.
-3. `evolve()` interactive path (line 824-835) — passes `backupPath`; no anchor/skeptic (the interactive path is not part of F024's scope — it's the legacy non-ingest flow). Gate runs with `margin` only (deterministic + Δ-margin). This keeps the gate universal without breaking the legacy path.
+3. `evolve()` interactive path (line 824-835) — passes `backupPath`; no anchor/skeptic (the interactive path is not part of G34's scope — it's the legacy non-ingest flow). Gate runs with `margin` only (deterministic + Δ-margin). This keeps the gate universal without breaking the legacy path.
 
-**Out of scope (per task):** persona definitions / skill wiring (F025), phase closing gate (F025).
-
+**Out of scope (per task):** persona definitions / skill wiring (H7), phase closing gate (H7).
 ### Plan
 
 **Step 1 — Shared backup module (R6).**
@@ -171,21 +155,6 @@ Extend stepVerify (evolve.ts:427 — already runs post-eval + records the row). 
 lint exit 0 · 514 pass / 0 fail (was 509; +5 gate tests) · build exit 0 · coverage 99.49% func / 98.30% line.
 
 
-### Phase 8 — Requirements Traceability
-
-| Req | Verdict | Evidence |
-|-----|---------|----------|
-| R1 — Deterministic gate (validate, 0 errors) | **UNMET** | No `runGate`; `validate()` not called in evolve gate path |
-| R2 — Δ-margin gate (`--margin`, default 0.05) | **UNMET** | No `--margin` option (helpers.ts), no Δ check in stepVerify |
-| R3 — Anchor gate (anchor_hash match) | **UNMET** | No `computeAnchorHash`, no `anchor_hash` emission/compare |
-| R4 — Skeptic gate (`skeptic.ok===false`) | **UNMET** | No skeptic handling anywhere |
-| R5 — Fail → draft + restore + reason | **UNMET** | No `EvolveResult.rejected`/`rejectionReason`; stepVerify never restores |
-| R6 — Pre-apply backup reuses refine `.bak` | **MET** | `content/backup.ts` `backupFile`/`restoreFromBackup` extracted; refine.ts rewired (refine.ts:3,187,306); backup.test.ts 100%/100% |
-| R7 — On pass keep accept + verify_id linkage | **UNMET** | Gate does not exist, so "on pass" path unbuilt |
-| R8 — Extend `stepVerify` (not parallel) | **UNMET** | `stepVerify` (evolve.ts:643) still has original 7-param signature — no `backupPath`/`margin`/gate |
-
-**Tests:** `gate.test.ts` + 4 fixtures (proposal-regressive/invalid/anchor-tampered/skeptic-veto) — **MISSING**.
-
 ### Phase 7 — SECU (on the partial R6 work only)
 
 `content/backup.ts` is clean: timestamp-suffixed `.bak` to avoid clobbering, `rmSync({force:true})` cleanup, no secrets/injection. lint + build pass; 509 tests pass (backup.test.ts 100%). No findings on what exists.
@@ -222,9 +191,10 @@ Tests ship **in this task** (design rule: each task owns its tests — no separa
 | ---- | ---- | ----- | ---- |
 
 ### References
-
 - Design: [design-doc-phase4.md](../design/design-doc-phase4.md) §4, §8 #5
-- Feature: [F024](../features/F024-double-loop-gate.md)
+- Feature: [G34](../features/G34_double-loop-gate-adversarial-safeguards.md)
 - Depends on: 0029, 0030
 - Code: apps/cli/src/operations/evolve.ts (stepVerify:427), operations/validate.ts
+### History
 
+- Migrated from legacy format (2026-08-01)

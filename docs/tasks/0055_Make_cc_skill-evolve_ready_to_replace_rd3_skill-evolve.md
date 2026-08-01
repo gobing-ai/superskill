@@ -1,20 +1,12 @@
 ---
+schema_version: 1
 name: Make cc skill-evolve ready to replace rd3 skill-evolve
-description: Make cc skill-evolve ready to replace rd3 skill-evolve
-status: Done
+status: done
+type: task
+priority: P1
+tags: [cc-skills,evolve,dogfood,migration,rd3-parity]
 created_at: 2026-06-21T20:56:07.191Z
 updated_at: 2026-06-22T02:11:08.367Z
-folder: docs/tasks
-type: task
-feature-id: ""
-priority: high
-tags: ["cc-skills","evolve","dogfood","migration","rd3-parity"]
-impl_progress:
-  planning: completed
-  design: completed
-  implementation: completed
-  review: completed
-  testing: completed
 ---
 
 ## 0055. Make cc skill-evolve ready to replace rd3 skill-evolve
@@ -125,3 +117,8 @@ All work items MET with code + test evidence:
 **Scope:** Full project — 1000 tests across 58 files, coverage gate (90/90)
 **Result:** PASS — 1000/1000 pass, 0 failures, 0 skips
 **Next action:** None — all gates pass.
+
+
+### History
+
+- Migrated from legacy format (2026-08-01)

@@ -1,22 +1,14 @@
 ---
+schema_version: 1
 name: Conversion pipeline + rulesync integration
-description: Conversion pipeline + rulesync integration
-status: Done
-created_at: 2026-06-16T05:43:14.543Z
-updated_at: 2026-06-16T07:09:33.401Z
-folder: docs/tasks
+status: done
 type: task
-feature-id: F003
-priority: high
-estimated_hours: 4
+priority: P1
+tags: [pipeline,conversion,rulesync,pi]
 dependencies: ["0001"]
-tags: ["pipeline","conversion","rulesync","pi"]
-impl_progress:
-  planning: pending
-  design: pending
-  implementation: pending
-  review: pending
-  testing: pending
+created_at: 2026-06-16T05:43:14.543Z
+updated_at: "2026-08-01T02:22:29.896Z"
+feature_id: G13
 ---
 
 ## 0003. Conversion pipeline + rulesync integration
@@ -65,15 +57,12 @@ For rulesync-supported targets, `generate()` does the write. Only `claude`, `her
 
 
 ### Plan
-
-1. Verify pipeline stage coverage against F003 requirements.
+1. Verify pipeline stage coverage against G13 requirements.
 2. Add missing slash-command translation stage and tests.
 3. Add missing frontmatter normalization stage and tests.
 4. Correct `omp` rulesync mapping and update regression coverage plus design snippet.
 5. Restore the 90/90 coverage threshold.
 6. Run lint, tests, and build.
-
-
 ### Review
 
 **Review date:** 2026-06-16
@@ -118,3 +107,8 @@ For rulesync-supported targets, `generate()` does the write. Only `claude`, `her
 ### References
 
 
+
+
+### History
+
+- Migrated from legacy format (2026-08-01)

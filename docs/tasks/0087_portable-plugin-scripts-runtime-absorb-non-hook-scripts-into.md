@@ -1,7 +1,7 @@
 ---
 template: standard
 schema_version: 1
-name: "Portable plugin scripts runtime — absorb non-hook scripts into superskill script run dispatcher"
+name: Portable plugin scripts runtime — absorb non-hook scripts into superskill script run dispatcher
 description: ""
 status: blocked
 type: task
@@ -10,9 +10,9 @@ feature_id: H1
 parent_wbs: null
 priority: P2
 tags: []
-dependencies: ["0088", "0089"]
-created_at: "2026-07-17T04:13:41.653Z"
-updated_at: "2026-08-01T00:24:29.745Z"
+dependencies: ["0088","0089"]
+created_at: 2026-07-17T04:13:41.653Z
+updated_at: 2026-08-01T00:24:29.745Z
 ---
 
 ## 0087. Portable plugin scripts runtime — absorb non-hook scripts into superskill script run dispatcher

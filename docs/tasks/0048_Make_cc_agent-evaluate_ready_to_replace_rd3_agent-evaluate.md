@@ -1,20 +1,12 @@
 ---
+schema_version: 1
 name: Make cc agent-evaluate ready to replace rd3 agent-evaluate
-description: Make cc agent-evaluate ready to replace rd3 agent-evaluate
-status: Done
+status: done
+type: task
+priority: P1
+tags: [cc-agents,evaluate,dogfood,migration,rd3-parity]
 created_at: 2026-06-21T18:12:32.323Z
 updated_at: 2026-06-21T18:26:38.180Z
-folder: docs/tasks
-type: task
-feature-id: ""
-priority: high
-tags: ["cc-agents","evaluate","dogfood","migration","rd3-parity"]
-impl_progress:
-  planning: done
-  design: done
-  implementation: done
-  review: done
-  testing: done
 ---
 
 ## 0048. Make cc agent-evaluate ready to replace rd3 agent-evaluate
@@ -284,3 +276,8 @@ Confirms A2 (Findings + Recommendations render) and A3 (rubric-weighted aggregat
 ### References
 
 
+
+
+### History
+
+- Migrated from legacy format (2026-08-01)

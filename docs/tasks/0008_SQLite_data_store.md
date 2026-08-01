@@ -1,39 +1,29 @@
 ---
+schema_version: 1
 name: SQLite data store
 description: Persistent SQLite store for evaluation records and evolution proposals via @gobing-ai/ts-db facade — the self-evolution data foundation.
-status: Done
-created_at: 2026-06-16T00:00:00.000Z
-updated_at: 2026-06-16T18:50:11.565Z
-folder: docs/tasks
+status: done
 type: task
-feature-id: F008
-priority: high
-estimated_hours: 5
-tags: ["foundation","sqlite","store","ts-db"]
-impl_progress:
-    planning: done
-    design: done
-    implementation: done
-    review: done
-    testing: done
+priority: P1
+tags: [foundation,sqlite,store,ts-db]
+created_at: 2026-06-16T00:00:00.000Z
+updated_at: "2026-08-01T02:22:56.931Z"
+feature_id: F4
 ---
 
 ## 0008. SQLite data store
 
 ### Background
-
 The `evaluate --save` and `evolve` operations require persistent storage for longitudinal quality tracking — evaluation scores recorded over time, and evolution proposals tracked through draft→accepted→rejected lifecycle. This is the self-evolution data foundation.
 
 Per ADR-014, data access goes through the `@gobing-ai/ts-db` facade — never raw `bun:sqlite` or hand-written DDL. Tables are authored once via `defineTable` (single source of truth for table shape + zod schemas + generated DDL). `store/evaluations.ts` and `store/proposals.ts` are thin `EntityDao` subclasses.
 
-The database lives at `<dataRoot>/.superskill/evaluations.db` where `dataRoot` is resolved by `content/paths.ts` (F007): `<cwd>/.superskill/` when it exists, else `~/.superskill/`. `--project`/`projectRoot` forces project-local.
+The database lives at `<dataRoot>/.superskill/evaluations.db` where `dataRoot` is resolved by `content/paths.ts` (G21): `<cwd>/.superskill/` when it exists, else `~/.superskill/`. `--project`/`projectRoot` forces project-local.
 
 Dependencies: `@gobing-ai/ts-db`, `drizzle-orm`, `drizzle-zod`, `zod` — all already resolved transitively; declaring them directly makes the dependence explicit.
 
-Design references: design doc §4 (data store schema), §10 (storage conventions), F007 `content/paths.ts` (ADR-013).
-
+Design references: design doc §4 (data store schema), §10 (storage conventions), G21 `content/paths.ts` (ADR-013).
 ### Requirements
-
 - [x] **R1** — both tables via `defineTable`; `.table/.insertSchema/.selectSchema` derived; no hand DDL → **MET** | `store/schema.ts:8,21`
 - [x] **R2** — `evaluations` columns per §4 (id PK, content_type/name, target_agent, operation, aggregate REAL, dimensions, file_hash, created_at) → **MET** (uses `standardColumns` per EntityDao constraint — append-only behavior preserved; see Review P4 #3) | `store/schema.ts:8-18`
 - [x] **R3** — `proposals` columns per §4 + `standardColumns` → **MET** | `store/schema.ts:21-31`
@@ -47,13 +37,11 @@ Design references: design doc §4 (data store schema), §10 (storage conventions
 - [x] **R11** — `ProposalInput`/`Proposal` types → **MET** | `store/proposals.ts:5-22`
 - [x] **R12** — `insertProposal` draft; `updateProposalStatus` status+applied_at+verify_id → **MET** | `proposals.ts:39-56`, `proposals.test.ts:46,53`
 - [x] **R13** — `getPendingProposals` draft/all-types; `getProposals` filtered → **MET** | `proposals.ts:59-77`, `proposals.test.ts:62`
-- [x] **R14** — DB path delegates to F007 `getDBPath`; tests use `projectRoot`/`:memory:` → **MET** | `db.ts:7,20`, `db.test.ts:18`, DAO tests `:memory:`
+- [x] **R14** — DB path delegates to G21 `getDBPath`; tests use `projectRoot`/`:memory:` → **MET** | `db.ts:7,20`, `db.test.ts:18`, DAO tests `:memory:`
 - [x] **R15** — no `bun:sqlite`, no DDL strings, `createTableSql` via `adapter.exec` → **MET** | verified by rg scan
 - [x] **R16** — `@gobing-ai/ts-db`, `drizzle-orm`, `drizzle-zod`, `zod` in deps → **MET** | `apps/cli/package.json:25,28,29,32`
 
 **Traceability:** 16/16 MET · 0 unmet · 0 partial · no breaking scope drift (1 documented schema deviation on R2, behavior-preserving). 4 new files + 1 barrel + 1 modified all map to requirements.
-
-
 ### Q&A
 
 Q: Why ts-db instead of raw bun:sqlite?
@@ -75,7 +63,6 @@ Q: Why does `getPendingProposals` return all content types?
 A: For the `evolve --accept` and `evolve --reject` commands that operate on proposal IDs directly. The `evolve` subcommand for a specific content type will call `getProposals(type, name)` with the filters.
 
 ### Design
-
 **Schema** (logical reference only — actual shape derived from `defineTable` + the column spreads):
 
 > **Implementer note.** The `created_at`/`updated_at` columns come from ts-db's `appendOnlyColumns` / `standardColumns` spreads — they are **`integer` epoch-millis timestamps** with a `$defaultFn`, **not** TEXT `datetime('now')`. So `Evaluation.created_at` / `Proposal.created_at` / `updated_at` are `number`, not `string`. Adjust the TS types below accordingly (the `string` annotations on `created_at`/`updated_at` are wrong — change to `number`). Order `getEvaluations` by the actual `created_at` integer column. The `id` PK uses drizzle's `integer('id').primaryKey({ autoIncrement: true })` — declare it in the `defineTable` column map, do not rely on the raw `AUTOINCREMENT` DDL shown below.
@@ -114,7 +101,7 @@ CREATE TABLE proposals (
 | File | Exports |
 |------|---------|
 | `store/schema.ts` | `evaluations` (defineTable output), `proposals` (defineTable output), derived `.table`, `.insertSchema`, `.selectSchema` |
-| `store/db.ts` | `openStore(opts?) → Promise<DbAdapter>`, re-exports `getDBPath` from F007 |
+| `store/db.ts` | `openStore(opts?) → Promise<DbAdapter>`, re-exports `getDBPath` from G21 |
 | `store/evaluations.ts` | `EvaluationDao` class, `EvaluationInput` type, `Evaluation` type |
 | `store/proposals.ts` | `ProposalDao` class, `ProposalInput` type, `Proposal` type |
 
@@ -185,7 +172,6 @@ await dao.insertEvaluation({
 - `getPendingProposals` when none → returns empty array.
 - DB path when `~/.superskill/` doesn't exist → `mkdir` with `{ recursive: true }` creates it.
 - DB path when `<cwd>/.superskill/` exists as a file, not directory → `mkdir` throws EEXIST; caller handles.
-
 ### Solution
 
 **New files** (4):
@@ -240,16 +226,14 @@ interface Proposal extends ProposalInput {
 **Test isolation**: Tests pass `{ projectRoot }` pointing to a temp directory or `url: ':memory:'` to a `createDbAdapter` override. No test touches the real `~/.superskill/` filesystem. The store module exports a `resetStore(adapter)` helper for test cleanup (drops all rows, keeps schema).
 
 ### Plan
-
 1. Add `@gobing-ai/ts-db`, `drizzle-orm`, `drizzle-zod`, `zod` to `apps/cli/package.json` dependencies.
 2. Create `apps/cli/src/store/schema.ts` — defineTable for evaluations (appendOnlyColumns) and proposals (standardColumns); export .table, .insertSchema, .selectSchema.
-3. Create `apps/cli/src/store/db.ts` — openStore: `await createDbAdapter(...)` then `adapter.exec(evaluations.createTableSql)` + `adapter.exec(proposals.createTableSql)` (NOT applyMigrations); re-export getDBPath from F007's content/paths.
+3. Create `apps/cli/src/store/db.ts` — openStore: `await createDbAdapter(...)` then `adapter.exec(evaluations.createTableSql)` + `adapter.exec(proposals.createTableSql)` (NOT applyMigrations); re-export getDBPath from G21's content/paths.
 4. Create `apps/cli/src/store/evaluations.ts` — EvaluationDao, EvaluationInput, Evaluation types, insertEvaluation, getEvaluations, getLatestEvaluation.
 5. Create `apps/cli/src/store/proposals.ts` — ProposalDao, ProposalInput, Proposal types, insertProposal, updateProposalStatus, getProposals, getPendingProposals.
 6. Create `apps/cli/src/store/index.ts` — barrel re-exports.
 7. Run `bun run lint` and verify typecheck passes.
 8. Verify ts-db types resolve correctly against installed versions.
-
 ### Review
 
 ## Review — 2026-06-16 (dev-verify --force --fix all)
@@ -300,10 +284,12 @@ interface Proposal extends ProposalInput {
 | ---- | ---- | ----- | ---- |
 
 ### References
-
 - Design doc: `docs/design/design-doc-phase2.md` §4 (data store), §10 (storage conventions)
-- Feature file: `docs/features/F008-sqlite-store.md`
+- Feature file: `docs/features/F4_sqlite-data-store.md`
 - ADR-007: prefer @gobing-ai/ts-* over raw/external data access
-- ADR-013: data root resolution rule (consumed from F007)
+- ADR-013: data root resolution rule (consumed from G21)
 - ADR-014: ts-db facade mandate — no bun:sqlite anywhere in store/
-- F007 `content/paths.ts`: getDBPath, getDataRoot
+- G21 `content/paths.ts`: getDBPath, getDataRoot
+### History
+
+- Migrated from legacy format (2026-08-01)

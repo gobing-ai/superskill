@@ -1,22 +1,13 @@
 ---
+schema_version: 1
 name: fix-refine-dimension-notes-dead-path
-description: fix-refine-dimension-notes-dead-path
-status: Done
+status: done
+type: task
+profile: standard
+priority: P1
+tags: [refine,dimension-notes,H3,high]
 created_at: 2026-06-17T00:09:03.122Z
 updated_at: 2026-06-17T00:18:25.969Z
-folder: docs/tasks
-type: task
-feature-id: ""
-priority: high
-estimated_hours: 4
-tags: ["refine","dimension-notes","H3","high"]
-preset: standard
-impl_progress:
-  planning: pending
-  design: pending
-  implementation: pending
-  review: pending
-  testing: pending
 ---
 
 ## 0019. fix-refine-dimension-notes-dead-path
@@ -70,3 +61,8 @@ This puts dimension notes in the `fixesSkipped` list with `strategy: 'suggest'` 
 ### References
 
 
+
+
+### History
+
+- Migrated from legacy format (2026-08-01)

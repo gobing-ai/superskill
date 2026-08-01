@@ -1,21 +1,14 @@
 ---
+schema_version: 1
 name: Quality dimension definitions
 description: Per-content-type quality dimension definitions, scoring heuristics, and the DimensionScore/QualityReport type system consumed by validate and evaluate operations.
-status: Done
-created_at: 2026-06-16T00:00:00.000Z
-updated_at: 2026-06-16T21:09:18.674Z
-folder: docs/tasks
+status: done
 type: task
-feature-id: F009
-priority: high
-estimated_hours: 5
-tags: ["foundation","quality","dimensions","evaluate"]
-impl_progress:
-    planning: done
-    design: done
-    implementation: done
-    review: done
-    testing: done
+priority: P1
+tags: [foundation,quality,dimensions,evaluate]
+created_at: 2026-06-16T00:00:00.000Z
+updated_at: "2026-08-01T02:23:04.560Z"
+feature_id: G22
 ---
 
 ## 0009. Quality dimension definitions
@@ -31,7 +24,6 @@ Scoring is heuristic-based initially (ML-augmented scoring deferred per design �
 Design references: design doc §3 (quality dimensions by content type), design doc §2.3 (evaluate operation).
 
 ### Requirements
-
 - [x] **R1** — `DimensionScore` type `{ score, note }` → **MET** | `quality/dimensions.ts:30`
 - [x] **R2** — `QualityReport` type → **MET** | `quality/dimensions.ts:36`
 - [x] **R3** — `ContentType` canonical union → **MET** | `quality/dimensions.ts:6`
@@ -46,19 +38,16 @@ Design references: design doc §3 (quality dimensions by content type), design d
 - [x] **R12** — `evaluateMagent` 5 dims → **MET** | `quality/magent.ts:88`
 - [x] **R13** — scores discriminate quality → **MET** | `evaluators.test.ts:35` + per-type `good.aggregate > bad.aggregate`
 - [x] **R14** — frontmatter parse failure → low completeness + error note, never throws → **MET** | `skill.ts:51`, `hook.ts:130`, `magent.ts:102`
-- [x] **R15** — `QualityReport.content` set via caller (`resolveContentName` when path available, else name/empty) → **MET** | evaluators emit `''`; caller (F014 evaluate) fills via `resolveContentName`
+- [x] **R15** — `QualityReport.content` set via caller (`resolveContentName` when path available, else name/empty) → **MET** | evaluators emit `''`; caller (F5 evaluate) fills via `resolveContentName`
 - [x] **R16** — all scoring synchronous → **MET** | no `async`/`await` in `quality/`
 
 **Traceability:** 16/16 MET · 0 unmet · 0 partial · no scope drift. 6 new files all map to requirements; no untraced code.
-
-
 ### Q&A
-
 Q: Why is `ContentType` defined in `quality/dimensions.ts` and not in `content/`?
-A: The quality module is the authority on content types — it defines what dimensions each type has. F007 (`content/*`) and F010–F014 consume `ContentType` from here. This avoids a circular dependency (content→quality would need ContentType; quality→content needs parseFrontmatter) — quality defines the type, content imports it.
+A: The quality module is the authority on content types — it defines what dimensions each type has. G21 (`content/*`) and G23–F5 consume `ContentType` from here. This avoids a circular dependency (content→quality would need ContentType; quality→content needs parseFrontmatter) — quality defines the type, content imports it.
 
 Q: Why `REQUIRED_FIELDS` lives in `dimensions.ts` rather than in `validate.ts`?
-A: `validate` (F010) needs to check required fields; `evaluate` (F009) also uses field presence for completeness scoring. Putting `REQUIRED_FIELDS` in `dimensions.ts` makes it a single source of truth — no duplication between validate and evaluate modules. F010 imports it; F009 already owns it.
+A: `validate` (G23) needs to check required fields; `evaluate` (G22) also uses field presence for completeness scoring. Putting `REQUIRED_FIELDS` in `dimensions.ts` makes it a single source of truth — no duplication between validate and evaluate modules. G23 imports it; G22 already owns it.
 
 Q: How do the scoring heuristics discriminate quality differences?
 A: Each heuristic is multi-factor:
@@ -77,9 +66,7 @@ A: Both check for unambiguous language, imperative verbs, and lack of vague term
 
 Q: How does `evaluateHook` handle having only 4 dimensions?
 A: `DIMENSION_REGISTRY['hook']` has 4 entries. `evaluateHook` scores those 4. `computeAggregate` works with any number of dimensions. The `QualityReport` for hooks will have 4 entries in `dimensions`, not 5 — the type system reflects this naturally since `dimensions` is `Record<string, DimensionScore>`.
-
 ### Design
-
 **Dimension registry** (from design doc §3):
 
 ```typescript
@@ -124,7 +111,7 @@ _Agent (5 dims)_:
 - **role-clarity** (0.20): Check body for role-defining language (`role`, `you are`, `specialist`, `persona`). Score based on specificity — a generic "you are a coding agent" gets 0.3; a specific "Auth-flow security reviewer" gets 0.9. Note: `"Clear role defined"` or `"Role definition vague/generic"`.
 - **tool-selection** (0.20): Check `tools` array in frontmatter. Score based on whether the tool list is non-empty and seems appropriate for the stated role (heuristic: ≥ 1 tool → 0.7; ≥ 3 tools → 0.9; none → 0.1). Note: `"N tools selected"`.
 - **skill-linkage** (0.20): Look for skill references in body/frontmatter (`skill:`, `skills:`, references to skill names). Score 1.0 if at least one skill reference found; 0.5 if keyword present but no actual ref; 0.0 if none. Note: `"Skill references found"` or `"No skill references"`.
-- **model-fit** (0.20): Check `model` field in frontmatter. Score 1.0 for a recognized agent-relative alias (`inherit` / `sonnet` / `opus` / `haiku`) or a well-formed full id (`claude-{sonnet,opus,haiku}-*`); 0.5 for plausible-but-unrecognized format; 0.0 for missing. Keep the alias list in sync with F010's `MODEL_ALIASES` (single source — consider importing it). Note: `"Model: <name>"`.
+- **model-fit** (0.20): Check `model` field in frontmatter. Score 1.0 for a recognized agent-relative alias (`inherit` / `sonnet` / `opus` / `haiku`) or a well-formed full id (`claude-{sonnet,opus,haiku}-*`); 0.5 for plausible-but-unrecognized format; 0.0 for missing. Keep the alias list in sync with G23's `MODEL_ALIASES` (single source — consider importing it). Note: `"Model: <name>"`.
 
 _Hook (4 dims)_:
 - **correctness** (0.25): Check `event` field against known hook event types (PreToolUse, PostToolUse, Stop, SubagentStop, SessionStart, SessionEnd, UserPromptSubmit, PreCompact, Notification). Score 1.0 for recognized event; 0.5 for plausible event name; 0.0 for missing. Also checks if `enabled` is a boolean. Note: `"Valid event: <name>"` or `"Unknown event: <name>"`.
@@ -192,9 +179,7 @@ export function evaluateSkill(content: string, target: string): QualityReport {
 - Target unknown → passed through to `QualityReport.target` as-is; no validation needed.
 - Hook only has 4 dimensions → `computeAggregate` divides by 4, not 5. Registry has 4 entries for `hook`.
 - `REQUIRED_FIELDS` for `hook` includes `event` which skill/command/magent don't have. Each type's completeness scorer uses its own required list.
-
 ### Solution
-
 **New files** (6):
 
 | Path | Purpose |
@@ -206,7 +191,7 @@ export function evaluateSkill(content: string, target: string): QualityReport {
 | `apps/cli/src/quality/hook.ts` | evaluateHook — 4 dimension scorers |
 | `apps/cli/src/quality/magent.ts` | evaluateMagent — 5 dimension scorers |
 
-**No modified files** (depends on F007 for `parseFrontmatter`, `resolveContentName`, `ContentType` — imported, not duplicated).
+**No modified files** (depends on G21 for `parseFrontmatter`, `resolveContentName`, `ContentType` — imported, not duplicated).
 
 **Key exports**:
 ```typescript
@@ -228,7 +213,6 @@ interface QualityReport {
 ```
 
 **Heuristic justification**: The heuristics are intentionally simple and transparent. They produce different scores for different content because they measure concrete, observable properties (field presence, keyword counts, section patterns). They are NOT LLM-based scoring — they are deterministic rules that run in < 1ms. The notes explain exactly what was observed, so a human can understand why the score changed between evaluations. This transparency is the foundation for trust in the `evolve` loop.
-
 ### Plan
 
 1. Create `apps/cli/src/quality/dimensions.ts` — ContentType, DimensionScore, QualityReport, DIMENSION_REGISTRY, REQUIRED_FIELDS, computeAggregate, and 5 heuristic helper functions.
@@ -290,7 +274,9 @@ interface QualityReport {
 | ---- | ---- | ----- | ---- |
 
 ### References
-
 - Design doc: `docs/design/design-doc-phase2.md` §3 (quality dimensions by content type), §2.3 (evaluate operation)
-- Feature file: `docs/features/F009-quality-dimensions.md`
-- F007: `content/frontmatter.ts` (parseFrontmatter consumed by evaluate functions), `content/identity.ts` (resolveContentName)
+- Feature file: `docs/features/G22_quality-dimension-definitions.md`
+- G21: `content/frontmatter.ts` (parseFrontmatter consumed by evaluate functions), `content/identity.ts` (resolveContentName)
+### History
+
+- Migrated from legacy format (2026-08-01)

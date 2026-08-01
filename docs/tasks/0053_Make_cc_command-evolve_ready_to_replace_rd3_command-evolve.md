@@ -1,20 +1,12 @@
 ---
+schema_version: 1
 name: Make cc command-evolve ready to replace rd3 command-evolve
-description: Make cc command-evolve ready to replace rd3 command-evolve
-status: Done
+status: done
+type: task
+priority: P1
+tags: [cc-commands,evolve,dogfood,migration,rd3-parity]
 created_at: 2026-06-21T20:55:48.450Z
 updated_at: 2026-06-21T23:39:51.460Z
-folder: docs/tasks
-type: task
-feature-id: ""
-priority: high
-tags: ["cc-commands","evolve","dogfood","migration","rd3-parity"]
-impl_progress:
-  planning: complete
-  design: complete
-  implementation: complete
-  review: complete
-  testing: complete
 ---
 
 ## 0053. Make cc command-evolve ready to replace rd3 command-evolve
@@ -139,3 +131,8 @@ No engine changes; no alias flip. Start commit: acae535.
 ### References
 
 
+
+
+### History
+
+- Migrated from legacy format (2026-08-01)

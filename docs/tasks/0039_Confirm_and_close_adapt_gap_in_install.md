@@ -1,32 +1,20 @@
 ---
+schema_version: 1
 name: Confirm and close adapt gap in install
-description: Confirm and close adapt gap in install
-status: Done
-created_at: 2026-06-17T22:44:31.761Z
-updated_at: 2026-06-19T21:48:50.508Z
-folder: docs/tasks
+status: done
 type: task
-feature-id: F032
-priority: medium
-estimated_hours: 3
-tags: ["phase5","adapt","install","pipeline","audit"]
-impl_progress:
-  planning: complete
-  design: complete
-  implementation: complete
-  review: complete
-  testing: complete
+priority: P2
+tags: [phase5,adapt,install,pipeline,audit]
+created_at: 2026-06-17T22:44:31.761Z
+updated_at: "2026-08-01T02:25:27.867Z"
+feature_id: G43
 ---
 
 ## 0039. Confirm and close adapt gap in install
 
 ### Background
-
-Confirm that the cross-platform adapt capability deleted in Phase 3 §2.1 (cc-{agents,commands,skills}/scripts/adapt.ts + scripts/adapters/) is already covered by the superskill install conversion pipeline (pipeline/convert.ts), and add ONLY what's missing. There is NO separate adapt verb — the pipeline is its documented home (Phase 3 §2 note, ADR). adapt was deleted with disposition 'fold into install conversion pipeline' (design §2.1, P5-D4). The forward path already does slash-dialect, colon->hyphen, frontmatter normalization, Pi subagent conversion. This is a GAP-CLOSING AUDIT, not a rebuild: confirm parity vs deleted adapters, add the missing transform if any, close the Phase 3 deletion debt (§6 exit #5). Design: design-doc-phase5.md §3 (adapt row). Owning feature: F032.
-
-
+Confirm that the cross-platform adapt capability deleted in Phase 3 §2.1 (cc-{agents,commands,skills}/scripts/adapt.ts + scripts/adapters/) is already covered by the superskill install conversion pipeline (pipeline/convert.ts), and add ONLY what's missing. There is NO separate adapt verb — the pipeline is its documented home (Phase 3 §2 note, ADR). adapt was deleted with disposition 'fold into install conversion pipeline' (design §2.1, P5-D4). The forward path already does slash-dialect, colon->hyphen, frontmatter normalization, Pi subagent conversion. This is a GAP-CLOSING AUDIT, not a rebuild: confirm parity vs deleted adapters, add the missing transform if any, close the Phase 3 deletion debt (§6 exit #5). Design: design-doc-phase5.md §3 (adapt row). Owning feature: G43.
 ### Requirements
-
 - [ ] **R1** — Read the deleted `adapt.ts` + `adapters/` intent (git history); enumerate the transforms they performed per target.
 - [ ] **R2** — Diff against the current `pipeline/` stages: `rewriteColonRefs` (`plugin:command`→`plugin-command`), `translateSlashCommand` (`/plugin:cmd`→per-agent dialect), `normalizeFrontmatter` (inject `name:`, normalize `allowed-tools:`), `convertToPiSubagent` (Skills 2.0 → Pi YAML).
 - [ ] **R3** — Produce a **parity table**: deleted-adapter transform × covered-by-pipeline? × gap. Recorded in the design/plans doc.
@@ -42,9 +30,7 @@ rg -i "adapt|parity|deleted adapter" docs/design/design-doc-phase5.md   # → au
 superskill install <plugin> --targets all --dry-run                    # → all transforms applied per target, no missing adapter
 ```
 
-**Out of scope:** any new top-level verb; hook work (F027–F029).
-
-
+**Out of scope:** any new top-level verb; hook work (F6–H9).
 ### Q&A
 
 
@@ -183,9 +169,10 @@ No test `.skip`'d to pass (R12). Test execution timestamp: 2026-06-19T06:30:00Z.
 
 
 ### References
-
 - Design: [design-doc-phase5.md](../design/design-doc-phase5.md) §3 (adapt row), §6 exit #5
-- Feature: [F032](../features/F032-adapt-gap.md)
+- Feature: [G43](../features/G43_confirm-close-the-adapt-gap-inside-install.md)
 - Code: apps/cli/src/pipeline/{convert,slash-command,rewrite-colons,frontmatter,pi-subagent}.ts; git history of deleted adapt.ts/adapters/
 - Owns: Phase 5 closing gate; carries the gate formerly held by canceled task 0040
+### History
 
+- Migrated from legacy format (2026-08-01)

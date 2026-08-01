@@ -1,35 +1,25 @@
 ---
+schema_version: 1
 name: Template system + scaffold operation + content-IO foundation
 description: Built-in templates, template resolution, scaffold operation, and the shared content-IO primitives (frontmatter parse/edit, content-name resolution, file hashing, change-apply) consumed by F009–F013.
-status: Done
-created_at: 2026-06-16T00:00:00.000Z
-updated_at: 2026-06-16T18:17:37.988Z
-folder: docs/tasks
+status: done
 type: task
-feature-id: F007
-priority: high
-estimated_hours: 6
-tags: ["foundation","templates","scaffold","content-io"]
-impl_progress:
-    planning: pending
-    design: pending
-    implementation: pending
-    review: pending
-    testing: pending
+priority: P1
+tags: [foundation,templates,scaffold,content-io]
+created_at: 2026-06-16T00:00:00.000Z
+updated_at: "2026-08-01T02:22:50.977Z"
+feature_id: G21
 ---
 
 ## 0007. Template system + scaffold operation + content-IO foundation
 
 ### Background
-
-Every Phase 2 command creates, reads, or mutates agent content files (skill, command, agent, hook, magent). Five operations and five quality evaluators all need to parse frontmatter, derive a canonical content name, hash files, and (for refine/evolve) apply structured mutations. Implementing those primitives per-operation would produce divergent parsers across features built in parallel. The solution is a shared `content/` foundation owned by F007, consumed by F009–F013.
+Every Phase 2 command creates, reads, or mutates agent content files (skill, command, agent, hook, magent). Five operations and five quality evaluators all need to parse frontmatter, derive a canonical content name, hash files, and (for refine/evolve) apply structured mutations. Implementing those primitives per-operation would produce divergent parsers across features built in parallel. The solution is a shared `content/` foundation owned by G21, consumed by G22–G26.
 
 The scaffold operation generates new content files from Markdown templates with `<!-- VARIABLE -->` HTML-comment placeholders for name, description, target, and body. Templates ship at `apps/cli/src/templates/<type>/default.md` and users can override them at `~/.superskill/templates/<type>/default.md`. Resolution order: user template → built-in template → built-in default.md. Scaffold is the content-generation foundation — every Phase 2 command creates content through this system.
 
 Design references: design doc §5 (template system), §9 (shared foundation).
-
 ### Requirements
-
 - [x] **R1** — `parseFrontmatter` splits `---` block, returns `{data,body,raw}`, throws `FrontmatterError` → **MET** | `content/frontmatter.ts:30`, `tests/content/frontmatter.test.ts`
 - [x] **R2** — `applyFrontmatterChange` round-trips via `yaml.parseDocument`, preserves comments + key order → **MET** | `content/frontmatter.ts:67`, `frontmatter.test.ts:52,72`
 - [x] **R3** — `resolveContentName` strips dir/`.md`; `SKILL.md` → parent dir → **MET** | `content/identity.ts:22`, `identity.test.ts`
@@ -45,33 +35,28 @@ Design references: design doc §5 (template system), §9 (shared foundation).
 - [x] **R13** — writes `output ?? cwd()` + `name.md`, returns path → **MET** | `scaffold.ts:90`
 - [x] **R14** — overwrite guard throws `already exists — pass --force` → **MET** | `scaffold.ts:94`, `scaffold.test.ts:85`
 - [x] **R15** — `yaml@^2.9.0` dep + `"templates"` in `files` → **MET** | `apps/cli/package.json:28,10`
-- [x] **R16** — Phase 2 commands use `process.stdout.write` → **MET (N/A to this task)** | library modules are output-agnostic; convention binds the command layer (F009+)
+- [x] **R16** — Phase 2 commands use `process.stdout.write` → **MET (N/A to this task)** | library modules are output-agnostic; convention binds the command layer (G22+)
 
 **Traceability:** 16/16 MET · 0 unmet · 0 partial · no scope drift (all 11 new + 1 modified files map to requirements).
-
-
 ### Q&A
-
 Q: Why `yaml` (external) instead of `bun:sqlite` for frontmatter?
 A: Phase 1's `pipeline/frontmatter.ts` is a regex injector for distribution-only transforms — it cannot read frontmatter as a typed object. `validate` needs field-type checks; `refine`/`evolve` need parse→mutate→serialize with comment preservation via `parseDocument`. The `yaml` package (`^2.9.0`) is already resolved transitively via rulesync; making it a direct dependency is ADR-012.
 
 Q: Why `content/edit.ts` instead of per-operation mutation logic?
-A: Both refine (F012) and evolve (F013) mutate content files. A single `applyChange` primitive prevents two divergent implementations. `frontmatter` kind changes round-trip through `applyFrontmatterChange` (preserving comments/key-order); `text` kind changes do a nearest-match replace of `current` with `proposed`.
+A: Both refine (G25) and evolve (G26) mutate content files. A single `applyChange` primitive prevents two divergent implementations. `frontmatter` kind changes round-trip through `applyFrontmatterChange` (preserving comments/key-order); `text` kind changes do a nearest-match replace of `current` with `proposed`.
 
 Q: How does `resolveContentName` handle `SKILL.md`?
 A: `SKILL.md` at the root of a skill directory → the parent directory name is the skill name. All other `.md` files → strip directory and `.md` extension. This matches the cc-skills convention.
 
 Q: What happens if frontmatter is missing or unparseable?
-A: `parseFrontmatter` throws `FrontmatterError`. Callers in `validate` (F010) and `evaluate` (F009) catch it and convert to a validation finding with severity `'error'`. Scaffold always produces valid frontmatter so it never encounters this.
+A: `parseFrontmatter` throws `FrontmatterError`. Callers in `validate` (G23) and `evaluate` (G22) catch it and convert to a validation finding with severity `'error'`. Scaffold always produces valid frontmatter so it never encounters this.
 
 Q: How does `applyChange` for `kind: 'text'` handle ambiguous matches?
 A: Locate the first occurrence of `current` in the body (case-sensitive, whitespace-trimmed). If not found, throw. This is intentionally simple — refine/evolve produce exact `current` strings from the evaluated content. No fuzzy matching.
 
 Q: Why `process.stdout.write` instead of `console.log`?
 A: Phase 1 testing convention: tests spy on `process.stdout.write` to capture command output. Using that consistently across all Phase 2 commands keeps test patterns uniform.
-
 ### Design
-
 **Content-IO foundation** (`apps/cli/src/content/`):
 
 | Module | Exports | Contract |
@@ -88,7 +73,7 @@ A: Phase 1 testing convention: tests spy on `process.stdout.write` to capture co
 
 - **Skill template**: frontmatter `{ name: '<!-- NAME -->', description: '<!-- DESCRIPTION -->' }`, body: `# <!-- NAME -->` heading + `<!-- TODO: skill body -->`.
 - **Command template**: frontmatter `{ name, description, arguments: [], target: '<!-- TARGET -->' }`, body: usage examples stub + `<!-- TODO: command body -->`.
-- **Agent template**: frontmatter `{ name, description, tools: [], model: 'sonnet', agentType: 'task' }`, body: `<!-- TODO: agent system prompt and configuration -->`. Use the agent-relative model alias (`sonnet` / `opus` / `haiku` / `inherit`) in the template default — **not** a dated full model ID like `claude-sonnet-4-20250514` (those go stale; the subagent frontmatter convention accepts the short alias). The validate `model` check (F010) must accept these aliases.
+- **Agent template**: frontmatter `{ name, description, tools: [], model: 'sonnet', agentType: 'task' }`, body: `<!-- TODO: agent system prompt and configuration -->`. Use the agent-relative model alias (`sonnet` / `opus` / `haiku` / `inherit`) in the template default — **not** a dated full model ID like `claude-sonnet-4-20250514` (those go stale; the subagent frontmatter convention accepts the short alias). The validate `model` check (G23) must accept these aliases.
 - **Hook template**: frontmatter `{ name, description, event: 'PreToolUse', enabled: true }`, body: `<!-- TODO: hook script or matcher -->`.
 - **Magent template**: frontmatter `{ name, description, platforms: ['claude'] }`, body: four section stubs: IDENTITY, SOUL, AGENTS, USER.
 
@@ -129,7 +114,6 @@ async function scaffold(
 ```
 
 **Template shipping**: `.md` files under `apps/cli/src/templates/` need to be accessible at runtime. For dev mode (Bun), `readFileSync` from `src/templates/` works. For production builds, add a build step that copies `templates/` into the output directory. The `package.json` `"files"` array must include `"templates"` to ship with the npm package. Add `readFileSync`-based resolution with `import.meta.dir` for dev and `import.meta.dir`-relative (or process-relative) for production.
-
 ### Solution
 
 **New files** (11):
@@ -265,9 +249,11 @@ interface ScaffoldOptions {
 | ---- | ---- | ----- | ---- |
 
 ### References
-
 - Design doc: `docs/design/design-doc-phase2.md` §5 (template system), §9 (shared foundation), §10 (storage conventions)
-- Feature file: `docs/features/F007-template-scaffold.md`
+- Feature file: `docs/features/G21_template-content-io-foundation-scaffold-operation.md`
 - ADR-012: yaml package for frontmatter round-tripping
 - ADR-013: data root resolution rule
 - Phase 1 output convention: `process.stdout.write` over `console.log`
+### History
+
+- Migrated from legacy format (2026-08-01)

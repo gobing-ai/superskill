@@ -1,22 +1,13 @@
 ---
+schema_version: 1
 name: fix-proposal-id-matching
-description: fix-proposal-id-matching
-status: Done
+status: done
+type: task
+profile: standard
+priority: P1
+tags: [evolve,proposal-id,H1,high]
 created_at: 2026-06-17T00:09:03.113Z
 updated_at: 2026-06-17T00:15:58.961Z
-folder: docs/tasks
-type: task
-feature-id: ""
-priority: high
-estimated_hours: 3
-tags: ["evolve","proposal-id","H1","high"]
-preset: standard
-impl_progress:
-  planning: pending
-  design: pending
-  implementation: pending
-  review: pending
-  testing: pending
 ---
 
 ## 0018. fix-proposal-id-matching
@@ -73,3 +64,8 @@ H1 finding: --accept \<id> / --reject \<id> match on String(p.id) — the SQLite
 ### References
 
 
+
+
+### History
+
+- Migrated from legacy format (2026-08-01)

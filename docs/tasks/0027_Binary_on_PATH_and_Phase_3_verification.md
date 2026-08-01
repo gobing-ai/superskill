@@ -1,31 +1,20 @@
 ---
+schema_version: 1
 name: Binary on PATH and Phase 3 verification
-description: Binary on PATH and Phase 3 verification
-status: Done
-created_at: 2026-06-17T22:29:14.161Z
-updated_at: 2026-06-18T04:32:23.184Z
-folder: docs/tasks
+status: done
 type: task
-feature-id: F020
-priority: high
-estimated_hours: 2
+priority: P1
+tags: [phase3,verification,binary,gate]
 dependencies: ["0023","0024","0025","0026"]
-tags: ["phase3","verification","binary","gate"]
-impl_progress:
-  planning: pending
-  design: pending
-  implementation: pending
-  review: pending
-  testing: pending
+created_at: 2026-06-17T22:29:14.161Z
+updated_at: "2026-08-01T02:24:12.611Z"
+feature_id: I1
 ---
 
 ## 0027. Binary on PATH and Phase 3 verification
 
 ### Background
-
-Closing feature: establish and EXERCISE the path by which the global superskill binary resolves on PATH (design D2), so the rewritten plugin commands (F017/F018) actually run, then run the Phase 3 exit gate (design §6). If superskill does not resolve on PATH, every rewritten invocation fails at runtime — the single thing that can silently make the whole phase non-functional. Verified: apps/cli/package.json bin is {superskill: dist/index.js} (name=superskill, target=dist/index.js); package publishes as @gobing-ai/superskill (v0.1.3 live). Gates on F016-F019; run last. Design: design-doc-phase3.md §6, D2. Owning feature: F020.
-
-
+Closing feature: establish and EXERCISE the path by which the global superskill binary resolves on PATH (design D2), so the rewritten plugin commands (H4/H5) actually run, then run the Phase 3 exit gate (design §6). If superskill does not resolve on PATH, every rewritten invocation fails at runtime — the single thing that can silently make the whole phase non-functional. Verified: apps/cli/package.json bin is {superskill: dist/index.js} (name=superskill, target=dist/index.js); package publishes as @gobing-ai/superskill (v0.1.3 live). Gates on H3-H6; run last. Design: design-doc-phase3.md §6, D2. Owning feature: I1.
 ### Requirements
 
 - [x] **R1** — Dev binary path exercised → **MET** | `which superskill` → `/Users/robin/.bun/bin/superskill`; `bun run build` emits `apps/cli/dist/index.js`
@@ -54,7 +43,6 @@ bun run lint && bun run test && bun run build && git status -s
 
 
 ### Design
-
 **Timestamp:** 2026-06-18T02:30:00Z
 
 This task IS the Phase 3 exit gate (design-doc-phase3.md §6). It verifies the consolidation work from 0023–0026 holds and the global `superskill` binary resolves + runs. No source code changes expected — only a runbook doc note.
@@ -70,17 +58,15 @@ This task IS the Phase 3 exit gate (design-doc-phase3.md §6). It verifies the c
 **Runbook note location (R3):** `README.md` — add a short "Installation" section with the two commands (dev link + consumer install). README is where a developer will find them; no new tooling, no new file.
 
 **Gate blocks (R5 = design §6, all must pass):**
-1. `rg "rd3" plugins/cc/` → zero (F016/0023)
-2. `rg "bun .*scripts/.*\.ts" plugins/cc/` → zero (F017/F018/0024+0025)
-3. `find plugins/cc -type d \( -name scripts -o -name templates -o -name tests -o -name emitters -o -name schema \)` → empty (F019/0026)
-4. `plugins/cc/hooks/hooks.json` valid JSON, no dangling skill refs (F018/0025)
-5. `ls plugins/cc/commands/ | wc -l` → 17 (F018/0025)
+1. `rg "rd3" plugins/cc/` → zero (H3/0023)
+2. `rg "bun .*scripts/.*\.ts" plugins/cc/` → zero (H4/H5/0024+0025)
+3. `find plugins/cc -type d \( -name scripts -o -name templates -o -name tests -o -name emitters -o -name schema \)` → empty (H6/0026)
+4. `plugins/cc/hooks/hooks.json` valid JSON, no dangling skill refs (H5/0025)
+5. `ls plugins/cc/commands/ | wc -l` → 17 (H5/0025)
 6. `which superskill` resolves + `superskill agent validate <sample>` runs (D2)
 7. Root gate: `bun run lint && bun run test && bun run build` green; `git status -s` clean
 
 **R7 scope guard:** `plugins/` is untracked in git, so `git status -s` shows only `plugins/` (intentional) + the README runbook edit. No CLI source touched — a CLI test regression means accidental out-of-scope edit → revert, don't patch.
-
-
 ### Solution
 
 Mechanism (D2 locked): dev = bun run build (emits dist/) then 'cd apps/cli && bun link'; consumers = npm i -g @gobing-ai/superskill. If bun link does not expose superskill name, fix is to ensure build ran first — NOT to repoint bin to src/index.ts (the .ts entry runs only under Bun; Node consumers need dist/). Add a short runbook note (plugin README or docs/) with the two commands. Then run all 7 §6 gate blocks: (1) rg rd3 plugins/cc/=0, (2) rg bun.*scripts.*.ts plugins/cc/=0, (3) find embedded dirs=empty, (4) hooks.json clean+valid, (5) ls commands=17, (6) which superskill resolves + runs, (7) bun run lint/test/build green + git status clean. If bun run test fails it must be plugin-adjacent only — a CLI test regression means an accidental out-of-scope edit (R3); revert, do not patch.
@@ -145,7 +131,6 @@ All 7 blocks pass. Phase 3 (F016–F020) confirmed COMPLETE.
 
 
 ### Testing
-
 **Timestamp:** 2026-06-18T02:45:00Z
 
 This task IS the Phase 3 exit gate (design-doc-phase3.md §6). All 7 gate blocks run as evidence.
@@ -171,11 +156,11 @@ This task IS the Phase 3 exit gate (design-doc-phase3.md §6). All 7 gate blocks
 - Build script output path fixed to MATCH the bin target (not repointing bin)
 
 **R5 — design §6 exit gate (all 7 blocks):** PASS
-- Block 1: `rg "rd3" plugins/cc/` → exit 1 (zero hits) — F016/0023 ✓
-- Block 2: `rg "bun .*scripts/.*\.ts" plugins/cc/` → exit 1 (zero hits) — F017/F018/0024+0025 ✓
-- Block 3: `find plugins/cc -type d \( -name scripts -o -name templates -o -name tests -o -name emitters -o -name schema \)` → empty — F019/0026 ✓
-- Block 4: `rg "indexed-context|anti-hallucination" plugins/cc/hooks/hooks.json` → exit 1 (none); `json.load` → "valid JSON" — F018/0025 ✓
-- Block 5: `ls plugins/cc/commands/ | wc -l` → 17 — F018/0025 ✓
+- Block 1: `rg "rd3" plugins/cc/` → exit 1 (zero hits) — H3/0023 ✓
+- Block 2: `rg "bun .*scripts/.*\.ts" plugins/cc/` → exit 1 (zero hits) — H4/H5/0024+0025 ✓
+- Block 3: `find plugins/cc -type d \( -name scripts -o -name templates -o -name tests -o -name emitters -o -name schema \)` → empty — H6/0026 ✓
+- Block 4: `rg "indexed-context|anti-hallucination" plugins/cc/hooks/hooks.json` → exit 1 (none); `json.load` → "valid JSON" — H5/0025 ✓
+- Block 5: `ls plugins/cc/commands/ | wc -l` → 17 — H5/0025 ✓
 - Block 6: `which superskill` resolves + `superskill agent validate <sample>` runs (exit 0) — D2 ✓
 - Block 7: root gate green (see R6) ✓
 
@@ -194,17 +179,16 @@ This task IS the Phase 3 exit gate (design-doc-phase3.md §6). All 7 gate blocks
 - `plugins/` changes from 0023-0026 committed in `9798b77`. Deleted embedded dirs were never git-tracked (untracked on-disk files removed in 0026).
 
 **No new tests** — this is a verification/gate task. The "test" is the exit gate itself (7 blocks above). The build fixes (`scripts/builder.ts`, `apps/cli/package.json`) are covered by existing `bun run test` (462 pass) and `bun run build` (exit 0) — no regression.
-
-
 ### Artifacts
 
 | Type | Path | Agent | Date |
 | ---- | ---- | ----- | ---- |
 
 ### References
-
 - Design: [design-doc-phase3.md](../design/design-doc-phase3.md) §6 (exit gate), D2
-- Feature: [F020](../features/F020-binary-path-verification.md)
+- Feature: [I1](../features/I1_binary-on-path-phase-3-verification.md)
 - Depends on: 0023, 0024, 0025, 0026
 - Binary: apps/cli/package.json:21 (bin name 'superskill')
+### History
 
+- Migrated from legacy format (2026-08-01)

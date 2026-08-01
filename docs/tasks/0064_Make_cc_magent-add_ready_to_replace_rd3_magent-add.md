@@ -1,20 +1,12 @@
 ---
+schema_version: 1
 name: Make cc magent-add ready to replace rd3 magent-add
-description: Make cc magent-add ready to replace rd3 magent-add
-status: Done
+status: done
+type: task
+priority: P1
+tags: [cc-magents,add,scaffold,dogfood,migration,rd3-parity]
 created_at: 2026-06-21T21:14:21.069Z
 updated_at: 2026-06-22T01:43:55.594Z
-folder: docs/tasks
-type: task
-feature-id: ""
-priority: high
-tags: ["cc-magents","add","scaffold","dogfood","migration","rd3-parity"]
-impl_progress:
-  planning: completed
-  design: completed
-  implementation: completed
-  review: completed
-  testing: completed
 ---
 
 ## 0064. Make cc magent-add ready to replace rd3 magent-add
@@ -116,3 +108,8 @@ regression. Gate: lint/test/build/git clean. Do NOT flip alias until ship.
 
 ### References
 
+
+
+### History
+
+- Migrated from legacy format (2026-08-01)

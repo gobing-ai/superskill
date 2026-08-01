@@ -1,18 +1,18 @@
 ---
 template: issue
 schema_version: 1
-name: "Fix cc plugin security, contract drift, and structural review findings"
+name: Fix cc plugin security, contract drift, and structural review findings
 description: ""
 status: done
-type: issue
+type: task
 profile: standard
 feature_id: H2
 parent_wbs: null
 priority: P2
-tags: ["bug"]
+tags: [bug]
 dependencies: []
-created_at: "2026-07-26T18:12:58.484Z"
-updated_at: "2026-08-01T00:24:29.902Z"
+created_at: 2026-07-26T18:12:58.484Z
+updated_at: 2026-08-01T00:24:29.902Z
 ---
 
 ## 0108. Fix cc plugin security, contract drift, and structural review findings

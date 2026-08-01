@@ -1,11 +1,12 @@
 ---
-schema_version: 1
-name: "Add native Grok target to superskill install (Claude-format plugin, no command-adapt)"
-status: done
 template: feature-impl
-created_at: 2026-07-12T07:16:35.285Z
-updated_at: "2026-07-12T18:34:59.451Z"
+schema_version: 1
+name: Add native Grok target to superskill install (Claude-format plugin, no command-adapt)
+status: done
+type: task
 priority: P1
+created_at: 2026-07-12T07:16:35.285Z
+updated_at: 2026-07-12T18:34:59.451Z
 ---
 
 ## 0078. Add native Grok target to superskill install (Claude-format plugin, no command-adapt)

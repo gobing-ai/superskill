@@ -1,13 +1,11 @@
 ---
+schema_version: 1
 name: Adapt slash commands and subagents as Skills 2.0 for all targets
-description: Adapt slash commands and subagents as Skills 2.0 for all targets
-status: Done
+status: done
+type: task
+profile: complex
 created_at: 2026-06-20T00:00:00.000Z
 updated_at: 2026-06-21T03:50:20.942Z
-folder: docs/tasks
-type: task
-feature-id: ""
-preset: complex
 ---
 
 # Task 0044: Comprehensive install — unify entity distribution for all targets
@@ -387,3 +385,8 @@ Dev-verify 2026-06-20 · Phase 7 (SECU) + Phase 8 (refinement traceability) · c
 
 
 **Update 2026-06-21 (task 0045 Done):** All deferred findings addressed in task 0045. P1 #1 (outputRoot→rulesync) → MET via optional `RulesyncOptions.outputRoot` + ADR-010 amendment. P3 #3 (project-mode ENOENT) → MET via `TARGET_SKILLS_RELDIR` pre-create. P3 #4 (adaptSubagentToPi FS coupling) → MET via injectable `skillExists` predicate. P4 #5 (rewriteColonRefs consolidation) → MET via scoped `rewriteSkillReferences` in per-target pass + legacy deletion. 820 tests pass, coverage 99.71%/98.40%, zero `$HOME` leak on smoke.
+
+
+### History
+
+- Migrated from legacy format (2026-08-01)

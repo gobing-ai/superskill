@@ -1,8 +1,8 @@
 ---
 template: feature-impl
 schema_version: 1
-name: "Enhance superskill install to support omp targets as native Claude Code plugins"
-description: "Enable OMP to run superskill plugins natively by registering local marketplaces, generating compatibility manifests, translating slash command dialects, and wrapping hooks as JS/TS modules."
+name: Enhance superskill install to support omp targets as native Claude Code plugins
+description: Enable OMP to run superskill plugins natively by registering local marketplaces, generating compatibility manifests, translating slash command dialects, and wrapping hooks as JS/TS modules.
 status: done
 type: task
 profile: standard
@@ -11,8 +11,8 @@ parent_wbs: null
 priority: P2
 tags: []
 dependencies: []
-created_at: "2026-07-09T06:01:02.846Z"
-updated_at: "2026-08-01T00:41:01.842Z"
+created_at: 2026-07-09T06:01:02.846Z
+updated_at: 2026-08-01T00:41:01.842Z
 ---
 
 ## 0073. Enhance superskill install to support omp targets as native Claude Code plugins

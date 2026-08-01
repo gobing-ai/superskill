@@ -1,20 +1,12 @@
 ---
+schema_version: 1
 name: Make cc skill-refine ready to replace rd3 skill-refine
-description: Make cc skill-refine ready to replace rd3 skill-refine
-status: Done
+status: done
+type: task
+priority: P1
+tags: [cc-skills,refine,dogfood,migration,rd3-parity]
 created_at: 2026-06-21T21:05:49.535Z
 updated_at: 2026-06-22T03:24:50.117Z
-folder: docs/tasks
-type: task
-feature-id: ""
-priority: high
-tags: ["cc-skills","refine","dogfood","migration","rd3-parity"]
-impl_progress:
-  planning: pending
-  design: pending
-  implementation: pending
-  review: pending
-  testing: pending
 ---
 
 ## 0060. Make cc skill-refine ready to replace rd3 skill-refine
@@ -116,3 +108,8 @@ No P1/P2/P3/P4 findings. Mechanical CLI wiring + doc + test changes only. No sec
 ### References
 
 
+
+
+### History
+
+- Migrated from legacy format (2026-08-01)

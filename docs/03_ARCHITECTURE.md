@@ -82,7 +82,7 @@ packages/core/src/                # ── Reusable domain logic (@gobing-ai/sup
 │   ├── dimensions.ts             # Shared type-specific dimension registries
 │   ├── hook.ts                   # Hook quality evaluation heuristics
 │   ├── magent.ts                 # Main agent quality evaluation heuristics (harness-aware scoring signals via template + cc-magents)
-│   ├── rubric.ts                 # Rubric loader & validator (ADR F022)
+│   ├── rubric.ts                 # Rubric loader & validator (feature G32)
 │   └── skill.ts                  # Skill quality evaluation heuristics
 │
 ├── rubrics/                      # ── Built-in rubric YAML data ──
