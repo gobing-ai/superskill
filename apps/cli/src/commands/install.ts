@@ -39,6 +39,7 @@ import {
     type Target,
     translateSlashCommands,
 } from '@gobing-ai/superskill-core';
+import { NodeProcessExecutor, type ProcessExecutor } from '@gobing-ai/ts-runtime';
 import { echo } from '@gobing-ai/ts-utils';
 import type { Command } from 'commander';
 import { loadConfig } from '../config';
@@ -149,6 +150,8 @@ interface InstallDependencies {
         plugin: string,
         pluginRoot: string,
     ) => Promise<void>;
+    /** Process execution port behind the default native installers; tests inject a recording fake. */
+    processExecutor?: ProcessExecutor;
 }
 
 interface InstallResultCounts {
@@ -173,9 +176,13 @@ export async function executeInstall(
     dependencies: InstallDependencies = {},
 ): Promise<void> {
     const runRulesyncImpl = dependencies.runRulesync ?? runRulesync;
-    const runClaudeInstallImpl = dependencies.runClaudeInstall ?? defaultRunClaudeInstall;
-    const runOmpInstallImpl = dependencies.runOmpInstall ?? defaultRunOmpInstall;
-    const runGrokInstallImpl = dependencies.runGrokInstall ?? defaultRunGrokInstall;
+    const executor = dependencies.processExecutor ?? defaultProcessExecutor;
+    const runClaudeInstallImpl =
+        dependencies.runClaudeInstall ?? ((r, m, p) => defaultRunClaudeInstall(r, m, p, executor));
+    const runOmpInstallImpl =
+        dependencies.runOmpInstall ?? ((r, m, p, g) => defaultRunOmpInstall(r, m, p, g, executor));
+    const runGrokInstallImpl =
+        dependencies.runGrokInstall ?? ((r, m, p, root) => defaultRunGrokInstall(r, m, p, root, executor));
     const configuredFeatures = new Set<MapFeature>(
         options.features ?? ['skills', 'commands', 'subagents', 'hooks', 'mcp'],
     );
@@ -422,7 +429,7 @@ export async function executeInstall(
             if (!options.dryRun) {
                 await runGrokInstallImpl(registration, marketplaceName, plugin, pluginRoot);
                 if (options.verbose) {
-                    const installPath = await resolveGrokInstallPath(plugin);
+                    const installPath = await resolveGrokInstallPath(plugin, executor);
                     if (installPath) {
                         echo(`  Grok install path: ${installPath}`);
                     } else {
@@ -515,14 +522,29 @@ export async function executeInstall(
 }
 
 /**
+ * Default process execution port for native install steps (no-direct-process-spawn:
+ * all spawning routes through ts-runtime). The stream policy preserves the old
+ * `stdout/stderr: 'inherit'` behavior for checked steps; capture sites pass
+ * `forceBuffered: true` per call.
+ */
+const defaultProcessExecutor: ProcessExecutor = new NodeProcessExecutor({ output: { mode: 'stream', isTTY: true } });
+
+/**
  * Spawn a CLI step and fail loudly on a non-zero exit. A swallowed failure here
  * would let `executeInstall` report "Installed" for a target that never installed.
  */
-export async function runCheckedCommand(argv: [string, ...string[]], label: string): Promise<void> {
-    const proc = Bun.spawn(argv, { stdout: 'inherit', stderr: 'inherit' });
-    const exitCode = await proc.exited;
-    if (exitCode !== 0) {
-        throw new Error(`${label} failed with exit code ${exitCode}: ${argv.join(' ')}`);
+export async function runCheckedCommand(
+    argv: [string, ...string[]],
+    label: string,
+    executor: ProcessExecutor = defaultProcessExecutor,
+): Promise<void> {
+    const result = await executor.run({ command: argv[0], args: argv.slice(1), label });
+    if (result.exitCode !== 0) {
+        const why =
+            result.exitCode === null
+                ? `no exit code (${result.signal ?? 'spawn failure'})`
+                : `exit code ${result.exitCode}`;
+        throw new Error(`${label} failed with ${why}: ${argv.join(' ')}`);
     }
 }
 
@@ -536,6 +558,7 @@ async function defaultRunClaudeInstall(
     registration: MarketplaceRegistration,
     marketplaceName: string,
     plugin: string,
+    executor: ProcessExecutor = defaultProcessExecutor,
 ): Promise<void> {
     // Same defense as grok/omp install helpers: marketplace + plugin key the
     // `plugin@marketplace` address and must be single path segments.
@@ -548,10 +571,15 @@ async function defaultRunClaudeInstall(
     await runCheckedCommand(
         ['claude', 'plugin', 'marketplace', 'add', registration.source],
         'claude plugin marketplace add',
+        executor,
     );
 
     // Install the plugin from the registered marketplace.
-    await runCheckedCommand(['claude', 'plugin', 'install', `${plugin}@${marketplaceName}`], 'claude plugin install');
+    await runCheckedCommand(
+        ['claude', 'plugin', 'install', `${plugin}@${marketplaceName}`],
+        'claude plugin install',
+        executor,
+    );
 }
 
 // ── OMP native install helpers (task 0073) ──────────────────────────────────
@@ -632,16 +660,14 @@ export function resolveGrokInstallPathFromList(
  * Falls back to `undefined` when the binary is missing, the list is empty, or the
  * name is absent — callers must not treat Claude-compat paths as success criteria.
  */
-export async function resolveGrokInstallPath(plugin: string): Promise<string | undefined> {
+export async function resolveGrokInstallPath(
+    plugin: string,
+    executor: ProcessExecutor = defaultProcessExecutor,
+): Promise<string | undefined> {
     try {
-        const proc = Bun.spawn(['grok', 'plugin', 'list', '--json'], {
-            stdout: 'pipe',
-            stderr: 'pipe',
-        });
-        const exitCode = await proc.exited;
-        if (exitCode !== 0) return undefined;
-        const text = await new Response(proc.stdout).text();
-        return resolveGrokInstallPathFromList(parseGrokPluginListJson(text), plugin);
+        const result = await executor.run({ command: 'grok', args: ['plugin', 'list', '--json'], forceBuffered: true });
+        if (result.exitCode !== 0) return undefined;
+        return resolveGrokInstallPathFromList(parseGrokPluginListJson(result.stdout), plugin);
     } catch {
         return undefined;
     }
@@ -664,37 +690,32 @@ export async function defaultRunGrokInstall(
     marketplaceName: string,
     plugin: string,
     pluginRoot: string,
+    executor: ProcessExecutor = defaultProcessExecutor,
 ): Promise<void> {
     assertSafePathSegment(marketplaceName, 'marketplace name');
     assertSafePathSegment(plugin, 'plugin name');
 
-    const add = Bun.spawn(['grok', 'plugin', 'marketplace', 'add', registration.source], {
-        stdout: 'pipe',
-        stderr: 'pipe',
+    const add = await executor.run({
+        command: 'grok',
+        args: ['plugin', 'marketplace', 'add', registration.source],
+        forceBuffered: true,
     });
-    const addCode = await add.exited;
-    if (addCode !== 0) {
-        const stderr = await new Response(add.stderr).text();
-        const stdout = await new Response(add.stdout).text();
-        const combined = `${stdout}\n${stderr}`;
+    if (add.exitCode !== 0) {
+        const combined = `${add.stdout}\n${add.stderr}`;
         if (!/already configured/i.test(combined)) {
             throw new Error(
-                `grok plugin marketplace add failed with exit code ${addCode}: grok plugin marketplace add ${registration.source}\n${combined.trim()}`,
+                `grok plugin marketplace add failed with exit code ${add.exitCode}: grok plugin marketplace add ${registration.source}\n${combined.trim()}`,
             );
         }
     }
 
     // Re-install is non-idempotent without remove: "repo '…' already installed".
     // Best-effort uninstall (exit non-zero when absent — first install).
-    const remove = Bun.spawn(['grok', 'plugin', 'uninstall', plugin, '--confirm'], {
-        stdout: 'ignore',
-        stderr: 'ignore',
-    });
-    await remove.exited;
+    await executor.run({ command: 'grok', args: ['plugin', 'uninstall', plugin, '--confirm'], forceBuffered: true });
 
     // Install from the plugin directory path (Claude-format layout). Do NOT pass
     // plugin@marketplace — Grok 0.2.93 does not accept that addressing form.
-    await runCheckedCommand(['grok', 'plugin', 'install', pluginRoot, '--trust'], 'grok plugin install');
+    await runCheckedCommand(['grok', 'plugin', 'install', pluginRoot, '--trust'], 'grok plugin install', executor);
 }
 
 /**
@@ -708,6 +729,7 @@ export async function defaultRunOmpInstall(
     marketplaceName: string,
     plugin: string,
     global: boolean,
+    executor: ProcessExecutor = defaultProcessExecutor,
 ): Promise<void> {
     // The name flows into omp CLI args and the registry key; a manifest name like `..`
     // or `a/b` would corrupt the `<plugin>@<marketplace>` addressing downstream.
@@ -719,20 +741,24 @@ export async function defaultRunOmpInstall(
     // is already registered (omp 16.x; `--force` does not bypass the check), so remove it
     // first. The remove exits 1 when the marketplace is absent — the expected first-install
     // case — so it is best-effort with output suppressed.
-    const remove = Bun.spawn(['omp', 'plugin', 'marketplace', 'remove', marketplaceName], {
-        stdout: 'ignore',
-        stderr: 'ignore',
+    await executor.run({
+        command: 'omp',
+        args: ['plugin', 'marketplace', 'remove', marketplaceName],
+        forceBuffered: true,
     });
-    await remove.exited;
 
-    await runCheckedCommand(['omp', 'plugin', 'marketplace', 'add', registration.source], 'omp plugin marketplace add');
+    await runCheckedCommand(
+        ['omp', 'plugin', 'marketplace', 'add', registration.source],
+        'omp plugin marketplace add',
+        executor,
+    );
 
     // --force: reinstall over an existing registry entry AND refresh the cached plugin dir
     // (verified against omp 16.4.2: a plain install exits 1 with "already installed" and
     // never refreshes the cache, so stale source would survive a re-install without it).
     const installArgs: [string, ...string[]] = ['omp', 'plugin', 'install', `${plugin}@${marketplaceName}`, '--force'];
     if (!global) installArgs.push('--scope', 'project');
-    await runCheckedCommand(installArgs, 'omp plugin install');
+    await runCheckedCommand(installArgs, 'omp plugin install', executor);
 }
 
 /**

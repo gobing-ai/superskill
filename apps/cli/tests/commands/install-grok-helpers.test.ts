@@ -1,4 +1,5 @@
-import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
+import { describe, expect, it } from 'bun:test';
+import type { ProcessExecutor, ProcessOptions, ProcessResult } from '@gobing-ai/ts-runtime';
 import {
     defaultRunGrokInstall,
     parseGrokPluginListJson,
@@ -6,29 +7,36 @@ import {
     resolveGrokInstallPathFromList,
 } from '../../src/commands/install';
 
-/** Minimal Bun.spawn stub shape used by Grok helpers that pipe stdout/stderr. */
-interface StubChild {
-    exited: Promise<number>;
-    stdout: ReadableStream<Uint8Array> | null;
-    stderr: ReadableStream<Uint8Array> | null;
+interface RecordedRun {
+    command: string;
+    args: string[];
 }
 
-function textStream(text: string): ReadableStream<Uint8Array> {
-    const bytes = Buffer.from(text, 'utf-8');
-    return new ReadableStream({
-        start(controller) {
-            controller.enqueue(bytes);
-            controller.close();
+/**
+ * Recording ProcessExecutor fake — the DI seam behind the default installers
+ * (replaces Bun.spawn monkey-patching after the no-direct-process-spawn refactor).
+ * `results[i]` = [exitCode, stdout, stderr] for the i-th run; defaults to [0].
+ */
+function recordingExecutor(results: [number, string?, string?][] = []) {
+    const calls: RecordedRun[] = [];
+    let i = 0;
+    const executor: ProcessExecutor = {
+        run: (options: ProcessOptions): Promise<ProcessResult> => {
+            const args = options.args ?? [];
+            calls.push({ command: options.command, args });
+            const [exitCode = 0, stdout = '', stderr = ''] = results[i++] ?? [];
+            return Promise.resolve({ command: options.command, args, exitCode, stdout, stderr, durationMs: 0 });
         },
-    });
+        runStreaming: () => {
+            throw new Error('runStreaming is not used by install helpers');
+        },
+    };
+    return { calls, executor };
 }
 
-function emptyStream(): ReadableStream<Uint8Array> {
-    return new ReadableStream({
-        start(controller) {
-            controller.close();
-        },
-    });
+/** Full argv of a recorded run, for argv-shape assertions. */
+function argv(call: RecordedRun): string[] {
+    return [call.command, ...call.args];
 }
 
 // ── parseGrokPluginListJson / resolveGrokInstallPathFromList ────────────────
@@ -111,16 +119,6 @@ describe('resolveGrokInstallPathFromList', () => {
 // ── resolveGrokInstallPath (spawn) ──────────────────────────────────────────
 
 describe('resolveGrokInstallPath', () => {
-    let originalSpawn: typeof Bun.spawn;
-
-    beforeEach(() => {
-        originalSpawn = Bun.spawn;
-    });
-
-    afterEach(() => {
-        Bun.spawn = originalSpawn;
-    });
-
     it('returns the install path when list --json includes the plugin', async () => {
         const body = JSON.stringify([
             {
@@ -129,130 +127,152 @@ describe('resolveGrokInstallPath', () => {
                 path: '/Users/u/.grok/installed-plugins/demo-abc',
             },
         ]);
-        const stub = ((): StubChild => ({
-            exited: Promise.resolve(0),
-            stdout: textStream(body),
-            stderr: emptyStream(),
-        })) as unknown as typeof Bun.spawn;
-        Bun.spawn = stub;
+        const fake = recordingExecutor([[0, body]]);
 
-        await expect(resolveGrokInstallPath('demo')).resolves.toBe('/Users/u/.grok/installed-plugins/demo-abc');
+        await expect(resolveGrokInstallPath('demo', fake.executor)).resolves.toBe(
+            '/Users/u/.grok/installed-plugins/demo-abc',
+        );
     });
 
     it('returns undefined when list exits non-zero', async () => {
-        const stub = ((): StubChild => ({
-            exited: Promise.resolve(1),
-            stdout: emptyStream(),
-            stderr: emptyStream(),
-        })) as unknown as typeof Bun.spawn;
-        Bun.spawn = stub;
+        const fake = recordingExecutor([[1]]);
 
-        await expect(resolveGrokInstallPath('demo')).resolves.toBeUndefined();
+        await expect(resolveGrokInstallPath('demo', fake.executor)).resolves.toBeUndefined();
     });
 });
 
 // ── defaultRunGrokInstall spawn contract ────────────────────────────────────
 
 describe('defaultRunGrokInstall', () => {
-    let originalSpawn: typeof Bun.spawn;
-    let spawnCalls: string[][] = [];
-
-    beforeEach(() => {
-        originalSpawn = Bun.spawn;
-        spawnCalls = [];
-    });
-
-    afterEach(() => {
-        Bun.spawn = originalSpawn;
-        spawnCalls = [];
-    });
-
-    function stubSpawn(exitCodes: number[], stderrByIndex: Record<number, string> = {}): void {
-        let i = 0;
-        const stub = ((cmd: string[]): StubChild => {
-            const idx = i++;
-            spawnCalls = [...spawnCalls, [...cmd]];
-            const code = exitCodes[idx] ?? 0;
-            const stderrText = stderrByIndex[idx] ?? '';
-            return {
-                exited: Promise.resolve(code),
-                stdout: textStream(''),
-                stderr: textStream(stderrText),
-            };
-        }) as unknown as typeof Bun.spawn;
-        Bun.spawn = stub;
-    }
-
     it('adds marketplace then installs from pluginRoot with --trust (Grok 0.2.93 path form)', async () => {
-        stubSpawn([0, 0, 0]); // add, uninstall, install
+        const fake = recordingExecutor([[0], [0], [0]]); // add, uninstall, install
 
-        await defaultRunGrokInstall({ source: '/mkp', mode: 'directory' }, 'superskill', 'demo', '/mkp/plugins/demo');
+        await defaultRunGrokInstall(
+            { source: '/mkp', mode: 'directory' },
+            'superskill',
+            'demo',
+            '/mkp/plugins/demo',
+            fake.executor,
+        );
 
-        expect(spawnCalls).toHaveLength(3);
-        expect(spawnCalls[0]).toEqual(['grok', 'plugin', 'marketplace', 'add', '/mkp']);
-        expect(spawnCalls[1]).toEqual(['grok', 'plugin', 'uninstall', 'demo', '--confirm']);
-        expect(spawnCalls[2]).toEqual(['grok', 'plugin', 'install', '/mkp/plugins/demo', '--trust']);
+        expect(fake.calls).toHaveLength(3);
+        expect(argv(fake.calls[0] as RecordedRun)).toEqual(['grok', 'plugin', 'marketplace', 'add', '/mkp']);
+        expect(argv(fake.calls[1] as RecordedRun)).toEqual(['grok', 'plugin', 'uninstall', 'demo', '--confirm']);
+        expect(argv(fake.calls[2] as RecordedRun)).toEqual([
+            'grok',
+            'plugin',
+            'install',
+            '/mkp/plugins/demo',
+            '--trust',
+        ]);
         // Must never use plugin@marketplace addressing (not supported by Grok CLI).
-        for (const call of spawnCalls) {
-            expect(call.join(' ')).not.toContain('demo@superskill');
+        for (const call of fake.calls) {
+            expect(argv(call).join(' ')).not.toContain('demo@superskill');
         }
     });
 
     it('passes github owner/repo slug to marketplace add when registration mode is github', async () => {
         // R3/R8: github mode uses registration.source (slug), not a local path.
-        stubSpawn([0, 0, 0]);
+        const fake = recordingExecutor([[0], [0], [0]]);
 
         await defaultRunGrokInstall(
             { source: 'gobing-ai/superskill', mode: 'github' },
             'superskill',
             'demo',
             '/mkp/plugins/demo',
+            fake.executor,
         );
 
-        expect(spawnCalls[0]).toEqual(['grok', 'plugin', 'marketplace', 'add', 'gobing-ai/superskill']);
-        expect(spawnCalls[2]).toEqual(['grok', 'plugin', 'install', '/mkp/plugins/demo', '--trust']);
+        expect(argv(fake.calls[0] as RecordedRun)).toEqual([
+            'grok',
+            'plugin',
+            'marketplace',
+            'add',
+            'gobing-ai/superskill',
+        ]);
+        expect(argv(fake.calls[2] as RecordedRun)).toEqual([
+            'grok',
+            'plugin',
+            'install',
+            '/mkp/plugins/demo',
+            '--trust',
+        ]);
     });
 
     it('tolerates marketplace already-configured (idempotent re-add)', async () => {
-        stubSpawn([1, 0, 0], {
-            0: 'Error: Marketplace source already configured: /mkp\n',
-        });
+        const fake = recordingExecutor([[1, '', 'Error: Marketplace source already configured: /mkp\n'], [0], [0]]);
 
-        await defaultRunGrokInstall({ source: '/mkp', mode: 'directory' }, 'superskill', 'demo', '/mkp/plugins/demo');
+        await defaultRunGrokInstall(
+            { source: '/mkp', mode: 'directory' },
+            'superskill',
+            'demo',
+            '/mkp/plugins/demo',
+            fake.executor,
+        );
 
-        expect(spawnCalls[2]).toEqual(['grok', 'plugin', 'install', '/mkp/plugins/demo', '--trust']);
+        expect(argv(fake.calls[2] as RecordedRun)).toEqual([
+            'grok',
+            'plugin',
+            'install',
+            '/mkp/plugins/demo',
+            '--trust',
+        ]);
     });
 
     it('fails loudly when marketplace add fails for a reason other than already-configured', async () => {
-        stubSpawn([1], { 0: 'Error: permission denied\n' });
+        const fake = recordingExecutor([[1, '', 'Error: permission denied\n']]);
 
         await expect(
-            defaultRunGrokInstall({ source: '/mkp', mode: 'directory' }, 'superskill', 'demo', '/mkp/plugins/demo'),
+            defaultRunGrokInstall(
+                { source: '/mkp', mode: 'directory' },
+                'superskill',
+                'demo',
+                '/mkp/plugins/demo',
+                fake.executor,
+            ),
         ).rejects.toThrow(/marketplace add failed/);
     });
 
     it('continues when uninstall fails (first install) then installs', async () => {
-        stubSpawn([0, 1, 0]); // add ok, uninstall miss, install ok
+        const fake = recordingExecutor([[0], [1], [0]]); // add ok, uninstall miss, install ok
 
-        await defaultRunGrokInstall({ source: '/mkp', mode: 'directory' }, 'superskill', 'demo', '/mkp/plugins/demo');
+        await defaultRunGrokInstall(
+            { source: '/mkp', mode: 'directory' },
+            'superskill',
+            'demo',
+            '/mkp/plugins/demo',
+            fake.executor,
+        );
 
-        expect(spawnCalls[2]?.[0]).toBe('grok');
-        expect(spawnCalls[2]?.[2]).toBe('install');
+        expect(fake.calls[2]?.command).toBe('grok');
+        expect(fake.calls[2]?.args[1]).toBe('install');
     });
 
     it('rejects unsafe marketplace names before spawning', async () => {
-        stubSpawn([0, 0, 0]);
+        const fake = recordingExecutor([[0], [0], [0]]);
         await expect(
-            defaultRunGrokInstall({ source: '/mkp', mode: 'directory' }, '../evil', 'demo', '/mkp/plugins/demo'),
+            defaultRunGrokInstall(
+                { source: '/mkp', mode: 'directory' },
+                '../evil',
+                'demo',
+                '/mkp/plugins/demo',
+                fake.executor,
+            ),
         ).rejects.toThrow();
-        expect(spawnCalls).toHaveLength(0);
+        expect(fake.calls).toHaveLength(0);
     });
 
     it('rejects unsafe plugin names before spawning', async () => {
-        stubSpawn([0, 0, 0]);
+        const fake = recordingExecutor([[0], [0], [0]]);
         await expect(
-            defaultRunGrokInstall({ source: '/mkp', mode: 'directory' }, 'superskill', 'a/b', '/mkp/plugins/demo'),
+            defaultRunGrokInstall(
+                { source: '/mkp', mode: 'directory' },
+                'superskill',
+                'a/b',
+                '/mkp/plugins/demo',
+                fake.executor,
+            ),
         ).rejects.toThrow();
-        expect(spawnCalls).toHaveLength(0);
+        expect(fake.calls).toHaveLength(0);
     });
 });

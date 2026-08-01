@@ -2,12 +2,47 @@ import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import type { ProcessExecutor, ProcessOptions, ProcessResult } from '@gobing-ai/ts-runtime';
 import {
     defaultRunOmpInstall,
     emitHooksForSurrogateTarget,
     postInstallOmp,
     resolveOmpInstallPath,
 } from '../../src/commands/install';
+
+interface RecordedRun {
+    command: string;
+    args: string[];
+}
+
+/** Recording ProcessExecutor fake — asserts the argv the default installers pass (replaces Bun.spawn stubbing). */
+function recordingExecutor(exitFor?: (call: RecordedRun) => number) {
+    const calls: RecordedRun[] = [];
+    const executor: ProcessExecutor = {
+        run: (options: ProcessOptions): Promise<ProcessResult> => {
+            const call = { command: options.command, args: options.args ?? [] };
+            calls.push(call);
+            const exitCode = exitFor?.(call) ?? 0;
+            return Promise.resolve({
+                command: call.command,
+                args: call.args,
+                exitCode,
+                stdout: '',
+                stderr: '',
+                durationMs: 0,
+            });
+        },
+        runStreaming: () => {
+            throw new Error('runStreaming is not used by install helpers');
+        },
+    };
+    return { calls, executor };
+}
+
+/** Full argv of a recorded run, for argv-shape assertions. */
+function argv(call: RecordedRun): string[] {
+    return [call.command, ...call.args];
+}
 
 // ── Env fixtures ─────────────────────────────────────────────────────────────
 
@@ -254,113 +289,126 @@ describe('postInstallOmp', () => {
 
 // ── defaultRunOmpInstall ──────────────────────────────────────────────────────
 
-interface StubChild {
-    exited: Promise<number>;
-    stdout: null;
-    stderr: null;
-    kill(): void;
-}
-
 describe('defaultRunOmpInstall', () => {
-    // Bun.spawn resolves PATH from a snapshot taken at process start, so setting
-    // process.env.PATH at runtime does not redirect `omp` resolution. We stub
-    // Bun.spawn directly and capture the argv that defaultRunOmpInstall passes.
-    let originalSpawn: typeof Bun.spawn;
-    let spawnCalls: readonly string[][] = [];
-
-    beforeEach(() => {
-        originalSpawn = Bun.spawn;
-        spawnCalls = [];
-        const stub = ((args: string[]): StubChild => {
-            spawnCalls = [...spawnCalls, args];
-            return { exited: Promise.resolve(0), stdout: null, stderr: null, kill() {} };
-        }) as unknown as typeof Bun.spawn;
-        Bun.spawn = stub;
-    });
-
-    afterEach(() => {
-        Bun.spawn = originalSpawn;
-    });
-
     it('re-registers the marketplace and force-installs so re-installs are idempotent (project scope)', async () => {
         // omp 16.x: `marketplace add` exits 1 on an existing marketplace and a plain
         // `install` exits 1 on an installed plugin — remove-first + --force is what
         // makes a second `superskill install --targets omp` succeed.
+        const fake = recordingExecutor();
         const marketRoot = makeTempDir('superskill-omp-market-');
-        await defaultRunOmpInstall({ source: marketRoot, mode: 'directory' }, 'superskill', 'demo', false);
+        await defaultRunOmpInstall(
+            { source: marketRoot, mode: 'directory' },
+            'superskill',
+            'demo',
+            false,
+            fake.executor,
+        );
 
-        expect(spawnCalls).toHaveLength(3);
-        expect(spawnCalls[0]).toEqual(['omp', 'plugin', 'marketplace', 'remove', 'superskill']);
-        expect(spawnCalls[1]).toEqual(['omp', 'plugin', 'marketplace', 'add', marketRoot]);
-        expect(spawnCalls[2]).toEqual(['omp', 'plugin', 'install', 'demo@superskill', '--force', '--scope', 'project']);
+        expect(fake.calls).toHaveLength(3);
+        expect(argv(fake.calls[0] as RecordedRun)).toEqual(['omp', 'plugin', 'marketplace', 'remove', 'superskill']);
+        expect(argv(fake.calls[1] as RecordedRun)).toEqual(['omp', 'plugin', 'marketplace', 'add', marketRoot]);
+        expect(argv(fake.calls[2] as RecordedRun)).toEqual([
+            'omp',
+            'plugin',
+            'install',
+            'demo@superskill',
+            '--force',
+            '--scope',
+            'project',
+        ]);
     });
 
     it('passes github owner/repo slug to marketplace add when registration mode is github', async () => {
         // R3/R8: github mode must register the slug, not a local absolute path.
-        await defaultRunOmpInstall({ source: 'gobing-ai/superskill', mode: 'github' }, 'superskill', 'demo', true);
+        const fake = recordingExecutor();
+        await defaultRunOmpInstall(
+            { source: 'gobing-ai/superskill', mode: 'github' },
+            'superskill',
+            'demo',
+            true,
+            fake.executor,
+        );
 
-        expect(spawnCalls).toHaveLength(3);
-        expect(spawnCalls[0]).toEqual(['omp', 'plugin', 'marketplace', 'remove', 'superskill']);
-        expect(spawnCalls[1]).toEqual(['omp', 'plugin', 'marketplace', 'add', 'gobing-ai/superskill']);
-        expect(spawnCalls[2]).toEqual(['omp', 'plugin', 'install', 'demo@superskill', '--force']);
+        expect(fake.calls).toHaveLength(3);
+        expect(argv(fake.calls[0] as RecordedRun)).toEqual(['omp', 'plugin', 'marketplace', 'remove', 'superskill']);
+        expect(argv(fake.calls[1] as RecordedRun)).toEqual([
+            'omp',
+            'plugin',
+            'marketplace',
+            'add',
+            'gobing-ai/superskill',
+        ]);
+        expect(argv(fake.calls[2] as RecordedRun)).toEqual(['omp', 'plugin', 'install', 'demo@superskill', '--force']);
     });
 
     it('omits --scope for global installs', async () => {
+        const fake = recordingExecutor();
         const marketRoot = makeTempDir('superskill-omp-market-');
-        await defaultRunOmpInstall({ source: marketRoot, mode: 'directory' }, 'superskill', 'demo', true);
+        await defaultRunOmpInstall(
+            { source: marketRoot, mode: 'directory' },
+            'superskill',
+            'demo',
+            true,
+            fake.executor,
+        );
 
-        expect(spawnCalls).toHaveLength(3);
-        expect(spawnCalls[2]).toEqual(['omp', 'plugin', 'install', 'demo@superskill', '--force']);
+        expect(fake.calls).toHaveLength(3);
+        expect(argv(fake.calls[2] as RecordedRun)).toEqual(['omp', 'plugin', 'install', 'demo@superskill', '--force']);
     });
 
     it('tolerates a failing marketplace remove (first install: nothing to remove yet)', async () => {
         // The remove step exits 1 when the marketplace was never registered — the
         // normal first-install case. It must not abort the add + install that follow.
-        const stub = ((args: string[]): StubChild => {
-            spawnCalls = [...spawnCalls, args];
-            const isRemove = args[2] === 'marketplace' && args[3] === 'remove';
-            return { exited: Promise.resolve(isRemove ? 1 : 0), stdout: null, stderr: null, kill() {} };
-        }) as unknown as typeof Bun.spawn;
-        Bun.spawn = stub;
+        const fake = recordingExecutor((call) => (call.args[1] === 'marketplace' && call.args[2] === 'remove' ? 1 : 0));
 
         const marketRoot = makeTempDir('superskill-omp-market-');
-        await defaultRunOmpInstall({ source: marketRoot, mode: 'directory' }, 'superskill', 'demo', true);
-        expect(spawnCalls).toHaveLength(3);
-        expect(spawnCalls[1]).toEqual(['omp', 'plugin', 'marketplace', 'add', marketRoot]);
+        await defaultRunOmpInstall(
+            { source: marketRoot, mode: 'directory' },
+            'superskill',
+            'demo',
+            true,
+            fake.executor,
+        );
+        expect(fake.calls).toHaveLength(3);
+        expect(argv(fake.calls[1] as RecordedRun)).toEqual(['omp', 'plugin', 'marketplace', 'add', marketRoot]);
     });
 
     it('rejects a marketplace name that is not a single path segment, before any spawn', async () => {
         // The name flows into `<plugin>@<marketplace>` CLI addressing and the registry
         // key; `..` would corrupt both. The guard must throw before any omp call runs.
+        const fake = recordingExecutor();
         const marketRoot = makeTempDir('superskill-omp-market-');
         await expect(
-            defaultRunOmpInstall({ source: marketRoot, mode: 'directory' }, '..', 'demo', true),
+            defaultRunOmpInstall({ source: marketRoot, mode: 'directory' }, '..', 'demo', true, fake.executor),
         ).rejects.toThrow('single path segment');
 
-        expect(spawnCalls).toHaveLength(0);
+        expect(fake.calls).toHaveLength(0);
     });
 
     it('rejects a plugin name that is not a single path segment, before any spawn', async () => {
         // Plugin is the left half of `plugin@marketplace` — same segment rule as
         // defaultRunGrokInstall. Throw before any omp CLI call.
+        const fake = recordingExecutor();
         const marketRoot = makeTempDir('superskill-omp-market-');
         await expect(
-            defaultRunOmpInstall({ source: marketRoot, mode: 'directory' }, 'superskill', '../evil', true),
+            defaultRunOmpInstall(
+                { source: marketRoot, mode: 'directory' },
+                'superskill',
+                '../evil',
+                true,
+                fake.executor,
+            ),
         ).rejects.toThrow('single path segment');
 
-        expect(spawnCalls).toHaveLength(0);
+        expect(fake.calls).toHaveLength(0);
     });
 
     it('throws when an omp CLI step exits non-zero instead of reporting success', async () => {
-        const failingStub = ((args: string[]): StubChild => {
-            spawnCalls = [...spawnCalls, args];
-            return { exited: Promise.resolve(1), stdout: null, stderr: null, kill() {} };
-        }) as unknown as typeof Bun.spawn;
-        Bun.spawn = failingStub;
+        const fake = recordingExecutor(() => 1);
 
         const marketRoot = makeTempDir('superskill-omp-market-');
         await expect(
-            defaultRunOmpInstall({ source: marketRoot, mode: 'directory' }, 'superskill', 'demo', true),
+            defaultRunOmpInstall({ source: marketRoot, mode: 'directory' }, 'superskill', 'demo', true, fake.executor),
         ).rejects.toThrow('omp plugin marketplace add failed with exit code 1');
     });
 });

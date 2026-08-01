@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, spyOn } from 'bun:test';
 import { existsSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import type { ProcessExecutor, ProcessOptions } from '@gobing-ai/ts-runtime';
 import { Command } from 'commander';
 import {
     copyDirectory,
@@ -518,37 +519,52 @@ describe('executeInstall', () => {
                 plugins: [{ name: 'market', source: './plugins/market' }],
             }),
         );
-        const spawnCalls: { cmd: string[]; options: Record<string, unknown> }[] = [];
-        const origSpawn = Bun.spawn;
-        Bun.spawn = ((cmd: string[], options: Record<string, unknown>) => {
-            spawnCalls.push({ cmd: [...cmd], options });
-            return { exited: Promise.resolve(0) };
-        }) as typeof Bun.spawn;
+        const spawnCalls: { command: string; args: string[] }[] = [];
+        const processExecutor: ProcessExecutor = {
+            run: (options: ProcessOptions) => {
+                const args = options.args ?? [];
+                spawnCalls.push({ command: options.command, args });
+                return Promise.resolve({
+                    command: options.command,
+                    args,
+                    exitCode: 0,
+                    stdout: '',
+                    stderr: '',
+                    durationMs: 0,
+                });
+            },
+            runStreaming: () => {
+                throw new Error('runStreaming is not used by install');
+            },
+        };
 
         spyOn(process.stdout, 'write').mockImplementation(() => true);
 
         process.chdir(workspace);
-        await executeInstall('market', ['claude'], {
-            marketplacePath: join(workspace, '.claude-plugin'),
-            global: false,
-            dryRun: false,
-            verbose: false,
-        });
-
-        Bun.spawn = origSpawn;
+        await executeInstall(
+            'market',
+            ['claude'],
+            {
+                marketplacePath: join(workspace, '.claude-plugin'),
+                global: false,
+                dryRun: false,
+                verbose: false,
+            },
+            { processExecutor },
+        );
 
         expect(spawnCalls.length).toBe(2);
         const c0 = spawnCalls[0];
         const c1 = spawnCalls[1];
         if (!c0 || !c1) throw new Error('expected 2 spawn calls');
-        expect(c0.cmd[0]).toBe('claude');
-        expect(c0.cmd[1]).toBe('plugin');
-        expect(c0.cmd[2]).toBe('marketplace');
-        expect(c0.cmd[3]).toBe('add');
-        expect(c1.cmd[0]).toBe('claude');
-        expect(c1.cmd[1]).toBe('plugin');
-        expect(c1.cmd[2]).toBe('install');
-        expect(c1.cmd[3]).toBe('market@test-mkp');
+        expect(c0.command).toBe('claude');
+        expect(c0.args[0]).toBe('plugin');
+        expect(c0.args[1]).toBe('marketplace');
+        expect(c0.args[2]).toBe('add');
+        expect(c1.command).toBe('claude');
+        expect(c1.args[0]).toBe('plugin');
+        expect(c1.args[1]).toBe('install');
+        expect(c1.args[2]).toBe('market@test-mkp');
     });
 
     it('installs grok natively via marketplace add + path install (task 0078)', async () => {
