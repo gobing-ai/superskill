@@ -2,13 +2,13 @@
 schema_version: 1
 id: "F1"
 name: superskill install command + marketplace registration
-status: active
+status: cancelled
 priority: P1
 tags:
   - install
   - marketplace
 created_at: "2026-06-16T00:00:00.000Z"
-updated_at: "2026-08-01T00:24:29.423Z"
+updated_at: "2026-08-01T00:41:04.121Z"
 ---
 
 ## F4. superskill install command + marketplace registration
@@ -28,3 +28,7 @@ notes also live in `F004-install-command.md` (legacy feature-tree slug).
 - Install resolves plugins via marketplace and dispatches per target.
 - Claude/Grok/OMP can register marketplaces as directory path or github slug.
 - Operator migration runbook ships for directory → github without breaking plugin IDs.
+## History
+
+- 2026-08-01T00:41:04.121Z active → cancelled (system)
+
