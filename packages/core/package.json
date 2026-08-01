@@ -24,6 +24,7 @@
     },
     "dependencies": {
         "@gobing-ai/ts-ai-runner": "catalog:",
+        "@gobing-ai/ts-runtime": "catalog:",
         "rulesync": "^8.28.1",
         "yaml": "^2.9.0",
         "zod": "^3.25.0"
