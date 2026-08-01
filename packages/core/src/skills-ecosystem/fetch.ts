@@ -1,14 +1,17 @@
-import { execFile, execSync } from 'node:child_process';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, normalize, resolve, sep } from 'node:path';
-import { promisify } from 'node:util';
+import { NodeProcessExecutor, type ProcessExecutor } from '@gobing-ai/ts-runtime';
 import { parseSkillFrontmatter } from './frontmatter';
 import { isGitHubHost } from './github-host';
 import { computeStructuredContentHash } from './locks';
 import { sanitizeMetadata } from './sanitize';
 
-const execFileAsync = promisify(execFile);
+/**
+ * Default process execution port for git/gh invocations (no-direct-process-spawn:
+ * all spawning routes through ts-runtime). Buffered: callers inspect stdout/stderr.
+ */
+const defaultExecutor: ProcessExecutor = new NodeProcessExecutor();
 
 /** Default clone timeout in milliseconds (5 minutes). */
 export const DEFAULT_CLONE_TIMEOUT_MS = 300_000;
@@ -105,10 +108,10 @@ export function toSkillSlug(name: string): string {
  * `ghAuthToken` only after an unauthenticated request hit a rate limit (R1; vendor
  * skill-lock.ts getGitHubToken semantics).
  */
-export function getGitHubToken(
+export async function getGitHubToken(
     env?: Record<string, string | undefined>,
-    ghAuthToken?: () => string | null,
-): string | null {
+    ghAuthToken?: () => Promise<string | null>,
+): Promise<string | null> {
     const environ = env ?? process.env;
     if (environ.GITHUB_TOKEN?.trim()) return environ.GITHUB_TOKEN.trim();
     if (environ.GH_TOKEN?.trim()) return environ.GH_TOKEN.trim();
@@ -116,9 +119,11 @@ export function getGitHubToken(
 }
 
 /** Lazy credential fallback: spawn `gh auth token` (vendor parity; injectable via `getGitHubToken`). */
-export function ghAuthTokenFromCli(): string | null {
+export async function ghAuthTokenFromCli(executor: ProcessExecutor = defaultExecutor): Promise<string | null> {
     try {
-        const token = execSync('gh auth token', { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] }).trim();
+        const result = await executor.run({ command: 'gh', args: ['auth', 'token'] });
+        if (result.exitCode !== 0) return null;
+        const token = result.stdout.trim();
         return token || null;
     } catch {
         // gh not installed or not authenticated.
@@ -504,13 +509,44 @@ function computeSnapshotHash(files: SkillSnapshotFile[]): string {
     return computeStructuredContentHash(files);
 }
 
+/**
+ * Run a git/gh subprocess and mirror execFile semantics: resolve with captured output on
+ * exit 0, reject otherwise. The rejection message carries stderr (auth-pattern probing in
+ * {@link cloneRepo} reads it) and marks signal kills as "timed out" so the clone timeout
+ * classifier keeps working.
+ */
+async function runChecked(
+    binary: 'git' | 'gh',
+    args: string[],
+    env: Record<string, string>,
+    timeoutMs?: number,
+): Promise<{ stdout: string; stderr: string }> {
+    const result = await defaultExecutor.run({
+        command: binary,
+        args,
+        env,
+        ...(timeoutMs !== undefined ? { timeout: timeoutMs } : {}),
+    });
+    if (result.exitCode !== 0) {
+        const why =
+            result.exitCode === null
+                ? result.signal !== undefined
+                    ? `timed out (signal ${result.signal})`
+                    : 'failed to start'
+                : `exit code ${result.exitCode}`;
+        const detail = result.stderr || result.stdout;
+        throw new Error(`Command failed: ${binary} ${args.join(' ')} (${why})${detail ? `\n${detail}` : ''}`);
+    }
+    return { stdout: result.stdout, stderr: result.stderr };
+}
+
 /** Default git process runner — the DI seam behind `cloneRepo` `options.execGit`. */
 export function spawnGit(
     args: string[],
     env: Record<string, string>,
     timeoutMs?: number,
 ): Promise<{ stdout: string; stderr: string }> {
-    return execFileAsync('git', args, { timeout: timeoutMs, env });
+    return runChecked('git', args, env, timeoutMs);
 }
 
 /** Default gh CLI process runner — the DI seam behind `cloneRepo` `options.execGh`. */
@@ -519,7 +555,7 @@ export function spawnGh(
     env: Record<string, string>,
     timeoutMs?: number,
 ): Promise<{ stdout: string; stderr: string }> {
-    return execFileAsync('gh', args, { timeout: timeoutMs, env });
+    return runChecked('gh', args, env, timeoutMs);
 }
 
 /**

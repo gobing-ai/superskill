@@ -316,10 +316,18 @@ function readJsonObject(path: string): JsonObject {
     return value;
 }
 
-function deepMerge(target: JsonObject, source: JsonObject): JsonObject {
+/**
+ * Recursive JSON-object merge. `source` keys win; nested objects merge per level.
+ * A `__proto__` key in `source` is skipped — assignment would invoke the inherited
+ * setter and hand the result an attacker-controlled prototype (mirrors the
+ * ts-utils 0.4.15 `deepMerge` fix). Exported for direct unit testing.
+ */
+export function deepMerge(target: JsonObject, source: JsonObject): JsonObject {
     const merged: JsonObject = { ...target };
 
     for (const [key, value] of Object.entries(source)) {
+        // Skip __proto__: assignment would invoke the inherited setter (mirrors ts-utils 0.4.15).
+        if (key === '__proto__') continue;
         const existing = merged[key];
         merged[key] = isJsonObject(existing) && isJsonObject(value) ? deepMerge(existing, value) : value;
     }

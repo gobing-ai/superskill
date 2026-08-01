@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from 'bun:test';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { mapPluginToRulesync } from '../src/mapper';
+import { deepMerge, mapPluginToRulesync } from '../src/mapper';
 
 const FIXTURE_DIR = join(import.meta.dir, 'fixtures', 'plugin-min');
 
@@ -171,6 +171,19 @@ describe('mapPluginToRulesync', () => {
         // Only the plugin's mcp, not merged with stale
         expect(written.mcpServers.plugin.command).toBe('plugin-mcp');
         expect(written.mcpServers.stale).toBeUndefined();
+    });
+
+    it('deepMerge skips a __proto__ key in source instead of polluting the prototype', () => {
+        // Residual-proof negative: the source carries the full trigger (own `__proto__`
+        // key with an object payload, as JSON.parse of a hostile plugin mcp.json yields)
+        // alongside legitimate keys that must still merge. Mirrors the ts-utils 0.4.15 fix.
+        const source = JSON.parse('{"__proto__":{"polluted":true},"mcpServers":{"plugin":{"command":"p"}}}');
+        const merged = deepMerge({ mcpServers: { stale: { command: 's' } } }, source);
+
+        expect(Object.getPrototypeOf(merged)).toBe(Object.prototype);
+        expect(Object.keys(merged)).not.toContain('__proto__');
+        expect((merged as Record<string, unknown>).polluted).toBeUndefined();
+        expect(merged.mcpServers).toEqual({ stale: { command: 's' }, plugin: { command: 'p' } });
     });
 
     it('handles missing optional directories gracefully', () => {

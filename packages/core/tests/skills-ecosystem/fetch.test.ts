@@ -26,10 +26,10 @@ describe('fetch.ts - GitHub Trees/Blob fast path and hardened git clone', () => 
         expect(toSkillSlug('PDF_Generator@v1')).toBe('pdf-generatorv1');
     });
 
-    it('getGitHubToken resolves token from GITHUB_TOKEN or GH_TOKEN env', () => {
-        expect(getGitHubToken({ GITHUB_TOKEN: 'ghp_secret123' })).toBe('ghp_secret123');
-        expect(getGitHubToken({ GH_TOKEN: 'gho_secret456' })).toBe('gho_secret456');
-        expect(getGitHubToken({})).toBeNull();
+    it('getGitHubToken resolves token from GITHUB_TOKEN or GH_TOKEN env', async () => {
+        await expect(getGitHubToken({ GITHUB_TOKEN: 'ghp_secret123' })).resolves.toBe('ghp_secret123');
+        await expect(getGitHubToken({ GH_TOKEN: 'gho_secret456' })).resolves.toBe('gho_secret456');
+        await expect(getGitHubToken({})).resolves.toBeNull();
     });
 
     it('parseGitHubRepoUrl handles invalid URLs and path variations', () => {
@@ -395,29 +395,29 @@ describe('fetch.ts - GitHub Trees/Blob fast path and hardened git clone', () => 
         );
     });
 
-    it('getGitHubToken invokes the gh fallback only when passed and env is empty (lazy)', () => {
+    it('getGitHubToken invokes the gh fallback only when passed and env is empty (lazy)', async () => {
         let runnerCalls = 0;
         const runner = () => {
             runnerCalls++;
-            return 'gh_cli_token';
+            return Promise.resolve('gh_cli_token');
         };
 
         // Env present → runner must NOT be consulted (explicit opt-in wins, never spawns gh).
-        expect(getGitHubToken({ GITHUB_TOKEN: 'env_token' }, runner)).toBe('env_token');
+        await expect(getGitHubToken({ GITHUB_TOKEN: 'env_token' }, runner)).resolves.toBe('env_token');
         expect(runnerCalls).toBe(0);
 
         // Env empty → lazy fallback resolves through the runner.
-        expect(getGitHubToken({}, runner)).toBe('gh_cli_token');
+        await expect(getGitHubToken({}, runner)).resolves.toBe('gh_cli_token');
         expect(runnerCalls).toBe(1);
 
         // No runner → env-only behavior preserved.
-        expect(getGitHubToken({})).toBeNull();
+        await expect(getGitHubToken({})).resolves.toBeNull();
     });
 
-    it('ghAuthTokenFromCli never throws and returns a token string or null (real spawn seam)', () => {
+    it('ghAuthTokenFromCli never throws and returns a token string or null (real spawn seam)', async () => {
         // Environment-independent contract: gh may be absent or unauthenticated (null) or
         // authenticated (token string) — the seam must never throw either way.
-        const token = ghAuthTokenFromCli();
+        const token = await ghAuthTokenFromCli();
         expect(token === null || typeof token === 'string').toBe(true);
     });
 
