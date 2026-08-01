@@ -7,6 +7,37 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
+
+## [0.3.10] - 2026-07-31
+
+### Added
+
+- **Prefilter `sp/task-write-guard` before the spur task resolve spawn (`8da9762`).** The write guard now short-circuits before spawning a `spur task` resolve, avoiding an unnecessary process when the path isn't task-corpus-owned.
+- **Demo team agent definitions (`768b297`).** Adds demo agent definitions under the spur config.
+
+### Fixed
+
+- **Cancel malformed F1 and recreate install-command as F3 (`2640b6f`).** A malformed feature entry was cancelled and the install-command feature was re-created as F3.
+
+### Changed
+
+- **Route git/gh spawns through `ProcessExecutor` and harden `deepMerge` (`a60b90c`).** Core process spawning for git and gh now routes through the `ProcessExecutor` abstraction; `deepMerge` hardened against edge cases.
+- **Route native install spawns through `ProcessExecutor` (`bf6c66e`).** The CLI's native install spawns now route through `ProcessExecutor` alongside the core git/gh path.
+- **Migrate legacy F0xx corpus into area-root tree IDs (`3a4a76d`).** The legacy F0xx feature corpus is re-IDed into the area-root tree structure.
+
+### Documentation
+
+- **Record ADR-032 (ProcessExecutor) and sync architecture diagram (`da56e06`).**
+- **Fill area-root Goal/Scope/AC and H1 contract scenarios (`be21ca5`).**
+- **Close 0110 with verify evidence and advance wayfinder E1 (`78493fc`).**
+
+### Other
+
+- **Upgrade spur config to schema 1.1 (ADR-033 executor tiers + planning blocks) (`6cd0aea`).**
+- **Adopt `@gobing-ai/ts-runtime` and bump `ts-*` to 0.4.15 (`b419abf`).**
+- **Restructure feature tree into 5 module areas (`61e79ac`).**
+- **Update spur config (`a583d86`).**
+
 ## [0.3.9] - 2026-07-26
 
 ### Added
