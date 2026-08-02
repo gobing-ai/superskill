@@ -8,7 +8,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 ## [Unreleased]
 
 
-## [0.3.10] - 2026-07-31
+## [0.3.11] - 2026-08-02
+
+### Added
+
+- **Dispatch native Codex agent TOML alongside skills floor (`4063ee2`).** `superskill install` now emits per-agent TOML files to `~/.codex/agents/<plugin>-<agent>.toml` for the codex target, mirroring the Pi dual-emit precedent. The new `adaptSubagentToCodex()` adapter reads a platform-neutral `model-tier:` frontmatter field (`judgment` | `execution`, default `execution`) and maps it to Codex per-agent `model` + `model_reasoning_effort` via `CODEX_MODEL_TIERS` (gpt-5.6-sol/medium, gpt-5.6-luna/max). Raw Claude `model:` is never forwarded. A model-tier classification rubric (`cc-agents/references/model-tiers.md`) provides 4-signal classification (authority, blast radius, invocation, consumer) for authoring/evolve-time LLM judgment; install stays deterministic. ADR-033 records the decision.
+
+### Documentation
+
+- **Sync architecture, design, and features docs for Codex dual-emit (`4063ee2`).** Architecture conversion rules + target taxonomy updated; design install surface paragraph added; features Phase 7 entry added; F3 feature scenario added; tasks 0073/0086 AC checkboxes ticked.
+- **Close task 0111 and open follow-up 0112 (`4063ee2`).** Task 0111 (Codex native agent dual-emit) closed with verify evidence; task 0112 tracks live verification of Codex agent discovery + model-key honoring (blocked by account usage limit, reset Aug 7).
+
 
 ### Added
 
