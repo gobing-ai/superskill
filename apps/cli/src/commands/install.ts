@@ -13,6 +13,7 @@ import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
 import {
     adaptMagentForTarget,
+    adaptSubagentToCodex,
     adaptSubagentToPi,
     assembleMagentContent,
     assertSafePathSegment,
@@ -472,6 +473,26 @@ export async function executeInstall(
                     writeFileSync(join(piAgentsDir, `${expectedName}.md`), adapted);
                 }
                 if (options.verbose) echo(`  Pi agents: dispatched to ${piAgentsDir}`);
+            }
+        }
+
+        // Codex native agent dispatch: adapt each subagent to Codex TOML -> ~/.codex/agents/
+        // Mirrors the Pi dual-emit (task 0111). Discovery of the ~/.codex/agents dir
+        // convention is unconfirmed on codex-cli 0.146.0 (R9 - see task Q&A).
+        if (target === 'codex') {
+            const agentsDir = join(pluginRoot, 'agents');
+            if (configuredFeatures.has('subagents') && existsSync(agentsDir) && !options.dryRun) {
+                const codexAgentsDir = join(outputRoot, '.codex', 'agents');
+                mkdirSync(codexAgentsDir, { recursive: true });
+                for (const entry of readdirSync(agentsDir)) {
+                    if (!entry.endsWith('.md')) continue;
+                    const agentName = entry.replace(/\.md$/, '');
+                    const expectedName = `${plugin}-${agentName}`;
+                    const source = readFileSync(join(agentsDir, entry), 'utf-8');
+                    const adapted = adaptSubagentToCodex(source, expectedName, plugin);
+                    writeFileSync(join(codexAgentsDir, `${expectedName}.toml`), adapted);
+                }
+                if (options.verbose) echo(`  Codex agents: dispatched to ${codexAgentsDir}`);
             }
         }
     }
@@ -1157,9 +1178,10 @@ export function emitHooksForSurrogateTarget(
 }
 
 function transformRulesyncMarkdown(root: string, target: Target, pluginName: string): void {
-    // Only skills/ exists now — commands and subagents are adapted into skill
+    // Only skills/ exists now - commands and subagents are adapted into skill
     // directories by the mapper. Slash-command dialect translation and scoped
-    // reference rewriting apply on the per-target pass.
+    // reference rewriting apply on the per-target pass. Pi and Codex additionally
+    // receive native agent files (TOML/MD) via the dual-emit dispatch above.
     transformMarkdownDirectory(join(root, 'skills'), target, pluginName);
 }
 

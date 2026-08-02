@@ -202,3 +202,141 @@ function buildPiRuntimeNotes(rawTools: string[], skillsCsv: string): string {
     if (sections.length === 0) return '';
     return `## Pi Runtime Adaptation\n\n${sections.join('\n')}`;
 }
+
+// ── Codex native agents ─────────────────────────────────────────────────────
+
+/**
+ * Binary model-tier partition for Codex native agents.
+ *
+ * Per-agent `model` and `model_reasoning_effort` keys follow the schema observed in
+ * real-world Codex agent TOML files and the spawn-time tool parameters confirmed in
+ * codex-cli 0.146.0; whether Codex 0.146.0 *honors* file-level model keys at spawn
+ * time is not yet confirmed (task 0111 R14 — live probe blocked by account usage
+ * limit, retry after 2026-08-07; if ignored, Codex falls back to its inherit-default
+ * for that agent, which is harmless).
+ * Rather than forwarding raw Claude `model:` values (`sonnet`/`opus`/`inherit`),
+ * which are Claude-scoped, the adapter maps a declarative `model-tier:` frontmatter
+ * field to a fixed Codex model + reasoning-effort pair. Two tiers only - judgment
+ * (deliberation, design, review) and execution (coding, mechanical work).
+ * Model slugs pinned to the `codex debug models` catalog of codex-cli 0.146.0 (2026-08-02).
+ *
+ * Default tier when `model-tier:` is absent: `execution` (most subagents are doers).
+ */
+export const CODEX_MODEL_TIERS = {
+    judgment: { model: 'gpt-5.6-sol', model_reasoning_effort: 'medium' },
+    execution: { model: 'gpt-5.6-luna', model_reasoning_effort: 'max' },
+} as const;
+
+/** Valid Codex model-tier keys, each mapping to a per-agent `model` + `model_reasoning_effort` pair. */
+export type CodexModelTier = keyof typeof CODEX_MODEL_TIERS;
+
+/**
+ * Adapt a Claude Code subagent `.md` file into the Codex native agent TOML format.
+ *
+ * Emits files following the `~/.codex/agents/*.toml` convention. Whether Codex
+ * 0.146.0 auto-discovers that directory without `[agents]` registration is not yet
+ * confirmed (task 0111 R9 — offline probes inconclusive, live probe blocked by
+ * account usage limit, retry after 2026-08-07). The adapter emits a TOML document
+ * with this key order:
+ *
+ * 1. `name` - the expected (dispatch-name) agent identifier
+ * 2. `description` - from frontmatter, or synthesized from the first body line
+ * 3. `model` - resolved from `CODEX_MODEL_TIERS` via the `model-tier:` frontmatter field
+ * 4. `model_reasoning_effort` - paired with the model
+ * 5. `developer_instructions` - the agent body (skill references rewritten)
+ *
+ * Raw Claude `model:` values are never forwarded - they are Claude-scoped. The
+ * `model-tier:` field (`judgment` | `execution`) is the only model signal honored;
+ * an unknown value throws. When absent, `execution` is assumed.
+ *
+ * `developer_instructions` uses a TOML literal block (`'''`) when the body contains
+ * no `'''` sequence, falling back to a multiline basic string (`"""`) otherwise.
+ * An empty body is backfilled from the description so Codex never sees a blank
+ * instructions field.
+ */
+export function adaptSubagentToCodex(source: string, expectedName: string, pluginPrefix: string): string {
+    let data: Record<string, unknown>;
+    let body: string;
+    try {
+        const fm = parseFrontmatter(source);
+        data = fm.data;
+        body = fm.body.trim();
+    } catch {
+        data = {};
+        body = source.trim();
+    }
+
+    // Description: from frontmatter, else first non-heading body line, else fallback.
+    let description = asString(data.description);
+    if (!description) {
+        const firstLine = body
+            .split('\n')
+            .slice(0, 5)
+            .find((l) => l.trim() && !l.startsWith('#'));
+        description = firstLine?.trim() || `${expectedName} subagent`;
+    }
+
+    // Body: rewrite plugin:skill references; backfill from description if empty.
+    let adaptedBody = rewriteSkillReferences(body, pluginPrefix).trim();
+    if (!adaptedBody) {
+        adaptedBody = description;
+    }
+
+    // Resolve model tier. Unknown declared value throws; absent defaults to execution.
+    const declaredTier = asString(data['model-tier']);
+    let tier: CodexModelTier;
+    if (declaredTier) {
+        if (declaredTier !== 'judgment' && declaredTier !== 'execution') {
+            throw new Error(
+                `Agent "${expectedName}" declares unknown model-tier "${declaredTier}". Valid values: judgment, execution.`,
+            );
+        }
+        tier = declaredTier;
+    } else {
+        tier = 'execution';
+    }
+    const tierMapping = CODEX_MODEL_TIERS[tier];
+
+    // Emit TOML in pinned key order.
+    const lines: string[] = [];
+    lines.push(`name = ${tomlBasicString(expectedName)}`);
+    lines.push(`description = ${tomlBasicString(description)}`);
+    lines.push(`model = ${tomlBasicString(tierMapping.model)}`);
+    lines.push(`model_reasoning_effort = ${tomlBasicString(tierMapping.model_reasoning_effort)}`);
+
+    if (!adaptedBody.includes("'''")) {
+        lines.push(`developer_instructions = '''`);
+        lines.push(adaptedBody);
+        lines.push(`'''`);
+    } else {
+        lines.push(`developer_instructions = ${tomlMultilineBasicString(adaptedBody)}`);
+    }
+
+    return `${lines.join('\n')}\n`;
+}
+
+/** Escape a string as a TOML basic string: `"..."` with backslash/quote/control escaping. */
+function tomlBasicString(value: string): string {
+    let escaped = value
+        .replace(/\\/g, '\\\\')
+        .replace(/"/g, '\\"')
+        .replace(/\r/g, '\\r')
+        .replace(/\n/g, '\\n')
+        .replace(/\t/g, '\\t');
+    // Escape remaining C0 control characters (excluding already-handled \r \n \t) as \uXXXX.
+    // TOML also requires escaping DEL (U+007F) in basic strings.
+    escaped = escaped.replace(/[\s\S]/g, (ch) => {
+        const code = ch.charCodeAt(0);
+        if ((code < 0x20 && ch !== '\r' && ch !== '\n' && ch !== '\t') || code === 0x7f) {
+            return `\\u${code.toString(16).padStart(4, '0')}`;
+        }
+        return ch;
+    });
+    return `"${escaped}"`;
+}
+
+/** Escape a string as a TOML multiline basic string: `"""..."""` with `"""` -> `""\"` escaping. */
+function tomlMultilineBasicString(value: string): string {
+    const escaped = value.replace(/"""/g, '""\\"');
+    return `"""\n${escaped}\n"""`;
+}

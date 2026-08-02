@@ -127,6 +127,9 @@ function setSkillName(content: string, newName: string): string {
  *
  * Missing optional directories (e.g. no `agents/`, no `hooks.json`) are handled
  * gracefully — nothing is created for absent inputs.
+ * Pi and Codex additionally receive native agent files at install time (adapted from
+ * `agents/*.md` in `install.ts`, not via this mapper) - the skill floor here is the
+ * universal base; the native dispatch is an additive overlay for those two targets.
  */
 export function mapPluginToRulesync(
     pluginPath: string,

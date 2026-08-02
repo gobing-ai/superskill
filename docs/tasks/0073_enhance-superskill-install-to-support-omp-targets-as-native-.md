@@ -12,7 +12,7 @@ priority: P2
 tags: []
 dependencies: []
 created_at: 2026-07-09T06:01:02.846Z
-updated_at: 2026-08-01T00:41:01.842Z
+updated_at: "2026-08-02T22:26:03.067Z"
 ---
 
 ## 0073. Enhance superskill install to support omp targets as native Claude Code plugins
@@ -44,6 +44,8 @@ R4. Slash command dialect translation. Post-process every `.md` file under `<ins
 - Checks that JS/TS hook files are generated under `hooks/pre/` / `hooks/post/` / etc. in the OMP cache directory.
 - Running `omp` loads the `cc` plugin, exposes `cc` commands, and successfully executes the stop hook (anti-hallucination check) when agent run completes.
 
+
+- [ ] Install resolves plugins via marketplace and dispatches per target.
 ### Q&A
 
 *No clarifications needed.*

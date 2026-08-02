@@ -12,7 +12,7 @@ priority: P1
 tags: []
 dependencies: []
 created_at: 2026-07-16T22:59:59.416Z
-updated_at: 2026-08-01T00:41:03.020Z
+updated_at: "2026-08-02T22:26:03.339Z"
 ---
 
 ## 0086. GitHub marketplace registration for spur/superskill (replace directory marketplaces)
@@ -143,6 +143,9 @@ AC6. **Docs.**
 
 AC7. **Regression.**  
     Existing install tests for local marketplace path remain green; no destructive default that wipes unrelated marketplaces (cc-agents, context-mode, official, etc.).
+
+- [ ] Claude/Grok/OMP can register marketplaces as directory path or github slug.
+- [ ] Operator migration runbook ships for directory to github without breaking plugin IDs.
 ### Q&A
 **Q1. Can we remove both `spur` and `superskill` from `known_marketplaces.json` safely *right now* (no other changes)?**  
 **A1. No — not as a standalone edit.**  

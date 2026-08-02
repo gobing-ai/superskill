@@ -416,3 +416,54 @@ audited implementation instead of per-call-site spawn plumbing.
 
 **Detail:** see 04 §Skills-ecosystem module surface; test seam is an injected
 `ProcessExecutor` fake (replaces `Bun.spawn` monkey-patching).
+
+---
+
+## ADR-033: Codex native agent dual-emit with model-tier classification rubric
+
+**Status:** Accepted · **Date:** 2026-08-02
+
+**Decision.** `superskill install` emits native Codex subagent TOML files to
+`~/.codex/agents/<plugin>-<agent>.toml` alongside the existing skill-downgrade
+dispatch, mirroring the Pi precedent (`adaptSubagentToPi`). The adapter
+(`adaptSubagentToCodex` in `packages/core/src/pipeline/adapt-subagent.ts`) reads
+a platform-neutral `model-tier:` frontmatter field (`judgment` | `execution`,
+default `execution`) and maps it to Codex per-agent TOML keys (`model`,
+`model_reasoning_effort`) via `CODEX_MODEL_TIERS`. The raw Claude `model:` value
+is never forwarded. Unknown tier values throw at install time (fail loud on
+typos).
+
+The tier classification is governed by a **rule, not a registry**
+(`plugins/cc/skills/cc-agents/references/model-tiers.md`): four
+characteristics-based signals (decision authority, error blast radius,
+invocation pattern, output consumer) derive the tier. The agent rubric's
+`model-fit` dimension (weight 0.15) references this rubric and asks the
+Scorer judge to classify and verify the declared tier. Classification is an
+**authoring-time decision** - install is a deterministic photocopier (no LLM,
+no network, no re-classification). The `superskill agent evolve` proposal flow
+can stamp `model-tier:` into frontmatter after human acceptance.
+
+**Why.** The `~/.codex/agents/*.toml` convention follows the real-world agent files
+observed on disk and the agent-role machinery confirmed in codex-cli 0.146.0
+(`AgentRoleToml`, `default_subagent_model`, spawn-time `model`/`reasoning_effort`
+tool parameters). Two premises remain **unverified** at decision time: whether Codex
+auto-discovers that directory without `[agents]` registration, and whether it honors
+file-level `model`/`model_reasoning_effort` keys at spawn time — offline probes on
+0.146.0 (2026-08-02, task 0111 Q&A) were inconclusive and the live probe is blocked
+by the account usage limit (retry after 2026-08-07). The emission shape is safe
+under either outcome: if the keys are ignored, Codex falls back to its
+inherit-default per agent; if directory registration turns out to be needed,
+dispatch adds `[agents]` entries additively. Dual-emit (skill downgrade +
+native agent) mirrors the Pi precedent. The rule-not-registry design ensures
+the classification mechanism survives model-slug churn: when Codex ships a new
+model, only `CODEX_MODEL_TIERS` changes - the rubric and all agent files stay
+valid. Authoring-time-only classification keeps `superskill install`
+deterministic: the same plugin bytes always produce the same TOML.
+
+**Detail.** See 03 §Conversion rules and §Target taxonomy; 04 §Phase 1 install
+surface. Adapter: `packages/core/src/pipeline/adapt-subagent.ts` (lines 206+).
+Dispatch: `apps/cli/src/commands/install.ts` (codex branch after Pi block).
+Rubric: `plugins/cc/skills/cc-agents/references/model-tiers.md`. Rubric wiring:
+`packages/core/src/rubrics/agent.yaml` `model-fit` dimension. Tests:
+`packages/core/tests/pipeline/adapt-subagent.test.ts` (14 cases),
+`apps/cli/tests/commands/install.test.ts` (4 dispatch cases).

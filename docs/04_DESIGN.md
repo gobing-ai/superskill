@@ -36,6 +36,15 @@ superskill install <plugin> [--marketplace <path>] [--targets <list>] [--no-glob
 
 Feature selection filters canonical mapper output. Native Claude/OMP/Grok installation rejects a
 partial feature set because those host installers operate on the full plugin package.
+Pi and Codex additionally receive native agent files at install time: Pi agents
+at `~/.pi/agent/agents/<plugin>-<agent>.md` (YAML) and Codex agents at
+`~/.codex/agents/<plugin>-<agent>.toml` (TOML). The Codex adapter reads a
+platform-neutral `model-tier:` frontmatter field (`judgment` | `execution`,
+default `execution`) and maps it to Codex per-agent `model` and
+`model_reasoning_effort` keys via `CODEX_MODEL_TIERS` (ADR-033). Unknown tier
+values throw at install time. The tier classification rubric lives at
+`plugins/cc/skills/cc-agents/references/model-tiers.md`; the agent quality
+rubric's `model-fit` dimension verifies the declared tier at authoring time.
 
 ## Phase 2 command surface
 

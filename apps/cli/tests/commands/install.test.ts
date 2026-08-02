@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, spyOn } from 'bun:test';
-import { existsSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { ProcessExecutor, ProcessOptions } from '@gobing-ai/ts-runtime';
@@ -830,6 +830,205 @@ describe('resolvePluginRoot — plugin name safety', () => {
         const root = createTempWorkspace();
         const pluginRoot = createPlugin(root, 'configured');
         expect(resolvePluginRoot('configured', undefined, pluginRoot).pluginRoot).toBe(pluginRoot);
+    });
+});
+
+describe('executeInstall - codex native agent dispatch (task 0111)', () => {
+    function mockRulesyncResult() {
+        return async () => ({
+            rulesCount: 0,
+            rulesPaths: [],
+            ignoreCount: 0,
+            ignorePaths: [],
+            mcpCount: 0,
+            mcpPaths: [],
+            commandsCount: 0,
+            commandsPaths: [],
+            subagentsCount: 1,
+            subagentsPaths: ['subagents/demo-coder.md'],
+            skillsCount: 1,
+            skillsPaths: ['skills/demo-a/SKILL.md'],
+            hooksCount: 0,
+            hooksPaths: [],
+            permissionsCount: 0,
+            permissionsPaths: [],
+            skills: [],
+            hasDiff: false,
+        });
+    }
+
+    it('dispatches subagents to ~/.codex/agents/<plugin>-<agent>.toml', async () => {
+        const workspace = createTempWorkspace();
+        const pluginRoot = createPlugin(workspace, 'demo');
+        // Add a subagent .md file to the agents/ directory
+        writeFileSync(
+            join(pluginRoot, 'agents', 'coder.md'),
+            '---\nname: coder\ndescription: Code generation agent\n---\n\nYou are a coding assistant.',
+        );
+        const outRoot = join(workspace, 'out');
+        mkdirSync(outRoot, { recursive: true });
+
+        await executeInstall(
+            'demo',
+            ['codex'],
+            { global: false, dryRun: false, verbose: true, outputRoot: outRoot },
+            { runRulesync: mockRulesyncResult() },
+        );
+
+        const tomlPath = join(outRoot, '.codex', 'agents', 'demo-coder.toml');
+        expect(existsSync(tomlPath)).toBe(true);
+        const content = require('node:fs').readFileSync(tomlPath, 'utf-8');
+        expect(content).toContain('name = "demo-coder"');
+        expect(content).toContain('description = "Code generation agent"');
+        expect(content).toContain('model = "');
+        expect(content).toContain('model_reasoning_effort = "');
+        expect(content).toContain("developer_instructions = '''");
+        expect(content).toContain('You are a coding assistant.');
+    });
+
+    it('does not dispatch codex agents in dry-run mode', async () => {
+        const workspace = createTempWorkspace();
+        const pluginRoot = createPlugin(workspace, 'demo');
+        writeFileSync(join(pluginRoot, 'agents', 'coder.md'), '---\nname: coder\ndescription: Test\n---\n\nBody.');
+        const outRoot = join(workspace, 'out');
+        mkdirSync(outRoot, { recursive: true });
+
+        await executeInstall(
+            'demo',
+            ['codex'],
+            { global: false, dryRun: true, verbose: true, outputRoot: outRoot },
+            { runRulesync: mockRulesyncResult() },
+        );
+
+        expect(existsSync(join(outRoot, '.codex', 'agents', 'demo-coder.toml'))).toBe(false);
+    });
+
+    it('does not dispatch codex agents when subagents feature is disabled', async () => {
+        const workspace = createTempWorkspace();
+        const pluginRoot = createPlugin(workspace, 'demo');
+        writeFileSync(join(pluginRoot, 'agents', 'coder.md'), '---\nname: coder\ndescription: Test\n---\n\nBody.');
+        const outRoot = join(workspace, 'out');
+        mkdirSync(outRoot, { recursive: true });
+
+        await executeInstall(
+            'demo',
+            ['codex'],
+            { global: false, dryRun: false, verbose: true, outputRoot: outRoot, features: ['skills'] },
+            { runRulesync: mockRulesyncResult() },
+        );
+
+        expect(existsSync(join(outRoot, '.codex', 'agents', 'demo-coder.toml'))).toBe(false);
+    });
+
+    it('skips codex agent dispatch when plugin has no agents/ directory', async () => {
+        const workspace = createTempWorkspace();
+        const pluginRoot = createPlugin(workspace, 'demo');
+        // Remove the agents/ directory created by createPlugin
+        rmSync(join(pluginRoot, 'agents'), { recursive: true, force: true });
+        const outRoot = join(workspace, 'out');
+        mkdirSync(outRoot, { recursive: true });
+
+        await executeInstall(
+            'demo',
+            ['codex'],
+            { global: false, dryRun: false, verbose: true, outputRoot: outRoot },
+            { runRulesync: mockRulesyncResult() },
+        );
+
+        expect(existsSync(join(outRoot, '.codex', 'agents'))).toBe(false);
+    });
+
+    it('overwrites stale TOML on reinstall (idempotent)', async () => {
+        const workspace = createTempWorkspace();
+        const pluginRoot = createPlugin(workspace, 'demo');
+        const agentPath = join(pluginRoot, 'agents', 'coder.md');
+        writeFileSync(agentPath, '---\nname: coder\ndescription: v1\n---\n\nFirst body.');
+        const outRoot = join(workspace, 'out');
+        mkdirSync(outRoot, { recursive: true });
+
+        const install = () =>
+            executeInstall(
+                'demo',
+                ['codex'],
+                { global: false, dryRun: false, verbose: false, outputRoot: outRoot },
+                { runRulesync: mockRulesyncResult() },
+            );
+        await install();
+        writeFileSync(agentPath, '---\nname: coder\ndescription: v2\n---\n\nSecond body.');
+        await install();
+
+        const content = readFileSync(join(outRoot, '.codex', 'agents', 'demo-coder.toml'), 'utf-8');
+        expect(content).toContain('description = "v2"');
+        expect(content).toContain('Second body.');
+        expect(content).not.toContain('First body.');
+    });
+
+    it('echoes the dispatch destination in verbose mode', async () => {
+        const workspace = createTempWorkspace();
+        const pluginRoot = createPlugin(workspace, 'demo');
+        writeFileSync(join(pluginRoot, 'agents', 'coder.md'), '---\nname: coder\ndescription: Test\n---\n\nBody.');
+        const outRoot = join(workspace, 'out');
+        mkdirSync(outRoot, { recursive: true });
+
+        const written: string[] = [];
+        const spy = spyOn(process.stdout, 'write').mockImplementation((chunk: unknown) => {
+            written.push(String(chunk));
+            return true;
+        });
+        try {
+            await executeInstall(
+                'demo',
+                ['codex'],
+                { global: false, dryRun: false, verbose: true, outputRoot: outRoot },
+                { runRulesync: mockRulesyncResult() },
+            );
+        } finally {
+            spy.mockRestore();
+        }
+
+        expect(written.join('')).toContain(`Codex agents: dispatched to ${join(outRoot, '.codex', 'agents')}`);
+    });
+
+    it('keeps the skills floor running for codex (dual-emit)', async () => {
+        const workspace = createTempWorkspace();
+        const pluginRoot = createPlugin(workspace, 'demo');
+        writeFileSync(join(pluginRoot, 'agents', 'coder.md'), '---\nname: coder\ndescription: Test\n---\n\nBody.');
+        const outRoot = join(workspace, 'out');
+        mkdirSync(outRoot, { recursive: true });
+
+        const rulesyncTargetsSeen: string[][] = [];
+        const recordingRulesync = async (targets: string[]) => {
+            rulesyncTargetsSeen.push(targets);
+            return mockRulesyncResult()();
+        };
+        await executeInstall(
+            'demo',
+            ['codex'],
+            { global: false, dryRun: false, verbose: false, outputRoot: outRoot },
+            { runRulesync: recordingRulesync as never },
+        );
+
+        // Native TOML written AND the rulesync skill pipeline still invoked for codex.
+        expect(existsSync(join(outRoot, '.codex', 'agents', 'demo-coder.toml'))).toBe(true);
+        expect(rulesyncTargetsSeen.flat()).toContain('codex');
+    });
+
+    it('project mode without outputRoot resolves codex agents under cwd', async () => {
+        // createTempWorkspace chdirs into the temp dir, so this exercises the
+        // --no-global fallback to process.cwd() without touching the real repo
+        // tree or home (pitfall 0106).
+        const workspace = createTempWorkspace();
+        const pluginRoot = createPlugin(workspace, 'demo');
+        writeFileSync(join(pluginRoot, 'agents', 'coder.md'), '---\nname: coder\ndescription: Test\n---\n\nBody.');
+
+        await executeInstall(
+            'demo',
+            ['codex'],
+            { global: false, dryRun: false, verbose: false },
+            { runRulesync: mockRulesyncResult() },
+        );
+
+        expect(existsSync(join(workspace, '.codex', 'agents', 'demo-coder.toml'))).toBe(true);
     });
 });
 

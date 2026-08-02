@@ -361,3 +361,17 @@ Design: [04_DESIGN.md § Skills-ecosystem module surface](04_DESIGN.md#skills-ec
 
 Tasks: 0097 (scaffold), 0098 (source-parser/sanitize/frontmatter), 0099 (agents/locks), 0100 (fetch/discovery), 0101 (installer/emit), 0102 (cli verbs), 0103 (round-trip interop verification & docs sync).
 
+
+---
+
+## Phase 7: Codex native agent dual-emit (task 0111)
+
+Design: [04_DESIGN.md § Phase 1 install surface](04_DESIGN.md#phase-1-install-surface)
+
+### Feature list
+
+| ID | Feature | Deps | Size | Status | Files |
+|----|---------|------|------|--------|-------|
+| G44 | Codex native agent dual-emit + model-tier rubric | G13, G31 | M | ✅ | `packages/core/src/pipeline/adapt-subagent.ts`, `apps/cli/src/commands/install.ts`, `packages/core/src/rubrics/agent.yaml`, `plugins/cc/skills/cc-agents/references/model-tiers.md` |
+
+Dispatches plugin subagents natively to Codex as `~/.codex/agents/<plugin>-<agent>.toml` (mirrors the Pi precedent). The adapter reads a platform-neutral `model-tier:` frontmatter field and maps it to Codex per-agent `model`/`model_reasoning_effort` keys. The tier classification rubric is a rule (not a registry); the agent rubric's `model-fit` dimension verifies the declared tier at authoring time. Install stays deterministic (ADR-033).
