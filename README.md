@@ -1,6 +1,6 @@
 # superskill
 
-Multi-agent skill, command, subagent, hook, and MCP config distribution and authoring CLI. Install a Claude Code plugin to any coding agent, and create / validate / evaluate / refine / evolve agent-facing content from the command line.
+Multi-agent skill, command, subagent, magent, hook, and MCP config distribution and authoring CLI. Install a Claude Code plugin to any coding agent, and create / validate / evaluate / refine / evolve agent-facing content from the command line.
 
 ## Install
 
@@ -59,11 +59,16 @@ Full walkthrough: [Quick start guide](docs/help/quick_start.md).
 | Hermes | ✓ | ✓ | — | ✓ |
 
 Both Antigravity targets get skills, commands, and hooks from rulesync
-(`codexcli`/`codexcli`/`antigravity-ide` adapters); subagents are not part of the
+(`codexcli`/`antigravity-cli`/`antigravity-ide` adapters); subagents are not part of the
 rulesync→antigravity map, so they don't ship there. `omp`, Grok, and Claude Code
 install plugins natively (no rulesync pass); the remaining targets route through
 rulesync's per-target generators. Hermes copies skills/commands from OpenCode's
 rulesync output and adds a canonical `hooks.json` copy at `~/.hermes/hooks.json`.
+
+Pi loads extensions natively from a plugin's `plugin.json` `extensions.pi` array (v0.3.12+),
+installing them to `.pi/agent/plugins/<plugin>/` with generated `package.json` and
+`settings.json` registration — no `@vahor/pi-hooks` dependency required. Plugins without
+`extensions.pi` fall back to the `@vahor/pi-hooks` hook-emit path.
 
 Grok loads the Claude-format plugin natively — slash form is `/plugin:command`
 (e.g. `/cc:skill-add`). Codex/Pi-installed skills under `~/.agents/` may also
@@ -73,18 +78,18 @@ skills root; prefer the colon form for plugin commands.
 See [entity locations](docs/help/entity_locations.md) for the exact install directories per agent.
 
 > Agents that don't natively support some entity types still get them. `superskill install` adapts commands and subagents as Skills 2.0 skill directories for targets that lack them — so every agent receives the full plugin surface, regardless of native feature set.
-</input>
 
 ## Commands
 
 | Command | What it does | Docs |
 |---------|-------------|------|
-| `install` | Distribute a plugin's skills, commands, subagents, hooks, MCP to target agents | [cmd_install.md](docs/help/cmd_install.md) |
+| `install` | Distribute a plugin's skills, commands, subagents, magents, hooks, and MCP config to target agents | [cmd_install.md](docs/help/cmd_install.md) |
 | `agent` | Manage subagent definitions (scaffold / validate / evaluate / refine / evolve) | [cmd_agent.md](docs/help/cmd_agent.md) |
-| `skill` | Manage skill definitions (+ `package`, `migrate`) | [cmd_skill.md](docs/help/cmd_skill.md) |
+| `skill` | Manage skill definitions (lifecycle + `package`, `migrate`) | [cmd_skill.md](docs/help/cmd_skill.md) |
 | `command` | Manage slash command definitions | [cmd_command.md](docs/help/cmd_command.md) |
-| `hook` | Manage hook definitions (+ `emit`) | [cmd_hook.md](docs/help/cmd_hook.md) |
+| `hook` | Manage hook definitions (+ `emit`, `run`) | [cmd_hook.md](docs/help/cmd_hook.md) |
 | `magent` | Manage main-agent configurations | [cmd_magent.md](docs/help/cmd_magent.md) |
+| `script` | Run / resolve / build portable twins for plugin scripts (`run`, `path`, `convert`) | [how to organize](docs/help/how_to_organize_scripts_for_plugin_development.md) |
 
 The five type commands share a common lifecycle: **scaffold → validate → evaluate → refine → evolve**, with type-specific quality dimensions and rubrics.
 
