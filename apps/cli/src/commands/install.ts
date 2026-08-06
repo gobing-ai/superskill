@@ -10,7 +10,7 @@ import {
     writeFileSync,
 } from 'node:fs';
 import { homedir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { basename, join, resolve } from 'node:path';
 import {
     adaptMagentForTarget,
     adaptSubagentToCodex,
@@ -441,9 +441,65 @@ export async function executeInstall(
         }
 
         // Pi reaches generate() but rulesync emits no hooks for it (hooks column blank, §1 table).
-        // Rung (b): superskill-installed shim — pi hooks via @vahor/pi-hooks format (design §1.2)
+        // Rung (b): pi extensions from plugin.json or @vahor/pi-hooks format (design §1.2)
         if (target === 'pi') {
-            if (!hooksBlockedByCliVersion) {
+            // Try reading platform extensions from plugin.json first
+            // Format: { "extensions": { "pi": ["./hooks/pi/guard-extension.ts"], ... } }
+            const pluginManifestPath = join(pluginRoot, 'plugin.json');
+            let piExtensions: string[] | undefined;
+            if (existsSync(pluginManifestPath)) {
+                try {
+                    const manifest = JSON.parse(readFileSync(pluginManifestPath, 'utf-8')) as Record<string, unknown>;
+                    const platformExtensions = manifest.extensions as Record<string, unknown> | undefined;
+                    if (platformExtensions?.pi && Array.isArray(platformExtensions.pi)) {
+                        piExtensions = platformExtensions.pi as string[];
+                    }
+                } catch {
+                    // Unparseable plugin.json — ignore, fall through to emitPiStyleHooks
+                }
+            }
+
+            if (piExtensions && piExtensions.length > 0) {
+                // Install Pi extensions natively — no @vahor/pi-hooks dependency
+                const piPluginsDir = join(outputRoot, '.pi', 'agent', 'plugins', plugin);
+                if (!options.dryRun) {
+                    mkdirSync(piPluginsDir, { recursive: true });
+                    // Copy extension files
+                    for (const ext of piExtensions) {
+                        const source = join(pluginRoot, ext);
+                        const dest = join(piPluginsDir, basename(ext));
+                        if (existsSync(source)) {
+                            copyFileSync(source, dest);
+                        }
+                    }
+                    // Create package.json for Pi to load the extension
+                    const pkgJson = {
+                        name: plugin,
+                        version: '0.1.0',
+                        private: true,
+                        pi: { extensions: piExtensions.map((e) => `./${basename(e)}`) },
+                    };
+                    writeFileSync(join(piPluginsDir, 'package.json'), `${JSON.stringify(pkgJson, null, 2)}\n`);
+                    // Register in Pi's settings.json packages
+                    const piSettingsPath = join(outputRoot, '.pi', 'agent', 'settings.json');
+                    try {
+                        const existing = existsSync(piSettingsPath)
+                            ? (JSON.parse(readFileSync(piSettingsPath, 'utf-8')) as Record<string, unknown>)
+                            : {};
+                        const packages = (existing.packages as string[]) ?? [];
+                        const packageRef = `file:${piPluginsDir}`;
+                        if (!packages.includes(packageRef)) {
+                            packages.push(packageRef);
+                            existing.packages = packages;
+                            writeFileSync(piSettingsPath, `${JSON.stringify(existing, null, 2)}\n`);
+                        }
+                    } catch {
+                        // settings.json read/write failure — non-fatal
+                    }
+                    if (options.verbose) echo(`  Pi extensions: installed to ${piPluginsDir}`);
+                }
+            } else if (!hooksBlockedByCliVersion) {
+                // Fallback: emit hooks for @vahor/pi-hooks format
                 const hookResult = emitPiStyleHooks(
                     rulesyncSourceRoot(targetInputRoots.get('pi'), outputDir),
                     outputRoot,
@@ -856,7 +912,7 @@ export function postInstallOmp(
  * Plugin rules (`plugins/<plugin>/rules/`) are emitted separately via
  * {@link emitPluginRules} — not from the magent package.
  */
-function emitMagents(
+export function emitMagents(
     plugin: string,
     targets: Target[],
     outputDir: string,
@@ -969,7 +1025,12 @@ function emitMagents(
  * directory when supported. Independent of magent selection — rules are
  * distribution constraints for the plugin, not persona layers.
  */
-function emitPluginRules(pluginRoot: string, targets: Target[], outputRoot: string, options: InstallOptions): void {
+export function emitPluginRules(
+    pluginRoot: string,
+    targets: Target[],
+    outputRoot: string,
+    options: InstallOptions,
+): void {
     const rulesDir = join(pluginRoot, 'rules');
     const ruleFiles = listRuleMarkdownFiles(rulesDir);
     if (ruleFiles.length === 0) return;
