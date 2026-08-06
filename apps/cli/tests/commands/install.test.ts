@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, spyOn } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, it, spyOn } from 'bun:test';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -834,6 +834,10 @@ describe('resolvePluginRoot — plugin name safety', () => {
 });
 
 describe('executeInstall - codex native agent dispatch (task 0111)', () => {
+    beforeEach(() => {
+        spyOn(process.stdout, 'write').mockImplementation(() => true);
+        spyOn(process.stderr, 'write').mockImplementation(() => true);
+    });
     function mockRulesyncResult() {
         return async () => ({
             rulesCount: 0,
