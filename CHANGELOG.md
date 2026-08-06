@@ -5,7 +5,22 @@ All notable changes to `@gobing-ai/superskill` are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Conventional Commits](https://www.conventionalcommits.org/).
 
 
-## [Unreleased]
+
+## [0.3.12] - 2026-08-06
+
+### Added
+
+- **Pi native extension loading via `plugin.json` `extensions` field.** `superskill install` now reads a `plugin.json` `extensions.pi` array (e.g. `["./hooks/pi/guard-extension.ts"]`) and installs Pi extensions natively to `.pi/agent/plugins/<plugin>/` with a generated `package.json` and registration in `.pi/agent/settings.json` `packages` — no `@vahor/pi-hooks` dependency required. Plugins without `extensions.pi` fall back to the existing `emitPiStyleHooks` `@vahor/pi-hooks` path, so the change is backward-compatible. (`apps/cli/src/commands/install.ts`)
+
+### Fixed
+
+- **`emitMagents` and `emitPluginRules` covered to clear the 90/90 coverage gate.** Bun 1.3.14 applies `coverageThreshold` per-file; `install.ts` sat at 89.41% lines because its two rule/magent emit paths had zero test coverage, causing `bun test` to exit 1 silently (no message) despite all tests passing. Both functions are now exported and covered by 17 new unit tests (`apps/cli/tests/commands/install-magents-rules.test.ts`) exercising no-op, auto-select, suffix/exact match, ambiguous-skip, dry-run, empty-assembly, global-dest, and rules copy/skip/dry-run/global branches. `install.ts` line coverage rose to 93.86%.
+- **Test output leak in install tests.** `echo()` (from `@gobing-ai/ts-utils`) writes to `process.stdout`; the `executeInstall - codex native agent dispatch` describe block ran `executeInstall` with `verbose: true` and no stdout spy, leaking "Resolving plugin…", "Mapping plugin…", "Running rulesync…", and "Installed …" into the dots reporter. Added a `beforeEach` stdout/stderr spy to that block and to the new magents-rules test file, matching the established `spyOn(process.stdout, 'write')` suppression pattern used across all other install tests.
+- **Two biome `useTemplate` lint infos in `install.ts`.** Converted `JSON.stringify(...) + '\n'` string concatenations to template literals in the Pi extension `package.json` and `settings.json` writers.
+
+### Other
+
+- **Upgrade `@gobing-ai/ts-*` family from 0.4.15 to 0.4.19.** `ts-ai-runner`, `ts-db`, `ts-runtime`, and `ts-utils` bumped across root `package.json` catalog, `apps/cli` dependencies, and `bun.lock`. Transitive `ts-infra` resolves to 0.4.19. (`package.json`, `apps/cli/package.json`, `bun.lock`)
 
 
 ## [0.3.11] - 2026-08-02
