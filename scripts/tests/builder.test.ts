@@ -13,6 +13,7 @@ import {
     diskRubricCount,
     dropTags,
     type FileResolver,
+    findMarketplaceVersionDrift,
     findUnpublishableSpecifiers,
     fsLineCount,
     handleMainError,
@@ -642,6 +643,31 @@ describe('findUnpublishableSpecifiers — publish-manifest guard (task 0074)', (
             JSON.stringify({ dependencies: { '@gobing-ai/ts-utils': '^0.4.6' } }),
         );
         expect(offenders).toEqual([]);
+    });
+});
+
+describe('findMarketplaceVersionDrift — stale packed manifest guard (task 0113 R5)', () => {
+    // WHY: `.claude-plugin/marketplace.json` is a build-time copy into the published package, so a
+    // version that lags `apps/cli/package.json` ships silently and advertises the wrong plugin
+    // version to Claude Code. Measured live: tarball manifest 0.3.11 against package 0.3.12.
+    it('flags a plugin entry whose version lags the package version', () => {
+        const drift = findMarketplaceVersionDrift(
+            JSON.stringify({ plugins: [{ name: 'cc', version: '0.3.11' }] }),
+            '0.3.12',
+        );
+        expect(drift).toEqual(['plugin "cc": 0.3.11 (package is 0.3.12)']);
+    });
+
+    it('passes when every plugin entry matches the package version', () => {
+        const drift = findMarketplaceVersionDrift(
+            JSON.stringify({ plugins: [{ name: 'cc', version: '0.3.12' }] }),
+            '0.3.12',
+        );
+        expect(drift).toEqual([]);
+    });
+
+    it('treats an absent marketplace manifest as no drift', () => {
+        expect(findMarketplaceVersionDrift(null, '0.3.12')).toEqual([]);
     });
 });
 

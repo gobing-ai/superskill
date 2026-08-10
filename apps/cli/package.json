@@ -23,7 +23,10 @@
     "files": [
         "dist/",
         "rubrics/",
-        "README.md"
+        "README.md",
+        "plugins/",
+        ".claude-plugin/",
+        "magents/"
     ],
     "engines": {
         "bun": ">=1.3.0"
@@ -31,8 +34,9 @@
     "scripts": {
         "start": "bun run src/index.ts",
         "build": "bun build src/index.ts --compile --outfile ../../dist/superskill",
-        "build:bundle": "bun build src/index.ts --outfile dist/index.js --target bun && bun run ../../scripts/builder.ts postbuild dist/index.js && rm -rf rubrics && cp -r ../../packages/core/src/rubrics rubrics",
-        "prepublishOnly": "bun ../../scripts/builder.ts check-publish-manifest apps/cli/package.json && bun run build:bundle && cp ../../README.md README.md",
+        "build:bundle": "bun build src/index.ts --outfile dist/index.js --target bun && bun run ../../scripts/builder.ts postbuild dist/index.js && rm -rf rubrics && cp -r ../../packages/core/src/rubrics rubrics && rm -rf plugins .claude-plugin magents && cp -r ../../plugins plugins && find plugins -type d -name tests -prune -exec rm -rf {} + && cp -r ../../.claude-plugin .claude-plugin && cp -r ../../magents magents",
+        "prepublishOnly": "bun ../../scripts/builder.ts check-publish-manifest apps/cli/package.json",
+        "prepack": "bun run build:bundle && cp ../../README.md README.md",
         "test": "NODE_ENV=test bun test --reporter=dots",
         "typecheck": "tsc --noEmit"
     },

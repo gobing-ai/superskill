@@ -38,6 +38,7 @@ Two layers:
 | [Bundled `cc` plugin](bundled_plugin.md) | The shipped Claude Code plugin — entities, delegation pattern, scripts |
 | [Plugin script organization](how_to_organize_scripts_for_plugin_development.md) | Dual contract: standard staged path (`script path`) + optional binary registry (`script run`/`hook run`), install staging, Entrypoint Contract, authoring anti-patterns |
 | [Development guide](development.md) | Stack, workspace layout, build commands, verification gate, code style |
+| [Release checklist](release.md) | Published surface, `prepack`/`prepublishOnly` lifecycle, publish-surface content review |
 
 ## Command overview
 

@@ -12,7 +12,7 @@ priority: P2
 tags: []
 dependencies: []
 created_at: "2026-08-02T20:25:41.550Z"
-updated_at: "2026-08-02T22:18:51.052Z"
+updated_at: "2026-08-10T00:13:57.710Z"
 ---
 
 ## 0111. Dispatch plugin subagents natively to Codex as agents TOML (dual-emit, mirrors pi)
@@ -117,6 +117,12 @@ A: Probed 2026-08-02 (same session as R9 above): UNRESOLVED offline. Confirmed: 
 
 **Q: Where do the sp/cc tier assignments live?**
 A: As worked examples inside `plugins/cc/skills/cc-agents/references/model-tiers.md` — outputs of the rubric (super-planner/super-reviewer/expert-* → judgment; super-coder → execution), not a hardcoded registry. If the rule and an example ever disagree, the rule wins and the example is re-derived.
+
+**Q: RESOLUTION (2026-08-09, task 0112) — are the two stale premises settled?**
+A: **Yes — discovery smoke-confirmed, model-key honoring officially verified** on the current installed client `codex-cli 0.147.0` (implementation session 2026-08-09; `codex --version` → `codex-cli 0.147.0`). The old 2026-08-02 probe record above is preserved as historical context; its instruments were inconclusive by construction (offline prompt rendering resolves no roster, and `list_agents` enumerates active/completed threads, not the configured agent-type registry).
+- **Discovery (R9):** a scratch `CODEX_HOME=$(mktemp -d)` with only the real `auth.json` symlinked and one `agents/zz_probe_agent.toml` (five shipped keys: `name`, `description`, `model`, `model_reasoning_effort`, `developer_instructions`) spawned the custom type and returned `PONG` under `codex exec --json --sandbox read-only` — directory discovery confirmed without `[agents]` registration. (Operational note: 0.147.0 rejects spawning a custom agent via a full-history fork — "Full-history forked agents inherit the parent agent type"; the model retried with a context-free fork and succeeded. Corroborating only; not the verdict.)
+- **Model-key honoring (R14):** the current official OpenAI subagents contract (developers.openai.com/codex/subagents) states custom-agent files load from `~/.codex/agents/` or `.codex/agents/` and that file-level `model` / `model_reasoning_effort` **take precedence**; both are documented optional custom-agent keys shown in official examples. Child-session model/effort metadata is treated as optional corroboration only — never inferred from `PONG`, response quality, latency, token use, or a no-model control agent. Verdict: **honored**, per the official precedence contract.
+- No per-agent `[agents.<name>]` registration is part of the contract; the shipped adapter, tier mapping, and install behavior are unchanged.
 ### Design
 **Approach:** additive dual-emit. Keep the universal skill floor (rulesync path) exactly as-is; add a codex-native TOML emitter beside the pi-native emitter. Two files carry the real change; everything else is tests + docs.
 

@@ -2,10 +2,10 @@
 doc: 01_PRD
 owns: WHAT — product vision, users, scope (in / out / deferred)
 authority: authoritative-on-scope
-version: 3.2.0
+version: 3.3.0
 derived_from: [00_ADR]
 owner: Robin Min
-updated_at: 2026-06-16
+updated_at: 2026-08-09
 read_before: adding a command or feature; edit when scope changes
 edit_rules: 99 §6.2
 sync: [T1, T4, T6]
@@ -101,7 +101,7 @@ Each command supports five operations:
 
 | Item | Condition to reactivate |
 |------|------------------------|
-| Remote in-manifest plugin `source` objects (Layer B: `github`, `url`, `git-subdir`, `npm`) | After local relative-path resolution ships; needs fetch + cache layer. Phase 1 supports local relative `source` only. Not to be confused with Layer A: host CLI marketplace **registration** source (`directory` vs `github`) — `--marketplace-source github` is implemented in task 0086. |
+| Remote in-manifest plugin `source` objects (Layer B: `github`, `url`, `git-subdir`, `npm`) | In-manifest object `source` still deferred. **Remote *marketplaces* ship via `--marketplace <locator>`** (local dir, `.claude-plugin/`, GitHub URL, or `owner/repo` shorthand; ADR-034) with content cached at `~/.cache/superskill/marketplaces/<owner>/<repo>/<ref>/`. `--marketplace-source github` is deprecated (ADR-034). |
 | Import from non-Claude formats (Codex, Pi) | After Phase 1 install is stable; needs custom import mapper |
 | `rulesync` upstream contribution (Hermes, omp) | When Hermes/omp adoption warrants it; local targets sufficient initially |
 | Cross-platform adaptation (adapt command) | After Phase 2 authoring commands stabilize; generate Codex/Pi/etc. variants from a single abstract definition |

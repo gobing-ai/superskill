@@ -14,12 +14,12 @@ superskill install [options] <plugin>
 
 | Argument / Option | Description | Default |
 |-------------------|-------------|---------|
-| `<plugin>` | Plugin name to install (required). Resolved via marketplace manifest or `plugins/<name>/`. | — |
-| `--marketplace <path>` | Path to `.claude-plugin/marketplace.json` or its containing directory. | CWD's `.claude-plugin/` |
+| `<plugin>` | Plugin name to install (required) — a bare segment, never a URL/path. Resolved via marketplace manifest, installed package root, or `plugins/<name>/`. | — |
+| `--marketplace <locator>` | Marketplace locator (ADR-034). A local path (probed as direct `marketplace.json` file → `<X>/marketplace.json` → `<X>/.claude-plugin/marketplace.json`), a GitHub URL (`https://github.com/owner/repo[/tree/<ref>[/subpath]]`), or `owner/repo` shorthand. **Local-first:** an existing path is local; only a non-existent `owner/repo` is GitHub shorthand; `https://`/`git@` are always remote. Remote content caches at `~/.cache/superskill/marketplaces/<owner>/<repo>/<ref>/` (warm cache resolves offline). | CWD's `.claude-plugin/`, then installed package root |
 | `--targets <list>` | Comma-separated target agents, or `all`. | all configured |
 | `--no-global` | Install to project-level instead of user-level global directories. | `false` (global) |
 | `--magent <name>` | Select which main-agent package under `magents/` to emit. Required when the plugin ships more than one; auto-selects when exactly one exists. | auto when unique |
-| `--marketplace-source <mode>` | Marketplace registration source for host CLIs (Claude/Grok/OMP): `directory` (local path, default) or `github` (`owner/repo` slug from known remotes; unknown names fall back to path). | `directory` |
+| `--marketplace-source <mode>` | **Deprecated** (ADR-034): warns to stderr, keeps behavior, removal planned. Prefer `--marketplace <locator>`. | `directory` |
 | `--dry-run` | Preview the install without writing files. | `false` |
 | `--verbose` | Print each pipeline step and file copy. | `false` |
 
@@ -48,8 +48,14 @@ superskill install cc --magent team-stark-children --no-global --targets claude,
 # Preview what would be written, no filesystem changes
 superskill install cc --targets all --dry-run --verbose
 
-# GitHub-backed marketplace (recommended for operators):
-superskill install cc --marketplace-source github --verbose
+# Zero-clone install from a registry install (no --marketplace needed):
+#   bun add -g @gobing-ai/superskill
+#   superskill install cc --magent team-stark-children
+# The CLI self-locates its own bundled plugin content from any directory.
+
+# Install from a GitHub marketplace (URL or owner/repo shorthand):
+superskill install cc --marketplace gobing-ai/superskill --verbose
+superskill install cc --marketplace https://github.com/gobing-ai/superskill --verbose
 ```
 
 ### Supported targets
@@ -119,7 +125,7 @@ flowchart TD
 
 ### Stage 1 — Resolve the plugin
 
-`resolvePlugin()` (in `marketplace.ts`) parses the `.claude-plugin/marketplace.json` manifest with a Zod schema and returns the plugin root directory. If no marketplace is found, the install falls back to scanning `plugins/<name>/plugin.json`. If neither resolves, it throws with the list of available plugin names.
+`resolvePlugin()` (in `marketplace.ts`) probes the `--marketplace` locator with a uniform three-way rule (direct `marketplace.json` file → `<X>/marketplace.json` → `<X>/.claude-plugin/marketplace.json`), parses the manifest with a Zod schema, and returns the plugin root directory plus the derived `marketplaceRoot`. A remote locator (GitHub URL / `owner/repo`) is materialized into `~/.cache/superskill/marketplaces/<owner>/<repo>/<ref>/` first via the shared skills-ecosystem fetch layer, so the local resolve flow runs unchanged (ADR-034). When no `--marketplace` is given, the install probes the CWD `.claude-plugin/`, then its own installed package root (self-location, so a registry install works from any directory), then falls back to scanning `plugins/<name>/plugin.json`. If none resolves, it throws with the list of available plugin names.
 
 ### Stage 2 — Map to the canonical `.rulesync/` layout
 

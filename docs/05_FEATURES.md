@@ -2,10 +2,10 @@
 doc: 05_FEATURES
 owns: STATUS — feature decomposition + state (✅ done / 🔶 partial / ⏳ planned / 💤 deferred)
 authority: derived
-version: 6.0.0
+version: 6.1.0
 derived_from: [01_PRD, 02_ROADMAP]
 owner: Robin Min
-updated_at: 2026-08-01
+updated_at: 2026-08-09
 read_before: finding a feature's state; edit when a feature's status changes
 edit_rules: 99 §6.6
 sync: [T4]
@@ -38,6 +38,12 @@ Design: [design-doc-phase1.md](design/design-doc-phase1.md)
 | F3 | [superskill install command + target dispatch](features/F3_superskill-install-command-marketplace-registration.md) | G11, G12, G13, G14 | ✅ | `commands/install.ts` |
 | E2 | [Tests + verification](features/E2_tests-verification.md) | G11–F3, G14 | ✅ | `tests/*` |
 | G14 | [Marketplace manifest resolver](features/G14_marketplace-manifest-resolver.md) | — | ✅ | `marketplace.ts` |
+
+> **ADR-034 (2026-08-09, task 0113):** G14/F3 extended — `--marketplace` is now a **locator**
+> (local dir, `.claude-plugin/`, GitHub URL, or `owner/repo` shorthand) with remote content cached
+> at `~/.cache/superskill/marketplaces/<owner>/<repo>/<ref>/`; the installed package ships
+> `plugins/`/`.claude-plugin/`/`magents/` and self-locates its own root. `--marketplace-source` is
+> deprecated.
 
 ### Foundation (already done)
 

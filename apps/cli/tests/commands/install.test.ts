@@ -7,9 +7,14 @@ import { Command } from 'commander';
 import {
     copyDirectory,
     executeInstall,
+    isRemoteMarketplaceLocator,
+    marketplaceCacheRoot,
+    parseRemoteMarketplaceLocator,
     parseTargets,
     registerInstall,
+    resolveInstalledPackageRoot,
     resolvePluginRoot,
+    resolveRemoteMarketplace,
     runCheckedCommand,
 } from '../../src/commands/install';
 
@@ -476,6 +481,8 @@ describe('executeInstall', () => {
         };
         process.chdir(workspace);
         spyOn(process.stdout, 'write').mockImplementation(() => true);
+        // T6/AC7: --marketplace-source is deprecated — warn on stderr, keep behavior.
+        const stderr = spyOn(process.stderr, 'write').mockImplementation(() => true);
 
         await executeInstall(
             'cc',
@@ -498,6 +505,10 @@ describe('executeInstall', () => {
                 },
             },
         );
+
+        const warning = stderr.mock.calls.map((call) => String(call[0])).join('');
+        expect(warning).toContain('--marketplace-source is deprecated');
+        stderr.mockRestore();
 
         const args = volArg.args;
         expect(args).not.toBeNull();
@@ -830,6 +841,183 @@ describe('resolvePluginRoot — plugin name safety', () => {
         const root = createTempWorkspace();
         const pluginRoot = createPlugin(root, 'configured');
         expect(resolvePluginRoot('configured', undefined, pluginRoot).pluginRoot).toBe(pluginRoot);
+    });
+});
+
+describe('resolveInstalledPackageRoot — self-location fall-through (AC10)', () => {
+    it('falls through silently for a virtual --compile root (/$bunfs) with no throw', () => {
+        expect(resolveInstalledPackageRoot(['/$bunfs/root'])).toBeNull();
+        expect(resolveInstalledPackageRoot(['/$bunfs/root', '/nonexistent/xyz'])).toBeNull();
+    });
+
+    it('returns an existing directory candidate', () => {
+        const root = createTempWorkspace();
+        expect(resolveInstalledPackageRoot([root])).toBe(root);
+    });
+
+    it('returns null when no candidate exists', () => {
+        expect(resolveInstalledPackageRoot(['/nonexistent/definitely-not-here'])).toBeNull();
+    });
+});
+
+describe('parseRemoteMarketplaceLocator + isRemoteMarketplaceLocator (R2 disambiguation)', () => {
+    it('parses a plain GitHub URL', () => {
+        expect(parseRemoteMarketplaceLocator('https://github.com/gobing-ai/superskill')).toEqual({
+            owner: 'gobing-ai',
+            repo: 'superskill',
+            ref: 'HEAD',
+        });
+    });
+
+    it('parses a /tree/<ref> URL and a /tree/<ref>/<subpath> URL', () => {
+        expect(parseRemoteMarketplaceLocator('https://github.com/owner/repo/tree/main')).toEqual({
+            owner: 'owner',
+            repo: 'repo',
+            ref: 'main',
+        });
+        expect(parseRemoteMarketplaceLocator('https://github.com/owner/repo/tree/main/.claude-plugin')).toEqual({
+            owner: 'owner',
+            repo: 'repo',
+            ref: 'main',
+            subdir: '.claude-plugin',
+        });
+    });
+
+    it('parses owner/repo shorthand', () => {
+        expect(parseRemoteMarketplaceLocator('gobing-ai/superskill')).toEqual({
+            owner: 'gobing-ai',
+            repo: 'superskill',
+            ref: 'HEAD',
+        });
+    });
+
+    it('returns null for non-GitHub input', () => {
+        expect(parseRemoteMarketplaceLocator('not a locator')).toBeNull();
+    });
+
+    it('is local-first: an existing path wins, https/git@ always remote', () => {
+        const root = createTempWorkspace();
+        mkdirSync(join(root, 'some', 'dir'), { recursive: true });
+        expect(isRemoteMarketplaceLocator('https://github.com/owner/repo')).toBe(true);
+        expect(isRemoteMarketplaceLocator('git@github.com:owner/repo.git')).toBe(true);
+        // Existing local dir with a slash stays local.
+        expect(isRemoteMarketplaceLocator(join(root, 'some', 'dir'))).toBe(false);
+        // Non-existent owner/repo shorthand → remote.
+        expect(isRemoteMarketplaceLocator('nonexistent/owner-repo')).toBe(true);
+        // Non-existent plain name (no slash) → not remote shorthand.
+        expect(isRemoteMarketplaceLocator('no-slash-name')).toBe(false);
+    });
+});
+
+describe('resolveRemoteMarketplace — cache + offline contract (R4/R9/AC6)', () => {
+    const savedHomeDir = process.env.HOME_DIR;
+
+    afterEach(() => {
+        if (savedHomeDir === undefined) delete process.env.HOME_DIR;
+        else process.env.HOME_DIR = savedHomeDir;
+    });
+
+    it('resolves a warm cache offline with zero network calls', async () => {
+        const home = createTempWorkspace();
+        process.env.HOME_DIR = home;
+        const cacheRoot = join(marketplaceCacheRoot(), 'gobing-ai', 'superskill', 'HEAD');
+        mkdirSync(join(cacheRoot, '.claude-plugin'), { recursive: true });
+        writeFileSync(
+            join(cacheRoot, '.claude-plugin', 'marketplace.json'),
+            JSON.stringify({ name: 'superskill', plugins: [{ name: 'cc', source: './plugins/cc' }] }),
+        );
+
+        // A fetchFn that would throw if touched — warm cache must not call the network.
+        const result = await resolveRemoteMarketplace('gobing-ai/superskill', {
+            fetchFn: (async () => {
+                throw new Error('network must not be reached');
+            }) as unknown as typeof fetch,
+        });
+        expect(result).toBe(cacheRoot);
+    });
+
+    it('fails a cold cache with an actionable error naming the fetch target and cache path', async () => {
+        const home = createTempWorkspace();
+        process.env.HOME_DIR = home;
+        const cacheRoot = join(marketplaceCacheRoot(), 'gobing-ai', 'superskill', 'HEAD');
+
+        await expect(
+            resolveRemoteMarketplace('gobing-ai/superskill', {
+                fetchFn: (async () => {
+                    throw new Error('offline');
+                }) as unknown as typeof fetch,
+            }),
+        ).rejects.toThrow(/gobing-ai\/superskill/);
+        await expect(
+            resolveRemoteMarketplace('gobing-ai/superskill', {
+                fetchFn: (async () => {
+                    throw new Error('offline');
+                }) as unknown as typeof fetch,
+            }),
+        ).rejects.toThrow(cacheRoot);
+    });
+
+    it('asserts every locator-derived cache path segment before any mkdir (AC6)', async () => {
+        const home = createTempWorkspace();
+        process.env.HOME_DIR = home;
+        await expect(resolveRemoteMarketplace('gobing-ai/..')).rejects.toThrow('single path segment');
+        // `..` is URL-normalized away by the URL parser and never reaches a cache path segment.
+        await expect(resolveRemoteMarketplace('https://github.com/../repo')).rejects.toThrow(
+            'Unrecognized --marketplace locator',
+        );
+    });
+
+    // AC2 end-to-end: both locator forms must resolve the `cc` plugin with its root materialized
+    // inside the cache. The parsing/disambiguation tests above cover the halves; this covers the
+    // composition (locator → cold-cache materialize → resolvePluginRoot) that AC2 actually claims.
+    function ccRepoFetch(): typeof fetch {
+        const tree = {
+            sha: 'abc',
+            branch: 'main',
+            tree: [
+                { path: '.claude-plugin/marketplace.json', type: 'blob' as const, sha: 'm1' },
+                { path: 'plugins/cc/plugin.json', type: 'blob' as const, sha: 'p1' },
+                { path: 'plugins/cc/skills/a.md', type: 'blob' as const, sha: 's1' },
+            ],
+        };
+        const contentByPath: Record<string, string> = {
+            '.claude-plugin/marketplace.json': JSON.stringify({
+                name: 'superskill',
+                plugins: [{ name: 'cc', source: './plugins/cc' }],
+            }),
+            'plugins/cc/plugin.json': JSON.stringify({ name: 'cc' }),
+            'plugins/cc/skills/a.md': '---\nname: a\ndescription: Skill a\n---\n# skill a\n',
+        };
+        return (async (url: string) => {
+            if (url.includes('/git/trees/')) {
+                return new Response(JSON.stringify(tree), {
+                    status: 200,
+                    headers: { 'Content-Type': 'application/json' },
+                });
+            }
+            for (const [path, content] of Object.entries(contentByPath)) {
+                if (url.endsWith(`/${path}`)) return new Response(content, { status: 200 });
+            }
+            return new Response('not found', { status: 404 });
+        }) as unknown as typeof fetch;
+    }
+
+    it.each([
+        ['GitHub URL', 'https://github.com/gobing-ai/superskill'],
+        ['owner/repo shorthand', 'gobing-ai/superskill'],
+    ])('resolves the cc plugin into the cache from a %s (AC2)', async (_label, locator) => {
+        const home = createTempWorkspace();
+        process.env.HOME_DIR = home;
+
+        const cacheRoot = await resolveRemoteMarketplace(locator, { fetchFn: ccRepoFetch() });
+
+        expect(cacheRoot).toBe(join(marketplaceCacheRoot(), 'gobing-ai', 'superskill', 'HEAD'));
+        expect(existsSync(join(cacheRoot, '.claude-plugin', 'marketplace.json'))).toBe(true);
+
+        // The materialized cache root feeds the unchanged local resolve flow.
+        const resolution = resolvePluginRoot('cc', cacheRoot);
+        expect(resolution.pluginRoot).toBe(join(cacheRoot, 'plugins', 'cc'));
+        expect(existsSync(join(resolution.pluginRoot, 'skills', 'a.md'))).toBe(true);
     });
 });
 

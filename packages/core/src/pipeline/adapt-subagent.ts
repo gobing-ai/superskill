@@ -210,10 +210,10 @@ function buildPiRuntimeNotes(rawTools: string[], skillsCsv: string): string {
  *
  * Per-agent `model` and `model_reasoning_effort` keys follow the schema observed in
  * real-world Codex agent TOML files and the spawn-time tool parameters confirmed in
- * codex-cli 0.146.0; whether Codex 0.146.0 *honors* file-level model keys at spawn
- * time is not yet confirmed (task 0111 R14 — live probe blocked by account usage
- * limit, retry after 2026-08-07; if ignored, Codex falls back to its inherit-default
- * for that agent, which is harmless).
+ * codex-cli 0.146.0. Whether Codex honors file-level model keys at spawn is now
+ * verified (task 0112, codex-cli 0.147.0): the official subagents contract states
+ * file-level `model`/`model_reasoning_effort` take precedence, and a scratch-home
+ * probe confirmed custom-agent directory discovery.
  * Rather than forwarding raw Claude `model:` values (`sonnet`/`opus`/`inherit`),
  * which are Claude-scoped, the adapter maps a declarative `model-tier:` frontmatter
  * field to a fixed Codex model + reasoning-effort pair. Two tiers only - judgment
@@ -233,10 +233,10 @@ export type CodexModelTier = keyof typeof CODEX_MODEL_TIERS;
 /**
  * Adapt a Claude Code subagent `.md` file into the Codex native agent TOML format.
  *
- * Emits files following the `~/.codex/agents/*.toml` convention. Whether Codex
- * 0.146.0 auto-discovers that directory without `[agents]` registration is not yet
- * confirmed (task 0111 R9 — offline probes inconclusive, live probe blocked by
- * account usage limit, retry after 2026-08-07). The adapter emits a TOML document
+ * Emits files following the `~/.codex/agents/*.toml` convention. Directory discovery
+ * is now verified (task 0112, codex-cli 0.147.0): custom agents load as standalone
+ * TOML files under `~/.codex/agents/` or `.codex/agents/` with no per-agent
+ * `[agents.<name>]` registration. The adapter emits a TOML document
  * with this key order:
  *
  * 1. `name` - the expected (dispatch-name) agent identifier

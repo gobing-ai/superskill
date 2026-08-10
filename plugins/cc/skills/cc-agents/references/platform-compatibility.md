@@ -172,7 +172,7 @@ url = "https://docs.example.com/mcp"
 
 **Valid sandbox_mode values**: `read-only`, `workspace-write`, `danger-full-access`
 
-**Valid model_reasoning_effort values**: `low`, `medium`, `high`
+**Valid model_reasoning_effort values**: `low`, `medium`, `high`, plus model-dependent higher levels `xhigh`, `max`, `ultra` (availability varies by selected model; per current official guidance)
 
 **Field Mapping**:
 | UAM | Codex |

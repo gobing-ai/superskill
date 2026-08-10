@@ -5,12 +5,13 @@ import {
     mkdirSync,
     readdirSync,
     readFileSync,
+    realpathSync,
     rmSync,
     statSync,
     writeFileSync,
 } from 'node:fs';
 import { homedir } from 'node:os';
-import { basename, join, resolve } from 'node:path';
+import { basename, join, relative, resolve } from 'node:path';
 import {
     adaptMagentForTarget,
     adaptSubagentToCodex,
@@ -18,6 +19,7 @@ import {
     assembleMagentContent,
     assertSafePathSegment,
     CLAUDE_PACKAGE_FILES,
+    getGitHubToken,
     isClaudeImportStyle,
     listResolvablePlugins,
     listRuleMarkdownFiles,
@@ -28,6 +30,8 @@ import {
     magentOutputFilename,
     magentRulesRelDir,
     mapPluginToRulesync,
+    materializeRepoSubdir,
+    parseGitHubRepoUrl,
     resolveMarketplaceRegistration,
     resolvePlugin,
     rewriteSkillReferences,
@@ -41,7 +45,7 @@ import {
     translateSlashCommands,
 } from '@gobing-ai/superskill-core';
 import { NodeProcessExecutor, type ProcessExecutor } from '@gobing-ai/ts-runtime';
-import { echo } from '@gobing-ai/ts-utils';
+import { echo, echoError } from '@gobing-ai/ts-utils';
 import type { Command } from 'commander';
 import { loadConfig } from '../config';
 import {
@@ -64,14 +68,21 @@ export function registerInstall(program: Command): void {
             "Install a Claude Code plugin's skills, commands, subagents, magents, hooks, and MCP config to target coding agents",
         )
         .argument('<plugin>', 'Plugin name to install')
-        .option('--marketplace <path>', 'Path to .claude-plugin/marketplace.json or its containing directory')
+        .option(
+            '--marketplace <locator>',
+            'Marketplace locator: a path to marketplace.json or its containing directory, a GitHub repo URL, or owner/repo shorthand. ' +
+                'Local-first: an existing path is local; only a non-existent owner/repo is GitHub shorthand; https:// and git@ are always remote.',
+        )
         .option('--targets <list>', 'Comma-separated target agents (default: all configured)')
         .option('--no-global', 'Install to project-level instead of user-level global directories')
         .option(
             '--magent <name>',
             'Select a specific magent (main-agent config) to install; auto-selects when exactly one exists',
         )
-        .option('--marketplace-source <mode>', 'Marketplace registration source: directory (default) or github')
+        .option(
+            '--marketplace-source <mode>',
+            'DEPRECATED: Marketplace registration source (directory or github); removal planned. Prefer --marketplace with a GitHub URL or owner/repo.',
+        )
         .option('--dry-run', 'Preview without writing files', false)
         .option('--verbose', 'Print each step and file copy', false)
         .action(async (plugin, options) => {
@@ -169,6 +180,96 @@ export interface PluginResolution {
     marketplaceName?: string;
 }
 
+// ── Remote marketplace locators (R2/R3/R4/T3) ───────────────────────────────
+
+/** Parsed GitHub marketplace locator from `--marketplace`. */
+export interface RemoteMarketplaceLocator {
+    owner: string;
+    repo: string;
+    ref: string;
+    /** Optional `/tree/<ref>/<subpath>` subdir inside the repo; '' = whole repo. */
+    subdir?: string;
+}
+
+/** Parse a GitHub URL (`https://github.com/owner/repo[/tree/<ref>[/subpath]]`) or `owner/repo` shorthand. */
+export function parseRemoteMarketplaceLocator(locator: string): RemoteMarketplaceLocator | null {
+    const treeMatch = locator.match(/^https:\/\/github\.com\/([^/]+)\/([^/]+?)(?:\.git)?\/tree\/([^/]+)(?:\/(.*))?$/);
+    if (treeMatch?.[1] && treeMatch[2] && treeMatch[3]) {
+        return { owner: treeMatch[1], repo: treeMatch[2], ref: treeMatch[3], subdir: treeMatch[4] };
+    }
+    const gh = parseGitHubRepoUrl(locator);
+    if (gh) return { owner: gh.owner, repo: gh.repo, ref: 'HEAD' };
+    // owner/repo shorthand
+    const shorthand = locator.match(/^([\w.-]+)\/([\w.-]+)$/);
+    if (shorthand?.[1] && shorthand[2]) {
+        return { owner: shorthand[1], repo: shorthand[2], ref: 'HEAD' };
+    }
+    return null;
+}
+
+/**
+ * Local-first disambiguation (R2): an existing local path is local; only a
+ * non-existent `<X>` matching `^[\w.-]+/[\w.-]+$` is GitHub shorthand; any
+ * `https://`/`git@` form is always remote.
+ */
+export function isRemoteMarketplaceLocator(locator: string): boolean {
+    if (locator.startsWith('https://') || locator.startsWith('git@')) return true;
+    if (existsSync(locator)) return false;
+    return /^[\w.-]+\/[\w.-]+$/.test(locator);
+}
+
+/** Base dir for materialized remote marketplaces: `~/.cache/superskill/marketplaces`. */
+export function marketplaceCacheRoot(): string {
+    return join(resolveHomeDir(), '.cache', 'superskill', 'marketplaces');
+}
+
+/**
+ * Resolve a remote marketplace locator to a local cache root, materializing
+ * plugin content on a cold cache (R4/R9). Warm cache resolves offline with no
+ * network call; a failed cold-cache fetch throws an actionable error naming
+ * the fetch target and the cache path. Every locator-derived path segment is
+ * asserted before the first mkdir (AC6).
+ */
+export async function resolveRemoteMarketplace(
+    locator: string,
+    deps: { fetchFn?: typeof fetch } = {},
+): Promise<string> {
+    const parsed = parseRemoteMarketplaceLocator(locator);
+    if (!parsed) {
+        throw new Error(
+            `Unrecognized --marketplace locator '${locator}'. Expected a local path, GitHub URL, or 'owner/repo'.`,
+        );
+    }
+    for (const seg of [parsed.owner, parsed.repo, parsed.ref]) {
+        assertSafePathSegment(seg, 'marketplace locator');
+    }
+    const cacheRoot = join(marketplaceCacheRoot(), parsed.owner, parsed.repo, parsed.ref);
+
+    // Warm cache: resolve offline, zero network calls (R9).
+    if (
+        existsSync(join(cacheRoot, 'marketplace.json')) ||
+        existsSync(join(cacheRoot, '.claude-plugin', 'marketplace.json'))
+    ) {
+        return cacheRoot;
+    }
+
+    const token = await getGitHubToken();
+    try {
+        await materializeRepoSubdir(`${parsed.owner}/${parsed.repo}`, parsed.subdir ?? '', cacheRoot, {
+            ref: parsed.ref === 'HEAD' ? undefined : parsed.ref,
+            getToken: () => token,
+            fetchFn: deps.fetchFn,
+        });
+    } catch (err) {
+        throw new Error(
+            `Failed to resolve marketplace '${locator}' from ${parsed.owner}/${parsed.repo}` +
+                `${parsed.ref !== 'HEAD' ? `@${parsed.ref}` : ''}` +
+                ` into cache ${cacheRoot}: ${err instanceof Error ? err.message : String(err)}`,
+        );
+    }
+    return cacheRoot;
+}
+
 /** Execute the full install flow: resolve → map → pipeline → rulesync → dispatch. */
 export async function executeInstall(
     plugin: string,
@@ -190,6 +291,15 @@ export async function executeInstall(
     const hasAllFeatures = (['skills', 'commands', 'subagents', 'hooks', 'mcp'] as const).every((feature) =>
         configuredFeatures.has(feature),
     );
+    // --marketplace-source is deprecated (T6/R7): one-line stderr warning,
+    // behavior unchanged. Removal is planned for a future release.
+    if (options.marketplaceSource !== undefined) {
+        echoError(
+            `Warning: --marketplace-source is deprecated and will be removed in a future release. ` +
+                `Use --marketplace with a GitHub URL or 'owner/repo' instead.`,
+        );
+    }
+
     const incompatibleNativeTargets = targets.filter(
         (target) => target === 'claude' || target === 'omp' || target === 'grok',
     );
@@ -202,8 +312,16 @@ export async function executeInstall(
 
     if (options.verbose) echo(`Resolving plugin '${plugin}'...`);
 
-    // Step 1: Resolve plugin root (+ marketplace metadata for Claude target)
-    const resolution = resolvePluginRoot(plugin, options.marketplacePath, options.pluginPath);
+    // Step 1: Resolve plugin root (+ marketplace metadata for Claude target).
+    // A remote `--marketplace` locator (GitHub URL / owner/repo shorthand) is
+    // materialized into a local cache root first (R2/R4); the cache root then
+    // feeds the unchanged local resolve flow.
+    let marketplacePath = options.marketplacePath;
+    if (marketplacePath && isRemoteMarketplaceLocator(marketplacePath)) {
+        if (options.verbose) echo(`Resolving remote marketplace '${marketplacePath}'...`);
+        marketplacePath = await resolveRemoteMarketplace(marketplacePath);
+    }
+    const resolution = resolvePluginRoot(plugin, marketplacePath, options.pluginPath);
     const pluginRoot = resolution.pluginRoot;
 
     if (options.verbose) echo(`Plugin root: ${pluginRoot}`);
@@ -464,12 +582,28 @@ export async function executeInstall(
                 const piPluginsDir = join(outputRoot, '.pi', 'agent', 'plugins', plugin);
                 if (!options.dryRun) {
                     mkdirSync(piPluginsDir, { recursive: true });
-                    // Copy extension files
+                    // Bundle each extension into a single self-contained file.
+                    // Pi loads extensions as single files; a raw copy drops sibling
+                    // modules referenced via relative imports (e.g. ../agent-hint)
+                    // and the import dangles at runtime. Bundling inlines relative
+                    // imports while keeping the Pi host SDK and node builtins external.
+                    // Output keeps the declared basename (naming: '[name].ts') so the
+                    // generated package.json ref stays valid and Bun loads it as ESM
+                    // (.ts is always ESM under Bun, regardless of package.json "type").
                     for (const ext of piExtensions) {
                         const source = join(pluginRoot, ext);
-                        const dest = join(piPluginsDir, basename(ext));
-                        if (existsSync(source)) {
-                            copyFileSync(source, dest);
+                        if (!existsSync(source)) continue;
+                        const result = await Bun.build({
+                            entrypoints: [source],
+                            target: 'bun',
+                            format: 'esm',
+                            outdir: piPluginsDir,
+                            naming: '[name].ts',
+                            external: ['@earendil-works/pi-coding-agent'],
+                        });
+                        if (!result.success) {
+                            const logs = result.logs.map(String).join('\n');
+                            throw new Error(`Failed to bundle Pi extension ${ext}${logs ? `:\n${logs}` : ''}`);
                         }
                     }
                     // Create package.json for Pi to load the extension
@@ -487,7 +621,8 @@ export async function executeInstall(
                             ? (JSON.parse(readFileSync(piSettingsPath, 'utf-8')) as Record<string, unknown>)
                             : {};
                         const packages = (existing.packages as string[]) ?? [];
-                        const packageRef = `file:${piPluginsDir}`;
+                        const piAgentDir = join(outputRoot, '.pi', 'agent');
+                        const packageRef = relative(piAgentDir, piPluginsDir);
                         if (!packages.includes(packageRef)) {
                             packages.push(packageRef);
                             existing.packages = packages;
@@ -534,7 +669,7 @@ export async function executeInstall(
 
         // Codex native agent dispatch: adapt each subagent to Codex TOML -> ~/.codex/agents/
         // Mirrors the Pi dual-emit (task 0111). Discovery of the ~/.codex/agents dir
-        // convention is unconfirmed on codex-cli 0.146.0 (R9 - see task Q&A).
+        // convention is verified on codex-cli 0.147.0 (task 0112 - scratch-home probe).
         if (target === 'codex') {
             const agentsDir = join(pluginRoot, 'agents');
             if (configuredFeatures.has('subagents') && existsSync(agentsDir) && !options.dryRun) {
@@ -1119,6 +1254,40 @@ export function parseTargets(raw: string | undefined): Target[] {
 }
 
 /**
+ * Locate the CLI's own installed package root for self-location (R6/T5).
+ *
+ * In `bun build --target bun` output, `import.meta.dir` is the real `dist/`
+ * path (already symlink-resolved), so its parent is the package root. A
+ * `--compile` binary reports the virtual `/$bunfs/root`, and a dev-repo run
+ * points at `apps/cli` — both must fall through silently (return null), never
+ * throw ENOENT from `realpathSync`. Accepts explicit `candidates` for tests.
+ */
+export function resolveInstalledPackageRoot(candidates?: string[]): string | null {
+    const roots: string[] = candidates ?? [];
+    if (!candidates) {
+        if (import.meta.dir) {
+            roots.push(resolve(import.meta.dir, '..'));
+        }
+        // Defensive fallback: argv[1] is already real-path'd under bun, so the
+        // realpath is belt-and-braces for a future node-hosted bin.
+        if (process.argv[1]) {
+            try {
+                roots.push(resolve(realpathSync(process.argv[1]), '..'));
+            } catch {
+                // virtual/non-existent path (--compile) — skip silently
+            }
+        }
+    }
+    for (const root of roots) {
+        if (root.startsWith('/$bunfs')) continue; // --compile virtual root
+        try {
+            if (existsSync(root) && statSync(root).isDirectory()) return root;
+        } catch {}
+    }
+    return null;
+}
+
+/**
  * Resolve a plugin to its root directory and marketplace metadata.
  *
  * Tries the marketplace manifest first (via {@link resolvePlugin}), then falls
@@ -1173,6 +1342,31 @@ export function resolvePluginRoot(
             }
         }
         return { pluginRoot: resolved.pluginRoot, marketplaceRoot: manifestRoot, marketplaceName };
+    }
+
+    // Step 4: installed package root self-location (R6/T5). Probes the bundled
+    // package for `.claude-plugin/marketplace.json` then `plugins/<name>`, so a
+    // registry install works from any CWD with zero flags. Falls through
+    // silently for --compile binaries (/bunfs virtual root) and dev-repo runs.
+    const installedRoot = resolveInstalledPackageRoot();
+    if (installedRoot) {
+        const pkgManifest = join(installedRoot, '.claude-plugin', 'marketplace.json');
+        if (existsSync(pkgManifest)) {
+            const pkgResolved = resolvePlugin(pkgManifest, plugin);
+            if (pkgResolved) {
+                return {
+                    pluginRoot: pkgResolved.pluginRoot,
+                    marketplaceRoot: pkgResolved.marketplaceRoot,
+                };
+            }
+        }
+        const pkgFallback = join(installedRoot, 'plugins', plugin);
+        if (
+            existsSync(pkgFallback) &&
+            readdirSync(pkgFallback).some((d) => ['skills', 'commands', 'agents', 'hooks', 'hooks.json'].includes(d))
+        ) {
+            return { pluginRoot: pkgFallback };
+        }
     }
 
     const fallback = join('plugins', plugin);

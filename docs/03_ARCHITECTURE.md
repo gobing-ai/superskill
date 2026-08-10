@@ -2,10 +2,10 @@
 doc: 03_ARCHITECTURE
 owns: HOW — module boundaries, data flow, runtime model, invariants
 authority: derived
-version: 2.8.0
+version: 2.9.0
 derived_from: [00_ADR, 01_PRD]
 owner: Robin Min
-updated_at: 2026-07-26
+updated_at: 2026-08-09
 read_before: cross-module, seam, or schema work
 edit_rules: 99 §6.4
 sync: [T1]
@@ -110,7 +110,7 @@ packages/core/src/                # ── Reusable domain logic (@gobing-ai/sup
 │   └── validate.ts               # Syntax and layout verification engine
 │
 ├── targets.ts                    # Target mapping registries and conversions
-├── marketplace.ts                # Local plugin/marketplace manifest resolution (ADR-011)
+├── marketplace.ts                # Marketplace manifest resolution + locator probe (ADR-011, ADR-034)
 ├── mapper.ts                     # Mappings from plugin structure to rulesync canonical
 ├── rulesync.ts                   # Rulesync invocation wrapper (ADR-010)
 └── index.ts                      # Public API barrel (structured results, typed errors; no process/stdout)
@@ -264,12 +264,23 @@ plugins/<name>/
 ## Plugin resolution
 
 `superskill install <plugin>` resolves the plugin root from explicit CLI input, validated config, or
-a Claude Code marketplace manifest (ADR-011). Resolution order, first match wins:
+a Claude Code marketplace manifest (ADR-011, extended by ADR-034). Resolution order, first match wins:
 
-1. `--marketplace <path>` — explicit path to a `.claude-plugin/marketplace.json` (or its containing dir).
+1. `--marketplace <locator>` — a **marketplace locator** (ADR-034): local path
+   (probed direct-file → `<X>/marketplace.json` → `<X>/.claude-plugin/marketplace.json`),
+   GitHub URL, or `owner/repo` shorthand. Remote locators are materialized into
+   `~/.cache/superskill/marketplaces/<owner>/<repo>/<ref>/` first; the cache root feeds the
+   unchanged local resolve flow.
 2. Matching `plugins[].path` in project-local `superskill.jsonc`.
 3. `.claude-plugin/marketplace.json` in CWD.
-4. Fallback: the `plugins/<name>/` directory scan (legacy convention).
+4. **Installed package root** self-location (ADR-034): probe the CLI's own bundled
+   `.claude-plugin/marketplace.json` then `plugins/<name>`, so a registry install works from any
+   CWD. Falls through silently for `--compile` binaries (virtual `/$bunfs/root`) and dev-repo runs.
+5. Fallback: the `plugins/<name>/` directory scan (legacy convention).
+
+`marketplaceRoot` is derived **per matched probe branch** (`dirname(manifest)`, raised one level
+only when that dirname is `.claude-plugin`) — the root-level `<X>/marketplace.json` branch resolves
+under `<X>`, not its parent (ADR-034).
 
 **Manifest shape** (verified against Claude Code docs + `cc-agents/.claude-plugin/marketplace.json`):
 
@@ -283,7 +294,7 @@ a Claude Code marketplace manifest (ADR-011). Resolution order, first match wins
 ```
 
 > [!IMPORTANT]
-> **Resolution rule (invariant 7):** match `<plugin>` against `plugins[].name`; the plugin root is `source` (prefixed by `metadata.pluginRoot` if `source` is bare) resolved relative to the **marketplace root** — the directory containing `.claude-plugin/`, *not* `.claude-plugin/` itself. Phase 1 accepts only **string relative-path** `source` values (must start `./`); object sources (`github`, `url`, `git-subdir`, `npm`) are rejected.
+> **Resolution rule (invariant 7):** match `<plugin>` against `plugins[].name`; the plugin root is `source` (prefixed by `metadata.pluginRoot` if `source` is bare) resolved relative to the **marketplace root** — derived per probe branch as `dirname(manifest)`, raised one level only when that dirname is `.claude-plugin` (ADR-034). Only **string relative-path** `source` values are accepted (must start `./`); object sources (`github`, `url`, `git-subdir`, `npm`) are rejected — remote marketplaces are reached via `--marketplace <locator>`, never via in-manifest object `source`.
 
 ## Conversion rules
 

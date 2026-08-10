@@ -337,6 +337,25 @@ export function findUnpublishableSpecifiers(manifestText: string): string[] {
     return offenders;
 }
 
+/**
+ * Find marketplace plugin entries whose version has drifted from the published package version.
+ * `bump-ver` writes a single version to both `apps/cli/package.json` and every plugin entry, so any
+ * difference at publish time means the packed `.claude-plugin/marketplace.json` advertises a stale
+ * plugin version to Claude Code. This shipped silently because the manifest is a build-time copy:
+ * task 0113 measured `0.3.11` in the packed tarball against package `0.3.12` (R5).
+ */
+export function findMarketplaceVersionDrift(marketplaceText: string | null, pkgVersion: string): string[] {
+    if (marketplaceText === null) return [];
+    const marketplace = JSON.parse(marketplaceText) as { plugins?: Array<{ name?: string; version?: string }> };
+    const drift: string[] = [];
+    for (const entry of marketplace.plugins ?? []) {
+        if (entry.version !== pkgVersion) {
+            drift.push(`plugin "${entry.name}": ${entry.version} (package is ${pkgVersion})`);
+        }
+    }
+    return drift;
+}
+
 function isNonFlag(arg: string): boolean {
     return !arg.startsWith('--');
 }
@@ -370,14 +389,27 @@ export async function runBuilderCommand(argv: string[], shell: ShellRunner = $) 
         }
         case 'check-publish-manifest': {
             const manifestPath = version ?? 'apps/cli/package.json';
-            const offenders = findUnpublishableSpecifiers(readFileSync(resolve(ROOT, manifestPath), 'utf-8'));
+            const manifestText = readFileSync(resolve(ROOT, manifestPath), 'utf-8');
+            const offenders = findUnpublishableSpecifiers(manifestText);
             if (offenders.length > 0) {
                 fail(
                     `${manifestPath} contains workspace-only specifiers npm cannot publish:\n  ${offenders.join('\n  ')}\n` +
                         'Pin concrete versions in the published workspace (catalog:/workspace: resolve only inside this monorepo).',
                 );
             }
-            logger.info(`${manifestPath}: publishable — no workspace-only specifiers.`);
+            const pkgVersion = (JSON.parse(manifestText) as { version?: string }).version ?? '';
+            const marketplacePath = resolve(ROOT, '.claude-plugin/marketplace.json');
+            const drift = findMarketplaceVersionDrift(
+                existsSync(marketplacePath) ? readFileSync(marketplacePath, 'utf-8') : null,
+                pkgVersion,
+            );
+            if (drift.length > 0) {
+                fail(
+                    `.claude-plugin/marketplace.json is stale — the packed manifest would advertise a wrong plugin version:\n  ${drift.join('\n  ')}\n` +
+                        `Run \`bun scripts/builder.ts bump-ver ${pkgVersion}\` to sync the marketplace and plugin.json manifests before publishing.`,
+                );
+            }
+            logger.info(`${manifestPath}: publishable — no workspace-only specifiers, marketplace versions in sync.`);
             break;
         }
         default:

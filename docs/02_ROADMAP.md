@@ -2,10 +2,10 @@
 doc: 02_ROADMAP
 owns: WHEN — phases, current vs deferred, sequencing
 authority: derived
-version: 3.4.0
+version: 3.5.0
 derived_from: [00_ADR, 01_PRD]
 owner: Robin Min
-updated_at: 2026-07-26
+updated_at: 2026-08-09
 read_before: placing work in a phase; edit when phase status changes
 edit_rules: 99 §6.3
 sync: [T5]
@@ -114,7 +114,7 @@ sync: [T5]
 
 **Design:** _(deferred — inventory in design-doc-phase5.md §5)_
 
-- [ ] Remote marketplace sources (`github`, `url`, `git-subdir`, `npm`) — fetch + cache layer (Phase 1 was local-relative only).
+- [x] Remote marketplace locators (`--marketplace <github-url|owner/repo>`) — fetch + cache layer (task 0113, ADR-034). In-manifest object `source` (Layer B) remains deferred.
 - [ ] Thin commands: `superskill list`, `doctor`, `init`.
 
 **Exit:** a remote marketplace source installs end-to-end; `list`/`doctor`/`init` ship and pass the gate.

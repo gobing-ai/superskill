@@ -1,6 +1,6 @@
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join, normalize, resolve, sep } from 'node:path';
+import { dirname, join, normalize, resolve, sep } from 'node:path';
 import { NodeProcessExecutor, type ProcessExecutor } from '@gobing-ai/ts-runtime';
 import { parseSkillFrontmatter } from './frontmatter';
 import { isGitHubHost } from './github-host';
@@ -507,6 +507,67 @@ export async function tryBlobInstall(
 
 function computeSnapshotHash(files: SkillSnapshotFile[]): string {
     return computeStructuredContentHash(files);
+}
+
+/**
+ * Materialize every blob under `subdir` of a GitHub repo into `destDir` via the
+ * Trees API + per-file raw fetches (the tree+blob path, matching {@link tryBlobInstall}).
+ * Built on the shared auth/tree primitives ({@link fetchRepoTree}, {@link getGitHubToken}) so
+ * `install` needs no parallel GitHub client (R3).
+ *
+ * Consumer boundary (task 0113 T2, "used by both `install` and, *where applicable*, `skill add`"):
+ * `install` uses this helper; `skill add` deliberately does not. It materializes blobs through
+ * `res.text()`, so it is text-only and GitHub-only — substituting it for {@link cloneRepo} in
+ * `skill add` would UTF-8-mangle binary skill assets, drop non-GitHub git sources, and lose
+ * git-credential auth for private repos. `skill add` therefore keeps {@link tryBlobInstall}
+ * (selective SKILL.md discovery returning in-memory {@link BlobSkill}s) and {@link cloneRepo}
+ * (full-fidelity fallback); both sit on the same shared auth/tree layer, which is what R3 requires.
+ *
+ * Rejects when the tree cannot be fetched or `subdir` contains no blobs. The caller asserts any
+ * locator-derived path segments before the first mkdir.
+ */
+export async function materializeRepoSubdir(
+    ownerRepo: string,
+    subdir: string,
+    destDir: string,
+    options: {
+        ref?: string;
+        getToken?: () => string | null;
+        fetchFn?: typeof fetch;
+        ghTokenRunner?: () => string | null;
+    } = {},
+): Promise<void> {
+    const fetchFn = options.fetchFn ?? fetch;
+    const tree = await fetchRepoTree(ownerRepo, options.ref, options.getToken, fetchFn, options.ghTokenRunner);
+    if (!tree) {
+        throw new Error(
+            `Could not fetch repository tree for ${ownerRepo}${options.ref ? `@${options.ref}` : ''} ` +
+                `(https://api.github.com/repos/${ownerRepo}/git/trees/)`,
+        );
+    }
+    const prefix = subdir ? (subdir.endsWith('/') ? subdir : `${subdir}/`) : '';
+    const blobs = tree.tree.filter((e) => e.type === 'blob' && e.path.startsWith(prefix));
+    if (blobs.length === 0) {
+        throw new Error(`No files found under '${subdir || '/'}' in ${ownerRepo}`);
+    }
+    const token = options.getToken ? options.getToken() : null;
+    await Promise.all(
+        blobs.map(async (blob) => {
+            const rel = blob.path.slice(prefix.length);
+            if (!rel) return;
+            const url = `https://raw.githubusercontent.com/${ownerRepo}/${tree.branch}/${blob.path}`;
+            const headers: Record<string, string> = { 'User-Agent': 'superskill-core' };
+            if (token) headers.Authorization = `Bearer ${token}`;
+            const res = await fetchFn(url, { headers });
+            if (!res.ok) {
+                throw new Error(`Failed to fetch ${url}: HTTP ${res.status}`);
+            }
+            const text = await res.text();
+            const dest = join(destDir, rel);
+            await mkdir(dirname(dest), { recursive: true });
+            await writeFile(dest, text);
+        }),
+    );
 }
 
 /**

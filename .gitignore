@@ -156,5 +156,9 @@ dist
 /apps/cli/README.md
 /apps/cli/templates/
 /apps/cli/rubrics/
+/apps/cli/plugins/
+/apps/cli/.claude-plugin/
+/apps/cli/magents/
 /.spur/run/
 /.spur/context/
+/.spur/memory/sessions/

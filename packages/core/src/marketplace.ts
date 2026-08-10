@@ -1,5 +1,5 @@
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { basename, dirname, join, resolve } from 'node:path';
 import { z } from 'zod';
 
 /** A single plugin entry in a marketplace manifest. */
@@ -41,10 +41,53 @@ export interface ResolvedPlugin {
 }
 
 /**
+ * Derive the marketplace root from a resolved manifest path.
+ *
+ * The manifest sits either directly at the root (`<root>/marketplace.json`) or
+ * under `<root>/.claude-plugin/marketplace.json`. The root is the manifest's
+ * directory, raised one level only when that directory is literally
+ * `.claude-plugin`. This single rule covers the direct-file branch too.
+ */
+function deriveMarketplaceRoot(manifestPath: string): string {
+    const dir = dirname(manifestPath);
+    return basename(dir) === '.claude-plugin' ? resolve(dir, '..') : resolve(dir);
+}
+
+/**
+ * Probe a `--marketplace` locator for a manifest with the uniform three-way
+ * rule (R1): direct file (when the locator ends in `marketplace.json`) →
+ * `<X>/marketplace.json` → `<X>/.claude-plugin/marketplace.json`. Throws only
+ * after all applicable probes, naming every probed path.
+ */
+function findMarketplaceManifest(marketplacePath: string): { manifestPath: string; marketplaceRoot: string } {
+    const probed: string[] = [];
+    let manifestPath: string | null = null;
+
+    if (marketplacePath.endsWith('marketplace.json')) {
+        manifestPath = resolve(marketplacePath);
+        probed.push(manifestPath);
+    } else {
+        const root = resolve(marketplacePath);
+        const atRoot = join(root, 'marketplace.json');
+        const inClaudePlugin = join(root, '.claude-plugin', 'marketplace.json');
+        probed.push(atRoot, inClaudePlugin);
+        if (existsSync(atRoot)) manifestPath = atRoot;
+        else if (existsSync(inClaudePlugin)) manifestPath = inClaudePlugin;
+    }
+
+    if (!manifestPath || !existsSync(manifestPath)) {
+        throw new Error(`Marketplace manifest not found. Probed: ${probed.join(', ')}`);
+    }
+
+    return { manifestPath, marketplaceRoot: deriveMarketplaceRoot(manifestPath) };
+}
+
+/**
  * Resolve a plugin name to its root directory via marketplace resolution.
  *
  * Resolution order:
- * 1. `--marketplace <path>` — explicit marketplace file or directory
+ * 1. `--marketplace <locator>` — explicit marketplace file, directory, or
+ *    (remote GitHub) locator already materialized by the caller
  * 2. `.claude-plugin/marketplace.json` in CWD
  * 3. Signal fall-through — caller should scan `plugins/<name>/`
  *
@@ -54,22 +97,18 @@ export interface ResolvedPlugin {
  */
 export function resolvePlugin(marketplacePath: string | undefined, pluginName: string): ResolvedPlugin | null {
     let manifestPath: string | null = null;
+    let marketplaceRoot = '';
 
     if (marketplacePath) {
-        // --marketplace can point to the file or its parent directory
-        if (marketplacePath.endsWith('marketplace.json')) {
-            manifestPath = resolve(marketplacePath);
-        } else {
-            manifestPath = resolve(join(marketplacePath, 'marketplace.json'));
-        }
-        if (!existsSync(manifestPath)) {
-            throw new Error(`Marketplace manifest not found at: ${manifestPath}`);
-        }
+        const found = findMarketplaceManifest(marketplacePath);
+        manifestPath = found.manifestPath;
+        marketplaceRoot = found.marketplaceRoot;
     } else {
         // Scan CWD for .claude-plugin/marketplace.json
         const cwdManifest = resolve('.claude-plugin', 'marketplace.json');
         if (existsSync(cwdManifest)) {
             manifestPath = cwdManifest;
+            marketplaceRoot = deriveMarketplaceRoot(cwdManifest);
         }
     }
 
@@ -134,9 +173,6 @@ export function resolvePlugin(marketplacePath: string | undefined, pluginName: s
         }
     }
 
-    // Marketplace root = directory containing .claude-plugin/ (NOT .claude-plugin/ itself)
-    const marketplaceRoot = resolve(manifestPath, '..', '..');
-
     const pluginRoot = resolve(marketplaceRoot, pluginRootBase, source);
 
     let dirents: string[];
@@ -166,10 +202,11 @@ export function listResolvablePlugins(marketplacePath: string | undefined): stri
     let manifestPath: string | null = null;
 
     if (marketplacePath) {
-        manifestPath = marketplacePath.endsWith('marketplace.json')
-            ? resolve(marketplacePath)
-            : resolve(join(marketplacePath, 'marketplace.json'));
-        if (!existsSync(manifestPath)) return [];
+        try {
+            manifestPath = findMarketplaceManifest(marketplacePath).manifestPath;
+        } catch {
+            return [];
+        }
     } else {
         const cwdManifest = resolve('.claude-plugin', 'marketplace.json');
         if (existsSync(cwdManifest)) manifestPath = cwdManifest;

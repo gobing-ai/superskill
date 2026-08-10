@@ -5,7 +5,7 @@ owns: PROCESS — how the key files are maintained
 authority: authoritative-on-process
 version: 1.2.0
 created_at: 2026-05-31T17:30:43.643Z
-updated_at: 2026-06-12T00:00:00.000Z
+updated_at: 2026-08-09T00:00:00.000Z
 ---
 
 # Project Constitution — How to Organize the Project
@@ -351,6 +351,14 @@ if it recurs, a new rule in §6.
 - [2026-06-11] spur-new: An ADR number was burned by confusion with a sibling repo's ADR
   sequence; the gap was later documented as a `Skipped` stub. One sequence per repo, stub the
   gaps (now §6.1 rule 4).
+- [2026-08-09] superskill: Task 0112 reconciled Codex evidence by folding the verification
+  into ADR-033's original `**Why.**` paragraph as an inline edit, leaving the 2026-08-02
+  "confirmed in codex-cli 0.146.0" premise as lead justification while a 2026-08-09 verification
+  was spliced mid-paragraph — and a dead "if directory registration turns out to be needed"
+  contingency survived because the resolution never named it as retired. An evidence update to an
+  accepted ADR is a correction to an append-only file: restore the original reasoning and add a
+  dated `**Amendment**` block that explicitly retires any contingency the new evidence settles
+  (§6.1 rule 3). If the amendment reads as a clean superset, the inline edit was wrong.
 
 ### Lessons for `docs/01_PRD.md`
 

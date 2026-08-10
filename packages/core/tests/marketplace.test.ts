@@ -160,6 +160,53 @@ describe('resolvePlugin', () => {
     it('throws when marketplace manifest is missing', () => {
         expect(() => resolvePlugin('/nonexistent/marketplace.json', 'demo')).toThrow('not found');
     });
+    it('probes <X>/.claude-plugin/marketplace.json when given a directory (R1)', () => {
+        tmpDir = mkdtempSync('superskill-mp-');
+        const claudePluginDir = join(tmpDir, '.claude-plugin');
+        mkdirSync(claudePluginDir, { recursive: true });
+        const pluginDir = join(tmpDir, 'plugins', 'demo');
+        mkdirSync(join(pluginDir, 'skills'), { recursive: true });
+        writeFileSync(
+            join(claudePluginDir, 'marketplace.json'),
+            JSON.stringify({ plugins: [{ name: 'demo', source: './plugins/demo' }] }),
+        );
+
+        // Point at the marketplace root dir — must probe <X>/.claude-plugin/marketplace.json
+        const result = resolvePlugin(tmpDir, 'demo');
+        expect(result).not.toBeNull();
+        expect(result?.pluginRoot).toBe(resolve(pluginDir));
+        expect(result?.marketplaceRoot).toBe(resolve(tmpDir));
+    });
+
+    it('derives marketplaceRoot === <X> for the root-level <X>/marketplace.json branch (R1 regression)', () => {
+        tmpDir = mkdtempSync('superskill-mp-');
+        const pluginDir = join(tmpDir, 'plugins', 'demo');
+        mkdirSync(join(pluginDir, 'skills'), { recursive: true });
+        mkdirSync(join(tmpDir, 'magents'), { recursive: true });
+        // Manifest at <X>/marketplace.json — NO .claude-plugin dir.
+        writeFileSync(
+            join(tmpDir, 'marketplace.json'),
+            JSON.stringify({ name: 'root-marketplace', plugins: [{ name: 'demo', source: './plugins/demo' }] }),
+        );
+
+        const result = resolvePlugin(tmpDir, 'demo');
+        expect(result).not.toBeNull();
+        // The latent bug resolved to dirname(<X>); must be <X> itself.
+        expect(result?.marketplaceRoot).toBe(resolve(tmpDir));
+        expect(result?.pluginRoot).toBe(resolve(pluginDir));
+        // Companion: the magents/ sibling must resolve under <X>.
+        expect(resolve(result?.marketplaceRoot ?? '', 'magents')).toBe(resolve(join(tmpDir, 'magents')));
+    });
+
+    it('throws one error listing every probed path when all three probe branches are missing (R1)', () => {
+        tmpDir = mkdtempSync('superskill-mp-');
+        expect(() => resolvePlugin(tmpDir, 'demo')).toThrow('Marketplace manifest not found');
+        expect(() => resolvePlugin(tmpDir, 'demo')).toThrow(resolve(join(tmpDir, 'marketplace.json')));
+        expect(() => resolvePlugin(tmpDir, 'demo')).toThrow(
+            resolve(join(tmpDir, '.claude-plugin', 'marketplace.json')),
+        );
+    });
+
     // R3 regression: absolute pluginRoot in metadata is rejected
     it('rejects absolute pluginRoot in metadata', () => {
         tmpDir = mkdtempSync('superskill-mp-');

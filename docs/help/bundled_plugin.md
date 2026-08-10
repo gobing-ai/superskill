@@ -2,6 +2,17 @@
 
 superskill ships with a Claude Code plugin at [`plugins/cc/`](../../plugins/cc/) (marketplace name: `cc`) that demonstrates the full authoring lifecycle and provides the meta-agent skills the expert personas reference.
 
+## Installing (zero-clone)
+
+The published `@gobing-ai/superskill` npm package bundles `plugins/`, `.claude-plugin/marketplace.json`, and `magents/` at its package root (ADR-034). The CLI self-locates that bundled content, so a registry install works from any directory — no clone, no checkout, no `--marketplace`:
+
+```bash
+bun add -g @gobing-ai/superskill
+superskill install cc --magent team-stark-children
+```
+
+The same package root is a valid Claude Code marketplace: `claude plugin marketplace add <extracted-pkg-root>`. To install from source (a git checkout or local repo), pass `--marketplace <path-to-repo-root>`.
+
 ## Entities
 
 | Entity | Count | Purpose |

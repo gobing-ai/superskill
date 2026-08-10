@@ -2,10 +2,10 @@
 doc: 04_DESIGN
 owns: SURFACE — concrete shapes: every CLI command, flag, config key, env var, table, DTO
 authority: derived
-version: 2.6.0
+version: 2.7.0
 derived_from: [00_ADR, 01_PRD, 02_ROADMAP]
 owner: Robin Min
-updated_at: 2026-07-26
+updated_at: 2026-08-09
 read_before: changing a command, flag, env var, or schema
 edit_rules: 99 §6.5
 sync: [T3]
@@ -19,14 +19,15 @@ sync: [T3]
 ## Phase 1 install surface
 
 ```text
-superskill install <plugin> [--marketplace <path>] [--targets <list>] [--no-global]
+superskill install <plugin> [--marketplace <locator>] [--targets <list>] [--no-global]
     [--magent <name>] [--marketplace-source <directory|github>] [--dry-run] [--verbose]
 ```
 
 | Input | Shape and precedence |
 |-------|----------------------|
-| `<plugin>` | Required plugin name |
-| `--marketplace <path>` | Explicit manifest/directory; overrides configured plugin path and ambient discovery |
+| `<plugin>` | Required plugin name — a **bare segment** (`assertSafePathSegment`); never a URL/path |
+| `--marketplace <locator>` | Marketplace locator (ADR-034). **Local-first disambiguation:** an existing local path is local; only a non-existent `^[\w.-]+/[\w.-]+$` is GitHub shorthand; `https://`/`git@` are always remote. Local probe: direct file (`.../marketplace.json`) → `<X>/marketplace.json` → `<X>/.claude-plugin/marketplace.json`. Remote content caches at `~/.cache/superskill/marketplaces/<owner>/<repo>/<ref>/`. Overrides configured plugin path and ambient discovery |
+| `--marketplace-source <mode>` | **Deprecated** (ADR-034): warns to stderr, keeps behavior, removal planned. Prefer `--marketplace <locator>` |
 | `--targets <list>` | Comma-separated target names or `all`; overrides configured targets |
 | `superskill.jsonc` | Project-local JSONC; supports line/block comments and trailing commas |
 | `version` | Literal `1` |

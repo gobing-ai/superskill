@@ -2,9 +2,9 @@
 doc: 00_ADR
 owns: WHY — which cross-cutting decision was made, and the one-line reason
 authority: authoritative
-version: 1.9.0
+version: 1.10.1
 owner: Robin Min
-updated_at: 2026-07-26
+updated_at: 2026-08-09
 read_before: any structural change; add a dated entry before diverging from a decision
 edit_rules: 99 §6.1
 sync: [T1, T2]
@@ -446,24 +446,117 @@ can stamp `model-tier:` into frontmatter after human acceptance.
 **Why.** The `~/.codex/agents/*.toml` convention follows the real-world agent files
 observed on disk and the agent-role machinery confirmed in codex-cli 0.146.0
 (`AgentRoleToml`, `default_subagent_model`, spawn-time `model`/`reasoning_effort`
-tool parameters). Two premises remain **unverified** at decision time: whether Codex
-auto-discovers that directory without `[agents]` registration, and whether it honors
-file-level `model`/`model_reasoning_effort` keys at spawn time — offline probes on
-0.146.0 (2026-08-02, task 0111 Q&A) were inconclusive and the live probe is blocked
-by the account usage limit (retry after 2026-08-07). The emission shape is safe
-under either outcome: if the keys are ignored, Codex falls back to its
-inherit-default per agent; if directory registration turns out to be needed,
-dispatch adds `[agents]` entries additively. Dual-emit (skill downgrade +
-native agent) mirrors the Pi precedent. The rule-not-registry design ensures
-the classification mechanism survives model-slug churn: when Codex ships a new
-model, only `CODEX_MODEL_TIERS` changes - the rubric and all agent files stay
-valid. Authoring-time-only classification keeps `superskill install`
+tool parameters). The emission shape is safe under either outcome: if the keys are
+ignored, Codex falls back to its inherit-default per agent; if directory registration
+turns out to be needed, dispatch adds `[agents]` entries additively. Dual-emit
+(skill downgrade + native agent) mirrors the Pi precedent. The rule-not-registry
+design ensures the classification mechanism survives model-slug churn: when Codex
+ships a new model, only `CODEX_MODEL_TIERS` changes - the rubric and all agent files
+stay valid. Authoring-time-only classification keeps `superskill install`
 deterministic: the same plugin bytes always produce the same TOML.
+
+**Amendment (2026-08-09, task 0112).** The two unverified premises in the `Why`
+above (directory discovery, model-key honoring) are now verified against
+codex-cli 0.147.0 and the current official OpenAI subagents contract
+(developers.openai.com/codex/subagents): custom agents are standalone TOML under
+`~/.codex/agents/` (personal) or `.codex/agents/` (project-scoped) with **no**
+per-agent `[agents.<name>]` registration, and file-level `model` /
+`model_reasoning_effort` take precedence (both are documented optional keys). A
+scratch-`CODEX_HOME` probe agent in `agents/` spawned and returned `PONG`. This
+retires the `Why`'s "if directory registration turns out to be needed" contingency:
+the contract rules out that registration. The first contingency (Codex may fall
+back to inherit-default if the optional keys are absent) still holds — the keys are
+optional. No production code changed; evidence reconciliation only.
+Test counts: `adapt-subagent.test.ts` now 37 cases, `install.test.ts` 61 dispatch
+cases.
 
 **Detail.** See 03 §Conversion rules and §Target taxonomy; 04 §Phase 1 install
 surface. Adapter: `packages/core/src/pipeline/adapt-subagent.ts` (lines 206+).
 Dispatch: `apps/cli/src/commands/install.ts` (codex branch after Pi block).
 Rubric: `plugins/cc/skills/cc-agents/references/model-tiers.md`. Rubric wiring:
-`packages/core/src/rubrics/agent.yaml` `model-fit` dimension. Tests:
-`packages/core/tests/pipeline/adapt-subagent.test.ts` (14 cases),
-`apps/cli/tests/commands/install.test.ts` (4 dispatch cases).
+`packages/core/tests/pipeline/adapt-subagent.test.ts`,
+`apps/cli/tests/commands/install.test.ts` (counts as of the latest amendment).
+
+---
+
+## ADR-034: `--marketplace` as a locator; bundled plugin distribution via npm
+
+**Status:** Accepted · **Date:** 2026-08-09
+
+**Decision.** `superskill install --marketplace <X>` becomes a **marketplace
+locator**, superseding the "remote in-manifest plugin `source` deferred" wording
+and the `--marketplace-source` flag's role as the remote knob:
+
+1. **Local probe (uniform three-way).** `<X>` resolves via direct file
+   (ends in `marketplace.json`) → `<X>/marketplace.json` →
+   `<X>/.claude-plugin/marketplace.json`; error only after all three, naming every
+   probed path. `marketplaceRoot` is derived per matched branch
+   (`dirname(manifest)`, raised one level only when that dirname is
+   `.claude-plugin`) — fixing the latent bug where the root-level branch
+   resolved to the parent of `<X>`.
+2. **Remote (GitHub) locators.** `--marketplace` accepts a GitHub URL
+   (`https://github.com/owner/repo[/tree/<ref>[/subpath]]`) and `owner/repo`
+   shorthand. **Local-first disambiguation:** an existing local path is local;
+   only a non-existent `^[\w.-]+/[\w.-]+$` is shorthand; `https://`/`git@` are
+   always remote. Remote content materializes into
+   `~/.cache/superskill/marketplaces/<owner>/<repo>/<ref>/`, keyed on the
+   **locator** (known before any network call), never `manifest.name`. Every
+   locator-derived segment passes `assertSafePathSegment` before the first
+   mkdir. GitHub is reached via `--marketplace`, never via `<plugin>` —
+   `assertSafePathSegment(plugin)` is unchanged.
+3. **Shared fetch layer.** Remote materialization reuses the skills-ecosystem
+   GitHub primitives (`materializeRepoSubdir` on
+   `fetchRepoTree`/`getGitHubToken`/`parseGitHubRepoUrl`); no parallel client.
+4. **Bundled distribution.** `build:bundle` (invoked from **`prepack`**) copies
+   `plugins/`, `.claude-plugin/`, `magents/` into the `apps/cli` package root
+   (mirroring the `rubrics`/`README.md` copies); npm `files` lists them. The
+   published tarball is itself a valid marketplace root for both Claude Code
+   (`claude plugin marketplace add <pkg-root>`) and superskill. Staging lives in
+   `prepack`, not `prepublishOnly`, because npm runs `prepublishOnly` only on
+   `npm publish` — see the 2026-08-09 amendment below.
+5. **Self-location.** `resolvePluginRoot` adds an installed-package-root step
+   (between the CWD probe and the CWD `plugins/<name>` fallback) so
+   `bun add -g @gobing-ai/superskill && superskill install cc` works from any
+   CWD with zero flags. A `--compile` binary's virtual `/$bunfs/root` and a
+   dev-repo run fall through silently (guard, never throw ENOENT).
+6. **`--marketplace-source` deprecated.** Prints a one-line stderr warning,
+   keeps behavior, removal planned in a later release (T6).
+
+**Why.** The intuitive user forms
+(`https://github.com/gobing-ai/superskill`, `gobing-ai/superskill`, a package
+root path) all failed because `--marketplace` only probed `<X>/marketplace.json`
+and the tarball shipped no plugin content. Making `--marketplace` the single
+locator escape hatch — while keeping `<plugin>` a bare segment — restores the
+zero-clone, zero-flag install path for end users and keeps the security
+invariants (`assertSafePathSegment`, path-escape guards on materialized trees).
+
+**Detail:** see 03 §Plugin resolution (locator sequence, cache, self-location);
+04 §Phase 1 install surface (`--marketplace` shapes, disambiguation rule, cache
+path, deprecation); 05 feature `F3` / `F006`. Implementation:
+`packages/core/src/marketplace.ts` (probe + root derivation),
+`packages/core/src/skills-ecosystem/fetch.ts` (`materializeRepoSubdir`),
+`apps/cli/src/commands/install.ts` (remote resolution, self-location,
+deprecation), `apps/cli/package.json` + `.gitignore` (bundled distribution).
+
+**Amendment (2026-08-09, task 0113 verify re-audit).** Two build/publish
+corrections to clause 4, both measured against a real tarball:
+
+1. **Staging moved `prepublishOnly` → `prepack`.** npm runs `prepublishOnly`
+   only on `npm publish`, never on `npm pack`. With staging there, `npm pack`
+   packed whatever stale gitignored copies sat in `apps/cli/` — or nothing at
+   all, silently, when they were absent. `prepack` runs for both, so the packed
+   artifact now always reflects the repo. `prepublishOnly` retains the
+   publish-only gate (`check-publish-manifest`). Consequence: verify a release
+   with `npm publish --dry-run`, not `npm pack` alone — only the publish path
+   runs the gate.
+2. **Marketplace version drift is now a publish-blocking error.**
+   `.claude-plugin/marketplace.json` is a build-time copy, so a plugin version
+   lagging `apps/cli/package.json` shipped silently (measured: tarball `0.3.11`
+   against package `0.3.12`). `findMarketplaceVersionDrift`
+   (`scripts/builder.ts`) is wired into `check-publish-manifest` and fails the
+   publish, naming the drift and the `bump-ver` remedy.
+
+Also recorded: `plugins/` and `magents/` became **published content** under this
+ADR, so their contents reach every consumer. The release checklist
+(`docs/help/release.md`) makes the publish-surface content review — personal
+data, repo-foreign content, credentials — an explicit pre-publish step.

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'bun:test';
-import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
-import { mkdtemp } from 'node:fs/promises';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
@@ -13,6 +13,7 @@ import {
     getSkillFolderHashFromTree,
     ghAuthTokenFromCli,
     isGitHubHttpsCloneUrl,
+    materializeRepoSubdir,
     parseGitHubRepoUrl,
     spawnGh,
     spawnGit,
@@ -603,5 +604,87 @@ describe('fetch.ts - GitHub Trees/Blob fast path and hardened git clone', () => 
         expect(failure).toBeInstanceOf(GitCloneError);
         expect((failure as GitCloneError).isAuthError).toBe(true);
         expect((failure as GitCloneError).message).toContain('git@github.com:owner/private.git');
+    });
+});
+
+describe('fetch.ts - materializeRepoSubdir (T2/R3 shared fetch primitive)', () => {
+    it('materializes a subdir via tree + per-file raw fetches', async () => {
+        const tree = {
+            sha: 'abc',
+            branch: 'main',
+            tree: [
+                { path: '.claude-plugin/marketplace.json', type: 'blob' as const, sha: 'm1' },
+                { path: '.claude-plugin/other.txt', type: 'blob' as const, sha: 'o1' },
+                { path: 'ignored/deep.txt', type: 'blob' as const, sha: 'i1' },
+            ],
+        };
+        const contentByPath: Record<string, string> = {
+            '.claude-plugin/marketplace.json': '{"name":"mp"}',
+            '.claude-plugin/other.txt': 'hello',
+        };
+        const fetchFn = (async (url: string) => {
+            if (url.includes('/git/trees/')) {
+                return new Response(JSON.stringify(tree), {
+                    status: 200,
+                    headers: { 'Content-Type': 'application/json' },
+                });
+            }
+            // raw.githubusercontent fetch
+            for (const [path, content] of Object.entries(contentByPath)) {
+                if (url.endsWith(`/${path}`)) {
+                    return new Response(content, { status: 200 });
+                }
+            }
+            return new Response('not found', { status: 404 });
+        }) as unknown as typeof fetch;
+
+        const destDir = await mkdtemp(join(tmpdir(), 'superskill-materialize-'));
+        try {
+            await materializeRepoSubdir('owner/repo', '.claude-plugin', destDir, { fetchFn });
+
+            expect(existsSync(join(destDir, 'marketplace.json'))).toBe(true);
+            expect(existsSync(join(destDir, 'other.txt'))).toBe(true);
+            expect(existsSync(join(destDir, 'ignored', 'deep.txt'))).toBe(false);
+            expect(readFileSync(join(destDir, 'marketplace.json'), 'utf-8')).toBe('{"name":"mp"}');
+        } finally {
+            await rm(destDir, { recursive: true, force: true });
+        }
+    });
+
+    it('throws naming the tree endpoint when the tree cannot be fetched', async () => {
+        const fetchFn = (async () => new Response('nope', { status: 500 })) as unknown as typeof fetch;
+        const destDir = await mkdtemp(join(tmpdir(), 'superskill-materialize-'));
+        try {
+            await expect(materializeRepoSubdir('owner/repo', '', destDir, { fetchFn })).rejects.toThrow(
+                /Could not fetch repository tree for owner\/repo/,
+            );
+        } finally {
+            await rm(destDir, { recursive: true, force: true });
+        }
+    });
+
+    it('throws when the subdir has no blobs', async () => {
+        const tree = {
+            sha: 'abc',
+            branch: 'main',
+            tree: [{ path: 'unrelated.txt', type: 'blob' as const, sha: 'u1' }],
+        };
+        const fetchFn = (async (url: string) => {
+            if (url.includes('/git/trees/')) {
+                return new Response(JSON.stringify(tree), {
+                    status: 200,
+                    headers: { 'Content-Type': 'application/json' },
+                });
+            }
+            return new Response('nope', { status: 404 });
+        }) as unknown as typeof fetch;
+        const destDir = await mkdtemp(join(tmpdir(), 'superskill-materialize-'));
+        try {
+            await expect(materializeRepoSubdir('owner/repo', '.claude-plugin', destDir, { fetchFn })).rejects.toThrow(
+                /No files found under '.claude-plugin'/,
+            );
+        } finally {
+            await rm(destDir, { recursive: true, force: true });
+        }
     });
 });
