@@ -6,7 +6,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 
 
-## [0.3.12] - 2026-08-06
+## [0.3.13] - 2026-08-09
+
+### Fixed
+
+- **Distribution staging moved from `prepublishOnly` to `prepack`; publish manifest version drift now fails the gate.** `npm pack` never runs `prepublishOnly`, so packing shipped stale gitignored copies from `apps/cli` (measured 23 minutes behind the repo) or silently packed nothing when they were absent. Staging now lives on `prepack`, which runs for both `npm pack` and `npm publish`; `prepublishOnly` keeps the publish-only gate. `findMarketplaceVersionDrift` fails `check-publish-manifest` on drift, verified by injecting drift (publish exits 1, no tarball). Includes AC2 end-to-end coverage for remote marketplace locators, `docs/help/release.md` (task 0113 T4), ADR-034 clause 4 amended to prepack, and 0112/0113 evidence reconciliation. (3985f23)
+
+### Other
+
+- **System-design principles folded into `AGENTS.md`.** New "Design & scope" section adds nine principles (layered growth, reuse-before-create, evidence-before-optimization, config minimalism, deterministic-over-implicit, delete-don't-layer, earned maintainability, out-of-scope-findings-are-notes, staged rollout), dropping ~60% that duplicated existing mandatory rules and trading-domain content foreign to this repo. (a13023b)
+- **README.md updated.** (b8ed4fd)
+- **CI: added a `workflow_dispatch` trigger for manual reruns, nudged the push-trigger dispatch, and re-subscribed / re-triggered the Actions event after a delivery miss.** (8912f0a, 27d1238, 6fb56f9, c6bb263)
+
+
 
 ### Added
 
@@ -17,6 +29,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 - **`emitMagents` and `emitPluginRules` covered to clear the 90/90 coverage gate.** Bun 1.3.14 applies `coverageThreshold` per-file; `install.ts` sat at 89.41% lines because its two rule/magent emit paths had zero test coverage, causing `bun test` to exit 1 silently (no message) despite all tests passing. Both functions are now exported and covered by 17 new unit tests (`apps/cli/tests/commands/install-magents-rules.test.ts`) exercising no-op, auto-select, suffix/exact match, ambiguous-skip, dry-run, empty-assembly, global-dest, and rules copy/skip/dry-run/global branches. `install.ts` line coverage rose to 93.86%.
 - **Test output leak in install tests.** `echo()` (from `@gobing-ai/ts-utils`) writes to `process.stdout`; the `executeInstall - codex native agent dispatch` describe block ran `executeInstall` with `verbose: true` and no stdout spy, leaking "Resolving plugin…", "Mapping plugin…", "Running rulesync…", and "Installed …" into the dots reporter. Added a `beforeEach` stdout/stderr spy to that block and to the new magents-rules test file, matching the established `spyOn(process.stdout, 'write')` suppression pattern used across all other install tests.
 - **Two biome `useTemplate` lint infos in `install.ts`.** Converted `JSON.stringify(...) + '\n'` string concatenations to template literals in the Pi extension `package.json` and `settings.json` writers.
+- **Remaining install leak closed in `install-pi-extension-bundle.test.ts`.** The pi-extension bundling test ran `executeInstall('demo', ['pi'], { dryRun: false })` with no stdout spy, so the non-dry-run completion `echo("Installed 'demo' to 1 target(s).")` (`install.ts` end-of-`executeInstall`) leaked into the dots reporter. Added the established `spyOn(process.stdout, 'write')` suppression in `beforeEach`, restored in `afterEach`.
 
 ### Other
 
