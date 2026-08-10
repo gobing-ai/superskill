@@ -11,6 +11,21 @@ npm i -g @gobing-ai/superskill
 bun add -g @gobing-ai/superskill
 ```
 
+No clone, no checkout, no extra flags. The published package bundles the `cc`
+plugin and the `team-stark-children` main-agent config, and the CLI locates them
+at runtime, so install works from any directory:
+
+```bash
+superskill install cc --magent team-stark-children
+```
+
+That distributes `cc` (skills, commands, subagents, hooks, rules) to every
+configured target and emits the `team-stark-children` magent. Want only the
+plugin, or only specific agents? `superskill install cc` (no `--magent`) and
+`superskill install cc --targets codex,pi` work too. See
+[cmd_install.md](docs/help/cmd_install.md) for the full surface, including
+installing from a GitHub marketplace (`--marketplace gobing-ai/superskill`).
+
 From source (contributors):
 
 ```bash
@@ -25,8 +40,11 @@ Requires [Bun](https://bun.sh/) ≥ 1.3.14. See [Installation guide](docs/help/i
 ## Quick start
 
 ```bash
-# Distribute a plugin cc in current repo to every supported target
+# Install the bundled cc plugin to every supported target
 superskill install cc --targets all
+
+# Install cc plus the team-stark-children main-agent config
+superskill install cc --magent team-stark-children
 
 # Author a skill: scaffold → validate → evaluate → refine
 superskill skill scaffold my-skill --description "Deploy a Cloudflare Worker"
