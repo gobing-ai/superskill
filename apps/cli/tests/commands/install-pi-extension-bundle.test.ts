@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, it, spyOn } from 'bun:test';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -15,8 +15,10 @@ import { executeInstall } from '../../src/commands/install';
 describe('executeInstall — pi extension bundling', () => {
     let tmpHome: string;
     let tmpPlugin: string;
+    let stdoutSpy: ReturnType<typeof spyOn> | undefined;
 
     beforeEach(() => {
+        stdoutSpy = spyOn(process.stdout, 'write').mockImplementation(() => true);
         tmpHome = mkdtempSync(join(tmpdir(), 'ss-pi-ext-'));
         tmpPlugin = mkdtempSync(join(tmpdir(), 'ss-pi-ext-plugin-'));
         // Plugin fixture: a pi extension that imports a sibling via ../sibling.
@@ -45,6 +47,7 @@ describe('executeInstall — pi extension bundling', () => {
     });
 
     afterEach(() => {
+        stdoutSpy?.mockRestore();
         rmSync(tmpHome, { recursive: true, force: true });
         rmSync(tmpPlugin, { recursive: true, force: true });
     });
