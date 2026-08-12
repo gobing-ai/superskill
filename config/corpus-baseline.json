@@ -1,0 +1,1013 @@
+{
+    "note": "Accepted errors in terminal legacy tasks. New errors and stale baseline entries fail the corpus gate.",
+    "entries": [
+        {
+            "kind": "task",
+            "id": "0001",
+            "code": "L3.required-section-placeholder",
+            "reason": "Terminal legacy task predates the current non-placeholder terminal-section contract; preserve the historical record and require current and new tasks to pass.",
+            "since": "2026-08-12"
+        },
+        {
+            "kind": "task",
+            "id": "0001",
+            "code": "L3.review-priority-table",
+            "reason": "Terminal legacy task predates the current P1–P4 review-table contract; preserve the historical record and require current and new tasks to pass.",
+            "since": "2026-08-12"
+        },
+        {
+            "kind": "task",
+            "id": "0001",
+            "code": "L3.solution-file-line",
+            "reason": "Terminal legacy task predates the current file:line Solution citation contract; preserve the historical record and require current and new tasks to pass.",
+            "since": "2026-08-12"
+        },
+        {
+            "kind": "task",
+            "id": "0002",
+            "code": "L3.required-section-placeholder",
+            "reason": "Terminal legacy task predates the current non-placeholder terminal-section contract; preserve the historical record and require current and new tasks to pass.",
+            "since": "2026-08-12"
+        },
+        {
+            "kind": "task",
+            "id": "0002",
+            "code": "L3.review-priority-table",
+            "reason": "Terminal legacy task predates the current P1–P4 review-table contract; preserve the historical record and require current and new tasks to pass.",
+            "since": "2026-08-12"
+        },
+        {
+            "kind": "task",
+            "id": "0002",
+            "code": "L3.solution-file-line",
+            "reason": "Terminal legacy task predates the current file:line Solution citation contract; preserve the historical record and require current and new tasks to pass.",
+            "since": "2026-08-12"
+        },
+        {
+            "kind": "task",
+            "id": "0003",
+            "code": "L3.required-section-placeholder",
+            "reason": "Terminal legacy task predates the current non-placeholder terminal-section contract; preserve the historical record and require current and new tasks to pass.",
+            "since": "2026-08-12"
+        },
+        {
+            "kind": "task",
+            "id": "0003",
+            "code": "L3.review-priority-table",
+            "reason": "Terminal legacy task predates the current P1–P4 review-table contract; preserve the historical record and require current and new tasks to pass.",
+            "since": "2026-08-12"
+        },
+        {
+            "kind": "task",
+            "id": "0003",
+            "code": "L3.solution-file-line",
+            "reason": "Terminal legacy task predates the current file:line Solution citation contract; preserve the historical record and require current and new tasks to pass.",
+            "since": "2026-08-12"
+        },
+        {
+            "kind": "task",
+            "id": "0004",
+            "code": "L3.required-section-placeholder",
+            "reason": "Terminal legacy task predates the current non-placeholder terminal-section contract; preserve the historical record and require current and new tasks to pass.",
+            "since": "2026-08-12"
+        },
+        {
+            "kind": "task",
+            "id": "0004",
+            "code": "L3.review-priority-table",
+            "reason": "Terminal legacy task predates the current P1–P4 review-table contract; preserve the historical record and require current and new tasks to pass.",
+            "since": "2026-08-12"
+        },
+        {
+            "kind": "task",
+            "id": "0004",
+            "code": "L3.solution-file-line",
+            "reason": "Terminal legacy task predates the current file:line Solution citation contract; preserve the historical record and require current and new tasks to pass.",
+            "since": "2026-08-12"
+        },
+        {
+            "kind": "task",
+            "id": "0005",
+            "code": "L3.review-priority-table",
+            "reason": "Terminal legacy task predates the current P1–P4 review-table contract; preserve the historical record and require current and new tasks to pass.",
+            "since": "2026-08-12"
+        },
+        {
+            "kind": "task",
+            "id": "0005",
+            "code": "L3.solution-file-line",
+            "reason": "Terminal legacy task predates the current file:line Solution citation contract; preserve the historical record and require current and new tasks to pass.",
+            "since": "2026-08-12"
+        },
+        {
+            "kind": "task",
+            "id": "0006",
+            "code": "L3.review-priority-table",
+            "reason": "Terminal legacy task predates the current P1–P4 review-table contract; preserve the historical record and require current and new tasks to pass.",
+            "since": "2026-08-12"
+        },
+        {
+            "kind": "task",
+            "id": "0006",
+            "code": "L3.solution-file-line",
+            "reason": "Terminal legacy task predates the current file:line Solution citation contract; preserve the historical record and require current and new tasks to pass.",
+            "since": "2026-08-12"
+        },
+        {
+            "kind": "task",
+            "id": "0007",
+            "code": "L3.review-priority-table",
+            "reason": "Terminal legacy task predates the current P1–P4 review-table contract; preserve the historical record and require current and new tasks to pass.",
+            "since": "2026-08-12"
+        },
+        {
+            "kind": "task",
+            "id": "0007",
+            "code": "L3.solution-file-line",
+            "reason": "Terminal legacy task predates the current file:line Solution citation contract; preserve the historical record and require current and new tasks to pass.",
+            "since": "2026-08-12"
+        },
+        {
+            "kind": "task",
+            "id": "0008",
+            "code": "L3.review-priority-table",
+            "reason": "Terminal legacy task predates the current P1–P4 review-table contract; preserve the historical record and require current and new tasks to pass.",
+            "since": "2026-08-12"
+        },
+        {
+            "kind": "task",
+            "id": "0008",
+            "code": "L3.solution-file-line",
+            "reason": "Terminal legacy task predates the current file:line Solution citation contract; preserve the historical record and require current and new tasks to pass.",
+            "since": "2026-08-12"
+        },
+        {
+            "kind": "task",
+            "id": "0009",
+            "code": "L3.review-priority-table",
+            "reason": "Terminal legacy task predates the current P1–P4 review-table contract; preserve the historical record and require current and new tasks to pass.",
+            "since": "2026-08-12"
+        },
+        {
+            "kind": "task",
+            "id": "0009",
+            "code": "L3.solution-file-line",
+            "reason": "Terminal legacy task predates the current file:line Solution citation contract; preserve the historical record and require current and new tasks to pass.",
+            "since": "2026-08-12"
+        },
+        {
+            "kind": "task",
+            "id": "0010",
+            "code": "L3.review-priority-table",
+            "reason": "Terminal legacy task predates the current P1–P4 review-table contract; preserve the historical record and require current and new tasks to pass.",
+            "since": "2026-08-12"
+        },
+        {
+            "kind": "task",
+            "id": "0010",
+            "code": "L3.solution-file-line",
+            "reason": "Terminal legacy task predates the current file:line Solution citation contract; preserve the historical record and require current and new tasks to pass.",
+            "since": "2026-08-12"
+        },
+        {
+            "kind": "task",
+            "id": "0011",
+            "code": "L3.review-priority-table",
+            "reason": "Terminal legacy task predates the current P1–P4 review-table contract; preserve the historical record and require current and new tasks to pass.",
+            "since": "2026-08-12"
+        },
+        {
+            "kind": "task",
+            "id": "0011",
+            "code": "L3.solution-file-line",
+            "reason": "Terminal legacy task predates the current file:line Solution citation contract; preserve the historical record and require current and new tasks to pass.",
+            "since": "2026-08-12"
+        },
+        {
+            "kind": "task",
+            "id": "0012",
+            "code": "L3.review-priority-table",
+            "reason": "Terminal legacy task predates the current P1–P4 review-table contract; preserve the historical record and require current and new tasks to pass.",
+            "since": "2026-08-12"
+        },
+        {
+            "kind": "task",
+            "id": "0012",
+            "code": "L3.solution-file-line",
+            "reason": "Terminal legacy task predates the current file:line Solution citation contract; preserve the historical record and require current and new tasks to pass.",
+            "since": "2026-08-12"
+        },
+        {
+            "kind": "task",
+            "id": "0013",
+            "code": "L2.missing-required-section",
+            "reason": "Terminal legacy task predates the current section matrix; preserve the historical record and require current and new tasks to pass.",
+            "since": "2026-08-12"
+        },
+        {
+            "kind": "task",
+            "id": "0014",
+            "code": "L2.missing-required-section",
+            "reason": "Terminal legacy task predates the current section matrix; preserve the historical record and require current and new tasks to pass.",
+            "since": "2026-08-12"
+        },
+        {
+            "kind": "task",
+            "id": "0014",
+            "code": "L3.solution-file-line",
+            "reason": "Terminal legacy task predates the current file:line Solution citation contract; preserve the historical record and require current and new tasks to pass.",
+            "since": "2026-08-12"
+        },
+        {
+            "kind": "task",
+            "id": "0015",
+            "code": "L2.missing-required-section",
+            "reason": "Terminal legacy task predates the current section matrix; preserve the historical record and require current and new tasks to pass.",
+            "since": "2026-08-12"
+        },
+        {
+            "kind": "task",
+            "id": "0015",
+            "code": "L3.solution-file-line",
+            "reason": "Terminal legacy task predates the current file:line Solution citation contract; preserve the historical record and require current and new tasks to pass.",
+            "since": "2026-08-12"
+        },
+        {
+            "kind": "task",
+            "id": "0016",
+            "code": "L3.review-priority-table",
+            "reason": "Terminal legacy task predates the current P1–P4 review-table contract; preserve the historical record and require current and new tasks to pass.",
+            "since": "2026-08-12"
+        },
+        {
+            "kind": "task",
+            "id": "0016",
+            "code": "L3.solution-file-line",
+            "reason": "Terminal legacy task predates the current file:line Solution citation contract; preserve the historical record and require current and new tasks to pass.",
+            "since": "2026-08-12"
+        },
+        {
+            "kind": "task",
+            "id": "0017",
+            "code": "L2.missing-required-section",
+            "reason": "Terminal legacy task predates the current section matrix; preserve the historical record and require current and new tasks to pass.",
+            "since": "2026-08-12"
+        },
+        {
+            "kind": "task",
+            "id": "0017",
+            "code": "L3.solution-file-line",
+            "reason": "Terminal legacy task predates the current file:line Solution citation contract; preserve the historical record and require current and new tasks to pass.",
+            "since": "2026-08-12"
+        },
+        {
+            "kind": "task",
+            "id": "0018",
+            "code": "L2.missing-required-section",
+            "reason": "Terminal legacy task predates the current section matrix; preserve the historical record and require current and new tasks to pass.",
+            "since": "2026-08-12"
+        },
+        {
+            "kind": "task",
+            "id": "0018",
+            "code": "L3.solution-file-line",
+            "reason": "Terminal legacy task predates the current file:line Solution citation contract; preserve the historical record and require current and new tasks to pass.",
+            "since": "2026-08-12"
+        },
+        {
+            "kind": "task",
+            "id": "0019",
+            "code": "L2.missing-required-section",
+            "reason": "Terminal legacy task predates the current section matrix; preserve the historical record and require current and new tasks to pass.",
+            "since": "2026-08-12"
+        },
+        {
+            "kind": "task",
+            "id": "0019",
+            "code": "L3.solution-file-line",
+            "reason": "Terminal legacy task predates the current file:line Solution citation contract; preserve the historical record and require current and new tasks to pass.",
+            "since": "2026-08-12"
+        },
+        {
+            "kind": "task",
+            "id": "0020",
+            "code": "L3.required-section-placeholder",
+            "reason": "Terminal legacy task predates the current non-placeholder terminal-section contract; preserve the historical record and require current and new tasks to pass.",
+            "since": "2026-08-12"
+        },
+        {
+            "kind": "task",
+            "id": "0021",
+            "code": "L3.required-section-placeholder",
+            "reason": "Terminal legacy task predates the current non-placeholder terminal-section contract; preserve the historical record and require current and new tasks to pass.",
+            "since": "2026-08-12"
+        },
+        {
+            "kind": "task",
+            "id": "0021",
+            "code": "L3.solution-file-line",
+            "reason": "Terminal legacy task predates the current file:line Solution citation contract; preserve the historical record and require current and new tasks to pass.",
+            "since": "2026-08-12"
+        },
+        {
+            "kind": "task",
+            "id": "0022",
+            "code": "L2.missing-required-section",
+            "reason": "Terminal legacy task predates the current section matrix; preserve the historical record and require current and new tasks to pass.",
+            "since": "2026-08-12"
+        },
+        {
+            "kind": "task",
+            "id": "0023",
+            "code": "L3.review-priority-table",
+            "reason": "Terminal legacy task predates the current P1–P4 review-table contract; preserve the historical record and require current and new tasks to pass.",
+            "since": "2026-08-12"
+        },
+        {
+            "kind": "task",
+            "id": "0023",
+            "code": "L3.solution-file-line",
+            "reason": "Terminal legacy task predates the current file:line Solution citation contract; preserve the historical record and require current and new tasks to pass.",
+            "since": "2026-08-12"
+        },
+        {
+            "kind": "task",
+            "id": "0024",
+            "code": "L3.review-priority-table",
+            "reason": "Terminal legacy task predates the current P1–P4 review-table contract; preserve the historical record and require current and new tasks to pass.",
+            "since": "2026-08-12"
+        },
+        {
+            "kind": "task",
+            "id": "0024",
+            "code": "L3.solution-file-line",
+            "reason": "Terminal legacy task predates the current file:line Solution citation contract; preserve the historical record and require current and new tasks to pass.",
+            "since": "2026-08-12"
+        },
+        {
+            "kind": "task",
+            "id": "0025",
+            "code": "L3.review-priority-table",
+            "reason": "Terminal legacy task predates the current P1–P4 review-table contract; preserve the historical record and require current and new tasks to pass.",
+            "since": "2026-08-12"
+        },
+        {
+            "kind": "task",
+            "id": "0025",
+            "code": "L3.solution-file-line",
+            "reason": "Terminal legacy task predates the current file:line Solution citation contract; preserve the historical record and require current and new tasks to pass.",
+            "since": "2026-08-12"
+        },
+        {
+            "kind": "task",
+            "id": "0026",
+            "code": "L3.review-priority-table",
+            "reason": "Terminal legacy task predates the current P1–P4 review-table contract; preserve the historical record and require current and new tasks to pass.",
+            "since": "2026-08-12"
+        },
+        {
+            "kind": "task",
+            "id": "0026",
+            "code": "L3.solution-file-line",
+            "reason": "Terminal legacy task predates the current file:line Solution citation contract; preserve the historical record and require current and new tasks to pass.",
+            "since": "2026-08-12"
+        },
+        {
+            "kind": "task",
+            "id": "0027",
+            "code": "L3.review-priority-table",
+            "reason": "Terminal legacy task predates the current P1–P4 review-table contract; preserve the historical record and require current and new tasks to pass.",
+            "since": "2026-08-12"
+        },
+        {
+            "kind": "task",
+            "id": "0027",
+            "code": "L3.solution-file-line",
+            "reason": "Terminal legacy task predates the current file:line Solution citation contract; preserve the historical record and require current and new tasks to pass.",
+            "since": "2026-08-12"
+        },
+        {
+            "kind": "task",
+            "id": "0028",
+            "code": "L3.review-priority-table",
+            "reason": "Terminal legacy task predates the current P1–P4 review-table contract; preserve the historical record and require current and new tasks to pass.",
+            "since": "2026-08-12"
+        },
+        {
+            "kind": "task",
+            "id": "0028",
+            "code": "L3.solution-file-line",
+            "reason": "Terminal legacy task predates the current file:line Solution citation contract; preserve the historical record and require current and new tasks to pass.",
+            "since": "2026-08-12"
+        },
+        {
+            "kind": "task",
+            "id": "0029",
+            "code": "L3.review-priority-table",
+            "reason": "Terminal legacy task predates the current P1–P4 review-table contract; preserve the historical record and require current and new tasks to pass.",
+            "since": "2026-08-12"
+        },
+        {
+            "kind": "task",
+            "id": "0029",
+            "code": "L3.solution-file-line",
+            "reason": "Terminal legacy task predates the current file:line Solution citation contract; preserve the historical record and require current and new tasks to pass.",
+            "since": "2026-08-12"
+        },
+        {
+            "kind": "task",
+            "id": "0030",
+            "code": "L3.review-priority-table",
+            "reason": "Terminal legacy task predates the current P1–P4 review-table contract; preserve the historical record and require current and new tasks to pass.",
+            "since": "2026-08-12"
+        },
+        {
+            "kind": "task",
+            "id": "0030",
+            "code": "L3.solution-file-line",
+            "reason": "Terminal legacy task predates the current file:line Solution citation contract; preserve the historical record and require current and new tasks to pass.",
+            "since": "2026-08-12"
+        },
+        {
+            "kind": "task",
+            "id": "0031",
+            "code": "L3.review-priority-table",
+            "reason": "Terminal legacy task predates the current P1–P4 review-table contract; preserve the historical record and require current and new tasks to pass.",
+            "since": "2026-08-12"
+        },
+        {
+            "kind": "task",
+            "id": "0032",
+            "code": "L3.review-priority-table",
+            "reason": "Terminal legacy task predates the current P1–P4 review-table contract; preserve the historical record and require current and new tasks to pass.",
+            "since": "2026-08-12"
+        },
+        {
+            "kind": "task",
+            "id": "0032",
+            "code": "L3.solution-file-line",
+            "reason": "Terminal legacy task predates the current file:line Solution citation contract; preserve the historical record and require current and new tasks to pass.",
+            "since": "2026-08-12"
+        },
+        {
+            "kind": "task",
+            "id": "0033",
+            "code": "L3.solution-file-line",
+            "reason": "Terminal legacy task predates the current file:line Solution citation contract; preserve the historical record and require current and new tasks to pass.",
+            "since": "2026-08-12"
+        },
+        {
+            "kind": "task",
+            "id": "0034",
+            "code": "L3.review-priority-table",
+            "reason": "Terminal legacy task predates the current P1–P4 review-table contract; preserve the historical record and require current and new tasks to pass.",
+            "since": "2026-08-12"
+        },
+        {
+            "kind": "task",
+            "id": "0034",
+            "code": "L3.solution-file-line",
+            "reason": "Terminal legacy task predates the current file:line Solution citation contract; preserve the historical record and require current and new tasks to pass.",
+            "since": "2026-08-12"
+        },
+        {
+            "kind": "task",
+            "id": "0035",
+            "code": "L3.review-priority-table",
+            "reason": "Terminal legacy task predates the current P1–P4 review-table contract; preserve the historical record and require current and new tasks to pass.",
+            "since": "2026-08-12"
+        },
+        {
+            "kind": "task",
+            "id": "0035",
+            "code": "L3.solution-file-line",
+            "reason": "Terminal legacy task predates the current file:line Solution citation contract; preserve the historical record and require current and new tasks to pass.",
+            "since": "2026-08-12"
+        },
+        {
+            "kind": "task",
+            "id": "0036",
+            "code": "L3.review-priority-table",
+            "reason": "Terminal legacy task predates the current P1–P4 review-table contract; preserve the historical record and require current and new tasks to pass.",
+            "since": "2026-08-12"
+        },
+        {
+            "kind": "task",
+            "id": "0036",
+            "code": "L3.solution-file-line",
+            "reason": "Terminal legacy task predates the current file:line Solution citation contract; preserve the historical record and require current and new tasks to pass.",
+            "since": "2026-08-12"
+        },
+        {
+            "kind": "task",
+            "id": "0037",
+            "code": "L3.review-priority-table",
+            "reason": "Terminal legacy task predates the current P1–P4 review-table contract; preserve the historical record and require current and new tasks to pass.",
+            "since": "2026-08-12"
+        },
+        {
+            "kind": "task",
+            "id": "0037",
+            "code": "L3.solution-file-line",
+            "reason": "Terminal legacy task predates the current file:line Solution citation contract; preserve the historical record and require current and new tasks to pass.",
+            "since": "2026-08-12"
+        },
+        {
+            "kind": "task",
+            "id": "0038",
+            "code": "L3.review-priority-table",
+            "reason": "Terminal legacy task predates the current P1–P4 review-table contract; preserve the historical record and require current and new tasks to pass.",
+            "since": "2026-08-12"
+        },
+        {
+            "kind": "task",
+            "id": "0038",
+            "code": "L3.solution-file-line",
+            "reason": "Terminal legacy task predates the current file:line Solution citation contract; preserve the historical record and require current and new tasks to pass.",
+            "since": "2026-08-12"
+        },
+        {
+            "kind": "task",
+            "id": "0039",
+            "code": "L3.review-priority-table",
+            "reason": "Terminal legacy task predates the current P1–P4 review-table contract; preserve the historical record and require current and new tasks to pass.",
+            "since": "2026-08-12"
+        },
+        {
+            "kind": "task",
+            "id": "0039",
+            "code": "L3.solution-file-line",
+            "reason": "Terminal legacy task predates the current file:line Solution citation contract; preserve the historical record and require current and new tasks to pass.",
+            "since": "2026-08-12"
+        },
+        {
+            "kind": "task",
+            "id": "0040",
+            "code": "L3.solution-file-line",
+            "reason": "Terminal legacy task predates the current file:line Solution citation contract; preserve the historical record and require current and new tasks to pass.",
+            "since": "2026-08-12"
+        },
+        {
+            "kind": "task",
+            "id": "0041",
+            "code": "L3.review-priority-table",
+            "reason": "Terminal legacy task predates the current P1–P4 review-table contract; preserve the historical record and require current and new tasks to pass.",
+            "since": "2026-08-12"
+        },
+        {
+            "kind": "task",
+            "id": "0041",
+            "code": "L3.solution-file-line",
+            "reason": "Terminal legacy task predates the current file:line Solution citation contract; preserve the historical record and require current and new tasks to pass.",
+            "since": "2026-08-12"
+        },
+        {
+            "kind": "task",
+            "id": "0042",
+            "code": "L3.review-priority-table",
+            "reason": "Terminal legacy task predates the current P1–P4 review-table contract; preserve the historical record and require current and new tasks to pass.",
+            "since": "2026-08-12"
+        },
+        {
+            "kind": "task",
+            "id": "0042",
+            "code": "L3.solution-file-line",
+            "reason": "Terminal legacy task predates the current file:line Solution citation contract; preserve the historical record and require current and new tasks to pass.",
+            "since": "2026-08-12"
+        },
+        {
+            "kind": "task",
+            "id": "0043",
+            "code": "L3.review-priority-table",
+            "reason": "Terminal legacy task predates the current P1–P4 review-table contract; preserve the historical record and require current and new tasks to pass.",
+            "since": "2026-08-12"
+        },
+        {
+            "kind": "task",
+            "id": "0043",
+            "code": "L3.solution-file-line",
+            "reason": "Terminal legacy task predates the current file:line Solution citation contract; preserve the historical record and require current and new tasks to pass.",
+            "since": "2026-08-12"
+        },
+        {
+            "kind": "task",
+            "id": "0044",
+            "code": "L3.review-priority-table",
+            "reason": "Terminal legacy task predates the current P1–P4 review-table contract; preserve the historical record and require current and new tasks to pass.",
+            "since": "2026-08-12"
+        },
+        {
+            "kind": "task",
+            "id": "0044",
+            "code": "L3.solution-file-line",
+            "reason": "Terminal legacy task predates the current file:line Solution citation contract; preserve the historical record and require current and new tasks to pass.",
+            "since": "2026-08-12"
+        },
+        {
+            "kind": "task",
+            "id": "0045",
+            "code": "L3.review-priority-table",
+            "reason": "Terminal legacy task predates the current P1–P4 review-table contract; preserve the historical record and require current and new tasks to pass.",
+            "since": "2026-08-12"
+        },
+        {
+            "kind": "task",
+            "id": "0045",
+            "code": "L3.solution-file-line",
+            "reason": "Terminal legacy task predates the current file:line Solution citation contract; preserve the historical record and require current and new tasks to pass.",
+            "since": "2026-08-12"
+        },
+        {
+            "kind": "task",
+            "id": "0046",
+            "code": "L3.review-priority-table",
+            "reason": "Terminal legacy task predates the current P1–P4 review-table contract; preserve the historical record and require current and new tasks to pass.",
+            "since": "2026-08-12"
+        },
+        {
+            "kind": "task",
+            "id": "0046",
+            "code": "L3.solution-file-line",
+            "reason": "Terminal legacy task predates the current file:line Solution citation contract; preserve the historical record and require current and new tasks to pass.",
+            "since": "2026-08-12"
+        },
+        {
+            "kind": "task",
+            "id": "0047",
+            "code": "L3.review-priority-table",
+            "reason": "Terminal legacy task predates the current P1–P4 review-table contract; preserve the historical record and require current and new tasks to pass.",
+            "since": "2026-08-12"
+        },
+        {
+            "kind": "task",
+            "id": "0047",
+            "code": "L3.solution-file-line",
+            "reason": "Terminal legacy task predates the current file:line Solution citation contract; preserve the historical record and require current and new tasks to pass.",
+            "since": "2026-08-12"
+        },
+        {
+            "kind": "task",
+            "id": "0048",
+            "code": "L3.review-priority-table",
+            "reason": "Terminal legacy task predates the current P1–P4 review-table contract; preserve the historical record and require current and new tasks to pass.",
+            "since": "2026-08-12"
+        },
+        {
+            "kind": "task",
+            "id": "0049",
+            "code": "L3.review-priority-table",
+            "reason": "Terminal legacy task predates the current P1–P4 review-table contract; preserve the historical record and require current and new tasks to pass.",
+            "since": "2026-08-12"
+        },
+        {
+            "kind": "task",
+            "id": "0050",
+            "code": "L3.review-priority-table",
+            "reason": "Terminal legacy task predates the current P1–P4 review-table contract; preserve the historical record and require current and new tasks to pass.",
+            "since": "2026-08-12"
+        },
+        {
+            "kind": "task",
+            "id": "0050",
+            "code": "L3.solution-file-line",
+            "reason": "Terminal legacy task predates the current file:line Solution citation contract; preserve the historical record and require current and new tasks to pass.",
+            "since": "2026-08-12"
+        },
+        {
+            "kind": "task",
+            "id": "0051",
+            "code": "L3.review-priority-table",
+            "reason": "Terminal legacy task predates the current P1–P4 review-table contract; preserve the historical record and require current and new tasks to pass.",
+            "since": "2026-08-12"
+        },
+        {
+            "kind": "task",
+            "id": "0051",
+            "code": "L3.solution-file-line",
+            "reason": "Terminal legacy task predates the current file:line Solution citation contract; preserve the historical record and require current and new tasks to pass.",
+            "since": "2026-08-12"
+        },
+        {
+            "kind": "task",
+            "id": "0052",
+            "code": "L3.review-priority-table",
+            "reason": "Terminal legacy task predates the current P1–P4 review-table contract; preserve the historical record and require current and new tasks to pass.",
+            "since": "2026-08-12"
+        },
+        {
+            "kind": "task",
+            "id": "0052",
+            "code": "L3.solution-file-line",
+            "reason": "Terminal legacy task predates the current file:line Solution citation contract; preserve the historical record and require current and new tasks to pass.",
+            "since": "2026-08-12"
+        },
+        {
+            "kind": "task",
+            "id": "0053",
+            "code": "L3.review-priority-table",
+            "reason": "Terminal legacy task predates the current P1–P4 review-table contract; preserve the historical record and require current and new tasks to pass.",
+            "since": "2026-08-12"
+        },
+        {
+            "kind": "task",
+            "id": "0054",
+            "code": "L2.missing-required-section",
+            "reason": "Terminal legacy task predates the current section matrix; preserve the historical record and require current and new tasks to pass.",
+            "since": "2026-08-12"
+        },
+        {
+            "kind": "task",
+            "id": "0054",
+            "code": "L3.solution-file-line",
+            "reason": "Terminal legacy task predates the current file:line Solution citation contract; preserve the historical record and require current and new tasks to pass.",
+            "since": "2026-08-12"
+        },
+        {
+            "kind": "task",
+            "id": "0055",
+            "code": "L3.review-priority-table",
+            "reason": "Terminal legacy task predates the current P1–P4 review-table contract; preserve the historical record and require current and new tasks to pass.",
+            "since": "2026-08-12"
+        },
+        {
+            "kind": "task",
+            "id": "0055",
+            "code": "L3.solution-file-line",
+            "reason": "Terminal legacy task predates the current file:line Solution citation contract; preserve the historical record and require current and new tasks to pass.",
+            "since": "2026-08-12"
+        },
+        {
+            "kind": "task",
+            "id": "0056",
+            "code": "L3.review-priority-table",
+            "reason": "Terminal legacy task predates the current P1–P4 review-table contract; preserve the historical record and require current and new tasks to pass.",
+            "since": "2026-08-12"
+        },
+        {
+            "kind": "task",
+            "id": "0056",
+            "code": "L3.solution-file-line",
+            "reason": "Terminal legacy task predates the current file:line Solution citation contract; preserve the historical record and require current and new tasks to pass.",
+            "since": "2026-08-12"
+        },
+        {
+            "kind": "task",
+            "id": "0057",
+            "code": "L3.solution-file-line",
+            "reason": "Terminal legacy task predates the current file:line Solution citation contract; preserve the historical record and require current and new tasks to pass.",
+            "since": "2026-08-12"
+        },
+        {
+            "kind": "task",
+            "id": "0058",
+            "code": "L1.schema-validation",
+            "reason": "Terminal legacy task predates the current frontmatter schema; preserve the historical record and require current and new tasks to pass.",
+            "since": "2026-08-12"
+        },
+        {
+            "kind": "task",
+            "id": "0058",
+            "code": "L3.solution-file-line",
+            "reason": "Terminal legacy task predates the current file:line Solution citation contract; preserve the historical record and require current and new tasks to pass.",
+            "since": "2026-08-12"
+        },
+        {
+            "kind": "task",
+            "id": "0059",
+            "code": "L3.review-priority-table",
+            "reason": "Terminal legacy task predates the current P1–P4 review-table contract; preserve the historical record and require current and new tasks to pass.",
+            "since": "2026-08-12"
+        },
+        {
+            "kind": "task",
+            "id": "0059",
+            "code": "L3.solution-file-line",
+            "reason": "Terminal legacy task predates the current file:line Solution citation contract; preserve the historical record and require current and new tasks to pass.",
+            "since": "2026-08-12"
+        },
+        {
+            "kind": "task",
+            "id": "0060",
+            "code": "L3.review-priority-table",
+            "reason": "Terminal legacy task predates the current P1–P4 review-table contract; preserve the historical record and require current and new tasks to pass.",
+            "since": "2026-08-12"
+        },
+        {
+            "kind": "task",
+            "id": "0060",
+            "code": "L3.solution-file-line",
+            "reason": "Terminal legacy task predates the current file:line Solution citation contract; preserve the historical record and require current and new tasks to pass.",
+            "since": "2026-08-12"
+        },
+        {
+            "kind": "task",
+            "id": "0061",
+            "code": "L3.review-priority-table",
+            "reason": "Terminal legacy task predates the current P1–P4 review-table contract; preserve the historical record and require current and new tasks to pass.",
+            "since": "2026-08-12"
+        },
+        {
+            "kind": "task",
+            "id": "0061",
+            "code": "L3.solution-file-line",
+            "reason": "Terminal legacy task predates the current file:line Solution citation contract; preserve the historical record and require current and new tasks to pass.",
+            "since": "2026-08-12"
+        },
+        {
+            "kind": "task",
+            "id": "0062",
+            "code": "L3.review-priority-table",
+            "reason": "Terminal legacy task predates the current P1–P4 review-table contract; preserve the historical record and require current and new tasks to pass.",
+            "since": "2026-08-12"
+        },
+        {
+            "kind": "task",
+            "id": "0062",
+            "code": "L3.solution-file-line",
+            "reason": "Terminal legacy task predates the current file:line Solution citation contract; preserve the historical record and require current and new tasks to pass.",
+            "since": "2026-08-12"
+        },
+        {
+            "kind": "task",
+            "id": "0063",
+            "code": "L3.review-priority-table",
+            "reason": "Terminal legacy task predates the current P1–P4 review-table contract; preserve the historical record and require current and new tasks to pass.",
+            "since": "2026-08-12"
+        },
+        {
+            "kind": "task",
+            "id": "0063",
+            "code": "L3.solution-file-line",
+            "reason": "Terminal legacy task predates the current file:line Solution citation contract; preserve the historical record and require current and new tasks to pass.",
+            "since": "2026-08-12"
+        },
+        {
+            "kind": "task",
+            "id": "0064",
+            "code": "L3.review-priority-table",
+            "reason": "Terminal legacy task predates the current P1–P4 review-table contract; preserve the historical record and require current and new tasks to pass.",
+            "since": "2026-08-12"
+        },
+        {
+            "kind": "task",
+            "id": "0064",
+            "code": "L3.solution-file-line",
+            "reason": "Terminal legacy task predates the current file:line Solution citation contract; preserve the historical record and require current and new tasks to pass.",
+            "since": "2026-08-12"
+        },
+        {
+            "kind": "task",
+            "id": "0065",
+            "code": "L3.review-priority-table",
+            "reason": "Terminal legacy task predates the current P1–P4 review-table contract; preserve the historical record and require current and new tasks to pass.",
+            "since": "2026-08-12"
+        },
+        {
+            "kind": "task",
+            "id": "0065",
+            "code": "L3.solution-file-line",
+            "reason": "Terminal legacy task predates the current file:line Solution citation contract; preserve the historical record and require current and new tasks to pass.",
+            "since": "2026-08-12"
+        },
+        {
+            "kind": "task",
+            "id": "0066",
+            "code": "L3.review-priority-table",
+            "reason": "Terminal legacy task predates the current P1–P4 review-table contract; preserve the historical record and require current and new tasks to pass.",
+            "since": "2026-08-12"
+        },
+        {
+            "kind": "task",
+            "id": "0066",
+            "code": "L3.solution-file-line",
+            "reason": "Terminal legacy task predates the current file:line Solution citation contract; preserve the historical record and require current and new tasks to pass.",
+            "since": "2026-08-12"
+        },
+        {
+            "kind": "task",
+            "id": "0067",
+            "code": "L3.required-section-placeholder",
+            "reason": "Terminal legacy task predates the current non-placeholder terminal-section contract; preserve the historical record and require current and new tasks to pass.",
+            "since": "2026-08-12"
+        },
+        {
+            "kind": "task",
+            "id": "0067",
+            "code": "L3.solution-file-line",
+            "reason": "Terminal legacy task predates the current file:line Solution citation contract; preserve the historical record and require current and new tasks to pass.",
+            "since": "2026-08-12"
+        },
+        {
+            "kind": "task",
+            "id": "0068",
+            "code": "L3.review-priority-table",
+            "reason": "Terminal legacy task predates the current P1–P4 review-table contract; preserve the historical record and require current and new tasks to pass.",
+            "since": "2026-08-12"
+        },
+        {
+            "kind": "task",
+            "id": "0068",
+            "code": "L3.solution-file-line",
+            "reason": "Terminal legacy task predates the current file:line Solution citation contract; preserve the historical record and require current and new tasks to pass.",
+            "since": "2026-08-12"
+        },
+        {
+            "kind": "task",
+            "id": "0069",
+            "code": "L3.review-priority-table",
+            "reason": "Terminal legacy task predates the current P1–P4 review-table contract; preserve the historical record and require current and new tasks to pass.",
+            "since": "2026-08-12"
+        },
+        {
+            "kind": "task",
+            "id": "0069",
+            "code": "L3.solution-file-line",
+            "reason": "Terminal legacy task predates the current file:line Solution citation contract; preserve the historical record and require current and new tasks to pass.",
+            "since": "2026-08-12"
+        },
+        {
+            "kind": "task",
+            "id": "0073",
+            "code": "L3.review-priority-table",
+            "reason": "Terminal legacy task predates the current P1–P4 review-table contract; preserve the historical record and require current and new tasks to pass.",
+            "since": "2026-08-12"
+        },
+        {
+            "kind": "task",
+            "id": "0074",
+            "code": "L2.missing-required-section",
+            "reason": "Terminal legacy task predates the current section matrix; preserve the historical record and require current and new tasks to pass.",
+            "since": "2026-08-12"
+        },
+        {
+            "kind": "task",
+            "id": "0077",
+            "code": "L2.missing-required-section",
+            "reason": "Terminal legacy task predates the current section matrix; preserve the historical record and require current and new tasks to pass.",
+            "since": "2026-08-12"
+        },
+        {
+            "kind": "task",
+            "id": "0078",
+            "code": "L2.missing-required-section",
+            "reason": "Terminal legacy task predates the current section matrix; preserve the historical record and require current and new tasks to pass.",
+            "since": "2026-08-12"
+        },
+        {
+            "kind": "task",
+            "id": "0078",
+            "code": "L3.solution-file-line",
+            "reason": "Terminal legacy task predates the current file:line Solution citation contract; preserve the historical record and require current and new tasks to pass.",
+            "since": "2026-08-12"
+        },
+        {
+            "kind": "task",
+            "id": "0079",
+            "code": "L2.missing-required-section",
+            "reason": "Terminal legacy task predates the current section matrix; preserve the historical record and require current and new tasks to pass.",
+            "since": "2026-08-12"
+        },
+        {
+            "kind": "task",
+            "id": "0082",
+            "code": "L4.malformed-verdict-artifact",
+            "reason": "Terminal task's legacy verdict predates the current verdict traceability contract; preserve history and require current and new verdicts to pass.",
+            "since": "2026-08-12"
+        },
+        {
+            "kind": "task",
+            "id": "0098",
+            "code": "L3.ac-empty",
+            "reason": "Terminal task shipped before task-level BDD acceptance criteria became mandatory; preserve the historical record and require current and new tasks to carry real scenarios.",
+            "since": "2026-08-12"
+        },
+        {
+            "kind": "task",
+            "id": "0099",
+            "code": "L3.ac-empty",
+            "reason": "Terminal task shipped before task-level BDD acceptance criteria became mandatory; preserve the historical record and require current and new tasks to carry real scenarios.",
+            "since": "2026-08-12"
+        },
+        {
+            "kind": "task",
+            "id": "0100",
+            "code": "L3.ac-empty",
+            "reason": "Terminal task shipped before task-level BDD acceptance criteria became mandatory; preserve the historical record and require current and new tasks to carry real scenarios.",
+            "since": "2026-08-12"
+        },
+        {
+            "kind": "task",
+            "id": "0101",
+            "code": "L3.ac-empty",
+            "reason": "Terminal task shipped before task-level BDD acceptance criteria became mandatory; preserve the historical record and require current and new tasks to carry real scenarios.",
+            "since": "2026-08-12"
+        },
+        {
+            "kind": "task",
+            "id": "0102",
+            "code": "L3.ac-empty",
+            "reason": "Terminal task shipped before task-level BDD acceptance criteria became mandatory; preserve the historical record and require current and new tasks to carry real scenarios.",
+            "since": "2026-08-12"
+        }
+    ]
+}
