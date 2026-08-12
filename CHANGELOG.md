@@ -4,11 +4,18 @@ All notable changes to `@gobing-ai/superskill` are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Conventional Commits](https://www.conventionalcommits.org/).
 
-## Unreleased
+## [0.3.14] - 2026-08-12
 
 ### Documentation
 
-- **Anti-hallucination consumer docs restored to the ADR-023 invocation order (H1 closure, #0087).** `plugins/cc/skills/anti-hallucination/SKILL.md`, `references/non-hook-enforcement.md`, `references/guard-implementation.md`, and `plugins/cc/README.md` now teach the staged `node "$(superskill script path cc anti-hallucination/validate_response.mjs)"` invocation as the standard/primary non-hook form and `superskill script run cc validate-response` as the optional registry form, matching ADR-023, `docs/04_DESIGN.md`, and H1. Contradictory "registry is preferred / staged twin is secondary" prose removed; the pending Spur Phase 4 workflow note and the `superskill hook run` form are unchanged. A structure-test regression (`plugins/cc/tests/structure.test.ts`) locks the ordering and rejects repo-relative `bun plugins/cc/scripts` recipes. Runtime behavior untouched (R1).
+- **Anti-hallucination consumer docs restored to the ADR-023 invocation order (H1 closure, #0087).** `plugins/cc/skills/anti-hallucination/SKILL.md`, `references/non-hook-enforcement.md`, `references/guard-implementation.md`, and `plugins/cc/README.md` now teach the staged `node "$(superskill script path cc anti-hallucination/validate_response.mjs)"` invocation as the standard/primary non-hook form and `superskill script run cc validate-response` as the optional registry form, matching ADR-023, `docs/04_DESIGN.md`, and H1. Contradictory "registry is preferred / staged twin is secondary" prose removed; the pending Spur Phase 4 workflow note and the `superskill hook run` form are unchanged. A content-invariant structure-test regression (`plugins/cc/tests/structure.test.ts:242-258`) locks the standard/optional labels and rejects repo-relative `bun plugins/cc/scripts` recipes; runtime untouched (R1). (ea84b7a)
+- **Numbered docs and feature statuses synced to the current surface.** Docs 00–05 + 99 refreshed (ADR-014 amendment, Phase 2 command table, quality-module tree, F2/F3/H2 marked done, constitution tool bindings + corpus ratchet note); `file://` absolute reference links normalized to repo-relative paths in `design-doc-phase3.md` and tasks 0073/0077. (3b9cd5b)
+- **README.md updated.** (0c14190)
+
+### Other
+
+- **`@gobing-ai/ts-*` bumped to ^0.4.28; corpus ratchet wired into `spur-check`.** `ts-ai-runner`, `ts-db`, `ts-runtime`, and `ts-utils` raised from ^0.4.19 across the workspace catalog and `apps/cli` dependencies (lockfile synced). `corpus-check` (`spur task check --corpus`) added to `spur-check` and `spur-check:full` so the two-sided legacy corpus ratchet gates every full run; AGENTS.md gate docs updated. (f07da11)
+- **Corpus baseline accepted for terminal legacy tasks.** `config/corpus-baseline.json` ratchets 144 pre-existing L2–L4 findings across 80 terminal legacy tasks; new errors and stale baseline entries now fail the corpus gate. (595c6c0)
 
 ## [0.3.13] - 2026-08-09
 
