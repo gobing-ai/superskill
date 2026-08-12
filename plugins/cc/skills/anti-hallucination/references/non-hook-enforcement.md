@@ -6,33 +6,27 @@ Use this guide when the target coding platform does not support hook execution.
 
 Apply the same anti-hallucination verification rules without relying on a `Stop` hook.
 
-The **primary** form is the binary registry — `cc/validate-response` is compiled into the
-`superskill` CLI (deep-imported at build time; `apps/cli/src/commands/script-run.ts`), so it runs the
-same `verifyAntiHallucinationProtocol` engine with **no filesystem path, no staging, no separate
-runtime**:
+The **standard** form is the staged path — the portable `.mjs` twin is staged at install time under
+the agents scripts root and resolved via `script path` (ADR-023: path invocation is the invocation
+standard for skill docs and other non-hook callers):
 
 ```bash
-# Primary — absorbed registry entry (no FS path needed; reads RESPONSE_TEXT or stdin)
-superskill script run cc validate-response
-```
-
-This is the recommended recipe because it has the fewest moving parts and works wherever the
-`superskill` CLI is on PATH. It is the default for this validator; the staged-path form below exists
-for the general dual contract (ADR-023) but is not the preferred way to reach *this* engine.
-
-**Secondary (staged path).** For parity with the general Entrypoint Contract, a portable `.mjs` twin
-of the validator is also staged and resolvable via `script path`:
-
-```bash
-# Secondary — resolve the staged portable entrypoint, run under Node
+# Standard — resolve the staged portable entrypoint, run under Node
 node "$(superskill script path cc anti-hallucination/validate_response.mjs)"
 ```
 
 The twin (`plugins/cc/scripts/anti-hallucination/validate_response.mjs`) is generated from the `.ts`
 source by `bun run build:scripts` / `superskill script convert cc anti-hallucination/validate_response.ts`;
-regenerate it when `validate_response.ts` or `ah_guard.ts` changes. In practice `script run` above is
-simpler and preferred — the staged path is only useful if you specifically need an FS entrypoint
-rather than the CLI subcommand.
+regenerate it when `validate_response.ts` or `ah_guard.ts` changes.
+
+**Optional (registry).** `cc/validate-response` is additionally compiled into the `superskill` CLI
+(deep-imported at build time; `apps/cli/src/commands/script-run.ts`), so it runs the same
+`verifyAntiHallucinationProtocol` engine with no filesystem path, no staging, no separate runtime:
+
+```bash
+# Optional — absorbed registry entry (no FS path needed; reads RESPONSE_TEXT or stdin)
+superskill script run cc validate-response
+```
 
 Both forms share the same engine, exit codes, and input modes.
 
@@ -65,31 +59,31 @@ whether invoked via the staged path or `script run`):
 
 ### Host-Side Validation
 
-Validate a final answer produced by a non-hook agent workflow. Primary form (registry):
+Validate a final answer produced by a non-hook agent workflow. Standard form (staged path):
 
 ```bash
 export RESPONSE_TEXT="According to the official documentation at https://api.example.com, the method is getUser(id: string): User. **Confidence**: HIGH. Source: https://api.example.com/docs"
-superskill script run cc validate-response
+node "$(superskill script path cc anti-hallucination/validate_response.mjs)"
 ```
 
-Secondary form (staged path, under Node):
+Optional form (registry):
 
 ```bash
-node "$(superskill script path cc anti-hallucination/validate_response.mjs)"
+superskill script run cc validate-response
 ```
 
 ### Pipe Final Output Through the Validator
 
-Primary form (registry):
-
-```bash
-printf '%s\n' "$FINAL_ANSWER" | superskill script run cc validate-response
-```
-
-Secondary form (staged path):
+Standard form (staged path):
 
 ```bash
 printf '%s\n' "$FINAL_ANSWER" | node "$(superskill script path cc anti-hallucination/validate_response.mjs)"
+```
+
+Optional form (registry):
+
+```bash
+printf '%s\n' "$FINAL_ANSWER" | superskill script run cc validate-response
 ```
 
 ### Cross-Agent Enforcement (Spur Workflow — Phase 4, pending)
@@ -106,22 +100,23 @@ spur workflow run anti-hallucination.yaml --vars '{"agent":"codex"}'
 ```
 
 The workflow runs the target agent via `agent.run`, captures the answer, validates it via
-`superskill script run cc validate-response` (or the staged `validate_response.mjs` entrypoint), and
+the staged `validate_response.mjs` entrypoint (or the optional `superskill script run cc validate-response`), and
 branches: ok → return; fail → retry or deny. The validator engine is ready; the orchestrating
 workflow itself remains pending — blocked on Spur's `agent.run` output-capture (data-threading) gap
-(ADR-015), not on this validator. Until that gap closes, use `script run` on any agent (including
+(ADR-015), not on this validator. Until that gap closes, validate manually on any agent (including
 pi/omp/grok/OpenCode, which have no prevent-stop hook).
 
-**Until Phase 4 lands**, validate captured answer text with `superskill script run cc validate-response`
-(or the secondary staged-path form), or apply the reviewer workflow pattern below.
+**Until Phase 4 lands**, validate captured answer text with the staged path
+`node "$(superskill script path cc anti-hallucination/validate_response.mjs)"` (or the optional
+`script run` form), or apply the reviewer workflow pattern below.
 
 ### Reviewer Workflow Pattern
 
 If you cannot wrap the CLI directly, use a review step:
 
 1. Draft the answer
-2. Validate the draft with `superskill script run cc validate-response`
-   (or the staged `node "$(superskill script path cc anti-hallucination/validate_response.mjs)"`)
+2. Validate the draft with `node "$(superskill script path cc anti-hallucination/validate_response.mjs)"`
+   (or the optional `superskill script run cc validate-response`)
 3. If validation fails, revise and re-run validation
 4. Only publish when validation passes
 
@@ -139,15 +134,15 @@ When the host platform can enforce schemas, require fields like:
 ```
 
 The host can then serialize the final `answer` block and validate it with
-`superskill script run cc validate-response` (or the staged
-`node "$(superskill script path cc anti-hallucination/validate_response.mjs)"`) before display.
+`node "$(superskill script path cc anti-hallucination/validate_response.mjs)"` (or the optional
+`superskill script run cc validate-response`) before display.
 
 ## Design Rule
 
 Do not duplicate verification rules across platforms. Keep:
 
 - `ah_guard.ts` for hook-based platforms (engine in `plugins/cc/scripts/anti-hallucination/`, invoked via `superskill hook run cc anti-hallucination`)
-- `validate_response.*` for direct answer validation — **primary**: `superskill script run cc validate-response`; **secondary**: staged path `node "$(superskill script path cc anti-hallucination/validate_response.mjs)"`
+- `validate_response.*` for direct answer validation — **standard**: staged path `node "$(superskill script path cc anti-hallucination/validate_response.mjs)"`; **optional**: `superskill script run cc validate-response`
 - `spur workflow run anti-hallucination.yaml` for cross-agent enforcement (Phase 4, pending)
 - `SKILL.md` as the shared protocol and policy source
 

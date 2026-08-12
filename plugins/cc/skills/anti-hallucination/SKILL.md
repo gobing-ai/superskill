@@ -219,7 +219,7 @@ If the target coding platform does not support hook execution, follow the same p
 **Preferred enforcement order:**
 
 1. **Spur workflow (Phase 4, pending)**: Run the agent through `spur workflow run anti-hallucination.yaml --vars '{"agent":"codex"}'` — a single workflow that captures the final answer, validates it with the anti-hallucination guard engine, and only returns the answer if validation passes. Replaces the former per-agent launcher scripts.
-2. **Direct validation**: Validate a captured answer — **primary:** `superskill script run cc validate-response` (compiled into the CLI; reads `RESPONSE_TEXT` or stdin; no FS path needed); **secondary:** the staged `node "$(superskill script path cc anti-hallucination/validate_response.mjs)"`. See `references/non-hook-enforcement.md`.
+2. **Direct validation**: Validate a captured answer — **standard:** the staged `node "$(superskill script path cc anti-hallucination/validate_response.mjs)"` (resolves the portable entrypoint staged at install time; reads `RESPONSE_TEXT` or stdin); **optional:** `superskill script run cc validate-response` (registry form compiled into the CLI; no FS path needed). See `references/non-hook-enforcement.md`.
 3. **Reviewer pass**: Use a second review step that checks for sources, confidence, and verification evidence before accepting the answer.
 4. **Structured output contract**: Require the final answer to include explicit `sources`, `confidence`, and `verification_steps` fields that can be validated by the host application or workflow.
 5. **Instruction-only fallback**: If no wrapper, reviewer, or validator is available, the agent must treat unsupported verification as blocking for strong claims and explicitly label the answer as unverified.

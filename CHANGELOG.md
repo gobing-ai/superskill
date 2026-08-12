@@ -4,7 +4,11 @@ All notable changes to `@gobing-ai/superskill` are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Conventional Commits](https://www.conventionalcommits.org/).
 
+## Unreleased
 
+### Documentation
+
+- **Anti-hallucination consumer docs restored to the ADR-023 invocation order (H1 closure, #0087).** `plugins/cc/skills/anti-hallucination/SKILL.md`, `references/non-hook-enforcement.md`, `references/guard-implementation.md`, and `plugins/cc/README.md` now teach the staged `node "$(superskill script path cc anti-hallucination/validate_response.mjs)"` invocation as the standard/primary non-hook form and `superskill script run cc validate-response` as the optional registry form, matching ADR-023, `docs/04_DESIGN.md`, and H1. Contradictory "registry is preferred / staged twin is secondary" prose removed; the pending Spur Phase 4 workflow note and the `superskill hook run` form are unchanged. A structure-test regression (`plugins/cc/tests/structure.test.ts`) locks the ordering and rejects repo-relative `bun plugins/cc/scripts` recipes. Runtime behavior untouched (R1).
 
 ## [0.3.13] - 2026-08-09
 

@@ -239,6 +239,25 @@ describe('cc plugin structure', () => {
         expect(guide).not.toMatch(/\|\s*[12]\s*\|\s*Deny stop/i);
     });
 
+    it('non-hook guide labels staged-path invocation standard and script run optional (ADR-023)', () => {
+        // WHY (0087 R4): ADR-023 and H1 define the staged `script path` invocation as the standard
+        // non-hook form and the `script run` registry as optional. The guide must carry the
+        // standard/optional labels, present the staged path before the registry, and never teach
+        // a repo-relative `bun plugins/cc/scripts` recipe.
+        const guide = readFileSync(
+            join(SKILLS_ROOT, 'anti-hallucination', 'references', 'non-hook-enforcement.md'),
+            'utf-8',
+        );
+        const stagedPath = 'node "$(superskill script path cc anti-hallucination/validate_response.mjs)"';
+        const registry = 'superskill script run cc validate-response';
+        expect(guide).toContain(stagedPath);
+        expect(guide).toContain(registry);
+        expect(guide).toMatch(/\*\*standard\*\*/i);
+        expect(guide).toMatch(/\*\*optional\*\*/i);
+        expect(guide.indexOf(stagedPath)).toBeLessThan(guide.indexOf(registry));
+        expect(guide).not.toMatch(/bun\s+plugins\/cc\/scripts/);
+    });
+
     it('contains no obsolete tasks update or cc:tasks lifecycle instructions', () => {
         for (const file of walkFiles(PLUGIN_ROOT).filter((entry) => entry.endsWith('.md'))) {
             const content = readFileSync(file, 'utf-8');
