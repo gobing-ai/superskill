@@ -2,11 +2,11 @@
 schema_version: 1
 id: "F3"
 name: "superskill install command + marketplace registration"
-status: active
+status: done
 priority: P1
 tags: []
 created_at: "2026-08-01T00:40:45.858Z"
-updated_at: "2026-08-10T00:16:37.337Z"
+updated_at: "2026-08-12T13:36:35.392Z"
 ---
 
 # F3: superskill install command + marketplace registration
@@ -96,9 +96,14 @@ Feature: superskill install command + marketplace registration
 | 0004 | superskill install command + target dispatch | done |
 | 0073 | Enhance superskill install to support omp targets as native Claude Code plugins | done |
 | 0086 | GitHub marketplace registration for spur/superskill (replace directory marketplaces) | done |
+| 0111 | Dispatch plugin subagents natively to Codex as agents TOML (dual-emit, mirrors pi) | done |
+| 0112 | Live-confirm codex agent discovery and model-key honoring (post-2026-08-07 retry) | done |
+| 0113 | Extend --marketplace to local/.claude-plugin/GitHub locators and ship bundled plugins via npm | done |
 <!-- END AUTO-GENERATED -->
 
 ## Notes
 
 ## History
 - 2026-08-01T00:40:59.611Z backlog → active (system)
+- 2026-08-12T13:36:35.237Z active → verifying (system)
+- 2026-08-12T13:36:35.392Z verifying → done (system)

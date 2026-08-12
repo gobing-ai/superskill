@@ -2,10 +2,10 @@
 doc: 05_FEATURES
 owns: STATUS — feature decomposition + state (✅ done / 🔶 partial / ⏳ planned / 💤 deferred)
 authority: derived
-version: 6.1.0
+version: 6.3.0
 derived_from: [01_PRD, 02_ROADMAP]
 owner: Robin Min
-updated_at: 2026-08-09
+updated_at: 2026-08-12
 read_before: finding a feature's state; edit when a feature's status changes
 edit_rules: 99 §6.6
 sync: [T4]
@@ -52,7 +52,7 @@ Design: [design-doc-phase1.md](design/design-doc-phase1.md)
 | Project scaffold | ✅ |
 | Biome + TypeScript gates | ✅ |
 | bun:test suite (2 tests, 100%) | ✅ |
-| Spur rule catalog (21 rules) | ✅ |
+| Spur recommended rule catalog (33 pre-check + 3 post-check rules) | ✅ |
 | Remove ts-base artifacts | ✅ |
 | Documentation 00–05 | ✅ |
 
@@ -363,21 +363,22 @@ Design: [04_DESIGN.md § Skills-ecosystem module surface](04_DESIGN.md#skills-ec
 
 | ID | Feature | Deps | Size | Status | Files |
 |----|---------|------|------|--------|-------|
-| FEAT-B | [Skills-ecosystem interop: `npx skills` parity](04_DESIGN.md#skills-ecosystem-module-surface-packagescoresrcskills-ecosystem) | — | L | ✅ | `packages/core/src/skills-ecosystem/*` (11 modules), `apps/cli/src/commands/skill.ts`, `packages/core/tests/skills-ecosystem/*` |
+| F2 | [Skills-ecosystem interop: `npx skills` parity](features/F2_skills-ecosystem-compatibility-npx-skills-add-interop.md) | — | L | ✅ | `packages/core/src/skills-ecosystem/*`, `apps/cli/src/commands/skill.ts`, `packages/core/tests/skills-ecosystem/*` |
 
 Tasks: 0097 (scaffold), 0098 (source-parser/sanitize/frontmatter), 0099 (agents/locks), 0100 (fetch/discovery), 0101 (installer/emit), 0102 (cli verbs), 0103 (round-trip interop verification & docs sync).
 
+---
+
+## Repository quality
+
+| ID | Feature | Status | Files |
+|----|---------|--------|-------|
+| H2 | [CC plugin security and contract integrity](features/H2_cc-plugin-security-and-contract-integrity.md) | ✅ | `plugins/cc/**`, `plugins/cc/tests/*` |
 
 ---
 
-## Phase 7: Codex native agent dual-emit (task 0111)
+## Phase 7: Codex native agent dual-emit (absorbed by F3; task 0111)
 
 Design: [04_DESIGN.md § Phase 1 install surface](04_DESIGN.md#phase-1-install-surface)
 
-### Feature list
-
-| ID | Feature | Deps | Size | Status | Files |
-|----|---------|------|------|--------|-------|
-| G44 | Codex native agent dual-emit + model-tier rubric | G13, G31 | M | ✅ | `packages/core/src/pipeline/adapt-subagent.ts`, `apps/cli/src/commands/install.ts`, `packages/core/src/rubrics/agent.yaml`, `plugins/cc/skills/cc-agents/references/model-tiers.md` |
-
-Dispatches plugin subagents natively to Codex as `~/.codex/agents/<plugin>-<agent>.toml` (mirrors the Pi precedent). The adapter reads a platform-neutral `model-tier:` frontmatter field and maps it to Codex per-agent `model`/`model_reasoning_effort` keys. The tier classification rubric is a rule (not a registry); the agent rubric's `model-fit` dimension verifies the declared tier at authoring time. Install stays deterministic (ADR-033).
+This extension is part of [F3](features/F3_superskill-install-command-marketplace-registration.md), not a separate feature. F3 is ✅ after Spur refreshed tasks 0111–0113 and passed its lifecycle gate. Task 0111 dispatches plugin subagents natively to Codex as `~/.codex/agents/<plugin>-<agent>.toml`; ADR-033 and [04_DESIGN.md § Phase 1 install surface](04_DESIGN.md#phase-1-install-surface) own the decision and concrete shape.

@@ -2,9 +2,9 @@
 doc: 00_ADR
 owns: WHY — which cross-cutting decision was made, and the one-line reason
 authority: authoritative
-version: 1.10.1
+version: 1.11.0
 owner: Robin Min
-updated_at: 2026-08-09
+updated_at: 2026-08-12
 read_before: any structural change; add a dated entry before diverging from a decision
 edit_rules: 99 §6.1
 sync: [T1, T2]
@@ -193,6 +193,12 @@ Reversals = new entries naming what they supersede. Burned numbers get a `Skippe
 **Why.** ADR-007 mandates preferring `@gobing-ai/ts-*` over external/raw approaches when a ts-lib equivalent exists; ts-db is exactly that equivalent (typed DAOs, predicate spec, migrations, drizzle-internal). The original Phase 2 plan (F4) hand-rolled `bun:sqlite` with literal DDL and string SQL — a direct ADR-007 violation that also forfeits boundary validation (drizzle-zod), the migration tracking table, and the D1 portability the facade already provides. `@gobing-ai/ts-db@0.3.19`, `drizzle-orm@0.45.2`, and `zod@3.25.76` are already resolved in the tree (via the `@gobing-ai/ts-*` chain), so adoption adds no new top-level package surface — only direct declarations.
 
 **Detail:** see design-doc-phase2 §4 and §6; 04 Phase 2. ts-db peer deps: `drizzle-orm` (required), `drizzle-zod`/`zod` (optional — required here because `defineTable` derives DDL + validation). `apps/cli/package.json` declares `@gobing-ai/ts-db`, `drizzle-orm`, `drizzle-zod`, and `zod` directly. This **supersedes** the design-doc-phase2 §4/§7 and F4 statements that the store uses `bun:sqlite` directly; `bun:sqlite` remains an internal detail of the ts-db `bun-sqlite` adapter only. The `yaml` decision (ADR-012) is unaffected.
+
+**Amendment (2026-08-12).** `evaluations` uses `standardColumns` because `EntityDao` requires both
+`created_at` and `updated_at`. Append-only behavior is enforced at the production DAO API boundary:
+`EvaluationDao` exposes insert and read operations, but no update or delete operation. `updated_at`
+is therefore a compatibility column, not mutation permission. This retires only the original
+`appendOnlyColumns` / `created_at`-only clause; the rest of ADR-014 remains unchanged.
 
 ---
 

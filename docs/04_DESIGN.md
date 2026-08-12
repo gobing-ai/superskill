@@ -2,10 +2,10 @@
 doc: 04_DESIGN
 owns: SURFACE — concrete shapes: every CLI command, flag, config key, env var, table, DTO
 authority: derived
-version: 2.7.0
+version: 2.8.0
 derived_from: [00_ADR, 01_PRD, 02_ROADMAP]
 owner: Robin Min
-updated_at: 2026-08-09
+updated_at: 2026-08-12
 read_before: changing a command, flag, env var, or schema
 edit_rules: 99 §6.5
 sync: [T3]
@@ -14,7 +14,7 @@ sync: [T3]
 # Design — Surface Reference
 
 - Phase 1 — Distribution: [design-doc-phase1.md](design/design-doc-phase1.md) — `superskill install` and supporting commands.
-- Phase 2 — Authoring + quality: [design-doc-phase2.md](design/design-doc-phase2.md) — `superskill agent|skill|command|hook|magent` with scaffold, validate, evaluate, refine, evolve.
+- Phase 2 — Authoring + quality: [design-doc-phase2.md](design/design-doc-phase2.md) — artifact-specific `superskill agent|skill|command|hook|magent` lifecycles.
 
 ## Phase 1 install surface
 
@@ -47,13 +47,30 @@ values throw at install time. The tier classification rubric lives at
 `plugins/cc/skills/cc-agents/references/model-tiers.md`; the agent quality
 rubric's `model-fit` dimension verifies the declared tier at authoring time.
 
-## Phase 2 command surface
+## Command surface
 
-| Command family | Lifecycle subcommands | Shared scaffold flags | Shared refine flags | Detail |
-|----------------|-----------------------|-----------------------|---------------------|--------|
-| `superskill agent|skill|command|hook|magent` | `scaffold`, `validate`, `evaluate`, `refine`, `evolve` | `--description <text>`, `--target <agent>`, `--output <dir>`, `--template <tier>`, `--tools <list>`, `--force` | `--target <agent>`, `--auto`, `--save`, `--dry-run` | [design-doc-phase2.md §2.1](design/design-doc-phase2.md#21-scaffold--generate-from-template), [§2.4](design/design-doc-phase2.md#24-refine--evaluate-then-fix) |
+| Command family | Registered subcommands / signature | Detail |
+|----------------|------------------------------------|--------|
+| `superskill agent` | `scaffold`, `validate`, `evaluate`, `refine`, `evolve` | [design-doc-phase2.md §2.1](design/design-doc-phase2.md#21-scaffold--generate-from-template), [§2.4](design/design-doc-phase2.md#24-refine--evaluate-then-fix) |
+| `superskill skill` | `add <source>`, `list`, `remove\|rm <names...>`, `update [names...]`, `scaffold`, `validate`, `evaluate`, `refine`, `evolve`, `package <name>`, `migrate <sources...>` | Skills-ecosystem and authoring/distribution surface |
+| `superskill command` | `scaffold`, `validate`, `evaluate`, `refine`, `evolve` | Slash-command authoring lifecycle |
+| `superskill hook` | `validate`, `evaluate`, `refine`, `evolve`, `emit <name>`, `run <plugin> <hook-id>` | No scaffold; refine is suggest-only and evolve is analyze-only |
+| `superskill magent` | `scaffold`, `validate`, `evaluate`, `refine`, `evolve` | Main-agent config authoring lifecycle |
+| `superskill script` | `run <plugin> <script-id>`, `path <plugin> <rel>`, `convert <plugin> <rel>` | Registered runtime dispatch, installed-path resolution, and portable `.mjs` conversion |
 
-`--dry-run` previews classified refine fixes and projected score delta without writing files or creating backups.
+| Additional signature | Flags |
+|----------------------|-------|
+| `skill package <name>` | `-o, --output <dir>`, `--include-companions` |
+| `skill migrate <sources...>` | `--refine`, `--ingest <file>`, `-t, --target <agent>`, `--margin <n>` |
+| `hook emit <name>` | `-t, --target <agent>`, `--global`, `--dry-run` |
+| `hook run <plugin> <hook-id>` | `--profile <block\|deny>` |
+| `script path <plugin> <rel>` | `--json`, `--global`, `--project` |
+| `script convert <plugin> <rel>` | `--out <path>`, `--dry-run`, `--json` |
+
+For `agent|skill|command|magent`, scaffold shares `--description`, `--target`, `--output`,
+`--template`, `--tools`, and `--force`; refine shares `--target`, `--auto`, `--save`, and
+`--dry-run`. `--dry-run` previews classified refine fixes and projected score delta without writing
+files or creating backups.
 Only `skill scaffold` exposes `--invocation-mode <user|model>`; the other scaffold families do not
 accept it because their output contracts have no invocation-mode field.
 
@@ -96,7 +113,7 @@ Executable logic a skill invokes at the user's install site lives in `plugins/<p
 - **Native marketplace installs** (Claude/OMP/Grok): full plugin tree ships in the cache, including `scripts/`.
 - **Rulesync/Hermes class**: install stages scripts to `~/.agents/scripts/<plugin>/<feature>/` (tree shape preserved; fail-closed if absent). Staging entrypoint: `stagePluginScripts` in `apps/cli/src/commands/install.ts`; native-class skip gate: `needsSharedScriptsRoot`.
 
-**Invocation standard** for skill docs and other non-hook callers is the Entrypoint Contract v1 form `node "$(superskill script path <plugin> <feature>/<file>.js)" [args]` (portable Node `.js`/`.mjs` + POSIX `.sh`, no Bun-on-target). **Optional invocation** for engines the CLI deep-imports: `superskill script run <plugin> <id>` / `superskill hook run <plugin> <id>` (ADR-022, amended by ADR-024). See the [plugin-scripts author guide](help/how_to_organize_scripts_for_plugin_development.md) for the dual contract.
+**Invocation standard** for skill docs and other non-hook callers is the Entrypoint Contract v1 form `node "$(superskill script path <plugin> <feature>/<file>.js)" [args]` (portable Node `.js`/`.mjs` + POSIX `.sh`, no Bun-on-target). **Optional invocation** for engines the CLI deep-imports: `superskill script run <plugin> <id>` / `superskill hook run <plugin> <id>` (ADR-022, amended by ADR-024). Build-time conversion uses `superskill script convert <plugin> <relative.ts> [--out <path>]` to produce the portable `.mjs` twin consumed by installed targets. See the [plugin-scripts author guide](help/how_to_organize_scripts_for_plugin_development.md) for the dual contract.
 
 | Surface | Path | Purpose |
 |---------|------|---------|

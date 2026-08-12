@@ -2,11 +2,11 @@
 schema_version: 1
 id: "F2"
 name: "Skills ecosystem compatibility (npx skills add interop)"
-status: active
+status: done
 priority: P2
 tags: []
 created_at: "2026-07-24T22:54:40.642Z"
-updated_at: "2026-08-01T00:24:29.583Z"
+updated_at: "2026-08-12T14:22:41.508Z"
 ---
 
 # B: Skills ecosystem compatibility (npx skills add interop)
@@ -80,3 +80,5 @@ Feature: Skills ecosystem compatibility (npx skills add interop)
 ## History
 - 2026-07-25T07:13:56.620Z backlog → active (system)
 - 2026-08-01T00:24:29.583Z moved B → F2 (system)
+- 2026-08-12T14:22:41.376Z active → verifying (system)
+- 2026-08-12T14:22:41.508Z verifying → done (system)

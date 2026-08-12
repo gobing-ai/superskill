@@ -3,9 +3,13 @@ name: Project Constitution
 doc: 99_PROJECT_CONSTITUTION
 owns: PROCESS — how the key files are maintained
 authority: authoritative-on-process
-version: 1.2.0
+version: 1.6.0
 created_at: 2026-05-31T17:30:43.643Z
-updated_at: 2026-08-09T00:00:00.000Z
+owner: project operator
+updated_at: 2026-08-12T14:21:17Z
+read_before: editing any numbered doc or changing documentation process
+edit_rules: 99 §6.8
+sync: [T7]
 ---
 
 # Project Constitution — How to Organize the Project
@@ -59,9 +63,9 @@ project-variable section besides Lessons — update the binding when the toolcha
 
 | Role | Current binding | Notes |
 |------|-----------------|-------|
-| Spec lifecycle — tasks | `tasks` CLI (WBS markdown task files) → migrating to `spur task` | Task files are tool-owned; edit through the tool, never the Write tool |
-| Spec lifecycle — features | `ftree` (feature markdown files) → migrating to `spur feature` | Same tool-owned rule |
-| Delivery harness | `spur` (constraint rules, workflows, agent runner, history analytics) | Quality gates are self-hosted through it where possible |
+| Spec lifecycle — tasks | `spur task` (WBS markdown task files) | Task files are tool-owned; edit through the tool, never the Write tool |
+| Spec lifecycle — features | `spur feature` (feature markdown files) | Same tool-owned rule |
+| Delivery harness | `spur` (constraint rules, workflows, agent runner, history analytics) | Quality gates are self-hosted through it where possible. `spur task check --corpus` ratchets accepted terminal legacy-task errors through `config/corpus-baseline.json`; current and new work must pass normal task checks. |
 | Agent-facing wrappers | per-project plugin dir (e.g. `plugins/sp/`) | **Fat Skills, thin others:** skills are the SSOT for agent-facing behavior and may be arbitrarily rich; slash commands and subagents are thin wrappers of skills (every agent supports skills; command/subagent support varies) |
 
 ## 4. Common file layout

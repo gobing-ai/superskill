@@ -2,11 +2,11 @@
 schema_version: 1
 id: "H2"
 name: "CC plugin security and contract integrity"
-status: backlog
+status: done
 priority: P2
 tags: []
 created_at: "2026-07-26T19:01:26.703Z"
-updated_at: "2026-08-01T00:24:29.902Z"
+updated_at: "2026-08-12T14:22:41.999Z"
 ---
 
 # C: CC plugin security and contract integrity
@@ -85,3 +85,6 @@ Feature: CC plugin security and contract integrity
 ## History
 
 - 2026-08-01T00:24:29.902Z moved C → H2 (system)
+- 2026-08-12T14:22:41.678Z backlog → active (system)
+- 2026-08-12T14:22:41.824Z active → verifying (system)
+- 2026-08-12T14:22:41.999Z verifying → done (system)

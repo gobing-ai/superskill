@@ -2,10 +2,10 @@
 doc: 03_ARCHITECTURE
 owns: HOW — module boundaries, data flow, runtime model, invariants
 authority: derived
-version: 2.9.0
+version: 2.11.0
 derived_from: [00_ADR, 01_PRD]
 owner: Robin Min
-updated_at: 2026-08-09
+updated_at: 2026-08-12
 read_before: cross-module, seam, or schema work
 edit_rules: 99 §6.4
 sync: [T1]
@@ -79,11 +79,15 @@ packages/core/src/                # ── Reusable domain logic (@gobing-ai/sup
 ├── quality/                      # ── Quality evaluation heuristics ──
 │   ├── agent.ts                  # Subagent quality evaluation heuristics
 │   ├── command.ts                # Slash command quality evaluation heuristics
-│   ├── dimensions.ts             # Shared type-specific dimension registries
+│   ├── eval-cases.ts             # Behavior-evaluation case loading and validation
+│   ├── evaluate.ts               # Shared quality-report composition
+│   ├── heuristics.ts             # Cross-type scoring helpers
 │   ├── hook.ts                   # Hook quality evaluation heuristics
 │   ├── magent.ts                 # Main agent quality evaluation heuristics (harness-aware scoring signals via template + cc-magents)
+│   ├── replay.ts                 # Deterministic behavior replay primitives
 │   ├── rubric.ts                 # Rubric loader & validator (feature G32)
-│   └── skill.ts                  # Skill quality evaluation heuristics
+│   ├── skill.ts                  # Skill quality evaluation heuristics
+│   └── types.ts                  # Quality report and rubric types
 │
 ├── rubrics/                      # ── Built-in rubric YAML data ──
 │   ├── agent.yaml
@@ -93,21 +97,34 @@ packages/core/src/                # ── Reusable domain logic (@gobing-ai/sup
 │   └── skill.yaml
 │
 ├── templates/                    # ── Built-in scaffold templates, bundled as text imports ──
-│   └── magent/default.md         # Harness-aware main-agent template (spur + superskill first; Platform Padding)
+│   ├── agent/                    # Default/minimal/specialist/standard subagent templates
+│   ├── command/                  # Default/plugin/simple/workflow command templates
+│   ├── magent/                   # Harness-aware main-agent template
+│   └── skill/                    # Default/pattern/reference/technique skill templates
 │
 ├── pipeline/                     # ── Conversion transformations (pure stage functions) ──
 │   ├── adapt-command.ts          # Adapt Claude command .md → Skills 2.0 skill entry
 │   ├── adapt-subagent.ts         # Adapt Claude subagent .md -> skill entry / Pi native agent / Codex native agent TOML
 │   ├── frontmatter-walk.ts       # Shared frontmatter-block walker for the adapt-* stages
+│   ├── marketplace-registration.ts # Native marketplace registration adapters
 │   ├── pi-tools.ts               # Claude → Pi tool-name normalization + skill-ref extraction
 │   ├── rewrite-references.ts     # Rewrite scoped plugin:name colon references
-│   └── slash-command.ts          # Slash-dialect translation mappings
+│   ├── select-magent.ts          # Main-agent config selection and target placement
+│   ├── slash-command.ts          # Slash-dialect translation mappings
+│   └── yaml-utils.ts             # YAML transform helpers
 │
 ├── operations/                   # ── Reusable operation APIs with no app dependency ──
 │   ├── migrate.ts                # Deterministic skill merge/migration core
 │   ├── package.ts                # Package content for distribution
 │   ├── scaffold.ts               # Scaffold content files from templates
 │   └── validate.ts               # Syntax and layout verification engine
+│
+├── skills-ecosystem/             # Loose SKILL.md discovery, fetch, install, emit, and lock interop
+│   ├── fetch.ts                  # Hardened local/GitHub source acquisition
+│   ├── installer.ts              # Canonical install and per-target emission
+│   ├── locks.ts                  # Project/global skills lock interop
+│   ├── operations.ts             # Add/list/remove/update domain operations
+│   └── source-parser.ts          # Local path, URL, and GitHub shorthand parsing
 │
 ├── targets.ts                    # Target mapping registries and conversions
 ├── marketplace.ts                # Marketplace manifest resolution + locator probe (ADR-011, ADR-034)
@@ -120,17 +137,24 @@ apps/cli/src/                     # ── CLI app (@gobing-ai/superskill) ─�
 │   ├── agent.ts                  # superskill agent subcommands
 │   ├── command.ts                # superskill command subcommands
 │   ├── helpers.ts                # common options, target resolution, and operation runners
+│   ├── hook-run.ts               # registered plugin hook runtime dispatcher
 │   ├── hook.ts                   # superskill hook subcommands
 │   ├── install.ts                # superskill install command
 │   ├── magent.ts                 # superskill magent subcommands
+│   ├── script-convert.ts         # portable .mjs build command
+│   ├── script-path.ts            # staged plugin entrypoint resolver
+│   ├── script-run.ts             # registered plugin script dispatcher
 │   └── skill.ts                  # superskill skill subcommands
 │
 ├── operations/                   # ── CLI adapters and store-backed workflows ──
 │   ├── evaluate.ts               # App-owned scoring workflow: CLI envelope output + store persistence
 │   ├── evolve.ts                 # Self-evolution loop using historical evaluations
 │   ├── migrate.ts                # CLI migration adapter; delegates deterministic merge to core
+│   ├── noise-floor.ts            # Pairwise-judge noise-floor calibration
 │   ├── package.ts                # Thin re-export adapter over core package API
+│   ├── pairwise-judge.ts         # Candidate-vs-baseline judgment adapter
 │   ├── refine.ts                 # Evaluate-and-fix automation pipeline
+│   ├── replay-runner.ts          # Held-out behavior replay orchestration
 │   ├── scaffold.ts               # Thin re-export adapter over core scaffold API
 │   └── validate.ts               # Thin re-export adapter over core validate API
 │
@@ -142,6 +166,8 @@ apps/cli/src/                     # ── CLI app (@gobing-ai/superskill) ─�
 │
 ├── config.ts                     # Configuration schema definition
 ├── hooks.ts                      # Hook emission (hermes/pi-style)
+├── omp-hooks.ts                  # OMP hook-module reconciliation
+├── stdin.ts                      # Non-blocking bounded stdin payload reader
 ├── cli.ts                        # Program registration entrypoint
 └── index.ts                      # Executable entrypoint
 ```
@@ -150,8 +176,8 @@ apps/cli/src/                     # ── CLI app (@gobing-ai/superskill) ─�
 
 ### Workspace packages
 
-- [apps/cli/](file:///Users/robin/xprojects/superskill/apps/cli): Commander CLI binary — command registration, option parsing, output formatting, exit-code mapping, operation adapters, and the persistence layer.
-- [packages/core/](file:///Users/robin/xprojects/superskill/packages/core): Reusable domain logic — content editing, quality scoring, conversion pipeline, target taxonomy, marketplace resolution, plugin mapping, rulesync wrapper, and no-app operation APIs. Consumed by the CLI via `@gobing-ai/superskill-core`.
+- [apps/cli/](../apps/cli/): Commander CLI binary — command registration, option parsing, output formatting, exit-code mapping, operation adapters, and the persistence layer.
+- [packages/core/](../packages/core/): Reusable domain logic — content editing, quality scoring, conversion pipeline, target taxonomy, marketplace resolution, plugin mapping, rulesync wrapper, and no-app operation APIs. Consumed by the CLI via `@gobing-ai/superskill-core`.
 ## Data flow
 
 ### Phase 1: Distribution
@@ -176,10 +202,10 @@ plugins/<name>/                  .rulesync/             ~/.agents/skills/
                   rulesync.generate({ outputRoots, global, ... })
                         │   writes <outputRoot>/<relativeDirPath> per rulesync
                         │
-                  Copy step — hermes & omp only (not in rulesync)
+                  Native host dispatch (Claude / OMP / Grok) or Hermes copy fallback
 ```
 
-`outputRoots = global ? [os.homedir()] : [process.cwd()]` (ADR-010). For every rulesync-supported target, the write is done by `generate()`; superskill copies only the two targets rulesync lacks (`hermes` and `omp`).
+`outputRoots = global ? [os.homedir()] : [process.cwd()]` (ADR-010). For rulesync-supported targets, writes are done by `generate()`. Claude, OMP, and Grok use their native host-plugin installers; Hermes receives the explicit copy fallback. OMP skills also read the shared `.agents/skills/` output natively.
 
 The install action loads `superskill.jsonc` before resolving the plugin. Explicit
 `--marketplace`/`--targets` values win over configured defaults; a configured plugin path is used
@@ -244,8 +270,8 @@ erDiagram
 
 ### Table Specifications
 
-1. **`evaluations`** (DAO: [EvaluationDao](file:///Users/robin/xprojects/superskill/apps/cli/src/store/evaluations.ts)): Stores append-only metrics generated by evaluations, auto-refinements, or post-evolution verifications.
-2. **`proposals`** (DAO: [ProposalDao](file:///Users/robin/xprojects/superskill/apps/cli/src/store/proposals.ts)): Manages the mutable lifecycle (`draft` → `accepted` | `rejected`) of self-evolution proposals.
+1. **`evaluations`** (DAO: [EvaluationDao](../apps/cli/src/store/evaluations.ts)): Stores append-only metrics generated by evaluations, auto-refinements, or post-evolution verifications.
+2. **`proposals`** (DAO: [ProposalDao](../apps/cli/src/store/proposals.ts)): Manages the mutable lifecycle (`draft` → `accepted` | `rejected`) of self-evolution proposals.
 
 ## Source of truth
 
@@ -308,7 +334,7 @@ Carried from cc-agents/scripts. Pipeline stages are pure functions per invariant
 | `adaptSubagentToPi` | Pi subagents | Skills 2.0 → Pi native agent YAML (skill refs filtered to existing skills) |
 | `adaptSubagentToCodex` | Codex subagents | Skills 2.0 -> Codex native agent TOML (model-tier -> model/model_reasoning_effort via `CODEX_MODEL_TIERS`, skill refs rewritten, pinned key order) |
 
-`translateSlashCommand` accepts a ts-ai-runner `AgentName`, not a superskill `Target`; the two sets are disjoint on `antigravity-cli`/`antigravity-ide`/`hermes`/`omp`. `TARGET_TO_AGENT_NAME` (in [targets.ts](file:///Users/robin/xprojects/superskill/packages/core/src/targets.ts), consumed by [config.ts](file:///Users/robin/xprojects/superskill/apps/cli/src/config.ts)) bridges them: `omp→pi`, the antigravity/hermes targets fall to the function's `default` branch (`/plugin-command`).
+`translateSlashCommand` accepts a ts-ai-runner `AgentName`, not a superskill `Target`. `TARGET_TO_AGENT_NAME` (in [targets.ts](../packages/core/src/targets.ts), consumed by [config.ts](../apps/cli/src/config.ts)) maps Claude, Codex, Pi, OMP, OpenCode, antigravity-cli, Hermes, and Grok 1:1; only `antigravity-ide` bridges to `opencode`. Grok's native-plugin path bypasses slash translation because its command dialect remains Claude-compatible.
 
 ## Target taxonomy
 
@@ -316,31 +342,31 @@ superskill maps each `Target` to a rulesync `ToolTarget` (`TARGET_TO_RULESYNC`) 
 
 | Target | rulesync target | AgentName (slash) | Global skill path | Note |
 |--------|----------------|-------------------|------------------|------|
+| `claude` | — | `claude` | native plugin cache | Native host-plugin install |
 | `codex` | `codexcli` | `codex` | `~/.agents/skills/` | Dual-emit - subagents -> Codex native agent TOML at `~/.codex/agents/` (ADR-033) |
 | `pi` | `codexcli` | `pi` | `~/.agents/skills/` | Unified — subagents → Pi native agent format |
-| `omp` | — | `pi` | `~/.agents/skills/` | Native — reads shared ~/.agents/skills/ |
+| `omp` | — | `omp` | `~/.agents/skills/` | Native plugin install; reads shared skills output |
 | `opencode` | `opencode` | `opencode` | `~/.config/opencode/skills/` | |
 | `antigravity-cli` | `antigravity-cli` | `antigravity-cli` | `~/.gemini/antigravity-cli/skills/` | Native — agy reads this dir |
-| `antigravity-ide` | `antigravity-ide` | default (`/plugin-command`) | `~/.gemini/config/skills/` | Native — IDE reads this dir |
-| `hermes` | — | default (`/plugin-command`) | `~/.hermes/skills/` | Copied by superskill |
+| `antigravity-ide` | `antigravity-ide` | `opencode` | `~/.gemini/config/skills/` | Native — IDE reads this dir |
+| `hermes` | — | `hermes` | `~/.hermes/skills/` | Copied by superskill |
+| `grok` | — | `grok` | native plugin cache | Native host-plugin install; slash conversion bypassed |
 
-**Output root (ADR-010).** rulesync writes to `<outputRoot>/<relativeDirPath>` and never resolves `~`. `runRulesync` sets `outputRoots: [os.homedir()]` for `--global`, `[process.cwd()]` otherwise; rulesync's `global` flag only swaps the relative subdir. Only `hermes` is absent from rulesync's `ToolTarget` set — superskill copies opencode-generated skills to `~/.hermes/skills/`. OMP reads from the shared `~/.agents/skills/` directory natively (ADR-010 amendment 2026-06-23).
+**Output root (ADR-010).** rulesync writes to `<outputRoot>/<relativeDirPath>` and never resolves `~`. `runRulesync` sets `outputRoots: [os.homedir()]` for `--global`, `[process.cwd()]` otherwise; rulesync's `global` flag only swaps the relative subdir. Claude, OMP, Hermes, and Grok have no `ToolTarget` mapping: Claude/OMP/Grok use native host-plugin dispatch, Hermes copies opencode-generated skills to `~/.hermes/skills/`, and OMP also reads the shared `~/.agents/skills/` output natively (ADR-010 amendment 2026-06-23).
 
-## CLI Commands Surface
+## CLI routing
 
-The following represents all commands exposed by the `superskill` CLI:
+Commander registers seven root families. Exact signatures and flags are transcribed in [04_DESIGN.md](04_DESIGN.md).
 
-```bash
-# Distribution & Sync
-superskill install <plugin> [--marketplace <path>] [--targets <list>] [--no-global] [--dry-run] [--verbose]
-
-# Resource-specific Operations (type is one of: agent, skill, command, hook, magent)
-superskill <type> scaffold <name> [--description <text>] [--target <agent>] [--output <dir>] [--force]
-superskill <type> validate <nameOrPath> [--target <agent>] [--strict] [--json]
-superskill <type> evaluate <nameOrPath> [--target <agent>] [--json] [--save]
-superskill <type> refine <nameOrPath> [--target <agent>] [--auto] [--save]
-superskill <type> evolve <name> [--target <agent>] [--from <date>] [--propose-only] [--accept <id>] [--reject <id>]
-```
+| Family | Registered subcommands |
+|--------|------------------------|
+| `install` | root command |
+| `agent` | `scaffold`, `validate`, `evaluate`, `refine`, `evolve` |
+| `skill` | `add`, `list`, `remove`/`rm`, `update`, `scaffold`, `validate`, `evaluate`, `refine`, `evolve`, `package`, `migrate` |
+| `command` | `scaffold`, `validate`, `evaluate`, `refine`, `evolve` |
+| `hook` | `validate`, `evaluate`, `refine`, `evolve`, `emit`, `run` |
+| `magent` | `scaffold`, `validate`, `evaluate`, `refine`, `evolve` |
+| `script` | `run`, `path`, `convert` |
 
 ## Command Sequence Diagrams & Briefings
 
@@ -349,7 +375,7 @@ superskill <type> evolve <name> [--target <agent>] [--from <date>] [--propose-on
 ### 1. `superskill install <plugin>`
 
 #### Briefing
-Resolves the plugin root from the workspace directory or an optional marketplace manifest. Maps source files into canonical `.rulesync/` layouts, applies targeted markdown conversions (colon rewriting, slash-dialect translations, frontmatter normalizations, and Pi agent configurations), executes `rulesync` for supported target agents, and copy-dispatches output files for targets that rulesync does not support natively (e.g. Claude local installer, Hermes, and OMP).
+Resolves the plugin root from the workspace directory or an optional marketplace locator. Maps source files into canonical `.rulesync/` layouts, applies targeted markdown conversions, executes `rulesync` for supported target agents, invokes native host-plugin installers for Claude/OMP/Grok, and copy-dispatches the Hermes fallback.
 
 #### Sequence Diagram
 
@@ -379,8 +405,10 @@ sequenceDiagram
     Rulesync->>Upstream: Write files to output roots
     alt Claude Code installation
         CLI->>Upstream: ProcessExecutor.run "claude plugin install" (ts-runtime, ADR-032)
-    else Hermes / OMP installation
-        CLI->>Upstream: copyDirectory to ~/.hermes or ~/.omp
+    else OMP / Grok native plugin installation
+        CLI->>Upstream: register or install native plugin
+    else Hermes installation
+        CLI->>Upstream: copy generated artifacts to ~/.hermes
     end
     CLI-->>User: Success with installed file counts
 ```
@@ -502,7 +530,7 @@ sequenceDiagram
     CLI->>Refine: refine(type, nameOrPath, options)
     Refine->>Validate: validate(type, path)
     Validate-->>Refine: ValidationResult
-    Note over Refine: If invalid with errors, abort refine
+    Note over Refine: Classify validation findings; structural auto-fixes remain reachable
     Refine->>Evaluate: evaluate(type, path)
     Evaluate-->>Refine: Baseline QualityReport
     Refine->>FS: Backup file to [path].bak
@@ -518,6 +546,12 @@ sequenceDiagram
         end
     end
     Refine->>FS: writeFileSync(path, updatedContent)
+    alt Initial validation had errors
+        Refine->>Validate: revalidate(type, path)
+        alt Errors remain
+            Refine->>FS: Restore from backup and abort
+        end
+    end
     Refine->>Evaluate: evaluate(type, path)
     Evaluate-->>Refine: Post-refinement QualityReport
     alt Save is true

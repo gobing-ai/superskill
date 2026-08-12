@@ -2,10 +2,10 @@
 doc: 01_PRD
 owns: WHAT — product vision, users, scope (in / out / deferred)
 authority: authoritative-on-scope
-version: 3.3.0
+version: 3.5.0
 derived_from: [00_ADR]
 owner: Robin Min
-updated_at: 2026-08-09
+updated_at: 2026-08-12
 read_before: adding a command or feature; edit when scope changes
 edit_rules: 99 §6.2
 sync: [T1, T4, T6]
@@ -27,13 +27,13 @@ The `cc-agents/scripts` toolchain synchronizes Claude Code plugin-format skills,
 
 **superskill** — a TypeScript CLI with two layers:
 
-**Layer 1 — Distribution.** `superskill install` replicates what `cc-agents/scripts/setup-all.sh` does: take a Claude Code plugin and install its skills, commands, subagents, hooks, and MCP config to any target coding agent. Uses `rulesync`'s programmatic `generate()` API as the conversion engine; superskill owns the output root (project vs `~`) and the two targets rulesync lacks (`hermes`, `omp`). See ADR-010.
+**Layer 1 — Distribution.** `superskill install` replicates what `cc-agents/scripts/setup-all.sh` does: take a Claude Code plugin and install its skills, commands, subagents, magents, hooks, and MCP config to any target coding agent. Uses `rulesync`'s programmatic `generate()` API as the conversion engine; superskill owns the output root (project vs `~`), native host-plugin dispatch, and the Hermes fallback. See ADR-010.
 
-**Layer 2 — Authoring + quality.** Five subcommands (`agent`, `skill`, `command`, `hook`, `magent`) that migrate the meta-agent skills out of the Claude Code plugin and into first-class CLI operations — each with create, validate, evaluate, refine, and evolve capabilities. These commands work locally (no Claude Code required) and improve themselves over time through structured evolution workflows.
+**Layer 2 — Authoring + quality.** Five subcommands (`agent`, `skill`, `command`, `hook`, `magent`) that migrate the meta-agent skills out of the Claude Code plugin and into first-class CLI operations. They provide the lifecycle appropriate to each artifact; skills additionally support ecosystem install/update and package/migrate workflows, while hooks expose deterministic emit/run operations. These commands work locally (no Claude Code required) and improve themselves over time through structured evolution workflows.
 
 ## Users
 
-- **Plugin author** — installs a Claude Code plugin to Codex, Pi, OpenCode, Antigravity, Hermes, omp.
+- **Plugin author** — installs a Claude Code plugin to Claude Code, Codex, Pi, OpenCode, Antigravity, Hermes, omp, or Grok.
 - **Plugin developer** — creates, validates, and refines agent skills, commands, subagents, hooks, and main-agent configs with structured quality gates.
 - **Team lead** — manages main-agent configs across a team using multiple coding agents, with evaluation-driven improvement.
 
@@ -50,27 +50,28 @@ The `cc-agents/scripts` toolchain synchronizes Claude Code plugin-format skills,
 
 | Item | Description | ADR |
 |------|-------------|-----|
-| `superskill install` | Install a Claude Code plugin's skills, commands, subagents, hooks, MCP config to specified coding agents | 005, 006 |
+| `superskill install` | Install a Claude Code plugin's skills, commands, subagents, magents, hooks, MCP config to specified coding agents; `--magent` selects a main-agent config | 005, 006, 034 |
 | Plugin → `.rulesync/` mapper | Canonical intermediate representation | 005 |
 | rulesync programmatic API | `rulesync.generate()` called from TypeScript | 005 |
 | Conversion pipeline | Slash dialect, colon→hyphen, @-file stripping, Pi subagent format | 006 |
-| Target agents | Claude Code, Codex, Pi, omp, OpenCode, antigravity-cli, antigravity-ide, Hermes | 005 |
-| Plugin resolution via marketplace | `--marketplace <path>` resolves `<plugin>` from a Claude Code `.claude-plugin/marketplace.json` (local relative-path sources); defaults to CWD's marketplace, falls back to `plugins/<name>/` scan | 011 |
+| Target agents | Claude Code, Codex, Pi, omp, OpenCode, antigravity-cli, antigravity-ide, Hermes, Grok | 005 |
+| Plugin resolution via marketplace | `--marketplace <locator>` resolves `<plugin>` from a local marketplace path, GitHub URL, or `owner/repo` shorthand; defaults to CWD's marketplace, falls back to `plugins/<name>/` scan | 011, 034 |
 | `--dry-run` / `--verbose` | Preview and diagnostics | — |
 
 ### Phase 2 — Authoring + quality: migrate and enhance meta-agent skills
 
-Source: `cc-agents/plugins/rd3/skills/cc-agents/` (currently Claude Code skills only).
+Source: bundled `plugins/cc/skills/cc-*` authoring skills.
 
 | Command | Origin skill | Capabilities | ADR |
 |---------|-------------|--------------|-----|
-| `superskill agent` | `cc-agents` | Create, validate, evaluate, refine, evolve subagents | — |
-| `superskill skill` | `cc-skills` | Create, validate, evaluate, refine, evolve skills | — |
-| `superskill command` | `cc-commands` | Create, validate, evaluate, refine, evolve slash commands | — |
-| `superskill hook` | `cc-hooks` | Create, validate, evaluate, refine, evolve hooks | — |
-| `superskill magent` | `cc-magents` | Create, validate, evaluate, refine, evolve main-agent configs | — |
+| `superskill agent` | `cc-agents` | Scaffold, validate, evaluate, refine, evolve subagents | — |
+| `superskill skill` | `cc-skills` | Add, list, remove, update, scaffold, validate, evaluate, refine, evolve, package, migrate skills | 028–031 |
+| `superskill command` | `cc-commands` | Scaffold, validate, evaluate, refine, evolve slash commands | — |
+| `superskill hook` | `cc-hooks` | Validate, evaluate, suggest-only refine, analyze-only evolve, emit, run hooks | 020, 021, 024 |
+| `superskill magent` | `cc-magents` | Scaffold, validate, evaluate, refine, evolve main-agent configs | — |
+| `superskill script` | plugin scripts | Run registered scripts, resolve staged entrypoint paths, build portable `.mjs` twins | 023, 024 |
 
-Each command supports five operations:
+The `agent`, `command`, `magent`, and `skill` authoring lifecycles support five shared operations:
 
 | Operation | What it does |
 |-----------|-------------|

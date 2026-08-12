@@ -2,10 +2,10 @@
 doc: 02_ROADMAP
 owns: WHEN — phases, current vs deferred, sequencing
 authority: derived
-version: 3.5.0
+version: 3.8.0
 derived_from: [00_ADR, 01_PRD]
 owner: Robin Min
-updated_at: 2026-08-09
+updated_at: 2026-08-12
 read_before: placing work in a phase; edit when phase status changes
 edit_rules: 99 §6.3
 sync: [T5]
@@ -21,54 +21,52 @@ sync: [T5]
 
 - [x] Foundation: scaffold, gates green, ts-base artifacts removed, docs 00–05 ready
 - [x] Target taxonomy + live `superskill.jsonc` defaults
-- [x] Marketplace manifest resolver — `--marketplace`, local relative-path sources (ADR-011)
+- [x] Marketplace manifest resolver — `--marketplace` local/GitHub locator (ADR-011, ADR-034)
 - [x] `superskill install <plugin>` — plugin → `.rulesync/` → `rulesync.generate()` → targets
 - [x] Conversion pipeline: slash dialect, colon→hyphen, frontmatter normalization
 - [x] Feature dispatch: skills, commands, subagents, hooks, MCP, Claude Code marketplace
 - [x] Target agents: Claude Code, Codex, Pi, omp, OpenCode, antigravity-cli, antigravity-ide, Hermes
 - [x] Verify: idempotent, dry-run, error handling, ≥90% test coverage
 
-**Exit:** `superskill install rd3 --targets all` produces correct output for every target from a fresh checkout.
+**Exit:** `superskill install cc --targets all` produces correct output for every target from a fresh checkout.
 
 ---
 
 ## Phase 2: Authoring + quality — `superskill agent|skill|command|hook|magent`
 
-**Goal:** Migrate the five meta-agent skills from `cc-agents/plugins/rd3/skills/cc-agents/` into first-class CLI commands, each with scaffold, validate, evaluate, refine, and evolve operations. The key enhancement is **self-evolution** — persistent evaluation data drives improvement proposals.
+**Goal:** Migrate the five meta-agent skills into first-class CLI commands with artifact-appropriate authoring and quality lifecycles. The key enhancement is **self-evolution** — persistent evaluation data drives improvement proposals.
 
 **Design:** [design-doc-phase2.md](design/design-doc-phase2.md)
 
-- [ ] `superskill agent` — subagent management (origin: `cc-agents`)
-- [ ] `superskill skill` — skill management (origin: `cc-skills`)
-- [ ] `superskill command` — slash command management (origin: `cc-commands`)
-- [ ] `superskill hook` — hook management (origin: `cc-hooks`)
-- [ ] `superskill magent` — main-agent config management (origin: `cc-magents`)
-- [ ] Shared operations: scaffold (templates), validate (schema), evaluate (quality dimensions), refine (fix), evolve (longitudinal proposals)
-- [ ] Data store: SQLite evaluations + proposals tables
-- [ ] Templates shipped with npm package, overridable per user
+- [x] `superskill agent` — scaffold/validate/evaluate/refine/evolve shipped (F5)
+- [x] `superskill skill` — authoring lifecycle shipped (F5; ecosystem and distribution verbs tracked in Phases 5–6)
+- [x] `superskill command` — scaffold/validate/evaluate/refine/evolve shipped (F5)
+- [x] `superskill hook` — validate/evaluate plus safe refine/evolve variants shipped (F5)
+- [x] `superskill magent` — scaffold/validate/evaluate/refine/evolve shipped (F5)
+- [x] Shared scaffold/validate/evaluate/refine/evolve operations shipped with artifact-specific constraints (G21–G26)
+- [x] SQLite evaluations + proposals store shipped (F4)
+- [x] Built-in templates and user override resolution shipped (G21)
 
-**Exit:** Each command's `evolve` operation produces a data-backed improvement proposal from at least three historical evaluation runs.
+**Exit (met):** Data-backed evolution and its persistence/command integration are covered by G26, F5, and E3.
 
 ---
 
 ## Phase 3: Plugin adaptation & script consolidation — `plugins/cc/`
 
-**Goal:** Enhance and customize the copied `rd3:cc-*` agent skills, subagents, and slash commands inside `plugins/cc` to leverage the new `superskill` CLI infrastructure. Get rid of all embedded scripts (`plugins/cc/skills/*/scripts/`) and migrate their workflows to first-class `superskill` commands.
+**Goal:** Adapt the copied plugin to the `cc` namespace, route its authoring workflows through the CLI, and remove obsolete per-skill embedded code.
 
-**Design:** [design-doc-phase3.md](file:///Users/robin/xprojects/superskill/docs/design/design-doc-phase3.md)
+**Design:** [design-doc-phase3.md](design/design-doc-phase3.md)
 
-- [ ] Rename all `rd3` references to `cc` across `plugins/cc/` (skill dir names kept; refs → `cc:cc-*`).
-- [ ] Refactor all five skill instructions (`cc-agents`, `cc-skills`, `cc-commands`, `cc-hooks`, `cc-magents`) to invoke `superskill <type> <op>` (the five real CLI verbs: scaffold, validate, evaluate, refine, evolve) instead of `bun scripts/*.ts`.
-- [ ] Slash commands: rewrite the 17 that map to a CLI verb; delete the 8 orphans (`*-adapt`, `hook-emit/list/setup`, `skill-migrate/package`) — no CLI verb (restoration tracked in Phase 5).
-- [ ] Update all 5 expert subagent definitions under `plugins/cc/agents/` to delegate to `superskill`.
-- [ ] Strip the dangling `plugins/cc/hooks/hooks.json` entries (leftover `indexed-context`/`tasks`/`anti-hallucination` skills are owned elsewhere, not this plugin).
-- [ ] Establish the global `superskill` binary path (build + link/publish) so plugin commands resolve on PATH.
-- [ ] Delete obsolete embedded code (`scripts/`, `templates/`, `tests/`, `cc-hooks/{emitters,schema}/`) after refactors stop referencing it.
-- [ ] Verify: namespace/script/embedded-dir invariants clean; gates pass.
+- [x] Namespace migrated from `rd3` to `cc` across the bundled plugin (H3)
+- [x] Five authoring skills and expert agents delegate to `superskill` (H4)
+- [x] Slash-command set reconciled and dangling hook references removed (H5)
+- [x] Obsolete per-skill scripts/templates/tests and hook emitter/schema copies removed (H6)
+- [x] `superskill` binary packaging and PATH contract verified (I1)
+- [x] Phase verification passed with the namespace and ownership invariants enforced (I1)
 
-> The non-deterministic eval / Spur orchestration / adversarial evolution is **deferred to Phase 4**; cross-platform hooks and restoring deleted verbs are **deferred to Phase 5**.
+> Plugin-level runtime scripts introduced later by ADR-023 are intentional distribution artifacts; H6 removed the obsolete per-skill copies, not that shared runtime seam.
 
-**Exit:** `rg "rd3" plugins/cc/` returns zero; no embedded script execution remains; `hooks.json` carries no dangling skill references; the 17 surviving commands delegate to the `superskill` CLI; verification gate passes.
+**Exit (met):** H3–H6 and I1 completed the namespace, delegation, cleanup, binary, and verification work.
 
 ---
 
@@ -76,17 +74,17 @@ sync: [T5]
 
 **Goal:** Close the evaluation & evolution gap for all five meta-agent skills by adding a non-deterministic quality layer — real LLM-driven scoring and content generation — while keeping the `superskill` CLI deterministic and the model intelligence in the agent / Spur layer.
 
-**Design:** [design-doc-phase4.md](file:///Users/robin/xprojects/superskill/docs/design/design-doc-phase4.md)
+**Design:** [design-doc-phase4.md](design/design-doc-phase4.md)
 
-- [ ] Versioned, user-overridable **rubric** config (unified shape) + package defaults for all 5 types.
-- [ ] **Scorer seam:** `evaluate --rubric`/`--ingest` envelope I/O; rubric-version stamping; weighted aggregate.
-- [ ] **Generation seam:** replace the `generateChanges` placeholder (`evolve.ts:118`); `evolve --propose-only --json` generation briefs; `evolve --ingest` for agent-authored proposals.
-- [ ] **Double-loop gate** on ingest (validate-zero-errors + Δ-margin + goal-anchor check), reject-on-regression with restore.
-- [ ] **`cc` skill + Spur personas:** Scorer / Author / Skeptic / Judge wired to the seams.
-- [ ] Hide `validate` behind evaluate/refine/evolve (no `*-validate` slash command); internal validate gate for all 5 types.
-- [ ] Fixture-replay tests for the ingest paths (no live model calls); ≥90% coverage.
+- [x] Versioned, user-overridable rubric config and five package defaults shipped (G31)
+- [x] Scorer envelope/ingest seam with rubric-version persistence shipped (G32)
+- [x] Generation envelope/ingest seam replaced the placeholder implementation (G33)
+- [x] Validate + score-delta + goal-anchor double-loop gate shipped (G34)
+- [x] `cc` authoring skills and expert personas route through the quality seams (H7)
+- [x] Standalone validation wrappers removed where the internal gate owns validation (H7)
+- [x] Deterministic fixture replay and empirical behavior gate shipped with gate coverage (G35)
 
-**Exit:** `superskill <type> evolve` produces a real rewritten file (no placeholder) for all 5 types; a rubric edit changes scores with no CLI rebuild; the gate rejects a regressive proposal and restores; CLI makes zero model API calls.
+**Exit (met):** G31–G35 and H7 implement and verify the scorer, generator, adversarial, and behavior-gate seams.
 
 ---
 
@@ -94,17 +92,17 @@ sync: [T5]
 
 **Goal:** Deliver one canonical hook definition that installs across every supported agent — by **leveraging `rulesync`'s native hook feature** (not a bespoke abstraction) — and restore the deterministic verbs deleted in Phase 3.
 
-**Design:** [design-doc-phase5.md](file:///Users/robin/xprojects/superskill/docs/design/design-doc-phase5.md)
+**Design:** [design-doc-phase5.md](design/design-doc-phase5.md)
 
 > **Finding:** rulesync already ships a canonical hook schema, event taxonomy, per-tool support matrix, and `superskill install` already maps `hooks.json` into `.rulesync/` **and forwards `hooks` to `generate()`** — hooks already emit for the 4 rulesync-hook-supported targets. The deleted `cc-hooks` bash emitters reinvented this. Phase 5 adopts rulesync's format rather than rebuilding one.
 
-- [ ] Coverage from the vendor matrix (not a research pass): rulesync hooks × our 8 targets → 4 emit today (codex/opencode/antigravity-cli/ide), Pi/omp/hermes need a shim/copy. Validation checklist: event-mapping fidelity + rulesync API shape.
-- [ ] Surface hook counts in install — add `hooksCount` to `InstallResultCounts` and stop dropping `result.hooksCount` (`install.ts`). (`rulesync.ts:51` is the no-target early-return, not a stub — hooks already emit.)
-- [ ] Re-author `cc:cc-hooks` (+ expert-hook) against the rulesync-canonical `HookDefinitionSchema`; evaluate/evolve reuse the Phase 4 brain.
-- [ ] `superskill hook emit --target <agent>` wrapper; research + enable Pi/omp hook parity via an installable extension/shim (fallback: copy-step); hermes via copy-step.
-- [ ] Restore deleted verbs: `adapt` (confirm gap closed inside `install`), `skill package`, `skill migrate` (refinement via Phase 4).
+- [x] Hook target coverage verified and Pi/omp/Hermes enablement shipped (H8)
+- [x] Install result surfaces emitted hook counts (F6)
+- [x] `cc:cc-hooks` and its expert agent target the canonical hook definition (H9)
+- [x] `superskill hook emit` and target-specific hook dispatch shipped (H8, H9)
+- [x] `skill package` and `skill migrate` restored; the adapt gap is covered inside install (G41–G43)
 
-**Exit:** one `hooks.json` installs correct native hook config for every rulesync-supported target (uncovered targets shimmed or documented, no silent drop); install reports real hook counts (`InstallResultCounts` carries `hooksCount`); restored verbs pass the gate.
+**Exit (met):** F6, H8, H9, and G41–G43 completed hook parity, count reporting, and deterministic verb restoration.
 
 ---
 

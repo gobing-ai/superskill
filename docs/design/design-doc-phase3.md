@@ -14,7 +14,7 @@ plugin that delegates every lifecycle operation to the global `superskill` CLI b
 Concretely:
 
 1. Rename all `rd3` references to `cc` (the plugin's registered name in
-   [marketplace.json](file:///Users/robin/xprojects/superskill/.claude-plugin/marketplace.json)).
+   [marketplace.json](../../.claude-plugin/marketplace.json)).
 2. Rewrite the five `SKILL.md` files, five expert subagents, and the surviving slash commands to
    invoke `superskill <type> <op>` instead of `bun scripts/*.ts`.
 3. Delete the embedded `scripts/`, `templates/`, script-coupled `references/`, and embedded `tests/`

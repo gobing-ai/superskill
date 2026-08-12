@@ -5,7 +5,7 @@ name: Guard heuristics, hook-seam follow-ups, and writing-great-skills extractio
 status: done
 type: task
 created_at: 2026-07-12T04:23:59.752Z
-updated_at: 2026-07-12T17:32:04.088Z
+updated_at: "2026-08-12T14:22:27.984Z"
 ---
 
 ## 0077. Guard heuristics, hook-seam follow-ups, and writing-great-skills extraction into cc meta-skills
@@ -113,18 +113,16 @@ Coverage: measured (aggregate ≥90% line/function gate green via `bunfig.toml`)
 
 **Operator acceptance (2026-07-12):** Robin accepted R5f as-is — the dogfood strict-improvement gap is a documented steady-state condition (the bundle is already clean on the measured axes), not a defect. The loop machinery is delivered and proven mechanical. Task promoted testing → done on this acceptance; the PARTIAL verdict is retained as the honest record of what verification found, superseded by the operator decision.
 ### References
-
-- [ah_guard.ts](file:///Users/robin/xprojects/superskill/plugins/cc/scripts/anti-hallucination/ah_guard.ts) — guard engine; R1 heuristic lives in `requiresExternalVerification`
-- [hook-run.ts](file:///Users/robin/xprojects/superskill/apps/cli/src/commands/hook-run.ts) — dispatcher; R2 deep-import seam at the top of the file
-- [validate_response.ts](file:///Users/robin/xprojects/superskill/plugins/cc/scripts/anti-hallucination/validate_response.ts) — R3 exit-contract target
-- [hooks.json](file:///Users/robin/xprojects/superskill/plugins/cc/hooks/hooks.json) — R4 `minCliVersion` target; compat gate in `apps/cli/src/commands/install.ts` (`hooksBlockedByCliVersion`)
-- [writing-great-skills source copy](file:///Users/robin/xprojects/superskill/docs/analysis/writing-great-skills/) — R5 single permitted source (SKILL.md + GLOSSARY.md + PROVENANCE.md); the temporary vendor checkout it was copied from must not be referenced
-- [skill-engineering-theory.md](file:///Users/robin/xprojects/superskill/plugins/cc/skills/cc-skills/references/skill-engineering-theory.md) — R5 primary port target
-- [glossary.md](file:///Users/robin/xprojects/superskill/plugins/cc/skills/cc-skills/references/glossary.md) — R5 term definitions target
-- [expert-skill.md](file:///Users/robin/xprojects/superskill/plugins/cc/agents/expert-skill.md) — R5 authoring-surface satellite
-- [structure.test.ts](file:///Users/robin/xprojects/superskill/plugins/cc/tests/structure.test.ts) — R5 six-failure-mode assertion target
+- [ah_guard.ts](../../plugins/cc/scripts/anti-hallucination/ah_guard.ts) — guard engine; R1 heuristic lives in `requiresExternalVerification`
+- [hook-run.ts](../../apps/cli/src/commands/hook-run.ts) — dispatcher; R2 deep-import seam at the top of the file
+- [validate_response.ts](../../plugins/cc/scripts/anti-hallucination/validate_response.ts) — R3 exit-contract target
+- [hooks.json](../../plugins/cc/hooks/hooks.json) — R4 `minCliVersion` target; compat gate in `apps/cli/src/commands/install.ts` (`hooksBlockedByCliVersion`)
+- [writing-great-skills source copy](../analysis/writing-great-skills/) — R5 single permitted source (SKILL.md + GLOSSARY.md + PROVENANCE.md); the temporary vendor checkout it was copied from must not be referenced
+- [skill-engineering-theory.md](../../plugins/cc/skills/cc-skills/references/skill-engineering-theory.md) — R5 primary port target
+- [glossary.md](../../plugins/cc/skills/cc-skills/references/glossary.md) — R5 term definitions target
+- [expert-skill.md](../../plugins/cc/agents/expert-skill.md) — R5 authoring-surface satellite
+- [structure.test.ts](../../plugins/cc/tests/structure.test.ts) — R5 six-failure-mode assertion target
 - Review provenance: `/sp:dev-review plugins/cc --focus all --fix all` (2026-07-11) — advisories A1–A4 recorded in that review's report; the two majors (stdin payload channel, exit-2 block signal) were fixed in the same pass
-
 ### History
 - 2026-07-12T04:43:07.742Z backlog → todo (system)
 - 2026-07-12T04:44:07.130Z todo → wip (system)

@@ -12,7 +12,7 @@ priority: P2
 tags: []
 dependencies: []
 created_at: 2026-07-09T06:01:02.846Z
-updated_at: "2026-08-02T22:26:03.067Z"
+updated_at: "2026-08-12T14:22:28.145Z"
 ---
 
 ## 0073. Enhance superskill install to support omp targets as native Claude Code plugins
@@ -164,11 +164,9 @@ R4. Slash command dialect translation. Post-process every `.md` file under `<ins
 *To be filled during review.*
 
 ### References
-
-- [install.ts](file:///Users/robin/xprojects/superskill/apps/cli/src/commands/install.ts)
-- [claude-plugins.ts](file:///Users/robin/xprojects/superskill/vendors/oh-my-pi/packages/coding-agent/src/discovery/claude-plugins.ts)
-- [omp-plugins.ts](file:///Users/robin/xprojects/superskill/vendors/oh-my-pi/packages/coding-agent/src/discovery/omp-plugins.ts)
-
+- [install.ts](../../apps/cli/src/commands/install.ts)
+- [claude-plugins.ts](../../vendors/oh-my-pi/packages/coding-agent/src/discovery/claude-plugins.ts)
+- [omp-plugins.ts](../../vendors/oh-my-pi/packages/coding-agent/src/discovery/omp-plugins.ts)
 ### History
 
 - **2026-07-09**: Initial task specification created.
