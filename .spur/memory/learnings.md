@@ -26,3 +26,26 @@ I have everything I need. Now I'll extract the learnings into clean markdown.
 - **Feature shippable gate reports FAIL while a covering task sits at `testing`:** the F3 scenario shows "linked but unverified" because the feature checker only honors verdicts from `done` tasks. The `testing → done` transition is what clears the scenario; a verify PASS written at `testing` is correct and sufficient, not a defect.
 - **`## Review` section ownership:** verify mode must not write `## Review`; it's owned by `/sp-dev-review`, and the `record` step backfills it only when bare. Historical P3 findings stay accurate as-of-review-time even if the verify fix pass resolves them — the Testing section documents the resolution.
 - **`spur task update --section` for prior-task resolution:** appending a dated `RESOLUTION (2026-08-09, task 0112)` into 0111's Q&A is the correct way to settle an earlier task's stale premise without erasing its historical probe record.
+# Wrap-up learnings — 2026-08-13 (feature A batch)
+
+## 0115 (magent completeness disclosure-aware)
+- Scoring surfaces must be exercised with real filesystem fixtures, not mocked `existsSync`: the live-link tests (temp dir, no mock) caught nothing the mock would miss — but they also certify the actual `fs` seam. Keep real-fixture tests for fs-touching heuristics.
+- Biome `noAssignInExpressions` rejects the `while ((m = re.exec(body)) !== null)` idiom — `body.matchAll(re)` is the drop-in replacement and reads cleaner. Add to the mental lint checklist; implement agents will keep producing the exec-loop form.
+- A change to `evaluate()` signature (optional param) is byte-identical for absent callers only if the default path never touches the new seam (`basePath === undefined → return false` before any fs call). Test that equivalence explicitly (`toEqual` vs explicit-undefined).
+
+## 0116 (contradiction failure mode)
+- Append-only enum growth with a frozen order: append last, derive types from the const, and let rejection messages self-enumerate via `join(', ')` — zero hand-maintained string lists. This survived review with no P1–P3.
+- Doc-surface parity sweeps (grep the whole repo for the old enumeration) are cheap and catch stale counts in command files that tests never read. Do the sweep in the same change, not as a follow-up.
+
+## 0117 (magent template minimization investigation)
+- A scorer that measures "conciseness" as byte length will penalize any template with teaching prose that no dimension scores. Before blaming the template, attribute the body: measure how much of it is unscored padding. 70.1% here was enablement prose — a linkable restructure, not deletion.
+- Counterfactual matrices (0/3/5 platforms) beat single-point measurements when a dimension is a `min(n/N, 1)` clamp — they expose both the penalty magnitude and its legitimacy.
+- Investigation tickets that graduate implementation should write the follow-up ticket (0119) fully populated (Background/Requirements/AC/Design) in the same change — the decision is fresh, the context is loaded.
+
+## 0118 (spur constitution template assessment)
+- Line-number citations in docs rot fast (two P4 citation errors in one task, both caught by verify's live re-read). Verify's `--fix all` correcting them in the same pass is the right loop — cite section headings, and when you cite lines, re-verify them at verify time.
+
+## Batch (process)
+- The inline pipeline driver's native-subagent dispatch worked cleanly for all 16 agent.run stages; the one format-gate failure (0115) was fixed at root cause and re-ran green. The `test -s` gate on wrap capture files is the right success signal for agent-produced artifacts.
+- Feature-sync bounded wrapper suppressed redundant blocked syncs mid-batch (expected — feature stays backlog until the batch-once feature-transition).
+
