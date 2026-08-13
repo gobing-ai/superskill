@@ -411,6 +411,9 @@ if it recurs, a new rule in §6.
 - [2026-06-11] spur-new: Accepted-but-unbuilt design text reads as current architecture unless
   the section title says otherwise — always flag `(accepted design — not yet built)` (§6.4
   rule 1).
+- [2026-08-13] superskill: Feature A (93670f5) added the `basePath` paragraph to 03 without
+  bumping `version`/`updated_at` — §4.3 rule 3 missed silently, repaired by the doc-evolve pass.
+  Bump frontmatter in the same edit as any substantive body change.
 
 ### Lessons for `docs/04_DESIGN.md`
 
@@ -424,6 +427,11 @@ if it recurs, a new rule in §6.
   `helpText()` renderers) survived two doc passes after the superseding ADR landed, directly
   contradicting the section above it. When an ADR is superseded, grep the derived docs for its
   mechanism vocabulary in the same change.
+- [2026-08-13] superskill: Task 0120 shipped `magent evaluate --base-path <dir>` and synced the
+  plugin command doc (`plugins/cc/commands/magent-evaluate.md`) but left 04's flag surface
+  untouched until the doc-evolve pass — a T3 miss: the plugin doc mirrors the flag, the numbered
+  doc owns it. Check 04's flag tables in the same change even when a plugin-side command doc was
+  updated.
 
 ### Lessons for `docs/05_FEATURES.md`
 
