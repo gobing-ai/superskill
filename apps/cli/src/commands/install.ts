@@ -85,6 +85,11 @@ export function registerInstall(program: Command): void {
         )
         .option('--dry-run', 'Preview without writing files', false)
         .option('--verbose', 'Print each step and file copy', false)
+        .option(
+            '--prune',
+            'Remove leftover dest skill dirs matching <plugin>-* on flattened skills dests (shared root safe)',
+            false,
+        )
         .action(async (plugin, options) => {
             try {
                 const config = loadConfig();
@@ -97,6 +102,7 @@ export function registerInstall(program: Command): void {
                 const global = options.global !== false;
                 const dryRun = options.dryRun === true;
                 const verbose = options.verbose === true;
+                const prune = options.prune === true;
                 const marketplaceSource = options.marketplaceSource as MarketplaceSource | undefined;
                 const configuredPlugin = config.plugins.find((entry) => entry.name === plugin);
                 await executeInstall(plugin, targets, {
@@ -109,6 +115,7 @@ export function registerInstall(program: Command): void {
                     global,
                     dryRun,
                     verbose,
+                    prune,
                     magent: options.magent as string | undefined,
                     marketplaceSource,
                 });
@@ -134,6 +141,8 @@ export interface InstallOptions {
     magent?: string;
     /** Marketplace registration source: directory (local path, default) or github (owner/repo slug). */
     marketplaceSource?: MarketplaceSource;
+    /** Remove or replace only dest skill dirs matching `<plugin>-*` on flattened skills dests (R4/R5). */
+    prune?: boolean;
 }
 
 interface InstallDependencies {
@@ -378,6 +387,16 @@ export async function executeInstall(
         rulesyncTargets.push('opencode');
     }
     const resultCounts: InstallResultCounts = { skillsCount: 0, commandsCount: 0, subagentsCount: 0, hooksCount: 0 };
+
+    // R4/R5 (task 0114): plugin-scoped --prune on flattened skills dests — runs BEFORE
+    // rulesync writes so it is true clean-before-write. Removes orphaned `<plugin>-*`
+    // dest skill dirs and replaces remaining ones so intra-dir leftovers disappear.
+    // Native dests (claude/omp/grok) own their own trees (pruned by host plugin CLIs).
+    // Shared skills roots stay multi-plugin: only dirs matching `^<plugin>-` are touched.
+    if (options.prune) {
+        const outputRootPre = options.outputRoot ?? (options.global ? resolveHomeDir() : process.cwd());
+        prunePluginDestSkills(outputDir, plugin, targets, outputRootPre, options);
+    }
 
     // R6 dual-path hygiene: Grok loads both native plugins (/plugin:cmd) and
     // ~/.agents skills (/plugin-cmd). Warn when both land in the same install.
@@ -1235,6 +1254,112 @@ function stagePluginScripts(
     copyDirectory(stagedSource, dest);
 
     return stagedFileCount;
+}
+
+/** Flattened skills targets whose dest is a shared/own skills root (not a native plugin tree). */
+const FLATTENED_PRUNE_TARGETS: readonly Target[] = [
+    'codex',
+    'pi',
+    'opencode',
+    'antigravity-cli',
+    'antigravity-ide',
+    'hermes',
+];
+
+/**
+ * Plugin-scoped `--prune` on flattened skills dests (R4/R5, task 0114).
+ *
+ * For each flattened skills dest this run writes, in two phases:
+ *
+ * 1. **Replace** dest dirs whose name is in the mapped set (clean-before-write) so
+ *    intra-dir leftovers from a prior install disappear. The current install then
+ *    rewrites them; callers run this before rulesync would re-write, so we only
+ *    delete — the mapped content is already on disk in `.rulesync/`.
+ * 2. **Remove** dest dirs matching `^<plugin>-` that are NOT in the mapped set
+ *    (orphans: renamed/deleted source entities).
+ *
+ * Dest dirs not starting with `<plugin>-` (other plugins) are never touched. Native
+ * plugin-tree dests (claude/omp/grok) own their own trees and are pruned by their
+ * host plugin CLIs, not here.
+ *
+ * @param outputDir   `.rulesync/` staging root holding the mapped `<plugin>-*` name set.
+ * @param plugin      Plugin prefix (e.g. `sp`).
+ * @param targets     Requested install targets (prune only applies to flattened ones).
+ * @param outputRoot  Global `$HOME` or project cwd/outputRoot override.
+ * @param options     Install options for dryRun/verbose gating.
+ */
+function prunePluginDestSkills(
+    outputDir: string,
+    plugin: string,
+    targets: Target[],
+    outputRoot: string,
+    options: InstallOptions,
+): void {
+    // plugin is the leaf prefix of a recursive rmSync target under a shared skills root.
+    assertSafePathSegment(plugin, 'plugin name');
+
+    const mappedNames = readMappedSkillNames(outputDir, plugin);
+    if (mappedNames.size === 0) {
+        if (options.verbose) echo(`  --prune: no mapped skills for '${plugin}' — nothing to prune`);
+        return;
+    }
+
+    // Build the deduped set of dest dirs this install touches (by absolute path).
+    // codex & pi share `~/.agents/skills` via the codexcli target; hermes writes
+    // `~/.hermes/skills` via an opencode copy. Dedupe by resolved path.
+    const destDirs = new Set<string>();
+    const flattened = targets.filter((t) => (FLATTENED_PRUNE_TARGETS as readonly string[]).includes(t));
+    const home = resolveHomeDir();
+    for (const target of flattened) {
+        const reldir = options.global
+            ? (TARGET_GLOBAL_SKILLS_RELDIR[target] ?? TARGET_SKILLS_RELDIR[target])
+            : TARGET_SKILLS_RELDIR[target];
+        if (!reldir) continue;
+        // hermes is project-mode-only in practice but the reldir map covers both; resolve against outputRoot.
+        const base = options.outputRoot ?? (options.global ? home : process.cwd());
+        destDirs.add(resolve(base, reldir));
+        if (target === 'hermes') destDirs.add(resolve(outputRoot, '.hermes', 'skills'));
+    }
+    if (destDirs.size === 0) return;
+
+    const prefix = `${plugin}-`;
+    let removed = 0;
+    let replaced = 0;
+    for (const destDir of destDirs) {
+        if (!existsSync(destDir)) continue;
+        for (const entry of readdirSync(destDir)) {
+            if (!entry.startsWith(prefix)) continue; // other plugins' dest dirs are untouchable
+            const target = join(destDir, entry);
+            if (!statSync(target).isDirectory()) continue;
+            if (options.dryRun) {
+                if (mappedNames.has(entry)) replaced++;
+                else removed++;
+                continue;
+            }
+            // Replace OR remove — both delete first; mapped dirs are re-written by the current install.
+            rmSync(target, { recursive: true, force: true });
+            if (mappedNames.has(entry)) replaced++;
+            else removed++;
+        }
+    }
+    if (options.verbose) {
+        echo(`  --prune: removed ${removed} orphan dir(s), replaced ${replaced} dir(s) for '${plugin}'`);
+    }
+}
+
+/** Read the `<plugin>-*` skill dir names this install mapped into `.rulesync/skills/`. */
+function readMappedSkillNames(outputDir: string, plugin: string): Set<string> {
+    assertSafePathSegment(plugin, 'plugin name');
+    const skillsStaging = join(outputDir, 'skills');
+    const names = new Set<string>();
+    if (!existsSync(skillsStaging)) return names;
+    const prefix = `${plugin}-`;
+    for (const entry of readdirSync(skillsStaging)) {
+        if (entry.startsWith(prefix) && statSync(join(skillsStaging, entry)).isDirectory()) {
+            names.add(entry);
+        }
+    }
+    return names;
 }
 
 /** Parse a comma-separated targets string. Returns all targets when undefined or "all". Throws on unknown targets. */

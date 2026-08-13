@@ -13,7 +13,7 @@ superskill install [options] <plugin>
 ### Arguments and options
 
 | Argument / Option | Description | Default |
-|-------------------|-------------|---------|
+| ------------------- | ------------- | --------- |
 | `<plugin>` | Plugin name to install (required) — a bare segment, never a URL/path. Resolved via marketplace manifest, installed package root, or `plugins/<name>/`. | — |
 | `--marketplace <locator>` | Marketplace locator (ADR-034). A local path (probed as direct `marketplace.json` file → `<X>/marketplace.json` → `<X>/.claude-plugin/marketplace.json`), a GitHub URL (`https://github.com/owner/repo[/tree/<ref>[/subpath]]`), or `owner/repo` shorthand. **Local-first:** an existing path is local; only a non-existent `owner/repo` is GitHub shorthand; `https://`/`git@` are always remote. Remote content caches at `~/.cache/superskill/marketplaces/<owner>/<repo>/<ref>/` (warm cache resolves offline). | CWD's `.claude-plugin/`, then installed package root |
 | `--targets <list>` | Comma-separated target agents, or `all`. | all configured |
@@ -22,6 +22,7 @@ superskill install [options] <plugin>
 | `--marketplace-source <mode>` | **Deprecated** (ADR-034): warns to stderr, keeps behavior, removal planned. Prefer `--marketplace <locator>`. | `directory` |
 | `--dry-run` | Preview the install without writing files. | `false` |
 | `--verbose` | Print each pipeline step and file copy. | `false` |
+| `--prune` | Remove leftover dest skill dirs matching `<plugin>-*` on flattened skills dests (`~/.agents/skills/`, `~/.config/opencode/skills/`, `~/.gemini/*/skills/`, `~/.hermes/skills/`) and replace remaining `<plugin>-*` dirs so intra-dir leftovers disappear. Shared skills roots stay multi-plugin — only the installing plugin's dirs are touched; other plugins' `cc-*`/`wt-*` dirs are never deleted. Native plugin-tree dests (`claude`, `grok`, `omp`) own their own trees and are pruned by their host plugin CLIs, not by this flag. Default install (no `--prune`) stays additive. | `false` |
 
 Project-local `superskill.jsonc` may provide plugin paths, targets, and feature defaults. The parser
 accepts JSONC comments and trailing commas. Explicit `--marketplace` and `--targets` flags win;
@@ -56,12 +57,15 @@ superskill install cc --targets all --dry-run --verbose
 # Install from a GitHub marketplace (URL or owner/repo shorthand):
 superskill install cc --marketplace gobing-ai/superskill --verbose
 superskill install cc --marketplace https://github.com/gobing-ai/superskill --verbose
+
+# Remove leftover dest skill dirs for this plugin only (renamed/deleted skills)
+superskill install cc --targets codex,pi --prune
 ```
 
 ### Supported targets
 
 | Target | Engine | Output location (global) |
-|--------|--------|--------------------------|
+| -------- | -------- | -------------------------- |
 | `claude` | `claude plugin install` CLI | Claude Code marketplace |
 | `codex` | rulesync | `~/.agents/skills/` |
 | `pi` | rulesync + superskill hook shim | `~/.agents/skills/` (+ `~/.pi/agent/agents/` for agents) |
@@ -132,7 +136,7 @@ flowchart TD
 `mapPluginToRulesync()` (in `mapper.ts`) translates the Claude Code plugin directory into the `.rulesync/` canonical layout that `rulesync.generate()` expects:
 
 | Plugin source | Canonical target |
-|---------------|------------------|
+| --------------- | ------------------ |
 | `skills/*.md` | `.rulesync/skills/<plugin>-<name>/SKILL.md` |
 | `commands/*.md` | `.rulesync/commands/<plugin>-<name>.md` |
 | `agents/*.md` | `.rulesync/subagents/<plugin>-<name>.md` |
@@ -141,6 +145,15 @@ flowchart TD
 | `mcp.json` | deep-merged into `.rulesync/mcp.json` |
 
 Missing optional directories are handled gracefully — nothing is created for absent inputs.
+
+#### Dest fidelity: flattened path rewrite + native exemption
+
+Command and subagent bodies often link to companion skill files with repo-relative paths (`../skills/<name>/references/…`, or `plugins/<plugin>/skills/<name>/…` from top-level docs). After install, these links must resolve in the dest — but the dest layout differs by target class:
+
+- **Flattened skills dests** (`codex`, `pi`, `opencode`, `antigravity-cli`, `antigravity-ide`, `hermes`) downgrade commands/subagents to `~/.<root>/skills/<plugin>-<name>/SKILL.md` under a shared skills root. The companion is a sibling dest skill, so `adaptCommandToSkill` / `adaptSubagentToSkill` rewrite those links to `../<plugin>-<name>/…` at map time (`rewritePluginTreeMarkdownLinks` in `pipeline/rewrite-plugin-tree-links.ts`). Command-as-skill and subagent-as-skill dest dirs receive `SKILL.md` only — a wrapped skill's `references/` (and other companions) are **not** copied next to them.
+- **Native plugin-tree dests** (`claude`, `grok`, `omp`) install the full Claude-format plugin tree via their own host CLIs and keep resolving `../skills/<name>/…` against it. The rewriter is **never** applied to them — the seam is structural: the mapper output (`.rulesync/`) only feeds flattened dests, while native installs read the raw `pluginRoot` directly, so their command/agent files keep source repo-relative paths byte-identical for those links.
+
+`plugin:name` colon references are owned by a separate rewriter (`rewriteSkillReferences`) and are not affected by the path rewrite.
 
 ### Magents (main-agent configs)
 
@@ -180,7 +193,7 @@ superskill install cc --magent team-stark-children --verbose
 `prepareTargetRulesyncInput()` copies the canonical `.rulesync/` into a per-target root (`$sourceRoot/.targets/$target/.rulesync`) and applies target-specific markdown transforms via the `pipeline/` modules:
 
 | Pipeline module | Transform | Applies to |
-|-----------------|-----------|------------|
+| ----------------- | ----------- | ------------ |
 | `frontmatter-walk.ts` | Walk frontmatter blocks for adaptation stages | adapt-command, adapt-subagent |
 | `adapt-command.ts` | Adapt command `.md` → Skills 2.0 skill entry (`disable-model-invocation: true`) | all non-Claude targets |
 | `adapt-subagent.ts` | Adapt subagent `.md` → Skills 2.0 skill entry (model-invocable) | all non-Claude targets |
@@ -289,7 +302,7 @@ sequenceDiagram
 ### Key source files
 
 | File | Role |
-|------|------|
+| ------ | ------ |
 | `apps/cli/src/commands/install.ts` | Command registration, `executeInstall()` orchestration, target dispatch |
 | `apps/cli/src/hooks.ts` | Canonical → Pi-hooks conversion; `emitPiStyleHooks` / `emitHermesHooks` |
 | `packages/core/src/marketplace.ts` | Plugin resolution from marketplace manifest (Zod-validated) |

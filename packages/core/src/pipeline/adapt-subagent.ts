@@ -1,6 +1,7 @@
 import { parseFrontmatter } from '../content/frontmatter';
 import { walkFrontmatter } from './frontmatter-walk';
 import { normalizePiToolList, parseToolsList } from './pi-tools';
+import { rewritePluginTreeMarkdownLinks } from './rewrite-plugin-tree-links';
 import { rewriteSkillReferences } from './rewrite-references';
 import { quoteYaml } from './yaml-utils';
 
@@ -35,7 +36,7 @@ export function adaptSubagentToSkill(source: string, expectedName: string, plugi
         const description = firstLine?.trim() || `${expectedName} subagent`;
         result = `---\nname: ${expectedName}\ndescription: ${quoteYaml(description)}\n---\n\n${source}`;
     }
-    return rewriteSkillReferences(result, pluginPrefix);
+    return rewritePluginTreeMarkdownLinks(rewriteSkillReferences(result, pluginPrefix), pluginPrefix);
 }
 
 /**

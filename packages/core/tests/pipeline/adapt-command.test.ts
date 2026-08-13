@@ -55,4 +55,14 @@ describe('adaptCommandToSkill', () => {
         expect(result).toContain('name: cc-new-name');
         expect(result).not.toMatch(/^name: old-name/m);
     });
+
+    // R1/R2 (task 0114): plugin-tree markdown links rewrite on the flattened skills floor.
+    it('rewrites ../skills/<name>/… to dest-sibling ../<plugin>-<name>/… (flattened floor)', () => {
+        const source =
+            '---\ndescription: wraps spur-dev\n---\n\nSee [flags](../skills/spur-dev/references/flag-glossary.md).';
+        const result = adaptCommandToSkill(source, 'sp-dev-run', 'sp');
+
+        expect(result).toContain('](../sp-spur-dev/references/flag-glossary.md)');
+        expect(result).not.toContain('../skills/spur-dev/');
+    });
 });

@@ -1,4 +1,5 @@
 import { walkFrontmatter } from './frontmatter-walk';
+import { rewritePluginTreeMarkdownLinks } from './rewrite-plugin-tree-links';
 import { rewriteSkillReferences } from './rewrite-references';
 import { quoteYaml } from './yaml-utils';
 
@@ -28,7 +29,7 @@ export function adaptCommandToSkill(source: string, expectedName: string, plugin
         const description = firstLine?.trim() || `${expectedName} command`;
         result = `---\nname: ${expectedName}\ndescription: ${quoteYaml(description)}\ndisable-model-invocation: true\n---\n\n${source}`;
     }
-    return rewriteSkillReferences(result, pluginPrefix);
+    return rewritePluginTreeMarkdownLinks(rewriteSkillReferences(result, pluginPrefix), pluginPrefix);
 }
 
 /**
