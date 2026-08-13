@@ -49,3 +49,39 @@ I have everything I need. Now I'll extract the learnings into clean markdown.
 - The inline pipeline driver's native-subagent dispatch worked cleanly for all 16 agent.run stages; the one format-gate failure (0115) was fixed at root cause and re-ran green. The `test -s` gate on wrap capture files is the right success signal for agent-produced artifacts.
 - Feature-sync bounded wrapper suppressed redundant blocked syncs mid-batch (expected — feature stays backlog until the batch-once feature-transition).
 
+# Wrap-up learnings — 2026-08-13 (0120 harness discoverability)
+
+## 0120 (harness discoverability bottlenecks — meta analysis task)
+
+### Conventions discovered
+
+- **Cross-repo routing: the task lives where the analysis ran.** Findings that land in another repo get routed as a new task there (`0534` in spur-new), and the source task's Solution records the correction of any finding that was wrong as originally written. Same-change write-up prevents re-deriving the routing decision.
+- **Fix the CLI at the point of failure, not the agent guidance.** Agents with `sp:spur-cli` available still probed `--help` 11 times; "a guidance fix that competes with a one-line shell probe loses." The probe is cheaper than opening a reference — the surface must answer at the failure site.
+- **When 7 independent agents route around a surface, the surface is missing an affordance, not the agents' discipline.** Don't frame it as a discipline fix.
+- **Investigate before fixing:** fix the analyzer defect first (R4 before R1-R3) so the before/after comparison of the fix run is trustworthy.
+- **Severity ledger** S0 >2h / S1 30m–2h / S2 <30m; anti-patterns seen in ≥2 independent sessions are codification candidates, single-session ones are not.
+
+### Errors hit and resolved
+
+- **Stale OMP field map corrupts forensic conclusions silently:** `references/session-formats.md` documented `input.command`; the live OMP toolCall block keys are `['arguments','id','intent','name','partialArgs','streamIndex','type']` — shell command lives at **`arguments.command`**. Following the stale map returned `test=0, spur=0`, a silently wrong "no test-loop waste" verdict. A forensic tool that fails open is worse than one that fails loudly — the fix added a self-check note that zero tool-command count means the field map is wrong, not that sessions were idle.
+- **Miscalibrated heuristic flags correct behavior:** `section-write` firing at >2× task count would flag 38 writes for 5 tasks (7.6/task), but `feature-impl` tasks legitimately carry ~9 canonical sections — one write per section is correct. Threshold must be expressed per section *slot*, not per task.
+- **R1 and R2 were wrong as originally written — verify findings at the fix site.** `showSuggestionAfterError` was already enabled (`spur task shwo` → `Did you mean show?`); the real fix is a `get`→`show` alias. The section list is already computed by `spur task sections <wbs> list`; the fix is a cross-reference, not a hoist.
+- **R3's actual gap was narrower than the finding assumed:** `evaluate` already ran a deterministic heuristic mode by default; what it could not do was pass a `basePath`, so CLI scoring never resolved links — precisely why seven sessions hand-rolled `/tmp/*.ts` scripts. Fix was a threaded option, not a new command.
+- **Plugin-doc guard enforces CLI/doc parity:** `plugins/cc/tests/structure.test.ts:222` ("keeps lifecycle wrapper argument hints aligned with Commander") fails until `magent-evaluate.md`'s `argument-hint` + Arguments row include the new flag. A CLI flag change ⇒ the cc command doc must change in the same commit.
+
+### Patterns that worked
+
+- **Default options to what the file means:** `basePath ?? dirname(resolvedPath)` — relative links in a doc resolve against the doc's own directory; override only when content is authored to live elsewhere (e.g. scaffold template scored as if at a project root).
+- **Monotonicity makes defaulting-on safe:** link credit is additive-only (`scoreCompleteness` short-circuits on a heading match, only *adds* on a link match), so no stored score can regress when `basePath` defaults on. Applying the same default in `emitEnvelope`'s baseline keeps Scorer deltas comparable.
+- **Real-fs fixtures for fs-touching heuristics:** `mkdtempSync` + `writeFileSync` fixture with every governance area inline except the one under test — "the delta isolates the link" (6/6 vs 5/6 completeness notes) — certifies the actual fs seam without mocks.
+- **Batch-write-then-single-check protocol held:** 13 `spur task check` for 5 tasks (2.6/task) stayed under the 3-per-task guard — the protocol that prevented loop waste.
+- **Discovery waste, not loop waste, is the expensive failure class:** 0 compactions and 1 repeated-command candidate across 876 tool calls — the ~60–95 min waste was probing (`--help` ×11, invalid `task get` ×6, guessed sections ×4) and hand-rolling scoring scripts (20 `/tmp/**` runs across 7 sessions, ~35–70 min).
+
+### Gotchas
+
+- **`spur task get` does not exist** — the verb is `show`; agents then build defensive fallback chains (`task show X --json || task get X --json || task list --json | jq ...`). Unknown-verb errors cost the failed call plus the fallback authoring.
+- **Section names are only discoverable after a failed write:** the `does not contain section` rejection lists valid sections, but reading them costs a failure first.
+- **Per-incident waste multipliers are estimates, not instrumented** — the ~60–95 min total is order-of-magnitude; counts and wall-clock are measured, multipliers are the skill's standard estimates.
+- **`...(opts.basePath ? { basePath } : {})` silently drops an explicit empty `--base-path ""`** — the dirname fallback is right (empty dir is meaningless), but the guard is implicit; P4-flagged for a comment.
+- **`basePath` default is computed in two places** (heuristic path and `emitEnvelope` baseline) — parity documented at `:222-226` but not enforced; a future change to one default silently diverges the envelope baseline from the default report.
+- **basePath tests assert only the completeness note, not the area identity** the link matched — a wrong-area keyword match would still yield `6/6`. Advisory P4, but a caution for delta-isolation tests.
