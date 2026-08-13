@@ -29,7 +29,7 @@
         "test-post-check": "spur rule run --preset recommended-post-check --fail-on warning --verbose",
         "test-pre-check:full": "spur rule run --preset recommended-pre-check --fail-on warning --verbose",
         "test-post-check:full": "spur rule run --preset recommended-post-check --fail-on warning --verbose",
-        "corpus-check": "spur task check --corpus",
+        "corpus-check": "bun \"$HOME/.bun/bin/spur\" task check --corpus",
         "spur-check": "bun run lint && bun run test-pre-check && bun run corpus-check && bun run test && bun run test-post-check",
         "spur-check:full": "bun run lint && bun run test-pre-check:full && bun run corpus-check && bun run test:full && bun run test-post-check:full",
         "typecheck": "bun run --filter './apps/*' --filter './packages/*' typecheck",
