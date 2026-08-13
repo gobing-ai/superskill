@@ -2,10 +2,10 @@
 doc: 03_ARCHITECTURE
 owns: HOW — module boundaries, data flow, runtime model, invariants
 authority: derived
-version: 2.11.0
+version: 2.12.0
 derived_from: [00_ADR, 01_PRD]
 owner: Robin Min
-updated_at: 2026-08-12
+updated_at: 2026-08-13
 read_before: cross-module, seam, or schema work
 edit_rules: 99 §6.4
 sync: [T1]
@@ -479,7 +479,7 @@ sequenceDiagram
 #### Briefing
 Analyzes resource quality across a type-specific registry of dimensions (e.g., completeness, clarity, trigger accuracy). Outputs a breakdown of scores (from 0.0 to 1.0) along with detailed notes suggesting areas of improvement, together with a consolidated aggregate score. If `--save` is active, it hashes the file content and records the results under the `.superskill/evaluations.db` database.
 
-Evaluators take an optional `basePath`. It is the directory that relative markdown links in the evaluated content resolve against, which lets a dimension credit a governance area satisfied by a link to a file that exists on disk rather than only by an inline section — the disclosure-aware path in `magent`'s `completeness`. A link whose target does not resolve earns nothing, so the same mechanism detects stale links. Omitting `basePath` disables link resolution entirely and leaves scores byte-identical to the pre-`basePath` behavior, which is why it is optional rather than required.
+Evaluators take an optional `basePath`. It is the directory that relative markdown links in the evaluated content resolve against, which lets a dimension credit a governance area satisfied by a link to a file that exists on disk rather than only by an inline section — the disclosure-aware path in `magent`'s `completeness`. A link whose target does not resolve earns nothing, so the same mechanism detects stale links. At the core API level omitting `basePath` disables link resolution (`resolvesOnDisk` returns false) and leaves scores byte-identical to the pre-`basePath` behavior; only `magent`'s evaluator consumes it. The CLI operation (`apps/cli/src/operations/evaluate.ts`) always supplies one, defaulting to the evaluated file's own directory (`dirname(resolvedPath)`) — a plain `superskill <type> evaluate <file>` therefore resolves links. `magent evaluate` exposes the override as `--base-path <dir>` for content authored to live elsewhere (e.g. a scaffold template scored as if already at a project root). Defaulting on is safe because link credit is additive: `scoreCompleteness` short-circuits on a heading match and only *adds* on a link match, so no re-evaluation can regress a stored score.
 
 #### Sequence Diagram
 

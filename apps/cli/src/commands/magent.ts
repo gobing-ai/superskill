@@ -66,6 +66,7 @@ export async function magentEvaluate(opts: {
     save?: boolean;
     rubric?: string;
     ingest?: string;
+    basePath?: string;
 }): Promise<number | undefined> {
     const target = resolveTarget(opts);
     const report = await evaluate('magent', opts.nameOrPath, {
@@ -73,6 +74,7 @@ export async function magentEvaluate(opts: {
         save: opts.save,
         ...(opts.rubric ? { rubric: opts.rubric } : {}),
         ...(opts.ingest ? { ingest: opts.ingest } : {}),
+        ...(opts.basePath ? { basePath: opts.basePath } : {}),
     });
     if (report) {
         const output = formatEvaluationReport(report, opts.json);
@@ -229,6 +231,10 @@ export function registerMagent(program: Command): void {
                         .command('evaluate <nameOrPath>')
                         .description(
                             'Evaluate magent quality (use --rubric --json for envelope, --ingest --save to persist scores)',
+                        )
+                        .option(
+                            '--base-path <dir>',
+                            "directory relative markdown links resolve against (default: the file's own directory)",
                         ),
                 ),
             ),
@@ -236,7 +242,14 @@ export function registerMagent(program: Command): void {
     ).action(
         async (
             nameOrPath: string,
-            opts: { target?: string; json?: boolean; save?: boolean; rubric?: string; ingest?: string },
+            opts: {
+                target?: string;
+                json?: boolean;
+                save?: boolean;
+                rubric?: string;
+                ingest?: string;
+                basePath?: string;
+            },
         ) => {
             await handleMagentEvaluate({ nameOrPath, ...opts });
         },

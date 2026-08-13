@@ -2,10 +2,10 @@
 doc: 04_DESIGN
 owns: SURFACE — concrete shapes: every CLI command, flag, config key, env var, table, DTO
 authority: derived
-version: 2.8.0
+version: 2.9.0
 derived_from: [00_ADR, 01_PRD, 02_ROADMAP]
 owner: Robin Min
-updated_at: 2026-08-12
+updated_at: 2026-08-13
 read_before: changing a command, flag, env var, or schema
 edit_rules: 99 §6.5
 sync: [T3]
@@ -64,8 +64,16 @@ rubric's `model-fit` dimension verifies the declared tier at authoring time.
 | `skill migrate <sources...>` | `--refine`, `--ingest <file>`, `-t, --target <agent>`, `--margin <n>` |
 | `hook emit <name>` | `-t, --target <agent>`, `--global`, `--dry-run` |
 | `hook run <plugin> <hook-id>` | `--profile <block\|deny>` |
+| `magent evaluate <nameOrPath>` | `--target <agent>`, `--json`, `--save`, `--rubric <file>`, `--ingest <file>`, `--base-path <dir>` |
 | `script path <plugin> <rel>` | `--json`, `--global`, `--project` |
 | `script convert <plugin> <rel>` | `--out <path>`, `--dry-run`, `--json` |
+
+`agent|skill|command|hook|magent evaluate <nameOrPath>` share `--target <agent>`, `--json`, `--save`,
+`--rubric <file>`, `--ingest <file>` (the scorer seam, G32). `magent evaluate` alone also registers
+`--base-path <dir>` (task 0120): the directory relative markdown links resolve against, defaulting to
+the evaluated file's own directory — plain evaluate credits a governance area satisfied by a link to
+an existing file; override when the content is authored to live elsewhere (e.g. a scaffold template
+scored as if already at a project root).
 
 For `agent|skill|command|magent`, scaffold shares `--description`, `--target`, `--output`,
 `--template`, `--tools`, and `--force`; refine shares `--target`, `--auto`, `--save`, and

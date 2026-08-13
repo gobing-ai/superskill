@@ -1,4 +1,5 @@
 import { readFileSync } from 'node:fs';
+import { dirname } from 'node:path';
 import {
     type ContentType,
     type DimensionScore,
@@ -38,6 +39,12 @@ export interface EvaluateOptions {
     ingest?: string;
     /** Show evaluation history from the store for the given content (--history mode). */
     history?: boolean;
+    /**
+     * Directory that relative markdown links in the content resolve against. Defaults to the
+     * evaluated file's own directory, which is what relative links mean. Override when the content
+     * is authored to live somewhere else — a scaffold template scored as if already at a project root.
+     */
+    basePath?: string;
 }
 
 /** Show prior evaluation rows from the SQLite store for a given content type and name. */
@@ -69,6 +76,18 @@ async function showHistory(type: ContentType, contentName: string, opts: Evaluat
     }
 
     echo(lines.join('\n'));
+}
+
+/**
+ * Directory that relative markdown links resolve against: the caller's override, else the
+ * evaluated file's own directory.
+ *
+ * Single source for the default so the heuristic path and `emitEnvelope`'s baseline cannot
+ * diverge — the Scorer's deltas are only comparable while both score on the same basis. An empty
+ * `--base-path ""` is meaningless as a directory and deliberately falls back to the default.
+ */
+function resolveBasePath(resolvedPath: string, opts?: EvaluateOptions): string {
+    return opts?.basePath || dirname(resolvedPath);
 }
 
 /** Result of an evaluate call, including the exact persisted row when `save` succeeds. */
@@ -111,8 +130,9 @@ export async function evaluate(
         throw Object.assign(new Error(`Cannot read file: ${resolvedPath}`), { code: 2 });
     }
 
-    // 3. Resolve target
+    // 3. Resolve target + link base
     const resolvedTarget = opts?.target ?? 'claude';
+    const resolvedBasePath = resolveBasePath(resolvedPath, opts);
 
     // 4. Ingest-in mode: validate + persist agent-produced rubric scores
     if (opts?.ingest) {
@@ -124,8 +144,10 @@ export async function evaluate(
         return emitEnvelope(type, resolvedPath, content, resolvedTarget, opts);
     }
 
-    // 6. Heuristic mode (default): deterministic F009 evaluators
-    const report: EvaluationResult = evaluateContent(type, content, resolvedTarget);
+    // 6. Heuristic mode (default): deterministic F009 evaluators.
+    // basePath defaults to the file's own directory — relative links in a doc resolve against it.
+    // Link credit is additive only (see scoreCompleteness), so defaulting it on never lowers a score.
+    const report: EvaluationResult = evaluateContent(type, content, resolvedTarget, resolvedBasePath);
     report.content = resolveContentName(resolvedPath);
     applyRubricWeightingAndVerdict(type, report, opts);
 
@@ -213,7 +235,7 @@ function emitEnvelope(
 
     // Baseline: heuristic QualityReport, weighted on the same basis as the default
     // report (P2#3) so the Scorer's deltas against the baseline stay comparable.
-    const baseline = evaluateContent(type, content, resolvedTarget);
+    const baseline = evaluateContent(type, content, resolvedTarget, resolveBasePath(resolvedPath, opts));
     baseline.content = contentName;
     applyRubricWeightingAndVerdict(type, baseline, opts);
 

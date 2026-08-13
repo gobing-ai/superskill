@@ -207,6 +207,34 @@ describe('magent command module', () => {
             process.exitCode = 0;
         }
     });
+
+    it('forwards magent evaluate basePath to the evaluate operation (0120 R3)', async () => {
+        const { magentEvaluate, registerMagent } = await import('../../src/commands/magent');
+
+        await magentEvaluate({ nameOrPath: 'main', basePath: '/tmp/project-root' });
+        expect(evaluateOp.evaluate).toHaveBeenLastCalledWith(
+            'magent',
+            'main',
+            expect.objectContaining({ target: 'claude', basePath: '/tmp/project-root' }),
+        );
+
+        const program = new Command();
+        registerMagent(program);
+        const exit = spyOn(process, 'exit').mockImplementation(() => undefined as never);
+        try {
+            await program.parseAsync(['magent', 'evaluate', 'main', '--base-path', '/tmp/project-root'], {
+                from: 'user',
+            });
+            expect(evaluateOp.evaluate).toHaveBeenLastCalledWith(
+                'magent',
+                'main',
+                expect.objectContaining({ target: 'claude', basePath: '/tmp/project-root' }),
+            );
+        } finally {
+            exit.mockRestore();
+            process.exitCode = 0;
+        }
+    });
 });
 
 describe('skill command module', () => {

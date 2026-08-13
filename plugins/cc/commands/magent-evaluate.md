@@ -1,6 +1,6 @@
 ---
 description: Score main agent config across 5 quality dimensions
-argument-hint: "<nameOrPath> [--json] [--target <platform>] [--save] [--rubric <file>] [--ingest <file>]"
+argument-hint: "<nameOrPath> [--json] [--target <platform>] [--save] [--rubric <file>] [--ingest <file>] [--base-path <dir>]"
 allowed-tools: ["Read", "Write", "Glob", "Bash", "Skill"]
 ---
 
@@ -25,6 +25,7 @@ Score main agent config quality across 5 dimensions. **Evaluate only — make NO
 | `--save` | Persist the evaluation to the evaluation store (enables evolve trend analysis) | false |
 | `--rubric <file>` | Rubric path for envelope-out scoring | built-in |
 | `--ingest <file>` | Agent-scored result JSON to validate and persist | - |
+| `--base-path <dir>` | Directory relative markdown links resolve against, so a governance area satisfied by a link to an existing file counts toward `completeness`. Override when the config is authored to live elsewhere — e.g. scoring a scaffold template as if already at a project root. | the file's own directory |
 
 ## Examples
 

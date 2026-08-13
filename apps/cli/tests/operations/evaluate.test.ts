@@ -529,3 +529,118 @@ describe('formatEvaluationReport', () => {
         expect(output).not.toContain('Recommendations:');
     });
 });
+
+describe('evaluate basePath (link resolution reachable from the CLI)', () => {
+    let tmpDir: string;
+
+    beforeEach(() => {
+        tmpDir = mkdtempSync(join(tmpdir(), 'superskill-eval-base-'));
+    });
+
+    afterEach(() => {
+        if (tmpDir) rmSync(tmpDir, { recursive: true, force: true });
+    });
+
+    /**
+     * A magent whose only `verification` governance signal is a link. With basePath resolving,
+     * completeness counts the linked area; without a resolvable target it does not. Every other
+     * governance area is inline so the delta isolates the link.
+     */
+    const LINKED_MAGENT = [
+        '## Project',
+        'A CLI.',
+        '## Commands',
+        '`bun run build`.',
+        '## Conventions',
+        'Four-space indent.',
+        '## Safety',
+        'NEVER force-push.',
+        '## Docs & Routing',
+        'See the docs tree.',
+        '',
+        'For testing, see [testing guide](docs/TESTING.md).',
+        '',
+    ].join('\n');
+
+    it('defaults basePath to the evaluated file directory so a live link earns credit', async () => {
+        mkdirSync(join(tmpDir, 'docs'), { recursive: true });
+        writeFileSync(join(tmpDir, 'docs', 'TESTING.md'), '# Testing\n');
+        const file = join(tmpDir, 'AGENTS.md');
+        writeFileSync(file, LINKED_MAGENT);
+
+        const result = notNull(await evaluate('magent', file));
+        expect(result.dimensions.completeness?.note).toBe('6/6 governance sections present');
+    });
+
+    it('earns no link credit when the target does not exist on disk', async () => {
+        const file = join(tmpDir, 'AGENTS.md');
+        writeFileSync(file, LINKED_MAGENT);
+
+        const result = notNull(await evaluate('magent', file));
+        expect(result.dimensions.completeness?.note).toBe('5/6 governance sections present');
+    });
+
+    it('honors an explicit basePath override pointing elsewhere', async () => {
+        const elsewhere = mkdtempSync(join(tmpdir(), 'superskill-eval-elsewhere-'));
+        try {
+            mkdirSync(join(elsewhere, 'docs'), { recursive: true });
+            writeFileSync(join(elsewhere, 'docs', 'TESTING.md'), '# Testing\n');
+            const file = join(tmpDir, 'AGENTS.md');
+            writeFileSync(file, LINKED_MAGENT);
+
+            const withOverride = notNull(await evaluate('magent', file, { basePath: elsewhere }));
+            expect(withOverride.dimensions.completeness?.note).toBe('6/6 governance sections present');
+        } finally {
+            rmSync(elsewhere, { recursive: true, force: true });
+        }
+    });
+});
+
+describe('evaluate basePath — link credit is area-specific', () => {
+    let tmpDir: string;
+
+    beforeEach(() => {
+        tmpDir = mkdtempSync(join(tmpdir(), 'superskill-eval-area-'));
+    });
+
+    afterEach(() => {
+        if (tmpDir) rmSync(tmpDir, { recursive: true, force: true });
+    });
+
+    /** Same shape as LINKED_MAGENT above: five governance areas inline, `verification` absent. */
+    const MISSING_VERIFICATION = [
+        '## Project',
+        'A CLI.',
+        '## Commands',
+        '`bun run build`.',
+        '## Conventions',
+        'Four-space indent.',
+        '## Safety',
+        'NEVER force-push.',
+        '## Docs & Routing',
+        'See the docs tree.',
+        '',
+    ].join('\n');
+
+    it('does not fill the verification gap with a link to an unrelated area', async () => {
+        // A live link whose text and target both point at `conventions` — an area already
+        // satisfied inline. It must not be credited against the missing `verification` area.
+        mkdirSync(join(tmpDir, 'docs'), { recursive: true });
+        writeFileSync(join(tmpDir, 'docs', 'CONVENTIONS.md'), '# Conventions\n');
+        const file = join(tmpDir, 'AGENTS.md');
+        writeFileSync(file, `${MISSING_VERIFICATION}\nSee [conventions](docs/CONVENTIONS.md).\n`);
+
+        const result = notNull(await evaluate('magent', file));
+        expect(result.dimensions.completeness?.note).toBe('5/6 governance sections present');
+    });
+
+    it('an empty --base-path falls back to the file directory rather than disabling links', async () => {
+        mkdirSync(join(tmpDir, 'docs'), { recursive: true });
+        writeFileSync(join(tmpDir, 'docs', 'TESTING.md'), '# Testing\n');
+        const file = join(tmpDir, 'AGENTS.md');
+        writeFileSync(file, `${MISSING_VERIFICATION}\nFor testing, see [testing guide](docs/TESTING.md).\n`);
+
+        const result = notNull(await evaluate('magent', file, { basePath: '' }));
+        expect(result.dimensions.completeness?.note).toBe('6/6 governance sections present');
+    });
+});
