@@ -3,7 +3,7 @@ name: Project Constitution
 doc: 99_PROJECT_CONSTITUTION
 owns: PROCESS — how the key files are maintained
 authority: authoritative-on-process
-version: 1.6.0
+version: 1.7.0
 created_at: 2026-05-31T17:30:43.643Z
 owner: project operator
 updated_at: 2026-08-12T14:21:17Z
@@ -145,6 +145,10 @@ Rules:
   same change.
 - `AGENTS.md` may **add** project facts; it may never **contradict** the numbered docs. On
   contradiction, the numbered doc wins — fix `AGENTS.md`.
+- In a monorepo, subdirectory `AGENTS.md` files merge with the root: the agent reads the root
+  first, then the file for the package it is working in. Each level carries only its own scope —
+  the root holds what spans packages, a package file holds what is true of that package alone.
+  Never restate one level's facts at another.
 
 ## 5. Sync triggers — same-commit obligations
 
@@ -285,11 +289,19 @@ Entry template:
 1. Factual blocks that mirror code — the command surface, the workspace layout, tool versions —
    are **regenerated from code**, never edited from memory. Verify with the actual registrations
    (e.g. list the CLI's registered nouns/verbs) before writing the block.
-2. Keep it lean: link to the owning doc instead of restating its facts. `AGENTS.md` repeats only
+2. File structure is the most perishable thing you can write down: paths move, and a stale path
+   sends an agent confidently to a file that is not there. Prefer capabilities and domain
+   vocabulary — which outlive layout — over directory listings; where a concrete path is genuinely
+   needed, regenerate it from code per rule 1.
+3. Keep it lean: link to the owning doc instead of restating its facts. `AGENTS.md` repeats only
    what an agent needs in the first 30 seconds of a session.
-3. Surfaces that are decided-but-unbuilt are flagged as planned with their ADR pointer, and
+4. Keep the instruction count inside a budget: roughly 150–200 instructions, beyond which an agent
+   attends to them unevenly and the marginal rule buys nothing (MEDIUM confidence — secondary
+   citation, not measured here). Over budget, cut the rule or move it to its owning doc and link
+   per rule 3.
+5. Surfaces that are decided-but-unbuilt are flagged as planned with their ADR pointer, and
    marked "do not invoke as if they exist".
-4. Re-synced whenever this file changes the map or process (§4.4).
+6. Re-synced whenever this file changes the map or process (§4.4).
 
 ### 6.8 This file (`99`)
 
