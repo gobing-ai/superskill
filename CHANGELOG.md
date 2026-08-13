@@ -4,6 +4,16 @@ All notable changes to `@gobing-ai/superskill` are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Conventional Commits](https://www.conventionalcommits.org/).
 
+## [0.3.15] - 2026-08-12
+
+### Added
+
+- **Plugin-scoped `install --prune` and flattened-dest markdown link rewrite (task 0114, feature F7).** Two coupled install-destination-fidelity improvements for flattened rulesync dests (codex, pi, opencode, antigravity, hermes). `superskill install --prune` is a new opt-in flag that runs *before* the rulesync write loop and removes only `<plugin>-*` orphan dirs under the dest skills tree, replacing remaining `<plugin>-*` dirs so intra-dir leftovers vanish; other plugins' dest dirs are untouched, native plugin-tree dests (claude, grok, omp) are structurally exempt via `FLATTENED_PRUNE_TARGETS`, and `assertSafePathSegment(plugin)` gates every `rmSync`; default install (no `--prune`) stays purely additive, dry-run reports intent without writing (5 integration tests in `apps/cli/tests/commands/install-prune.test.ts`). The companion `rewritePluginTreeMarkdownLinks` (`packages/core/src/pipeline/rewrite-plugin-tree-links.ts`) rewrites `../skills/<name>/...` and `plugins/<plugin>/skills/<name>/...` references inside adapted SKILL.md bodies to `../<plugin>-<name>/...` so markdown links resolve after commands/subagents are flattened into `skills/<plugin>-<name>/` dirs; wired into `adapt-command.ts` and `adapt-subagent.ts` after `rewriteSkillReferences` (16 unit tests, 100% coverage; 1 adapt-command flow test). Docs: `--prune` flag row, dest-fidelity subsection, and `--prune` example added to `docs/help/cmd_install.md`; feature `F7` and task `0114` recorded. Full gate green — 2031 tests, 0 fail. (459ae70)
+
+### Fixed
+
+- **`bun run corpus-check` no longer drops the `task` subcommand.** `bun run` parses script strings itself (not via `/bin/sh`) and, for a script beginning with a bun-installed global binary followed by `task`, re-dispatches through a fast path that strips `task` from argv — so `spur task check --corpus` failed with `unknown command 'task'` under `bun run` while the identical `spur rule ...` scripts passed. The `corpus-check` script now invokes the spur shim through bun explicitly (`bun "$HOME/.bun/bin/spur" task check --corpus`), which bypasses the argv-drop; `bun run spur-check` is now green end-to-end. (047a3ca)
+
 ## [0.3.14] - 2026-08-12
 
 ### Documentation
@@ -29,8 +39,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 - **README.md updated.** (b8ed4fd)
 - **CI: added a `workflow_dispatch` trigger for manual reruns, nudged the push-trigger dispatch, and re-subscribed / re-triggered the Actions event after a delivery miss.** (8912f0a, 27d1238, 6fb56f9, c6bb263)
 
-
-
 ### Added
 
 - **Pi native extension loading via `plugin.json` `extensions` field.** `superskill install` now reads a `plugin.json` `extensions.pi` array (e.g. `["./hooks/pi/guard-extension.ts"]`) and installs Pi extensions natively to `.pi/agent/plugins/<plugin>/` with a generated `package.json` and registration in `.pi/agent/settings.json` `packages` — no `@vahor/pi-hooks` dependency required. Plugins without `extensions.pi` fall back to the existing `emitPiStyleHooks` `@vahor/pi-hooks` path, so the change is backward-compatible. (`apps/cli/src/commands/install.ts`)
@@ -46,7 +54,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 - **Upgrade `@gobing-ai/ts-*` family from 0.4.15 to 0.4.19.** `ts-ai-runner`, `ts-db`, `ts-runtime`, and `ts-utils` bumped across root `package.json` catalog, `apps/cli` dependencies, and `bun.lock`. Transitive `ts-infra` resolves to 0.4.19. (`package.json`, `apps/cli/package.json`, `bun.lock`)
 
-
 ## [0.3.11] - 2026-08-02
 
 ### Added
@@ -57,7 +64,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 - **Sync architecture, design, and features docs for Codex dual-emit (`4063ee2`).** Architecture conversion rules + target taxonomy updated; design install surface paragraph added; features Phase 7 entry added; F3 feature scenario added; tasks 0073/0086 AC checkboxes ticked.
 - **Close task 0111 and open follow-up 0112 (`4063ee2`).** Task 0111 (Codex native agent dual-emit) closed with verify evidence; task 0112 tracks live verification of Codex agent discovery + model-key honoring (blocked by account usage limit, reset Aug 7).
-
 
 ### Added
 
@@ -137,7 +143,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 - **Pi & OMP plugin hook reconciliation on install (`mergePiHooks`, `generateOmpHookModules`).** Reinstalling a plugin for Pi or OMP now reconciles generated hook artifacts by plugin ownership instead of appending or skipping. Previously, an event move (e.g. `sp/context-session-stop` moving from `Stop` to `SessionEnd`) or target policy exclusion (e.g. `cc/anti-hallucination` excluded on Pi/OMP) left stale generated hook entries/files active forever. Ownership is proven via the `superskill hook run <plugin> <hookId>` command grammar (`hookRunKey`). Stale owned entries under all events in Pi's `.pi/hooks.json` and generated module `.js` files under OMP's `hooks/pre/` and `hooks/post/` are pruned prior to merging current policy results, while foreign plugin artifacts and user scripts are preserved. Upstream `sp` plugin update: re-installing `sp` moves `context-session-stop` to `session_shutdown`. (#0096)
 
-
 ## [0.3.5] - 2026-07-18
 
 ### New Features
@@ -154,11 +159,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 - **Scripts-and-install contract rewritten.** New `plugins/cc/skills/cc-skills/references/scripts-and-install.md` is the canonical reference for where skill executables live (`plugins/<plugin>/scripts/<feature>/`, never inside the skill folder) and how they reach install targets (dual contract: staged `.mjs` path vs. `script run` / `hook run` binary registry). The `cc-skills` family (SKILL.md + best-practices, platform-compatibility, quick-reference, security, skill-categories, skill-creation, skill-patterns, troubleshooting, workflows) is rewritten to make skill folders prose-only — `extensions/` is retired. The anti-hallucination docs and `plugins/cc/README.md` promote `superskill script run cc validate-response` to the primary non-hook form, with the portable `.mjs` twin as the secondary staged-path form. `cc-hooks/platform-limits.md` marks Codex and Antigravity Stop continuation as supported and documents the pi gating rationale.
 - **`docs/help/how_to_organize_scripts_for_plugin_development.md`** documents the `script convert` workflow and the entrypoint-contract notes.
+
 ## [0.3.4] - 2026-07-17
 
 ### New Features
 
-- **Marketplace registration source: ` --marketplace-source github`.** `superskill install` now supports registering marketplaces as GitHub repos (e.g. `claude plugin marketplace add gobing-ai/superskill`) instead of only local directory paths. Local directory mode remains the default for authoring/dogfood. Grok and OMP install helpers mirror the source-mode choice. Includes a migration runbook for operators moving from directory to github-backed registrations. (#0086)
+- **Marketplace registration source: `--marketplace-source github`.** `superskill install` now supports registering marketplaces as GitHub repos (e.g. `claude plugin marketplace add gobing-ai/superskill`) instead of only local directory paths. Local directory mode remains the default for authoring/dogfood. Grok and OMP install helpers mirror the source-mode choice. Includes a migration runbook for operators moving from directory to github-backed registrations. (#0086)
 - **`superskill script run <plugin> <script-id>` — portable non-hook plugin scripts.** Non-hook scripts under `plugins/<plugin>/scripts/` are now invocable on every install target through the CLI binary, mirroring `hook run` for hook scripts. First registered script: `cc/validate-response` (anti-hallucination answer validator, exit 0/1 validation semantics). The dispatcher deep-imports script engines at build time (ADR-022), so skill docs no longer depend on repo-relative `bun` paths that break on install targets. Unknown script ids fail open with a stderr warning (version-skew posture, same as `hook run`). (#0087)
 - **Plugin-level scripts staged on install for rulesync targets.** `mapPluginToRulesync` now copies `plugins/<plugin>/scripts/` into `.rulesync/scripts/<plugin>/` (preserving tree shape, not flattening into skills). `superskill install` then dispatches these to `~/.agents/scripts/<plugin>/` (global) or `<cwd>/.agents/scripts/<plugin>/` (project) for rulesync+hermes targets — native targets (claude/omp/grok) already receive `scripts/` through their own plugin install CLIs. This is the staging half of the portable scripts redesign (feature A): downstream path-helper and guide tasks will resolve `$(superskill script path <p> <id>)` against these staged files. (#0090)
 - **`superskill script path <plugin> <rel>` — resolve staged entrypoints.** Skill docs can now use `$(superskill script path cc validate-response)` to resolve staged plugin scripts to absolute filesystem paths, removing the last hard-coded-path anti-pattern. Resolution searches `.agents/scripts/<plugin>/<rel>` (project) then `~/.agents/scripts/<plugin>/<rel>` (global). `--json` outputs a machine-readable object. Missing files fail closed (exit 2) — unlike `script run`'s fail-open-on-skew posture, path resolution is not version-skew-tolerant. Path traversal (`..`) and absolute rels are rejected (exit 1). (#0091)
@@ -566,4 +572,4 @@ All six `cc-*` skills (`anti-hallucination`, `cc-agents`, `cc-commands`, `cc-hoo
 
 ## [0.1.3] - 2026-06-17
 
-_Initial tagged release. See git history for details._
+*Initial tagged release. See git history for details.*
