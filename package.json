@@ -9,10 +9,10 @@
             "packages/*"
         ],
         "catalog": {
-            "@gobing-ai/ts-ai-runner": "^0.4.28",
-            "@gobing-ai/ts-db": "^0.4.28",
-            "@gobing-ai/ts-runtime": "^0.4.28",
-            "@gobing-ai/ts-utils": "^0.4.28"
+            "@gobing-ai/ts-ai-runner": "^0.4.31",
+            "@gobing-ai/ts-db": "^0.4.31",
+            "@gobing-ai/ts-runtime": "^0.4.31",
+            "@gobing-ai/ts-utils": "^0.4.31"
         }
     },
     "scripts": {

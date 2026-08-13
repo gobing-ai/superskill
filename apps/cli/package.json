@@ -41,10 +41,10 @@
         "typecheck": "tsc --noEmit"
     },
     "dependencies": {
-        "@gobing-ai/ts-ai-runner": "^0.4.28",
-        "@gobing-ai/ts-db": "^0.4.28",
-        "@gobing-ai/ts-runtime": "^0.4.28",
-        "@gobing-ai/ts-utils": "^0.4.28",
+        "@gobing-ai/ts-ai-runner": "^0.4.31",
+        "@gobing-ai/ts-db": "^0.4.31",
+        "@gobing-ai/ts-runtime": "^0.4.31",
+        "@gobing-ai/ts-utils": "^0.4.31",
         "commander": "^14.0.0",
         "drizzle-orm": "^0.44.0",
         "drizzle-zod": "^0.7.0",
