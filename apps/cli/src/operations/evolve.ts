@@ -117,9 +117,10 @@ export const FAILURE_MODES = [
     'no-op',
     'premature-completion',
     'negation',
+    'contradiction',
 ] as const;
 
-/** One of the six failure modes an evolve proposal may declare it cures. */
+/** One of the seven failure modes an evolve proposal may declare it cures. */
 export type FailureMode = (typeof FAILURE_MODES)[number];
 
 /** A single agent-authored change within an evolve proposal (the `changes[]` element shape). */

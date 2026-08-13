@@ -105,7 +105,7 @@ begging to collapse into a leading word: "fast, deterministic, low-overhead" →
 "a loop you believe in" → the loop goes *red* on the bug, or it doesn't. The collapse wins twice:
 fewer tokens, and a sharper hook for the agent to hang its thinking on.
 
-## The six named failure modes
+## The seven named failure modes
 
 Each failure mode below has a definition, a detection question, and a fix. These are the taxonomy
 `evolve` proposals tag against (see cc:cc-skills workflow reference for the tagging mechanism).
@@ -149,7 +149,7 @@ elsewhere become silently wrong? If yes, that second copy is duplication.
 **Fix:** collapse to one home, cite from the rest. `packages/core/src/rubrics/skill.yaml` owns
 dimension weights; `cc-skills` SKILL.md cites it (`"See packages/core/src/rubrics/skill.yaml"`)
 rather than restating the numbers. This document (`skill-engineering-theory.md`) owns the failure
-taxonomy; other lifecycle skills name `cc:cc-skills` rather than re-explaining the six modes.
+taxonomy; other lifecycle skills name `cc:cc-skills` rather than re-explaining the seven modes.
 
 ### 4. No-op
 
@@ -211,6 +211,22 @@ paired positive ("cite the owning file for every claim") is a negation smell.
 Keep a prohibition **only** as a hard guardrail you genuinely cannot phrase positively (a safety
 "never force-push"), and even then pair it with what to do instead. This is the one failure mode
 whose fix is a rewrite, not a deletion — the sentence stays, its polarity flips.
+
+### 7. Contradiction
+
+**Definition:** two instructions in the same config that cannot both be followed. Distinct from
+duplication (the same instruction stated twice, wasteful but consistent) and from negation (a
+prohibition with no positive alternative). The fix is not to delete both sides — it is to ask which
+one the operator wants and delete the loser.
+
+**Detection question:** can an agent satisfy both instructions in the same run? If obeying one
+forces breaking the other, the pair is a contradiction — not a restatement (duplication asks "do the
+two copies say the same thing?") and not a lone prohibition (negation asks "does this one
+instruction only forbid?").
+
+**Fix:** ask which one the operator wants and delete the loser — keep the instruction that matches
+the operator's intent (the more specific or more recent one), remove the one that fights it.
+Deleting both sides is not the answer: one of them is the operator's real requirement.
 
 ## Description rules
 

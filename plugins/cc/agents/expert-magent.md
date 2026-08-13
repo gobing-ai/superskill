@@ -128,7 +128,7 @@ All commands share the `superskill magent` prefix. Common flags: `--target <plat
 | `--strict` | Treat warnings as failures | false |
 | `--json` | Emit JSON to stdout | false |
 
-### evaluate — Score across 6 capability dimensions
+### evaluate — Score across 5 quality dimensions
 
 | Argument | Description | Default |
 |----------|-------------|---------|
@@ -137,7 +137,7 @@ All commands share the `superskill magent` prefix. Common flags: `--target <plat
 | `--json` | Emit JSON to stdout | false |
 | `--save` | Persist the evaluation result | false |
 
-Scored dimensions: `coverage`, `scoping`, `safety`, `portability`, `evidence`, `maintainability`. Output includes `score`, `grade`, `dimensions`, `findings`.
+Scored dimensions: `completeness`, `platform-coverage`, `conciseness`, `tone-consistency`, `safety`. Output includes `score`, `grade`, `dimensions`, `findings`.
 
 ### refine — Capability-aware suggestions
 
@@ -188,7 +188,7 @@ Report confidence on every operation outcome:
 | **MEDIUM** (70–90%) | Result correct but interpretation needed | warnings present, low-confidence platforms (antigravity, pi), partial evidence |
 | **LOW** (<70%) | Cannot fully verify; flag for user review | parse failure, unknown platform alias, missing template, evolve speculative |
 
-State confidence explicitly in the output ("Confidence: HIGH — clean validate; HIGH coverage").
+State confidence explicitly in the output ("Confidence: HIGH — clean validate; HIGH completeness").
 
 ## Red Flags
 
@@ -207,7 +207,7 @@ Stop and ask the user before proceeding when any of these appear:
 - Auto-select template from project signals (Node.js/Bun → `dev-agent`, ML notebooks → `data-agent`, infra repos → `devops-agent`)
 - Validate parse-ability, frontmatter integrity, and registry-conformant structure
 - Detect platform from filename, frontmatter, and content shape (with override via `--target`)
-- Evaluate across six capability-aware dimensions with weighted aggregation
+- Evaluate across five quality dimensions with weighted aggregation
 - Surface findings as validation issues plus capability signals (path-scoped rules, source evidence presence)
 - Generate refine suggestions of kinds `safety`, `scope`, `evidence`, `modularity`, `split` — read-only output
 - Bind refine output to target platform when `--target` is set (multi-file split, config-listed instructions)
@@ -241,14 +241,13 @@ Each platform declares: native files & locations, discovery/precedence, import/m
 
 ## 5.3 Quality Assessment
 
-- Six-dimension capability-aware scoring: `coverage`, `scoping`, `safety`, `portability`, `evidence`, `maintainability`
-- Weighted aggregation produces 0–100 score with A–F grade
-- Coverage rewards section breadth + presence of key topics (rules, workflow, tools, output)
-- Scoping rewards path-scoped rules where the platform supports globs
+- Five-dimension scoring: `completeness`, `platform-coverage`, `conciseness`, `tone-consistency`, `safety`
+- Equal-weight aggregate (rubric-weighted when `--rubric` is passed) produces a 0–1 score with A–F grade
+- Completeness rewards coverage of the six governance areas (project, commands, verification, conventions, safety, docs) — inline sections or links to existing docs both count fully
+- Platform-coverage rewards declared or body-detected supported platforms
+- Conciseness rewards the 1000–8000-char body sweet spot, free of no-op phrasing and within-body duplication
+- Tone-consistency rewards a stable register, voice, and persona across sections
 - Safety rewards explicit approval boundaries, destructive-action handling, secret guidance
-- Portability rewards `agents-md` compatibility, imports, and glob-scoped rules
-- Evidence rewards source URLs and verification dates with high-confidence platforms
-- Maintainability rewards modular structure and registry/import usage
 - Findings surface both validation issues and positive capability signals
 - Refine suggestions are capability-bound; `--auto` applies non-destructive ones, `safety`-kind always escalated
 - Evolve proposals are speculative — always require user confirmation before apply
@@ -324,23 +323,21 @@ After each operation, present:
 ```
 Operation: Evaluate AGENTS.md
 Result: Success (Grade: B — 78)
-Confidence: HIGH (clean parse, all 6 dimensions scored)
+Confidence: HIGH (clean parse, all 5 dimensions scored)
 
 Dimensions:
-  - coverage:        85
-  - scoping:         60  (no path-scoped rules)
-  - safety:          90
-  - portability:     80
-  - evidence:        45  (no source URLs / verification dates)
-  - maintainability: 70
+  - completeness:        1.0
+  - platform-coverage:   0.6  (limited platform coverage)
+  - conciseness:         0.8
+  - tone-consistency:    0.6
+  - safety:              0.9
 
 Findings:
-  - path-scoped rules missing
-  - source evidence unavailable
+  - limited platform coverage
 
 Next Steps:
   1. superskill magent refine AGENTS.md --target claude-code --auto --save   (capability-aware suggestions)
-  2. Add per-path globs and source evidence
+  2. Declare supported platforms in frontmatter or prose
   3. Re-run superskill magent evaluate AGENTS.md --save to confirm
 ```
 

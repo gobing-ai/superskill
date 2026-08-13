@@ -395,6 +395,35 @@ describe('generation seam — ingest-in (F023)', () => {
         expect(json.changes[0].failure_mode).toBe('negation');
     });
 
+    it('accepts the contradiction failure_mode tag (0116 — seventh mode)', async () => {
+        await seedHistory(adapter);
+
+        const tagged = {
+            proposal_id: 'skill-evolve-contradiction-001',
+            changes: [
+                {
+                    dimension: 'clarity',
+                    location: 'body',
+                    current: 'Do X and also never do X.',
+                    proposed: 'Do X only.',
+                    reason: 'Collapse two instructions that cannot both be followed',
+                    failure_mode: 'contradiction',
+                },
+            ],
+        };
+        const proposalPath = join(dir, 'contradiction-proposal.json');
+        writeFileSync(proposalPath, JSON.stringify(tagged));
+
+        await evolve('skill', 'widget', { adapter, ingest: proposalPath });
+
+        const stored = await new ProposalDao(adapter).getProposals('skill', 'widget');
+        const json =
+            typeof stored[0]?.proposal_json === 'string'
+                ? JSON.parse(stored[0].proposal_json)
+                : stored[0]?.proposal_json;
+        expect(json.changes[0].failure_mode).toBe('contradiction');
+    });
+
     it('rejects an unknown failure_mode tag (task 0070 R5)', async () => {
         await seedHistory(adapter);
 
@@ -416,6 +445,10 @@ describe('generation seam — ingest-in (F023)', () => {
 
         await expect(evolve('skill', 'widget', { adapter, ingest: proposalPath })).rejects.toThrow(
             /Invalid failure_mode "bloat"/,
+        );
+        // AC (0116): the rejection names the full valid set so an author can pick a real tag.
+        await expect(evolve('skill', 'widget', { adapter, ingest: proposalPath })).rejects.toThrow(
+            /sprawl, sediment, duplication, no-op, premature-completion, negation, contradiction/,
         );
     });
 

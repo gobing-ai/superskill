@@ -1,3 +1,5 @@
+import { existsSync } from 'node:fs';
+import { resolve } from 'node:path';
 import {
     clamp,
     duplicationRatio,
@@ -10,21 +12,70 @@ import {
 } from './heuristics';
 import { computeAggregate, DIMENSION_REGISTRY, type DimensionScore, type QualityReport } from './types';
 
-// Governance section patterns for main-agent configs (frontmatter-optional)
-const MAGENT_SECTIONS: { re: RegExp; label: string }[] = [
-    { re: /^## .*[Pp]roject|^## .*[Ss]tack/m, label: 'project' },
-    { re: /^## .*[Cc]ommand|^## .*[Tt]ool/m, label: 'commands' },
-    { re: /^## .*[Vv]erif|^## .*[Tt]est|^## .*[Gg]ate/m, label: 'verification' },
-    { re: /^## .*[Cc]onvention|^## .*[Ss]tyle|^## .*[Bb]oundar/m, label: 'conventions' },
-    { re: /^## .*[Ss]afety|^## .*[Ss]ecurity|^## .*[Cc]ritical/m, label: 'safety' },
-    { re: /^## .*[Dd]oc|^## .*[Rr]eference|^## .*[Rr]outing/m, label: 'docs' },
+// Governance section patterns for main-agent configs (frontmatter-optional).
+// `keywords` match a markdown link's text or resolved target basename (disclosure-aware
+// completeness): an area counts when either its heading regex hits or a link-resolving
+// doc matches its keywords. `label` is the area identity (no parallel enum).
+const MAGENT_SECTIONS: { re: RegExp; label: string; keywords: string[] }[] = [
+    { re: /^## .*[Pp]roject|^## .*[Ss]tack/m, label: 'project', keywords: ['project', 'stack'] },
+    { re: /^## .*[Cc]ommand|^## .*[Tt]ool/m, label: 'commands', keywords: ['command', 'tool'] },
+    {
+        re: /^## .*[Vv]erif|^## .*[Tt]est|^## .*[Gg]ate/m,
+        label: 'verification',
+        keywords: ['verification', 'verify', 'test', 'gate'],
+    },
+    {
+        re: /^## .*[Cc]onvention|^## .*[Ss]tyle|^## .*[Bb]oundar/m,
+        label: 'conventions',
+        keywords: ['convention', 'style', 'boundary'],
+    },
+    {
+        re: /^## .*[Ss]afety|^## .*[Ss]ecurity|^## .*[Cc]ritical/m,
+        label: 'safety',
+        keywords: ['safety', 'security', 'critical'],
+    },
+    {
+        re: /^## .*[Dd]oc|^## .*[Rr]eference|^## .*[Rr]outing/m,
+        label: 'docs',
+        keywords: ['doc', 'reference', 'routing'],
+    },
 ];
 
-/** Count governance sections found in body. */
-function scoreCompleteness(body: string): DimensionScore {
+/** True when `target` resolves to an existing file under `basePath`. Absent basePath → never (R4). */
+function resolvesOnDisk(basePath: string | undefined, target: string): boolean {
+    if (basePath === undefined) return false;
+    try {
+        return existsSync(resolve(basePath, target));
+    } catch {
+        return false;
+    }
+}
+
+/** True when a markdown link in body matches the area's keywords and its target resolves on disk. */
+function linkMatchesArea(body: string, keywords: string[], basePath: string): boolean {
+    const linkRe = /\[([^\]]+)\]\(([^)\s]+)\)/g;
+    for (const m of body.matchAll(linkRe)) {
+        const text = m[1] ?? '';
+        const target = m[2] ?? '';
+        if (/^(https?:|mailto:)/i.test(target) || target.startsWith('#')) continue; // relative targets only
+        const pathPart = target.split('#')[0] ?? '';
+        if (!resolvesOnDisk(basePath, pathPart)) continue;
+        const basename = pathPart.split('/').pop() ?? pathPart;
+        const hay = `${text} ${basename}`.toLowerCase();
+        if (keywords.some((kw) => hay.includes(kw.toLowerCase()))) return true;
+    }
+    return false;
+}
+
+/** Count governance sections found in body; link-resolved areas count when basePath is given. */
+function scoreCompleteness(body: string, basePath?: string): DimensionScore {
     let found = 0;
-    for (const { re } of MAGENT_SECTIONS) {
-        if (re.test(body)) found++;
+    for (const { re, keywords } of MAGENT_SECTIONS) {
+        if (re.test(body)) {
+            found++;
+            continue; // heading match short-circuits; never double-count an area
+        }
+        if (basePath !== undefined && linkMatchesArea(body, keywords, basePath)) found++;
     }
     const score = clamp(found / MAGENT_SECTIONS.length);
     const findings = found < MAGENT_SECTIONS.length / 2 ? ['Config is missing key governance sections'] : undefined;
@@ -155,9 +206,12 @@ function scoreSafety(body: string): DimensionScore {
  *
  * @param content  Markdown content string with YAML frontmatter.
  * @param target   Identifier for the content being evaluated.
+ * @param basePath Optional directory for resolving markdown links against disk
+ *                 (disclosure-aware completeness). Absent → byte-identical to
+ *                 the pre-basePath behavior (R4).
  * @returns        QualityReport with per-dimension scores and aggregate.
  */
-export function evaluateMagent(content: string, target: string): QualityReport {
+export function evaluateMagent(content: string, target: string, basePath?: string): QualityReport {
     const body = extractBody(content);
     // Distinguish "no frontmatter" (valid for magents — AGENTS.md/CLAUDE.md are plain markdown)
     // from "malformed frontmatter" (starts with --- but parse fails — real error)
@@ -167,7 +221,7 @@ export function evaluateMagent(content: string, target: string): QualityReport {
     const fmNote = hasFrontmatter && fmResult === null ? parseErrorNote(content, 'Frontmatter parse error') : null;
 
     const dimensions: Record<string, DimensionScore> = {
-        completeness: scoreCompleteness(body),
+        completeness: scoreCompleteness(body, basePath),
         'platform-coverage': scorePlatformCoverage(data, body),
         conciseness: scoreConciseness(body),
         'tone-consistency': scoreToneConsistency(body),

@@ -6,7 +6,7 @@ import { dirname, join, resolve } from 'node:path';
  * Structural invariants for the cc plugin (task 0070 R10):
  * - the README flow map lists every commands/*.md exactly once (AC7);
  * - the skill-engineering theory reference and glossary exist as single copies (AC1/AC8);
- * - the theory reference carries all six failure modes plus the two invocation loads (AC1);
+ * - the theory reference carries all seven failure modes plus the two invocation loads (AC1);
  * - lifecycle skills reference cc:cc-skills by name, never by deep relative link (AC1).
  */
 
@@ -99,7 +99,7 @@ describe('cc plugin structure', () => {
         expect(copies[0]).toContain(join('cc-skills', 'references'));
     });
 
-    it('theory reference names all six failure modes and both invocation loads', () => {
+    it('theory reference names all seven failure modes and both invocation loads', () => {
         const theory = readFileSync(
             join(SKILLS_ROOT, 'cc-skills', 'references', 'skill-engineering-theory.md'),
             'utf-8',
@@ -111,6 +111,7 @@ describe('cc plugin structure', () => {
             'no-op',
             'premature completion',
             'negation',
+            'contradiction',
             'context load',
             'cognitive load',
         ]) {

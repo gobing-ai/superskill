@@ -54,7 +54,8 @@ Analyze agent quality over time, draft heuristic proposals for declining/flat-lo
 ## Failure-Mode Tags
 
 Every proposed change authored for `--ingest` carries a `failure_mode` field naming the failure
-mode it cures: `sprawl`, `sediment`, `duplication`, `no-op`, or `premature-completion`. The CLI
+mode it cures: `sprawl`, `sediment`, `duplication`, `no-op`, `premature-completion`, `negation`,
+or `contradiction`. The CLI
 rejects unknown tags on ingest and persists valid ones in proposal history, so `--history` reads
 as a failure-mode ledger. Definitions: **cc:cc-skills** skill-engineering theory reference.
 

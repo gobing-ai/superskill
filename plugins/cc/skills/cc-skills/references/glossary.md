@@ -73,8 +73,9 @@ Avoid: "score" alone when you mean the letter (score is the 0.0–1.0 number; gr
 
 **Proposal** — a versioned, persisted set of `ProposedChange[]` generated (or agent-authored) by
 `evolve`, gated by the double-loop gate before it can be `accepted`. Proposals carry status
-(`draft` / `accepted` / `rejected`) and, per R5, a failure-mode tag naming which of the six named
-failure modes (sprawl/sediment/duplication/no-op/premature-completion/negation) the proposal cures.
+(`draft` / `accepted` / `rejected`) and, per R5, a failure-mode tag naming which of the seven named
+failure modes (sprawl/sediment/duplication/no-op/premature-completion/negation/contradiction) the
+proposal cures.
 Avoid: "suggestion", "change request" (both used informally elsewhere; "proposal" is the exact
 stored-row term).
 
@@ -95,6 +96,12 @@ behavior primes it — the "don't think of an elephant" effect). Fix by promptin
 target instead; keep a prohibition only as an unphraseable-otherwise hard guardrail. The one failure
 mode whose fix flips a sentence's polarity rather than deleting it.
 Avoid: "prohibition smell", "anti-pattern" (too generic — "negation" is the taxonomy term).
+
+**Contradiction** — the seventh failure mode: two instructions in the same config that cannot both
+be followed. Distinct from duplication (the same instruction stated twice) and negation (a
+prohibition with no positive alternative); the fix is to ask which one the operator wants and delete
+the loser.
+Avoid: "conflict", "clash" (plain-language glosses — "contradiction" is the taxonomy term).
 
 **Sentence-level pruning** — running the no-op test on each *sentence in isolation* (not just line
 by line) and deleting the whole failing sentence, never trimming words from it. The discipline that

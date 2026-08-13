@@ -6,9 +6,14 @@ dimensions:
     criterion: >
       Does the main-agent config cover key governance areas: project/stack,
       commands/tools, verification/testing, conventions/style, safety/security,
-      and documentation/references? Configs may be frontmatter-optional
-      (AGENTS.md/CLAUDE.md are plain markdown by design). Penalize missing
-      governance sections regardless of frontmatter presence.
+      and documentation/references? A governance area is covered either by an
+      inline section or by a markdown link to an existing doc whose name or
+      link text matches the area — link-resolved areas count fully, so a
+      progressively disclosed config (small root + docs/ tree) is not
+      penalized. Configs may be frontmatter-optional (AGENTS.md/CLAUDE.md are
+      plain markdown by design). Penalize missing governance sections
+      regardless of frontmatter presence; a link to a nonexistent file earns
+      no credit.
     anchors:
       excellent: "All governance areas covered; project, commands, verification, conventions, safety, docs."
       poor: "Few governance sections; config is mostly unstructured or bare."

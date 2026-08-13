@@ -498,8 +498,9 @@ Fix issues and improve quality. Supports multiple refinement modes.
 
 Two named fix types complement the deterministic structural fixes. Both are `suggest`-strategy
 fixes (a rewrite judgment call, never auto-applied); this section is the single copy the
-`*-refine` commands point to. Failure-mode definitions (all six: no-op, duplication, sediment,
-sprawl, premature-completion, negation) live in the skill-engineering theory reference.
+`*-refine` commands point to. Failure-mode definitions (all seven: sprawl, sediment, duplication,
+no-op, premature-completion, negation, contradiction) live in the skill-engineering theory
+reference.
 
 **Description prune** — rewrite an over-long or synonym-heavy description to budget by applying
 the three description rules: front-load the leading identity phrase; keep one trigger per genuine

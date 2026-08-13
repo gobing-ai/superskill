@@ -1,5 +1,5 @@
 ---
-description: Score main agent config across 6 quality dimensions
+description: Score main agent config across 5 quality dimensions
 argument-hint: "<nameOrPath> [--json] [--target <platform>] [--save] [--rubric <file>] [--ingest <file>]"
 allowed-tools: ["Read", "Write", "Glob", "Bash", "Skill"]
 ---
@@ -8,7 +8,7 @@ allowed-tools: ["Read", "Write", "Glob", "Bash", "Skill"]
 
 Wraps **cc:cc-magents** skill.
 
-Score main agent config quality across 6 dimensions. **Evaluate only — make NO changes.** Delegates to **cc:cc-magents** skill.
+Score main agent config quality across 5 dimensions. **Evaluate only — make NO changes.** Delegates to **cc:cc-magents** skill.
 
 ## When to Use
 

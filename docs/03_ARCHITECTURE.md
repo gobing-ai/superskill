@@ -479,6 +479,8 @@ sequenceDiagram
 #### Briefing
 Analyzes resource quality across a type-specific registry of dimensions (e.g., completeness, clarity, trigger accuracy). Outputs a breakdown of scores (from 0.0 to 1.0) along with detailed notes suggesting areas of improvement, together with a consolidated aggregate score. If `--save` is active, it hashes the file content and records the results under the `.superskill/evaluations.db` database.
 
+Evaluators take an optional `basePath`. It is the directory that relative markdown links in the evaluated content resolve against, which lets a dimension credit a governance area satisfied by a link to a file that exists on disk rather than only by an inline section — the disclosure-aware path in `magent`'s `completeness`. A link whose target does not resolve earns nothing, so the same mechanism detects stale links. Omitting `basePath` disables link resolution entirely and leaves scores byte-identical to the pre-`basePath` behavior, which is why it is optional rather than required.
+
 #### Sequence Diagram
 
 ```mermaid
@@ -495,7 +497,7 @@ sequenceDiagram
     CLI->>Evaluate: evaluate(type, nameOrPath, options)
     Evaluate->>FS: resolveContentPath & read file
     FS-->>Evaluate: file contents
-    Evaluate->>Evaluator: evaluate[Type](content, target)
+    Evaluate->>Evaluator: evaluate[Type](content, target, basePath?)
     Evaluator-->>Evaluate: QualityReport (dimensions & aggregate)
     alt Save is true
         Evaluate->>Evaluate: hashContent(filePath)

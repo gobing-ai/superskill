@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { scaffold } from '../../src/operations/scaffold';
+import { evaluateMagent } from '../../src/quality/magent';
 
 describe('scaffold', () => {
     let tmpDir: string;
@@ -567,5 +568,91 @@ describe('scaffold invocation axis', () => {
 
         const content = readFileSync(filePath, 'utf-8');
         expect(content).not.toContain('disable-model-invocation');
+    });
+});
+
+// ── 0119: restructured magent template contract (R1–R5 / AC scenarios 1–5) ────
+// The template is emitted verbatim by scaffold with no link rewriting
+// (scaffold.ts:15), so every repo-relative markdown link in it is dangling by
+// construction in scaffolded targets. R2 therefore requires slimmed sections to
+// point at discoverable surfaces (--help commands, bare skill names) — never at
+// repo-relative files — and AC scenario 3 requires the relative-link set to be
+// empty. Frontmatter `platforms:` is the load-bearing replacement for the
+// slimmed Platform Padding prose (R3).
+describe('magent template contract (0119)', () => {
+    const templateUrl = new URL('../../src/templates/magent/default.md', import.meta.url);
+    const content = readFileSync(templateUrl, 'utf-8');
+    const body = content.replace(/^---\n[\s\S]*?\n---\n?/, '');
+
+    const section = (name: string): string => {
+        const m = body.match(new RegExp(`## ${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}[\\s\\S]*?(?=\\n## |$)`));
+        return m ? m[0] : '';
+    };
+    const relativeLinks = (text: string): string[] =>
+        [...text.matchAll(/\[[^\]]*\]\(([^)\s]+)\)/g)]
+            .map((m) => m[1])
+            .filter((t): t is string => !!t && !/^(https?:|mailto:|#)/i.test(t));
+
+    const SLIM = ['Harness & Infrastructure', 'Tool Discipline', 'Platform Padding'];
+    const GOV = ['Project', 'Commands', 'Verification', 'Conventions', 'Safety', 'Docs & Routing'];
+
+    it('keeps all six governance headings with inline Safety and Verification (R1, AC 1)', () => {
+        for (const h of GOV) {
+            expect(body).toMatch(new RegExp(`^## ${h}$`, 'm'));
+        }
+        expect(section('Safety')).toContain('[CRITICAL]');
+        expect(section('Safety')).toMatch(/rm -rf|destructive/);
+        expect(section('Verification')).toMatch(/lint/);
+        expect(section('Verification')).toMatch(/tests/);
+    });
+
+    it('keeps the three slimmed sections under 1,000 combined chars (AC 2)', () => {
+        const combined = SLIM.reduce((n, s) => n + section(s).length, 0);
+        expect(combined).toBeLessThan(1000);
+    });
+
+    it('names a discoverable surface (--help command or bare skill name) in each slimmed section (AC 2)', () => {
+        for (const name of SLIM) {
+            const s = section(name);
+            expect(s).toMatch(/\b(spur|superskill)\s+\w+\b|--help|\b(skill|agent|command|hook|workflow|rule)\b/i);
+        }
+    });
+
+    it('has no repo-relative markdown link in any slimmed section (AC 2)', () => {
+        for (const name of SLIM) {
+            expect(relativeLinks(section(name))).toEqual([]);
+        }
+    });
+
+    it('emits a body with zero relative markdown links (AC 3)', () => {
+        expect(relativeLinks(body)).toEqual([]);
+    });
+
+    it('declares >= 5 platforms in frontmatter and scores platform-coverage 1.0 (R3, AC 4)', () => {
+        const fm = content.match(/^---\n([\s\S]*?)\n---/)?.[1] ?? '';
+        const platforms = (fm.match(/^platforms:\s*\[(.*)\]$/m)?.[1] ?? '')
+            .split(',')
+            .map((p) => p.trim())
+            .filter(Boolean);
+        expect(platforms.length).toBeGreaterThanOrEqual(5);
+
+        const report = evaluateMagent(content, 'templates/magent/default.md');
+        expect(report.dimensions['platform-coverage']?.score).toBe(1);
+    });
+
+    it('scores 1.0 on all five dimensions with and without basePath (R5, AC 5)', () => {
+        for (const bp of [undefined, process.cwd()]) {
+            const report = evaluateMagent(content, 'templates/magent/default.md', bp);
+            for (const [k, d] of Object.entries(report.dimensions)) {
+                expect(d.score).toBe(1);
+                expect(report.aggregate).toBe(1);
+                expect(k).toBeTruthy();
+            }
+        }
+    });
+
+    it('keeps body length inside the 1000-8000 sweet spot (R4, AC 5)', () => {
+        expect(body.length).toBeGreaterThanOrEqual(1000);
+        expect(body.length).toBeLessThanOrEqual(8000);
     });
 });

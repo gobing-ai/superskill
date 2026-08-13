@@ -1,4 +1,7 @@
 import { describe, expect, it } from 'bun:test';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { evaluateAgent } from '../../src/quality/agent';
 import { evaluateCommand } from '../../src/quality/command';
 import { evaluate } from '../../src/quality/evaluate';
@@ -978,6 +981,112 @@ Always run the linter first. Never bypass verification gates.
         const noisyReport = evaluateMagent(noisy, 'AGENTS-noisy.md');
         const cleanReport = evaluateMagent(clean, 'AGENTS-clean.md');
         expect(noisyReport.dimensions.conciseness?.score).toBeLessThan(cleanReport.dimensions.conciseness?.score ?? 1);
+    });
+});
+
+describe('evaluateMagent disclosure-aware completeness (0115)', () => {
+    // A progressively disclosed config: small root, governance lives in linked docs.
+    const LINKED_CONFIG = makeSample(
+        'name: dev-agent\ndescription: Main agent config',
+        `## Project
+You are a senior full-stack developer agent.
+
+## Commands
+- \`bun run lint\` — check + typecheck
+
+Governance lives in the docs tree:
+- [Testing](docs/TESTING.md)
+- [Conventions](docs/CONVENTIONS.md)
+- [Safety](docs/SAFETY.md)
+- [Documentation](docs/DOCS.md)
+`,
+    );
+
+    /** Run fn against a fresh temp dir that is removed afterwards. Real fs — no mocks. */
+    function withTempDir(fn: (dir: string) => void): void {
+        const dir = mkdtempSync(join(tmpdir(), 'magent-link-'));
+        try {
+            fn(dir);
+        } finally {
+            rmSync(dir, { recursive: true, force: true });
+        }
+    }
+
+    it('credits a governance area satisfied by a link to an existing doc', () => {
+        withTempDir((dir) => {
+            mkdirSync(join(dir, 'docs'), { recursive: true });
+            writeFileSync(join(dir, 'docs', 'TESTING.md'), '# Testing\nRun the suite.');
+            const report = evaluateMagent(LINKED_CONFIG, 'AGENTS.md', dir);
+            const c = report.dimensions.completeness;
+            // ## Project + ## Commands headings, plus verification via the resolving docs/TESTING.md link.
+            expect(c?.score).toBeCloseTo(3 / 6);
+            expect(c?.note).toContain('3/6');
+        });
+    });
+
+    it('scores a link-resolved area identically to an inline section', () => {
+        withTempDir((dir) => {
+            mkdirSync(join(dir, 'docs'), { recursive: true });
+            writeFileSync(join(dir, 'docs', 'TESTING.md'), '# Testing\nRun the suite.');
+            const base = `## Project\nDev agent.\n\n## Commands\n\`bun run test\` runs the suite.\n\n## Safety\n[CRITICAL] never force-push.`;
+            const fm = 'name: dev-agent\ndescription: Main agent config';
+            const inline = makeSample(fm, `${base}\n\n## Verification\nAll must pass before done.`);
+            const linked = makeSample(fm, `${base}\n\n[Testing](docs/TESTING.md)`);
+            const a = evaluateMagent(inline, 'AGENTS.md', dir);
+            const b = evaluateMagent(linked, 'AGENTS.md', dir);
+            expect(b.dimensions.completeness?.score).toBeCloseTo(a.dimensions.completeness?.score ?? -1);
+            expect(b.dimensions.completeness?.score).toBeCloseTo(4 / 6); // project + commands + safety + verification
+        });
+    });
+
+    it('earns no credit for a link whose target does not exist on disk', () => {
+        withTempDir((dir) => {
+            mkdirSync(join(dir, 'docs'), { recursive: true }); // docs/ exists, but no TESTING.md
+            const report = evaluateMagent(LINKED_CONFIG, 'AGENTS.md', dir);
+            const c = report.dimensions.completeness;
+            expect(c?.score).toBeCloseTo(2 / 6); // only the ## Project and ## Commands headings
+            expect(c?.note).toContain('2/6');
+        });
+    });
+
+    it('treats a malformed link target as unresolved without crashing', () => {
+        withTempDir((dir) => {
+            // A NUL byte in the target makes `resolve` throw; the scorer must treat it as unresolved, not crash.
+            const config = makeSample(
+                'name: dev-agent\ndescription: Main agent config',
+                `## Project\nDev agent.\n\n[Testing](docs/TESTING\u0000.md)`,
+            );
+            const report = evaluateMagent(config, 'AGENTS.md', dir);
+            expect(report.dimensions.completeness?.score).toBeCloseTo(1 / 6); // only the ## Project heading
+        });
+    });
+
+    it('evaluating without a basePath ignores links (byte-identical to pre-change)', () => {
+        const without = evaluateMagent(LINKED_CONFIG, 'AGENTS.md');
+        const explicit = evaluateMagent(LINKED_CONFIG, 'AGENTS.md', undefined);
+        expect(explicit).toEqual(without);
+        expect(without.dimensions.completeness?.score).toBeCloseTo(2 / 6); // links earn nothing without basePath
+    });
+
+    it('a fully inlined config does not regress', () => {
+        const full = makeSample(
+            'name: dev-agent\ndescription: Main agent config',
+            `## Project\nDev agent.\n\n## Commands\n\`bun run test\`.\n\n## Verification\nAll must pass.\n\n## Conventions\n4-space indent.\n\n## Safety\n[CRITICAL] never force-push.\n\n## Documentation\nSee docs/.`,
+        );
+        const before = evaluateMagent(full, 'AGENTS.md');
+        const after = evaluateMagent(full, 'AGENTS.md', process.cwd());
+        expect(after.dimensions.completeness?.score).toBeGreaterThanOrEqual(before.dimensions.completeness?.score ?? 1);
+        expect(after.dimensions.completeness?.score).toBeCloseTo(1);
+    });
+
+    it('forwards basePath through the evaluate dispatch verb', () => {
+        withTempDir((dir) => {
+            mkdirSync(join(dir, 'docs'), { recursive: true });
+            writeFileSync(join(dir, 'docs', 'TESTING.md'), '# Testing');
+            const linked = makeSample('name: d\ndescription: d', `## Project\nx\n\n[Testing](docs/TESTING.md)`);
+            const viaVerb = evaluate('magent', linked, 'AGENTS.md', dir);
+            expect(viaVerb.dimensions.completeness?.score).toBeCloseTo(2 / 6);
+        });
     });
 });
 
