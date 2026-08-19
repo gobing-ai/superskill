@@ -6,6 +6,56 @@ import type { Command } from 'commander';
 
 const NODE_SHEBANG = '#!/usr/bin/env node';
 
+/**
+ * Bun globals that survive `Bun.build({ target: 'node' })`, mapped to their Node replacement.
+ * `target: 'node'` rewrites module resolution but does NOT polyfill the `Bun.*` global namespace, so
+ * any surviving reference dies under Node with `ReferenceError: Bun is not defined`. Convert rejects
+ * them rather than emitting a twin that cannot run.
+ */
+const BUN_GLOBAL_NODE_EQUIVALENTS: Record<string, string> = {
+    argv: 'process.argv.slice(2)',
+    env: 'process.env',
+    file: 'node:fs (readFileSync / createReadStream)',
+    write: 'node:fs (writeFileSync)',
+    spawn: 'node:child_process (spawn)',
+    spawnSync: 'node:child_process (spawnSync)',
+    $: 'node:child_process (execFileSync)',
+    sleep: 'node:timers/promises (setTimeout)',
+    stdin: 'process.stdin',
+    stdout: 'process.stdout',
+    stderr: 'process.stderr',
+};
+
+/** One surviving `Bun.<prop>` reference in the bundled output. */
+export interface BunGlobalUse {
+    /** Property name, e.g. `argv`. */
+    prop: string;
+    /** 1-based line number in the BUNDLED text (not the source). */
+    line: number;
+    /** Trimmed bundled line, so the author can locate the symbol. */
+    text: string;
+}
+
+const BUN_GLOBAL_RE = /\bBun\s*\.\s*([A-Za-z_$][\w$]*)/g;
+
+/**
+ * Scan bundled output for surviving `Bun.*` references. Textual scan over the bundled text; a string
+ * literal containing `Bun.` is a false positive the author resolves by renaming it (cost of
+ * stripping literals/comments first is real code for a case that has never occurred).
+ * ponytail: textual scan — strip string literals before scanning if a false positive ever bites.
+ */
+export function findBunGlobals(bundled: string): BunGlobalUse[] {
+    const uses: BunGlobalUse[] = [];
+    for (const [i, line] of bundled.split('\n').entries()) {
+        // matchAll clones the regex, so lastIndex reuse across lines is safe.
+        const matches = [...line.matchAll(BUN_GLOBAL_RE)];
+        for (const m of matches) {
+            uses.push({ prop: m[1] ?? '', line: i + 1, text: line.trim() });
+        }
+    }
+    return uses;
+}
+
 /** Outcome of converting one script to its portable twin. */
 export interface ConvertedTwin {
     /** Absolute source `.ts` path. */
@@ -47,6 +97,28 @@ export async function convertScriptToPortableTwin(srcPath: string, outPath: stri
         if (lines[0]?.startsWith('#!')) lines[0] = NODE_SHEBANG;
         else lines.unshift(NODE_SHEBANG);
         bundled = lines.join('\n').replace(/if\s*\(\s*\S*main\s*={2,3}\s*\S*module\s*\)\s*/g, '');
+        // Reject any surviving `Bun.*` reference BEFORE writing — the twin must run under bare Node,
+        // so a bundle still calling Bun globals is a broken artifact, not a success. Scanning the
+        // post-processed text (the exact bytes that would be written) and throwing before
+        // `writeFileSync` is what makes "no .mjs left behind" true without cleanup code.
+        const bunUses = findBunGlobals(bundled);
+        if (bunUses.length > 0) {
+            const seen = new Set<string>();
+            const hints: string[] = [];
+            for (const u of bunUses) {
+                if (seen.has(u.prop)) continue;
+                seen.add(u.prop);
+                const equiv =
+                    BUN_GLOBAL_NODE_EQUIVALENTS[u.prop] ?? 'no Node equivalent recorded — replace with a Node built-in';
+                hints.push(`  Bun.${u.prop} (bundled line ${u.line}: ${u.text}) → ${equiv}`);
+            }
+            throw new Error(
+                'Bun globals survive the bundle — the twin would die under Node with "ReferenceError: Bun is not defined".\n' +
+                    `Not written: ${outPath}\n` +
+                    hints.join('\n') +
+                    `\nReplace them in ${srcPath}, then re-run script convert.`,
+            );
+        }
         writeFileSync(outPath, bundled);
         return { src: srcPath, out: outPath, bytes: bundled.length };
     } finally {
@@ -86,8 +158,14 @@ export function registerScriptConvert(program: Command, ci?: { exit(code: number
                 echo(`${src} → ${out} (dry-run)`);
                 return;
             }
-            const result = await convertScriptToPortableTwin(src, out);
-            if (options.json) echo(JSON.stringify({ converted: [result] }));
-            else echo(`✓ ${src} → ${out} (${result.bytes} bytes)`);
+            try {
+                const result = await convertScriptToPortableTwin(src, out);
+                if (options.json) echo(JSON.stringify({ converted: [result] }));
+                else echo(`✓ ${src} → ${out} (${result.bytes} bytes)`);
+            } catch (err) {
+                // Message to stderr, nothing to stdout (a machine consumer reads exit code + empty stdout).
+                echoError((err as Error).message);
+                exitFn(1);
+            }
         });
 }

@@ -4,7 +4,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Command } from 'commander';
-import { convertScriptToPortableTwin, registerScriptConvert } from '../../src/commands/script-convert';
+import { convertScriptToPortableTwin, findBunGlobals, registerScriptConvert } from '../../src/commands/script-convert';
 
 describe('convertScriptToPortableTwin', () => {
     // WHY: `script convert` is the reusable build step for the dual install contract's standard
@@ -91,6 +91,52 @@ describe('convertScriptToPortableTwin', () => {
 
         await expect(convertScriptToPortableTwin(missing, out)).rejects.toThrow();
         expect(existsSync(out)).toBe(false);
+    });
+
+    it('rejects a source using Bun globals and leaves no .mjs behind (R1 + R2)', async () => {
+        const dir = mkdtempSync(join(tmpdir(), 'convert-bun-'));
+        const src = join(dir, 'bunky.ts');
+        writeFileSync(
+            src,
+            [
+                '#!/usr/bin/env bun',
+                'function mainCli(argv = Bun.argv.slice(2)) {',
+                '  const f = Bun.file(argv[0] ?? "");',
+                '  console.log(f);',
+                '  return 0;',
+                '}',
+                'mainCli();',
+                '',
+            ].join('\n'),
+        );
+        const out = join(dir, 'bunky.mjs');
+
+        // R1: convert rejects instead of silently emitting a broken artifact, and writes nothing.
+        await expect(convertScriptToPortableTwin(src, out)).rejects.toThrow(/Bun globals survive/);
+        expect(existsSync(out)).toBe(false);
+        // R2: the failure names the offending global and its Node equivalent.
+        await expect(convertScriptToPortableTwin(src, out)).rejects.toThrow('Bun.argv');
+        await expect(convertScriptToPortableTwin(src, out)).rejects.toThrow('process.argv.slice(2)');
+    });
+
+    it('findBunGlobals reports each surviving Bun.* reference with its bundle line (R1 unit)', async () => {
+        const bundled = 'function mainCli(argv = Bun.argv) {\n  return Bun.file(x);\n}\n';
+        const uses = findBunGlobals(bundled);
+        expect(uses.map((u) => u.prop)).toEqual(['argv', 'file']);
+        expect(uses[0]?.line).toBe(1);
+        expect(uses[1]?.line).toBe(2);
+        expect(uses[1]?.text).toContain('Bun.file');
+    });
+
+    it('runs the shipped cc validate-response twin under node (R6 — twin-runnable proof)', async () => {
+        const twin = join(import.meta.dir, '../../../../plugins/cc/scripts/anti-hallucination/validate_response.mjs');
+        const res = spawnSync('node', [twin], {
+            env: { ...process.env, RESPONSE_TEXT: '{"text":"hi"}' },
+            encoding: 'utf-8',
+        });
+        expect(res.status).toBe(0);
+        const parsed = JSON.parse(res.stdout) as { ok: boolean };
+        expect(parsed.ok).toBe(true);
     });
 });
 
@@ -180,11 +226,32 @@ describe('registerScriptConvert CLI', () => {
         expect(existsSync(join(projectDir, 'plugins', 'cc', 'scripts', 'demo.mjs'))).toBe(true);
     });
 
+    it('exits 1 and writes no .mjs when the source uses Bun globals (R1 + R2, CLI)', async () => {
+        seedSource('bunky.ts', 'function main() { console.log(Bun.argv); }\nmain();\n');
+        const program = new Command().name('superskill');
+        const exits: number[] = [];
+        registerScriptConvert(program, {
+            exit: (code) => {
+                exits.push(code);
+                throw new Error(`exit ${code}`);
+            },
+        });
+        await expect(program.parseAsync(['node', 'superskill', 'script', 'convert', 'cc', 'bunky.ts'])).rejects.toThrow(
+            /exit 1/,
+        );
+        expect(exits).toEqual([1]);
+        expect(joined(stderrSpy)).toContain('Bun globals survive');
+        expect(existsSync(join(projectDir, 'plugins', 'cc', 'scripts', 'bunky.mjs'))).toBe(false);
+    });
+
     /** Write a minimal entrypoint .ts under the temp projectRoot the CLI action resolves. */
-    function seedSource(name: string): string {
+    function seedSource(name: string, content?: string): string {
         const srcPath = join(projectDir, 'plugins', 'cc', 'scripts', name);
         mkdirSync(join(projectDir, 'plugins', 'cc', 'scripts'), { recursive: true });
-        writeFileSync(srcPath, 'function main() { return 0; }\nif (import.meta.main) process.exit(main());\n');
+        writeFileSync(
+            srcPath,
+            content ?? 'function main() { return 0; }\nif (import.meta.main) process.exit(main());\n',
+        );
         return srcPath;
     }
 
