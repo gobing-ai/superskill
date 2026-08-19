@@ -4,6 +4,21 @@ All notable changes to `@gobing-ai/superskill` are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Conventional Commits](https://www.conventionalcommits.org/).
 
+## [0.3.17] - 2026-08-18
+
+### Added
+
+- **`script convert` rejects sources whose bundle still references `Bun.*` (task 0121, R1+R3).** `apps/cli/src/commands/script-convert.ts` ships a `BUN_GLOBAL_NODE_EQUIVALENTS` table (10 Bun→Node mappings) and a pre-write `findBunGlobals` scan; any surviving `Bun.argv` / `Bun.file` / `Bun.spawn` / `Bun.spawnSync` throws a frozen error naming each offending global by prop + bundle-relative line + Node equivalent, and writes no `.mjs`. Previously, `Bun.build({ target: 'node' })` silently produced a broken `#!/usr/bin/env node` twin that died at runtime with `ReferenceError: Bun is not defined`. Regression coverage in `apps/cli/tests/commands/script-convert.test.ts` (Bun.argv + Bun.file fixture → rejects, no `.mjs` left behind). (3b848c5)
+
+### Documentation
+
+- **Script run contract limits documented (task 0121, R2).** `apps/cli/src/commands/script-run.ts` adds comment contracts on `ScriptRunner` (argv-less + synchronous; flag-driven/async → standard contract) and `SCRIPT_RUNNERS` (first-party-only registry, `<plugin>` is a namespace key, not an extension point; cites `sp` `hook-run.ts` precedent). `docs/04_DESIGN.md` invocation standard now names convert's Bun-global rejection; `docs/help/how_to_organize_scripts_for_plugin_development.md` adds a pre-rejection paragraph + Bun→Node cheat sheet. (aefe962)
+
+### Other
+
+- **`config/corpus-baseline.json` en-dash escape normalized.** JSON re-emit converted `–` → `\u2013` across the legacy ratchet entries. No semantic change to the ratchet. (a36d58b)
+- **Agent model config refreshed.** `omp-xf` and `omp-deepseek` commented out (unused); `pi-k3` (kimi/k3, capable-1) added; `zai/glm-5.2` → `5.3` for `omp-zai` and `omp-zai-volc`. (9d95c20)
+
 ## [0.3.15] - 2026-08-12
 
 ### Added
