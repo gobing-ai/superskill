@@ -35,6 +35,11 @@ export interface ScriptRunResult {
 }
 
 /** A registered non-hook script: pure logic in, stdout + exit code out. */
+// Deliberately minimal: argv-less and synchronous (R4). A flag-driven CLI (--wbs, subcommands) or an
+// async/subprocess script is NOT expressible here — that work belongs on the standard contract,
+// `node "$(superskill script path <plugin> <rel>)" [args]`, which has full argv, full async, and no
+// superskill release coupling. Do not extend this signature: it would duplicate the standard
+// contract inside a surface whose only justification is the compile-time deep import (ADR-022).
 export interface ScriptRunner {
     run(input: ScriptRunInput): ScriptRunResult;
 }
@@ -58,6 +63,12 @@ const ccValidateResponse: ScriptRunner = {
 
 // ── Registry + dispatcher ────────────────────────────────────────────────────
 
+// First-party-only registry (R5). `SCRIPT_RUNNERS` is populated by static top-level imports and
+// bundled into the CLI at build time (`bun build --compile`, ADR-022), so registration requires code
+// inside superskill's compile graph. The `<plugin>` argument is a **namespace key**, not an
+// extension point: an externally-maintained plugin cannot self-register without vendoring its logic
+// into this repo. Precedent: `sp`'s hooks reimplement `runSpTaskWriteGuard` inside `hook-run.ts`.
+// External plugins use the standard contract instead.
 const SCRIPT_RUNNERS: Record<string, ScriptRunner> = {
     'cc/validate-response': ccValidateResponse,
 };

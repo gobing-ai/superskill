@@ -7,7 +7,7 @@ Guidance for plugin authors on where executable logic lives in a superskill plug
 Every script ships under exactly one **contract**, chosen per script:
 
 | Contract | How it ships to targets | How skills invoke it | When to choose |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | **Standard — staged path** | `superskill install` copies `scripts/<feature>/` into each target's scripts root (or lands the whole tree via the host plugin install for native targets). | `$(superskill script path <plugin> <rel>)` then the portable runner (`node` or `sh` — see Entrypoint Contract; do **not** assume Bun on targets). | Default. Script must be runnable from a real path on the target host. |
 | **Optional — binary registry** | CLI deep-imports the module at build time and `bun build --compile` bundles it into `superskill`; nothing is staged to disk. | `superskill script run <plugin> <id>` (non-hook) or `superskill hook run <plugin> <id>` (hook). | Pure engines with no FS needs; you accept that a fix requires a CLI release. |
 
@@ -42,7 +42,7 @@ First existing **regular file** wins; directories never satisfy resolution. Flag
 Exit codes:
 
 | Outcome | Exit | Notes |
-|---|---|---|
+| --- | --- | --- |
 | Found | `0` | Prints the absolute path (or JSON with `--json`). |
 | Not found | `2` | **Fail-closed.** A missing staged script is a deployment/setup error, not a graceful-degradation case (`script-path.ts:163-172`). |
 | Invalid args | `1` | Unknown flag, missing plugin/rel, or `rel` with `..` / absolute / Windows-drive segments (`isUnsafeRel`, `script-path.ts:57-63`). |
@@ -71,14 +71,14 @@ node "$(superskill script path myplugin myfeat/tool.mjs)"
 Staged entrypoints MUST be runnable on a target host without Bun:
 
 | Runtime | Extension | Notes |
-|---|---|---|
+| --- | --- | --- |
 | Node | `.js`, `.mjs` | Plain JS; no TypeScript source. CommonJS or ESM as the host Node supports. |
 | POSIX shell | `.sh` | Portable `sh`; no Bash-isms. |
 
 Exit-code classes by role:
 
 | Role | Pass | Violation | Block (hook only) |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Validation CLI | `0` | `1` | — |
 | Hook script | `0` | — | `2` |
 
@@ -97,7 +97,11 @@ superskill script convert <plugin> <rel>          # e.g. cc anti-hallucination/v
 superskill script convert cc anti-hallucination/validate_response.ts --dry-run
 ```
 
-- Bundles the `.ts` (+ its imports) into a single Node-runnable ESM **`.mjs`** beside the source (`--out` overrides), with a `#!/usr/bin/env node` shebang. ESM `.mjs` runs under bare Node on any target — no `type:module` package.json needed.
+- Bundles the `.ts` (+ its imports) into a single ESM **`.mjs`** beside the source (`--out` overrides), with a `#!/usr/bin/env node` shebang. ESM `.mjs` runs under bare Node on any target — no `type:module` package.json needed.
+- **The source must not use Bun-only globals.** `script convert` bundles with `Bun.build({ target: 'node' })`, which rewrites imports but **does not polyfill `Bun.*`**. A source calling `Bun.argv`, `Bun.file`, `Bun.spawn`, or `Bun.spawnSync` is **rejected** — convert exits non-zero, names each offending global, and writes no `.mjs`. Replace them in the source, then re-run: `Bun.argv` → `process.argv.slice(2)`, `Bun.file` → `node:fs`, `Bun.spawn`/`Bun.spawnSync` → `node:child_process`. Even then, exit 0 only proves *no Bun globals* — verify runtime behavior by **running the twin under `node`**, never by trusting convert's exit code alone.
+
+  > `plugins/cc/scripts/anti-hallucination/validate_response.ts` — the only converted script today —
+  > uses no Bun globals, so the rejection is a no-op for it (`build:scripts` still succeeds).
 - `<rel>` is **required**: whether a `.ts` is a `script path` entrypoint is a policy call, not detectable from the file (e.g. `ah_guard.ts` carries a shebang but is the hook engine, invoked via `hook run`).
 - Commit the generated `.mjs` — it is the staged artifact. Regenerate whenever the source or its engine deps change. In-repo, `bun run build:scripts` (wired into `build`) just runs this `script convert` command for the plugin's twins.
 - Reusable across plugins — resolves `plugins/<plugin>/scripts/<rel>` under the project root, so any plugin author (not just superskill's own `cc`) ships the standard-form entrypoint.
@@ -116,6 +120,17 @@ printf '%s' "$FINAL_ANSWER" | superskill script run cc validate-response
 - Exit codes are **validation-CLI semantics** (0 pass / 1 violation), never hook block semantics.
 - Unknown `<plugin>/<script-id>` **fails open** (exit 0 + stderr warning naming the id and CLI version) — version skew is a deployment issue, not a policy violation (`apps/cli/src/commands/script-run.ts:66-85`).
 - Register a `ScriptRunner` in `apps/cli/src/commands/script-run.ts` mapping `<plugin>/<id>` → runner.
+- **The registry is first-party-only — the runner's code must live in the superskill repo.**
+  `SCRIPT_RUNNERS` is a hardcoded object populated by static top-level imports, and there is no
+  dynamic or third-party registration path. A plugin maintained in another repository therefore
+  cannot self-register: its logic must be ported into (or imported into) superskill's own tree, and
+  every subsequent fix requires a superskill release. The `sp` plugin's *hooks* are registered this
+  way — `runSpTaskWriteGuard` is implemented inside `hook-run.ts`, not imported from the plugin's
+  home repo. Weigh this before choosing the optional contract for an external plugin.
+- **The runner signature is argv-less and synchronous:** `run({ stdinText, env }) => { stdout, exitCode }`.
+  There is no argument channel, so a flag-driven CLI (`--wbs`, subcommands) does not fit without
+  smuggling argv through environment variables, and a runner cannot `await`. (`HookRunner` *may* be
+  async; `ScriptRunner` may not.) Flag-driven or async scripts belong on the **standard** contract.
 
 ### Hook: `hook run` (current hook form)
 
@@ -143,9 +158,11 @@ Is it triggered by a host hook event (Stop/PreToolUse/…)?
             → author a portable entrypoint (.js/.mjs/.sh) under scripts/<feature>/
             → skill doc uses `$(superskill script path <plugin> <rel>)` + runtime
             → install stages it automatically
-      NO  → OPTIONAL contract
-            → register ScriptRunner in script-run.ts
-            → skill doc uses `superskill script run <plugin> <id>`
+      NO  → Does it take flags/subcommands, need async, or live in another repo?
+        YES → STANDARD contract (the registry cannot host it — argv-less, sync, first-party only)
+        NO  → OPTIONAL contract
+              → register ScriptRunner in script-run.ts
+              → skill doc uses `superskill script run <plugin> <id>`
     NO  → Is it repo build/release tooling (version bumps, publish checks)?
       YES → repo-root scripts/ (NOT plugin scripts — never installed)
       NO  → Does it need to exist? Prose guidance in the skill may be enough.
@@ -154,13 +171,15 @@ Is it triggered by a host hook event (Stop/PreToolUse/…)?
 ## Anti-patterns
 
 | Anti-pattern | Why it's wrong | Do instead |
-|---|---|---|
+| --- | --- | --- |
 | `bun plugins/<plugin>/scripts/foo.ts` in a skill doc | Repo-relative source path; cwd ≠ plugin root on any install, file absent on non-Claude targets | Standard: `node "$(superskill script path <plugin> <rel>)"` · Optional: `superskill script run <plugin> <id>` |
 | `${CLAUDE_PLUGIN_ROOT}/scripts/foo.ts` in `hooks.json` | Variable exists only inside Claude Code; retired for hooks in v0.3.3 | `superskill hook run <plugin> <id>` |
 | Hard-coded absolute path (`~/.agents/scripts/...`, cache dir, repo clone) | Install mode and target class decide the real path | `$(superskill script path <plugin> <rel>)` |
 | Per-skill `skills/<name>/scripts/` executables | Duplication across skills (ADR-015); skill folders are prose-only | Plugin-level `scripts/<feature>/` shared by all skills |
 | Wiring a validation CLI (exit 0/1) into `hooks.json` | Hosts treat exit 1 as non-blocking error, not a block signal | Keep exit-0/1 CLIs as non-hook scripts (standard or optional); hook adapters use exit 2 |
 | Assuming Bun is on the target host | Targets have no Bun/TS runtime guarantee; a `.ts` file staged as-is is not runnable | Ship a `.js`/`.mjs`/`.sh` portable entrypoint (Entrypoint Contract) |
+| Trusting `script convert`'s exit code as proof the twin works | Exit 0 means *no Bun globals*, not *the twin runs* — convert rejects `Bun.*` references but cannot prove runtime behavior | Run the generated `.mjs` under `node` as the acceptance check |
+| Choosing the registry contract for a flag-driven or externally-maintained script | `ScriptRunner` is argv-less, synchronous, and hardcoded in superskill's tree | Standard contract: portable twin + `$(superskill script path …)` |
 | Ad-hoc manual copy of scripts into target dirs | Bypasses staging dedup and re-install safety; drifts from source | Let `superskill install` stage; never copy by hand |
 
 > **Note on "copying scripts":** install-time staging to `~/.agents/scripts/<plugin>/` (rulesync/hermes) and native plugin tree delivery (Claude/OMP/Grok) is the **intended** mechanism. What remains wrong is *ad-hoc* copying and *repo-relative* invocation — staging is the fix, not the anti-pattern.
@@ -175,11 +194,11 @@ Is it triggered by a host hook event (Stop/PreToolUse/…)?
 ## Status
 
 | Surface | State |
-|---|---|
+| --- | --- |
 | Plugin-level `scripts/<feature>/` layout + prose-only skills (ADR-015) | Shipped |
 | `superskill install` staging of plugin scripts → `~/.agents/scripts/<plugin>/` (rulesync + hermes); native tree for Claude/OMP/Grok | Shipped (task 0090) |
 | `superskill script path <plugin> <rel>` — fail-closed path resolution (exit 0 found / 2 not-found / 1 invalid) | Shipped (task 0091) |
-| `superskill script convert <plugin> <rel>` — build a portable `.mjs` twin from a plugin script `.ts` (Node-runnable on any target; reusable across plugins) | Shipped; `cc anti-hallucination/validate_response.mjs` built via `build:scripts` |
+| `superskill script convert <plugin> <rel>` — build a portable `.mjs` twin from a plugin script `.ts` (reusable across plugins) | Shipped; `cc anti-hallucination/validate_response.mjs` built via `build:scripts`. Rejects `Bun.*` globals that would survive the bundle (non-zero exit, writes nothing) — see [Build the portable twin](#build-the-portable-twin--script-convert). |
 | Entrypoint Contract v1 (Node `.js`/`.mjs`, POSIX `.sh`; exit-code classes) | Defined (task 0089) |
 | `superskill script run <plugin> <id>` + `ScriptRunner` registry (optional contract, non-hook) | Shipped (task 0087); `cc/validate-response` registered |
 | `superskill hook run <plugin> <id>` + `HookRunner` registry (current hook form) | Shipped (v0.2.19+); `cc/anti-hallucination` registered |

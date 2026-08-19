@@ -13,7 +13,7 @@ tags: []
 dependencies: []
 ac_numbering: task-local
 created_at: "2026-08-19T00:09:45.164Z"
-updated_at: "2026-08-19T01:26:20.574Z"
+updated_at: "2026-08-19T03:29:33.562Z"
 ---
 
 ## 0121. Harden script convert against Bun globals and document the script run contract limits
@@ -334,14 +334,14 @@ fixture now fails convert.
 ### Solution
 Implemented per the frozen design (steps 1–6). One commit's worth of code + docs. All claims verified: `bun run lint` clean, `bun run test` 2057 pass / 0 fail, `bun run build` succeeds producing the cc twin.
 
-## Change map
+**Change map**
 
 **R1 + R2 — Bun-global guard in `script convert`**
 - `apps/cli/src/commands/script-convert.ts:15` — added `BUN_GLOBAL_NODE_EQUIVALENTS` (10 Bun→Node mappings: argv/env/file/write/spawn/spawnSync/$/sleep/stdin/stdout/stderr).
 - `apps/cli/src/commands/script-convert.ts:30` — `BunGlobalUse` interface.
 - `apps/cli/src/commands/script-convert.ts:47` — exported `findBunGlobals(bundled)`: per-line textual scan (`\bBun\s*\.\s*prop`) over the bundled text. Textual-scan ceiling (string-literal `Bun.` false positive) documented with a `ponytail:` comment naming the upgrade path (strip string literals before scanning); no AST pass.
-- `apps/cli/src/commands/script-convert.ts:104-120` — guard wired between the main-guard strip and `writeFileSync`: any surviving `Bun.*` throws the frozen error message (names each offending global by prop + bundle-relative line + Node equivalent; props deduped when rendering the hint) before any write → "no .mjs left behind" without cleanup code.
-- `apps/cli/src/commands/script-convert.ts:165` — action wrapped `convertScriptToPortableTwin` in try/catch → `echoError(message)` + `exitFn(1)`, matching the `Source not found` branch; message to stderr, nothing to stdout, plain and `--json`. Unknown prop → "no Node equivalent recorded — replace with a Node built-in".
+- `apps/cli/src/commands/script-convert.ts:100-122` — guard wired between the main-guard strip and `writeFileSync`: any surviving `Bun.*` throws the frozen error message (names each offending global by prop + bundle-relative line + Node equivalent; props deduped when rendering the hint) before any write → "no .mjs left behind" without cleanup code.
+- `apps/cli/src/commands/script-convert.ts:161-169` — action wrapped `convertScriptToPortableTwin` in try/catch → `echoError(message)` + `exitFn(1)`, matching the `Source not found` branch; message to stderr, nothing to stdout, plain and `--json`. Unknown prop → "no Node equivalent recorded — replace with a Node built-in".
 
 **R3 — regression coverage** (`apps/cli/tests/commands/script-convert.test.ts`)
 - Engine-level: `Bun.argv` + `Bun.file` fixture → rejects `/Bun globals survive/`, `existsSync(out)===false`, message contains `Bun.argv` + `process.argv.slice(2)`.
@@ -350,8 +350,8 @@ Implemented per the frozen design (steps 1–6). One commit's worth of code + do
 - Existing Bun-free `demo.ts` negative-control cases untouched and still passing.
 
 **R4 + R5 — contract limits documented** (`apps/cli/src/commands/script-run.ts`, doc comments only, no signature/registry change)
-- `apps/cli/src/commands/script-run.ts:38` — `ScriptRunner`: deliberately argv-less + synchronous; flag-driven/async → standard contract (`node "$(superskill script path <plugin> <rel>)" [args]`).
-- `apps/cli/src/commands/script-run.ts:66` — `SCRIPT_RUNNERS`: first-party-only (bundled at build time, ADR-022); `<plugin>` is a namespace key, not an extension point; cites `sp` `hook-run.ts` precedent; external plugins use the standard contract.
+- `apps/cli/src/commands/script-run.ts:38-45` — `ScriptRunner`: deliberately argv-less + synchronous; flag-driven/async → standard contract (`node "$(superskill script path <plugin> <rel>)" [args]`).
+- `apps/cli/src/commands/script-run.ts:66-74` — `SCRIPT_RUNNERS`: first-party-only (bundled at build time, ADR-022); `<plugin>` is a namespace key, not an extension point; cites `sp` `hook-run.ts` precedent; external plugins use the standard contract.
 
 **R6 — twin-runnable proof** (`apps/cli/tests/commands/script-convert.test.ts`)
 - Spawns `node` on `plugins/cc/scripts/anti-hallucination/validate_response.mjs` (resolved from `import.meta.dir`) with `RESPONSE_TEXT` set; asserts exit 0 and `JSON.parse(stdout).ok === true`.
@@ -361,10 +361,10 @@ Implemented per the frozen design (steps 1–6). One commit's worth of code + do
 - `docs/04_DESIGN.md` — added the clause that convert rejects sources whose bundle still references `Bun.*`. Flag table unchanged (no new flag).
 - No `.bak` file existed in the working tree to delete; `validate_response.mjs` intentionally unchanged (Bun-free → guard is a no-op).
 
-## Anti-patterns honored (not implemented)
+**Anti-patterns honored (not implemented)**
 No `--allow-bun-globals` flag; no source-scan instead of bundle-scan; no AST/transpiler pass; no bundling in `--dry-run`; no `ScriptRunner`/`SCRIPT_RUNNERS` shape change; no autofix of `Bun.argv`; no rebuild/recommit of `validate_response.mjs`.
 
-## Files changed
+**Files changed**
 - `apps/cli/src/commands/script-convert.ts`
 - `apps/cli/src/commands/script-run.ts`
 - `apps/cli/tests/commands/script-convert.test.ts`
@@ -373,22 +373,16 @@ No `--allow-bun-globals` flag; no source-scan instead of bundle-scan; no AST/tra
 ### Testing
 **Pipeline verify results**
 
-- Verdict: PASS (from verdict artifact)
+- Verdict: PARTIAL (from verdict artifact)
 
 | Requirement | Status | Evidence |
 |-------------|--------|----------|
-| R1 | MET | `apps/cli/src/commands/script-convert.ts:104-120` — guard between main-guard strip and `writeFileSync`: `findBunGlobals(bundled)` non-empty → throws frozen message; nothing written (no `.mjs` left behind). CLI action try/catch → `echoError` + `exitFn(1)` at `:165-169`. Verified live: `script convert zz bad.ts` (Bun.argv+Bun.file fixture) → exit 1, empty stdout, no `.mjs` twin |
-| R2 | MET | `apps/cli/src/commands/script-convert.ts:15-27` `BUN_GLOBAL_NODE_EQUIVALENTS` (argv/env/file/write/spawn/spawnSync/$/sleep/stdin/stdout/stderr); `:115-120` frozen message renders `Bun.<prop> (bundled line N: <text>) → <equiv>`. Live: `Bun.argv → process.argv.slice(2)`, `Bun.file → node:fs (readFileSync / createReadStream)` |
-| R3 | MET | `apps/cli/tests/commands/script-convert.test.ts` — engine-level `Bun.argv`+`Bun.file` fixture rejects `/Bun globals survive/` + `existsSync(out)===false`; CLI-level seeded `Bun.argv` → `exits=== [1]`, stderr contains `Bun globals survive`, no `.mjs`; `findBunGlobals` direct unit. Negative control: Bun-free `demo.ts` cases still pass. File: 14 pass / 0 fail, 100% line+func coverage on script-convert.ts |
-| R4 | MET | `apps/cli/src/commands/script-run.ts:38-41` — doc comment at `ScriptRunner` interface: deliberately argv-less + synchronous; flag-driven/async → standard contract `node "$(superskill script path <plugin> <rel>)" [args]`; no signature change |
-| R5 | MET | `apps/cli/src/commands/script-run.ts:66-70` — doc comment at `SCRIPT_RUNNERS`: first-party-only (bundled at build time, ADR-022); `<plugin>` is a namespace key, not an extension point; external plugins use the standard contract; cites `sp` `hook-run.ts` precedent; no registry-shape change |
-| R6 | MET | `apps/cli/tests/commands/script-convert.test.ts:131-138` spawns `node` on the committed twin; live: `RESPONSE_TEXT='{"text":"hi"}' node plugins/cc/scripts/anti-hallucination/validate_response.mjs` → `{"ok":true,"reason":"Task is complete"}`, exit 0 |
-| R1 — a Bun-global source is rejected, not silently bundled | MET | command |
-| R2 — the failure tells the author what to do | MET | command |
-| R3 — the regression is covered by a fixture, not by luck | MET | test |
-| R4 — the runner's limits are discoverable at the definition | MET | code |
-| R5 — external registration is answered explicitly | MET | code |
-| R6 — the shipped twin is proven runnable | MET | command |
+| R1 | MET | apps/cli/src/commands/script-convert.ts:100-122; apps/cli/tests/commands/script-convert.test.ts:96,229 |
+| R2 | MET | apps/cli/src/commands/script-convert.ts:15-27,113; apps/cli/tests/commands/script-convert.test.ts:96 |
+| R3 | MET | apps/cli/tests/commands/script-convert.test.ts:96,122,229 — 14 pass / 0 fail |
+| R4 | MET | apps/cli/src/commands/script-run.ts:38-45 |
+| R5 | MET | apps/cli/src/commands/script-run.ts:66-74 |
+| R6 | MET | apps/cli/tests/commands/script-convert.test.ts:131 — node spawn of shipped twin, exit 0 |
 - Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 ### Review
 ## Review Report — 0121 (Harden script convert against Bun globals and document the script run contract limits)

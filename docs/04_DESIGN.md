@@ -24,7 +24,7 @@ superskill install <plugin> [--marketplace <locator>] [--targets <list>] [--no-g
 ```
 
 | Input | Shape and precedence |
-|-------|----------------------|
+| ------- | ---------------------- |
 | `<plugin>` | Required plugin name — a **bare segment** (`assertSafePathSegment`); never a URL/path |
 | `--marketplace <locator>` | Marketplace locator (ADR-034). **Local-first disambiguation:** an existing local path is local; only a non-existent `^[\w.-]+/[\w.-]+$` is GitHub shorthand; `https://`/`git@` are always remote. Local probe: direct file (`.../marketplace.json`) → `<X>/marketplace.json` → `<X>/.claude-plugin/marketplace.json`. Remote content caches at `~/.cache/superskill/marketplaces/<owner>/<repo>/<ref>/`. Overrides configured plugin path and ambient discovery |
 | `--marketplace-source <mode>` | **Deprecated** (ADR-034): warns to stderr, keeps behavior, removal planned. Prefer `--marketplace <locator>` |
@@ -50,7 +50,7 @@ rubric's `model-fit` dimension verifies the declared tier at authoring time.
 ## Command surface
 
 | Command family | Registered subcommands / signature | Detail |
-|----------------|------------------------------------|--------|
+| ---------------- | ------------------------------------ | -------- |
 | `superskill agent` | `scaffold`, `validate`, `evaluate`, `refine`, `evolve` | [design-doc-phase2.md §2.1](design/design-doc-phase2.md#21-scaffold--generate-from-template), [§2.4](design/design-doc-phase2.md#24-refine--evaluate-then-fix) |
 | `superskill skill` | `add <source>`, `list`, `remove\|rm <names...>`, `update [names...]`, `scaffold`, `validate`, `evaluate`, `refine`, `evolve`, `package <name>`, `migrate <sources...>` | Skills-ecosystem and authoring/distribution surface |
 | `superskill command` | `scaffold`, `validate`, `evaluate`, `refine`, `evolve` | Slash-command authoring lifecycle |
@@ -59,7 +59,7 @@ rubric's `model-fit` dimension verifies the declared tier at authoring time.
 | `superskill script` | `run <plugin> <script-id>`, `path <plugin> <rel>`, `convert <plugin> <rel>` | Registered runtime dispatch, installed-path resolution, and portable `.mjs` conversion |
 
 | Additional signature | Flags |
-|----------------------|-------|
+| ---------------------- | ------- |
 | `skill package <name>` | `-o, --output <dir>`, `--include-companions` |
 | `skill migrate <sources...>` | `--refine`, `--ingest <file>`, `-t, --target <agent>`, `--margin <n>` |
 | `hook emit <name>` | `-t, --target <agent>`, `--global`, `--dry-run` |
@@ -121,10 +121,10 @@ Executable logic a skill invokes at the user's install site lives in `plugins/<p
 - **Native marketplace installs** (Claude/OMP/Grok): full plugin tree ships in the cache, including `scripts/`.
 - **Rulesync/Hermes class**: install stages scripts to `~/.agents/scripts/<plugin>/<feature>/` (tree shape preserved; fail-closed if absent). Staging entrypoint: `stagePluginScripts` in `apps/cli/src/commands/install.ts`; native-class skip gate: `needsSharedScriptsRoot`.
 
-**Invocation standard** for skill docs and other non-hook callers is the Entrypoint Contract v1 form `node "$(superskill script path <plugin> <feature>/<file>.js)" [args]` (portable Node `.js`/`.mjs` + POSIX `.sh`, no Bun-on-target). **Optional invocation** for engines the CLI deep-imports: `superskill script run <plugin> <id>` / `superskill hook run <plugin> <id>` (ADR-022, amended by ADR-024). Build-time conversion uses `superskill script convert <plugin> <relative.ts> [--out <path>]` to produce the portable `.mjs` twin consumed by installed targets. See the [plugin-scripts author guide](help/how_to_organize_scripts_for_plugin_development.md) for the dual contract.
+**Invocation standard** for skill docs and other non-hook callers is the Entrypoint Contract v1 form `node "$(superskill script path <plugin> <feature>/<file>.js)" [args]` (portable Node `.js`/`.mjs` + POSIX `.sh`, no Bun-on-target). **Optional invocation** for engines the CLI deep-imports: `superskill script run <plugin> <id>` / `superskill hook run <plugin> <id>` (ADR-022, amended by ADR-024). Build-time conversion uses `superskill script convert <plugin> <relative.ts> [--out <path>]` to produce the portable `.mjs` twin consumed by installed targets (convert rejects sources whose bundle still references `Bun.*`, writing nothing). See the [plugin-scripts author guide](help/how_to_organize_scripts_for_plugin_development.md) for the dual contract.
 
 | Surface | Path | Purpose |
-|---------|------|---------|
+| --------- | ------ | --------- |
 | Guard engine | `plugins/cc/scripts/anti-hallucination/ah_guard.ts` | Pure `verifyAntiHallucinationProtocol(text)` + direct-invocation `main()`; payload resolved by `resolveStopContext` (stdin first — Claude Code `transcript_path` / omp `agent_end`; `$ARGUMENTS` is the legacy/test channel) |
 | Validate adapter | `plugins/cc/scripts/anti-hallucination/validate_response.ts` | Thin wrapper: `RESPONSE_TEXT`/stdin → verify → exit 0/1 (CLI semantics, **not** the hook block signal) |
 | Shared logger | `plugins/cc/scripts/anti-hallucination/logger.ts` | Single shared copy (dedup'd from per-skill copies) |
@@ -140,7 +140,7 @@ Hook and script runners receive their payload on fd 0 from the spawning host. `r
 observed with Antigravity, and it hangs the agent mid-run.
 
 | Condition | Result |
-|-----------|--------|
+| ----------- | -------- |
 | Interactive TTY | `undefined` — nothing was piped (manual invocation) |
 | Data arrives, then `end` | full payload |
 | Data streamed in several writes | full payload — the budget is re-armed per chunk, so a multi-write payload is **never** truncated |
@@ -170,7 +170,7 @@ Phase 4 (pending): cross-agent enforcement re-developed as `spur workflow run an
 Ports of vercel-labs/skills (MIT) for `npx skills` interop (feature B, tasks 0098/0099). All modules re-exported from `packages/core/src/index.ts`; the ecosystem `parseFrontmatter` is exported as `parseSkillMdFrontmatter` to avoid the ambiguous-`export *` collision with `content/frontmatter`.
 
 | Module | Surface | Purpose |
-|--------|---------|---------|
+| -------- | --------- | --------- |
 | `source-parser.ts` | `parseSource`, `getOwnerRepo`, `sanitizeSubpath`, `isSubpathSafe`, `ParsedSource` | Full source grammar: `owner/repo[/subpath][@skill][#ref]`, `github:`/`gitlab:` prefixes, `/tree/` + `/-/tree/` URLs, git@/ssh/http(s), local paths, `SOURCE_ALIASES`, `..` rejection |
 | `github-host.ts` | `getGitHubHost`, `isGitHubHost` | GHE host resolution; **`GH_HOST`** read per-call, never at module load |
 | `sanitize.ts` | `sanitizeName`, `stripTerminalEscapes`, `sanitizeMetadata` | CWE-150 terminal-escape stripping; control bytes built via `String.fromCharCode` (no lint suppression) |
@@ -186,7 +186,7 @@ Ports of vercel-labs/skills (MIT) for `npx skills` interop (feature B, tasks 009
 **CLI verbs (task 0102).** Registered under the existing `skill` group (`apps/cli/src/commands/skill.ts`); `superskill install` is untouched. Non-interactive by design (AI-first); `-y` accepted for vendor-parity scripts; `--json` emits the operation's result envelope. Handlers accept an injected `homeDir` (test seam, not a CLI flag).
 
 | Verb | Flags | Behavior |
-|------|-------|----------|
+| ------ | ------- | ---------- |
 | `superskill skill add <source>` | `-s, --skill <name...>`, `-a, --agent <targets...>`, `-g, --global`, `--copy`, `-y, --yes`, `--list`, `--dry-run`, `--json` | Install from a local path or parsed GitHub/GitLab/git source (`@skill`, `#ref`, and subpaths honored). Project scope default; `-g` for user-level. `--list` discovers without installing; `--dry-run` previews with zero writes (no canonical copy, no lock) |
 | `superskill skill list` | `-g, --global`, `--json` | Scoped lock entries + on-disk scan of the scope's canonical dir |
 | `superskill skill remove <names...>` (alias `rm`) | `-g, --global`, `-y, --yes`, `--json` | Sweeps canonical + all target tiers, removes the scoped lock entry (lock-key-wins name resolution) |
@@ -203,7 +203,7 @@ Ports of vercel-labs/skills (MIT) for `npx skills` interop (feature B, tasks 009
 A plugin's `hooks.json` is the canonical (abstract) hook definition consumed by `superskill install` and emitted to per-platform targets (rulesync, hermes, pi, OMP). Top-level shape (`CanonicalHooksConfig` at `apps/cli/src/hooks.ts`):
 
 | Field | Type | Purpose |
-|------|------|---------|
+| ------ | ------ | --------- |
 | `hooks` | `Record<string, HookEvent[]>` | Platform-agnostic hook entries keyed by event (`PreToolUse`, `PostToolUse`, `Stop`, …). The only required structural field. |
 | `minCliVersion` | `string` (semver) | **Compat floor (task 0074, ADR-021).** When set, `superskill install` reads the installed CLI version and, if below the floor, warns + skips emitting this plugin's hooks (skills still install). Warn-and-skip only — Claude Code's marketplace sync bypasses `superskill install`, so the floor is early-warning, not enforcement; the load-bearing protection is the fail-open policy (ADR-020). Omitted/empty = no floor. |
 
