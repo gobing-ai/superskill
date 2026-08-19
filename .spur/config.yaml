@@ -53,17 +53,17 @@ agent:
     - name: omp
       agent: omp
       tier: standard
-    - name: omp-xf
-      agent: omp
-      model: astron-code-latest
-      tier: standard
+    # - name: omp-xf
+    #   agent: omp
+    #   model: astron-code-latest
+    #   tier: standard
     - name: omp-zai
       agent: omp
-      model: zai/glm-5.2
+      model: zai/glm-5.3
       tier: standard
     - name: omp-zai-volc
       agent: omp
-      model: volc/glm-5.2
+      model: volc/glm-5.3
       tier: standard
     - name: pi
       agent: pi
@@ -76,10 +76,14 @@ agent:
     # capable-1/2/3 — planning, verification, dogfooding (0343)
     # 1 = low output quality within the capable band, 3 = high. Declare
     # explicitly — inference never invents capable-2/3.
-    - name: omp-deepseek
-      agent: omp
-      model: deepseek/deepseek-v4-pro
-      tier: capable-2
+    # - name: omp-deepseek
+    #   agent: omp
+    #   model: deepseek/deepseek-v4-pro
+    #   tier: capable-1
+    - name: pi-k3
+      agent: pi
+      model: kimi/k3
+      tier: capable-1
     - name: grok
       agent: grok
       tier: capable-2
