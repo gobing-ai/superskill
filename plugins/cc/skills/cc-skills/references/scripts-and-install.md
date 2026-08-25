@@ -29,11 +29,16 @@ plugins/<plugin>/
   lives here. (ADR-015)
 - **Per-skill executables are a hard violation.** `plugins/<plugin>/skills/<name>/scripts/` — any
   executable subdir inside a skill folder (`scripts/`, the retired `extensions/`, …) — is **NOT
-  supported**. ALL scripts centralize at `plugins/<plugin>/scripts/<skill>/` so prompts and scripts
-  split cleanly and engines dedupe across the plugin's skills. Adding a per-skill scripts directory
-  requires **explicit permission**; `superskill skill validate` / `evaluate` flag it, and the
-  create/refine workflows refuse to scaffold or accept it.
+  supported**. ALL scripts centralize at `plugins/<plugin>/scripts/<feature>/` so prompts and scripts
+  split cleanly and engines dedupe across the plugin's skills.
+- **Validate gate (plugin skills only):** `superskill skill validate` errors (`field: _layout`) when
+  a skill at `plugins/<plugin>/skills/<name>/SKILL.md` contains a `scripts/` or `extensions/`
+  directory. `evaluate` does not walk the filesystem (it scores content). Create / refine checklists
+  catch invocation-form mistakes; they do not auto-delete a banned directory.
 - Repo-root `scripts/` is build/release tooling only — never part of a plugin payload, never installed.
+- There is **no class SDK.** Engines are processes. `ScriptRunner` / `HookRunner` are CLI-internal
+  adapters in `apps/cli/src/commands/script-run.ts` and `hook-run.ts`, not interfaces authors
+  implement under `plugins/<plugin>/scripts/`.
 
 > **`extensions/` is retired.** Earlier cc-skills guidance put executable helpers in
 > `skills/<name>/extensions/`. That is superseded: the current agent-skills standard names the
@@ -55,8 +60,8 @@ Two ways a skill's script gets invoked. Pick by role.
 
 | Contract | Form | Use when |
 |---|---|---|
-| **Standard — staged path** | `node "$(superskill script path <plugin> <feature>/<file>.js)" [args]` | Default for skill docs and non-hook callers. Portable; no CLI-release coupling. |
-| **Optional — binary registry** | `superskill script run <plugin> <id>` (non-hook) · `superskill hook run <plugin> <id>` (hook) | The engine is a pure CLI-deep-imported engine and you accept that a fix needs a CLI release. |
+| **Standard — staged path** | `node "$(superskill script path <plugin> <feature>/<file>.mjs)" [args]` | **Default** for skill docs and non-hook callers. Portable; no CLI-release coupling. Convert emits `.mjs`; `.js`/`.sh` also satisfy Entrypoint Contract v1. |
+| **Optional — binary registry** | `superskill script run <plugin> <id>` (non-hook) · `superskill hook run <plugin> <id>` (hook) | First-party pure engines the CLI already deep-imports, and you accept that a fix needs a CLI release. Never the default for a new plugin skill. |
 
 Both share one engine and one source tree under `plugins/<plugin>/scripts/<feature>/`. They differ
 only in delivery + invocation.
@@ -92,14 +97,27 @@ targets.
 **Canonical doc form:** `$(superskill script path <plugin> <rel>)` plus the runtime the entrypoint
 requires. Resolve at runtime, never hardcode a path.
 
+## Authoring recipe (create / evaluate / refine)
+
+Use this whenever cc-skills create, evaluate, or refine a plugin skill that needs an executable.
+
+1. Write the engine at `plugins/<plugin>/scripts/<feature>/` (TypeScript or portable `.js`/`.sh`). Put tests in `scripts/<feature>/tests/`.
+2. If the source is TypeScript: `superskill script convert <plugin> <feature>/<file>.ts` — commit the `.mjs` twin. Run the twin under `node` before calling convert a success.
+3. Document the **standard** form in SKILL.md:
+   `node "$(superskill script path <plugin> <feature>/<file>.mjs)" [args]`
+4. `superskill skill validate` the skill directory — a leftover `scripts/` or `extensions/` dir inside the skill is an error for plugin skills.
+5. Only then consider the optional registry (`script run` / `hook run`) if the engine is a pure first-party validator or a host hook. External plugins cannot self-register a `ScriptRunner`.
+
+Canonical example: `plugins/cc/scripts/anti-hallucination/`.
+
 ## Invoking from a skill doc
 
 ```bash
-# Registry form — the primary form for a CLI-deep-imported engine (no FS path, no separate runtime)
-printf '%s' "$FINAL_ANSWER" | superskill script run cc validate-response
-
-# Staged-path form — resolve the portable entrypoint, run via a portable runtime (Node/sh)
+# Standard — staged path (default for every non-hook skill-doc caller)
 node "$(superskill script path cc anti-hallucination/validate_response.mjs)"
+
+# Optional — registry (first-party engines the CLI deep-imports; extra, not preferred)
+printf '%s' "$FINAL_ANSWER" | superskill script run cc validate-response
 
 # Shell twin
 "$(superskill script path myplugin myfeat/run.sh)"
@@ -115,9 +133,10 @@ bug. `<rel>` must be a plain relative path under the plugin's scripts tree (`foo
 ### Decision tree
 
 - Skill doc / shell caller needs to run the engine? → **standard**: `script path` + `node`/shebang.
-- Pure engine, no FS state, deterministic from input, and a fix may ship via CLI release? →
-  **optional**: register a `ScriptRunner` (`apps/cli/src/commands/script-run.ts`) and use
-  `script run`.
+- Needs argv, async, FS, or lives in another repo? → **standard** (the registry cannot host it).
+- Pure first-party engine, no FS, deterministic from input, and a fix may ship via CLI release? →
+  **optional extra**: register a `ScriptRunner` in `apps/cli/src/commands/script-run.ts` *and* keep
+  the staged twin. Do not implement a class in the plugin tree.
 - Engine is a host hook (PreToolUse / Stop / …)? → **hook**: register a `HookRunner`
   (`apps/cli/src/commands/hook-run.ts`) and wire `superskill hook run <plugin> <id>` in
   `<plugin>/hooks/hooks.json`. Hooks do **not** resolve staged FS paths.
@@ -172,8 +191,9 @@ Only portable runtimes (Node `.js`/`.mjs`, POSIX `.sh`) are useful on staged tar
 ```
 plugins/cc/scripts/anti-hallucination/
 ├── ah_guard.ts                # hook engine → `superskill hook run cc anti-hallucination`
-├── validate_response.ts       # non-hook validator → `superskill script run cc validate-response`
-│   validate_response.mjs      #   portable twin (secondary form: script path + node)
+├── validate_response.ts       # non-hook validator (source)
+│   validate_response.mjs      # portable twin — standard form: script path + node
+                               # optional extra: `superskill script run cc validate-response`
 ├── logger.ts                  # shared helper
 └── tests/
     ├── ah_guard.test.ts
@@ -193,6 +213,8 @@ and points at the engine; it contains no executable code.
 - ❌ A TypeScript-only entrypoint depended on via `script path` before its portable twin ships.
 - ❌ Wiring a non-hook validator into `hooks.json` (its exit 1 is a non-blocking error, not a block).
 - ❌ An engine with no co-located `tests/`.
+- ❌ A `class X implements ScriptRunner` (or any plugin-tree "public interface") expecting
+  `script run` to discover it — the registry is a hardcoded first-party map.
 
 ## See also
 

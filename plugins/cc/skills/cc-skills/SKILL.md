@@ -4,7 +4,7 @@ description: Create, modify, evaluate, and evolve Agent skills. This skill shoul
 license: Apache-2.0
 metadata:
   author: superskill
-  version: "3.0.0"
+  version: "3.1.0"
   platforms: "claude-code,codex,antigravity,opencode,openclaw"
   openclaw:
     emoji: "🛠️"
@@ -213,9 +213,9 @@ plugins/<plugin>/skills/<name>/
 
 > **Scripts centralize at the plugin level.** A `scripts/` (or retired `extensions/`) directory
 > inside `plugins/<plugin>/skills/<name>/` is **not supported** — a hard rule, not a preference.
-> ALL executable logic lives at `plugins/<plugin>/scripts/<skill>/`, invoked via the dual contract,
-> so prompts and scripts split cleanly and engines dedupe across the plugin's skills. Adding a
-> per-skill scripts directory requires **explicit permission**. See
+> ALL executable logic lives at `plugins/<plugin>/scripts/<feature>/`, invoked via the dual
+> contract, so prompts and scripts split cleanly and engines dedupe across the plugin's skills.
+> `superskill skill validate` errors on those banned dirs for plugin skills. See
 > [references/scripts-and-install.md](references/scripts-and-install.md).
 
 ## Scripts and the Dual Install Contract
@@ -223,16 +223,16 @@ plugins/<plugin>/skills/<name>/
 Skills are prose-only; executable engines live at the plugin level (`plugins/<plugin>/scripts/<feature>/`)
 and reach install targets through the dual contract:
 
-- **Standard** — `node "$(superskill script path <plugin> <feature>/<file>.js)" [args]` (portable;
-  default for skill docs and non-hook callers).
-- **Optional** — `superskill script run <plugin> <id>` (non-hook) / `superskill hook run <plugin> <id>` (hook).
+- **Standard (default)** — `node "$(superskill script path <plugin> <feature>/<file>.mjs)" [args]`
+  (portable Node `.js`/`.mjs` or POSIX `.sh`; this is what create / evaluate / refine must teach).
+- **Optional** — `superskill script run <plugin> <id>` (non-hook) / `superskill hook run <plugin> <id>`
+  (hook). First-party CLI registry only — not a class authors implement in the plugin.
 
-Hard rules: no executables inside the skill folder; no `extensions/` (retired — use `scripts/` for
-standalone skills, plugin-level `scripts/` for plugin skills); no `bun plugins/<plugin>/scripts/<file>.ts` or
-`${CLAUDE_PLUGIN_ROOT}/...` in docs or `hooks.json`. **See
-[references/scripts-and-install.md](references/scripts-and-install.md)** for the placement rule,
-Entrypoint Contract v1, `superskill script path` exit codes, tests placement, install staging, the
-`.ts`→`.js` twin gap, and the worked anti-hallucination example.
+When a new plugin skill needs an executable: write it under `plugins/<plugin>/scripts/<feature>/`,
+`superskill script convert` the TypeScript to a committed `.mjs` twin, and document the **path**
+form in SKILL.md. Do not add `scripts/` inside the skill folder; do not invent a `PluginScript`
+class. **See [references/scripts-and-install.md](references/scripts-and-install.md)** for the
+authoring recipe, Entrypoint Contract v1, validate layout gate, and the anti-hallucination example.
 
 ## Platform Adapters
 

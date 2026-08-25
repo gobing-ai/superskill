@@ -113,6 +113,24 @@ Avoid: "trimming", "tightening" (both imply word-level shortening; pruning is wh
 reactive cleanup — an assumed-present target you go looking for.
 Avoid: "cleanup", "polish".
 
+## Plugin scripts
+
+**Plugin-level scripts** — executable engines for a superskill plugin live at
+`plugins/<plugin>/scripts/<feature>/`, shared across that plugin's skills. Skill folders are
+prose-only. Avoid: skill-folder `scripts/`, retired `extensions/`.
+
+**Dual contract** — two invocation paths for the same engine (ADR-023): **standard** staged path
+(`node "$(superskill script path <plugin> <rel>)"`) and **optional** binary registry
+(`superskill script run` / `hook run`). Standard is the default for skill docs. Avoid: calling
+`script run` the "primary" form.
+
+**Entrypoint Contract v1** — staged files must run without Bun: Node `.js`/`.mjs` or POSIX `.sh`.
+`superskill script convert` emits a `.mjs` twin from TypeScript and rejects leftover `Bun.*`.
+
+**ScriptRunner** — CLI-internal adapter `{ run({ stdinText, env }) => { stdout, exitCode } }` in
+`apps/cli/src/commands/script-run.ts`. Argv-less, synchronous, first-party-only. Not a class
+authors implement in the plugin tree. Avoid: "plugin SDK", "script interface".
+
 ## See also
 
 - [skill-engineering-theory.md](skill-engineering-theory.md) — the absorbed theory these terms

@@ -20,6 +20,21 @@ Shared Phase 1 conventions:
 - deterministic script work and invoking-agent judgment are documented separately
 - `Evolve` follows the closed loop: Observe -> Analyze -> Propose -> Apply -> Verify -> Snapshot -> Rollback -> Learn
 
+### Plugin-skill executable contract (shared across operations)
+
+When the skill lives under `plugins/<plugin>/skills/` and needs an executable, every lifecycle
+operation follows [scripts-and-install.md](scripts-and-install.md). Do not restate the dual
+contract here — apply this checklist:
+
+| When | Check |
+|------|--------|
+| **Create** | Scaffold is prose-only (no `scripts/` inside the skill). If an engine is needed, author it at `plugins/<plugin>/scripts/<feature>/`, convert TypeScript to a committed `.mjs`, and document `node "$(superskill script path …)"` in SKILL.md. |
+| **Validate** | `superskill skill validate` errors on plugin-skill `scripts/` or `extensions/` (`_layout`). Invocation-form mistakes (`bun plugins/…`, `${CLAUDE_PLUGIN_ROOT}`) are a checklist item — validate does not scan SKILL.md bodies for those strings. |
+| **Evaluate** | LLM checklist: skill docs use the **standard** path form; `script run` only if the engine is a registered first-party id; no class-SDK guidance. |
+| **Refine** | If a banned executable dir exists, hoist it to plugin-level `scripts/<feature>/` by hand (refine `--auto` does not delete it). Fix invocation recipes to `$(superskill script path …)`. |
+
+Standalone skills (not under `plugins/*/skills/`) may keep skill-local `scripts/` per agentskills.io.
+
 ---
 
 ## Table of Contents
@@ -96,7 +111,7 @@ superskill skill scaffold <skill-name> --output ./skills
 - Creates directories: references/, assets/ (executable scripts live at plugin level)
 - Initializes platform adapter files
 
-**Output:** Skill directory with basic structure (prose-only — no `scripts/` inside the skill folder; see [scripts-and-install.md](scripts-and-install.md))
+**Output:** Skill directory with basic structure (prose-only — no `scripts/` inside the skill folder). If the skill needs an engine, follow the [plugin-skill executable contract](#plugin-skill-executable-contract-shared-across-operations).
 
 #### Step 2: Validate Structure (Script)
 ```bash
@@ -168,6 +183,7 @@ Deterministic validation checks:
 - required name and description fields
 - resource discovery and companion readiness
 - no critical structure breakage
+- plugin skills: no `scripts/` or `extensions/` directory (`_layout` error)
 
 #### Step 3: Action Decision
 
@@ -354,6 +370,8 @@ Organized by category for comprehensive validation:
 | 1 | SKILL.md in root | File check | Script |
 | 2 | references/, assets/ exist | Directory check | Script |
 | 3 | Progressive disclosure | Reference links | Script |
+| 4 | Plugin skill has no `scripts/` or `extensions/` | `skill validate` `_layout` | Script |
+| 5 | Skill-doc invocations use `$(superskill script path …)` | No `bun plugins/…` / `${CLAUDE_PLUGIN_ROOT}` recipes | LLM |
 
 #### Circular Reference Prevention
 
@@ -603,6 +621,9 @@ superskill skill evaluate <skill-path> --save
 **What happens:**
 - Run evaluation to identify issues
 - Determine which fixes needed
+- If the skill is a plugin skill with `scripts/` or `extensions/`, hoist the engine to
+  `plugins/<plugin>/scripts/<feature>/` before applying body fixes (refine `--auto` will not
+  delete those directories)
 
 #### Step 2: Apply Best Practices (Script)
 ```bash

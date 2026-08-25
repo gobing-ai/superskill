@@ -23,7 +23,7 @@ This document provides detailed guidance for creating new skills using the cc wo
         ▼
 ┌───────────────┐
 │ Step 2:      │ For each example, identify:
-│ Plan Resources│ • Scripts: Code rewritten repeatedly?
+│ Plan Resources│ • Plugin scripts at scripts/<feature>/
 │               │ • References: Info re-discovered each time?
 │               │ • Assets: Boilerplate needed each time?
 └───────┬───────┘
@@ -42,8 +42,9 @@ This document provides detailed guidance for creating new skills using the cc wo
         │
         ▼
 ┌───────────────┐
-│ Step 5:      │ superskill skill evaluate <nameOrPath>
-│ Evaluate      │ Checks: YAML, structure, quality
+│ Step 5:      │ validate (structure + `_layout`), then
+│ Validate +    │ superskill skill evaluate <nameOrPath>
+│ Evaluate      │ (quality scoring is content-only)
 └───────┬───────┘
         │
         ▼
@@ -159,7 +160,8 @@ skill-name/
 
 - Customize SKILL.md frontmatter with skill-specific name and description
 - Keep or remove placeholder files based on skill needs
-- Add skill-specific scripts, references, or assets
+- Add references or assets **inside the skill folder**
+- Add executables **only** at `plugins/<plugin>/scripts/<feature>/` — never `skills/<name>/scripts/`
 
 ---
 
@@ -173,11 +175,17 @@ Create the resources and write SKILL.md content.
 
 Start with the reusable resources identified in Step 2:
 
-1. **Plugin-level scripts** - Write and test executable code at `plugins/<plugin>/scripts/<skill>/` (not inside the skill folder)
-2. **references/** - Document schemas, APIs, workflows
-3. **assets/** - Gather templates and sample files
+1. **Plugin-level scripts** — write and test at `plugins/<plugin>/scripts/<feature>/` (not inside the skill folder). TypeScript sources need a portable twin: `superskill script convert <plugin> <feature>/<file>.ts`. Commit the `.mjs`. Run it under `node`.
+2. **references/** — document schemas, APIs, workflows
+3. **assets/** — gather templates and sample files
 
-**Important:** Test scripts by actually running them to ensure they work correctly.
+**Important:** Test scripts by running the portable entrypoint (`node` / `sh`), not only the TypeScript source. Teach SKILL.md the standard form:
+
+```bash
+node "$(superskill script path <plugin> <feature>/<file>.mjs)" [args]
+```
+
+Do not implement a class for `script run` to discover. See [scripts-and-install.md](scripts-and-install.md).
 
 ### Part B: Write SKILL.md
 
@@ -216,32 +224,33 @@ Write instructions for using the skill and its bundled resources.
 
 ---
 
-## Step 5: Evaluate
+## Step 5: Validate, then Evaluate
 
 ### Goal
 
-Ensure the skill meets all structural and quality requirements.
+Ensure the skill meets structural requirements, then score quality. Layout (`_layout`) is a
+**validate** finding — `evaluate` is content-only and has no filesystem walk.
 
 ### Command
 
 ```bash
-# Basic validation
-superskill skill evaluate <nameOrPath> --save
+# Structure + plugin-skill layout (scripts/ / extensions/ → field _layout)
+superskill skill validate <nameOrPath>
 
-# Full evaluation with scoring
+# Quality scoring (content-only)
 superskill skill evaluate <nameOrPath> --save
 ```
 
-### What It Checks (Basic)
+### What validate checks
 
 - ✓ SKILL.md exists
 - ✓ Valid YAML frontmatter
 - ✓ Required fields (name, description)
 - ✓ Proper file organization
+- ✓ Plugin skills have no `scripts/` or `extensions/` directory (field `_layout`)
 
-### What It Checks (Full)
+### What evaluate checks
 
-- All basic checks +
 - Quality scoring across dimensions
 - Recommendations for improvement
 
@@ -331,7 +340,7 @@ Test and re-evaluate
 
 - **Missing guidance**: Add workflow steps for uncovered edge cases
 - **Token efficiency**: Move details to references/, tighten language
-- **New resources**: Add scripts for repeated patterns, references for re-discovered info
+- **New resources**: Add plugin-level scripts for repeated patterns (`plugins/<plugin>/scripts/<feature>/`), references for re-discovered info
 - **Clarity**: Improve description triggers, simplify instructions
 
 ### Re-Refine
@@ -351,7 +360,7 @@ superskill skill refine ./my-skill --auto --save --target all
 # Full workflow from scratch
 superskill skill scaffold my-skill --output ./skills
 # Edit SKILL.md and add resources
-superskill skill evaluate ./skills/my-skill --save
+superskill skill validate ./skills/my-skill
 superskill skill evaluate ./skills/my-skill --save
 superskill skill refine ./skills/my-skill --auto --save --target all
 
@@ -369,3 +378,4 @@ superskill skill refine ./skills/my-skill --auto --save
 - [best-practices.md](best-practices.md) - Comprehensive guidance
 - [quick-reference.md](quick-reference.md) - CLI command reference
 - [troubleshooting.md](troubleshooting.md) - Common issues and fixes
+- [scripts-and-install.md](scripts-and-install.md) - Plugin-level scripts, dual contract, authoring recipe

@@ -240,6 +240,33 @@ describe('cc plugin structure', () => {
         expect(guide).not.toMatch(/\|\s*[12]\s*\|\s*Deny stop/i);
     });
 
+    it('cc-skills scripts-and-install is path-first (ADR-023)', () => {
+        const guide = readFileSync(join(SKILLS_ROOT, 'cc-skills', 'references', 'scripts-and-install.md'), 'utf-8');
+        const stagedPath = 'node "$(superskill script path cc anti-hallucination/validate_response.mjs)"';
+        const registry = 'superskill script run cc validate-response';
+        expect(guide).toContain(stagedPath);
+        expect(guide).toContain(registry);
+        expect(guide).toMatch(/\*\*Standard/i);
+        expect(guide).toMatch(/\*\*Optional/i);
+        expect(guide.indexOf(stagedPath)).toBeLessThan(guide.indexOf(registry));
+        expect(guide).not.toMatch(/bun\s+plugins\/cc\/scripts/);
+        expect(guide).toContain('no class SDK');
+        expect(guide).toContain('field: _layout');
+    });
+
+    it('plugin-scripts help guide is standard-first (0122 R1)', () => {
+        const guide = readFileSync(
+            join(PLUGIN_ROOT, '..', '..', 'docs', 'help', 'how_to_organize_scripts_for_plugin_development.md'),
+            'utf-8',
+        );
+        expect(guide).toContain('## Authoring recipe (standard contract — default)');
+        expect(guide).toContain('no plugin-script class SDK');
+        expect(guide).toContain('scripts/<feature>/');
+        expect(guide).toMatch(/`\.mjs`/);
+        expect(guide).not.toMatch(/prefer\s+`?script run/i);
+        expect(guide).not.toMatch(/bun\s+plugins\/cc\/scripts/);
+    });
+
     it('non-hook guide labels staged-path invocation standard and script run optional (ADR-023)', () => {
         // WHY (0087 R4): ADR-023 and H1 define the staged `script path` invocation as the standard
         // non-hook form and the `script run` registry as optional. The guide must carry the

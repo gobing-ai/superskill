@@ -36,7 +36,7 @@ Two layers:
 | [Quality system](quality_system.md) | Rubrics, scoring dimensions, two-call seam, double-loop gate, empirical behavior gate |
 | [Entity locations](entity_locations.md) | Where superskill writes each entity type per target agent |
 | [Bundled `cc` plugin](bundled_plugin.md) | The shipped Claude Code plugin — entities, delegation pattern, scripts |
-| [Plugin script organization](how_to_organize_scripts_for_plugin_development.md) | Dual contract: standard staged path (`script path`) + optional binary registry (`script run`/`hook run`), install staging, Entrypoint Contract, authoring anti-patterns |
+| [Plugin script organization](how_to_organize_scripts_for_plugin_development.md) | Dual contract: standard staged path (`script path`) is the default; optional binary registry (`script run`/`hook run`); authoring recipe; no class SDK |
 | [Development guide](development.md) | Stack, workspace layout, build commands, verification gate, code style |
 | [Release checklist](release.md) | Published surface, `prepack`/`prepublishOnly` lifecycle, publish-surface content review |
 

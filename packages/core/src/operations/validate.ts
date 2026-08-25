@@ -1,5 +1,5 @@
 import { existsSync, statSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { dirname, join, posix } from 'node:path';
 import { parseFrontmatter } from '../content/frontmatter';
 import { resolveContentPath } from '../content/identity';
 import type { ContentType } from '../content/types';
@@ -161,8 +161,9 @@ function computeFencedLineSet(body: string): Set<number> {
 /**
  * Structural + schema validation for a content file.
  *
- * Performs 7 check categories in order: file access, frontmatter presence,
- * required fields, field types, format compliance, link validity, strict checks.
+ * Performs 8 check categories in order: file access, frontmatter presence,
+ * required fields, field types, format compliance, link validity, strict checks,
+ * plugin-skill layout (scripts/ / extensions/ dirs).
  *
  * Never throws for validation failures — all issues become `Finding` entries.
  */
@@ -222,6 +223,13 @@ export async function validate(
     }
     const linkFindings = checkBodyLinks(bodyForLinks, baseDir);
     result.findings.push(...linkFindings);
+
+    // 8. Plugin-skill layout: prose-only skill folders (ADR-015). Standalone skills
+    // (not under plugins/<plugin>/skills/) keep the agentskills.io skill-local scripts/.
+    if (type === 'skill') {
+        result.findings.push(...checkPluginSkillLayout(resolvedPath));
+        result.valid = !result.findings.some((f) => f.severity === 'error');
+    }
 
     return result;
 }
@@ -576,6 +584,52 @@ export function formatValidationResult(result: ValidationResult, json?: boolean)
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
+
+/** Match `…/plugins/<plugin>/skills/<name>/SKILL.md` after normalizing separators. */
+const PLUGIN_SKILL_MD = /(?:^|\/)plugins\/[^/]+\/skills\/[^/]+\/SKILL\.md$/i;
+
+const BANNED_PLUGIN_SKILL_DIRS = ['scripts', 'extensions'] as const;
+
+/** Slash separators + `.`/`..` collapse. Path-shape only — not inode identity. */
+function normalizeSkillMdPath(skillMdPath: string): string {
+    return posix.normalize(skillMdPath.replaceAll('\\', '/'));
+}
+
+/**
+ * True when `skillMdPath` is a plugin-managed skill:
+ * `…/plugins/<plugin>/skills/<name>/SKILL.md`.
+ *
+ * Standalone skills (`.claude/skills/`, `./skills/`, …) return false — those
+ * follow the agentskills.io convention of skill-local `scripts/`.
+ */
+export function isPluginSkillPath(skillMdPath: string): boolean {
+    return PLUGIN_SKILL_MD.test(normalizeSkillMdPath(skillMdPath));
+}
+
+/**
+ * Error findings when a plugin skill folder contains executable subdirs
+ * (`scripts/` or the retired `extensions/`). No-op for standalone skills.
+ */
+export function checkPluginSkillLayout(skillMdPath: string): Finding[] {
+    const normalized = normalizeSkillMdPath(skillMdPath);
+    if (!PLUGIN_SKILL_MD.test(normalized)) return [];
+    const baseDir = dirname(normalized);
+    const findings: Finding[] = [];
+    for (const name of BANNED_PLUGIN_SKILL_DIRS) {
+        const candidate = join(baseDir, name);
+        if (existsSync(candidate) && statSync(candidate).isDirectory()) {
+            findings.push({
+                severity: 'error',
+                field: '_layout',
+                message:
+                    `Plugin skills are prose-only: '${name}/' is not allowed inside the skill folder. ` +
+                    'Move executables to plugins/<plugin>/scripts/<feature>/ (ADR-015). ' +
+                    'Standalone skills (not under plugins/*/skills/) may keep a skill-local scripts/ directory.',
+            });
+        }
+    }
+    return findings;
+}
 
 function sentinelResult(message: string): ValidationResult {
     return {

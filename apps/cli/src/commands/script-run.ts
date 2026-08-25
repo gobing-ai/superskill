@@ -34,12 +34,16 @@ export interface ScriptRunResult {
     stderr?: string;
 }
 
-/** A registered non-hook script: pure logic in, stdout + exit code out. */
-// Deliberately minimal: argv-less and synchronous (R4). A flag-driven CLI (--wbs, subcommands) or an
-// async/subprocess script is NOT expressible here — that work belongs on the standard contract,
-// `node "$(superskill script path <plugin> <rel>)" [args]`, which has full argv, full async, and no
-// superskill release coupling. Do not extend this signature: it would duplicate the standard
-// contract inside a surface whose only justification is the compile-time deep import (ADR-022).
+/**
+ * A registered non-hook script: pure logic in, stdout + exit code out.
+ *
+ * Deliberately minimal: argv-less and synchronous (R4). A flag-driven CLI (`--wbs`, subcommands)
+ * or an async/subprocess script is NOT expressible here — that work belongs on the standard
+ * contract, `node "$(superskill script path <plugin> <rel>)" [args]`, which has full argv, full
+ * async, and no superskill release coupling. Do not extend this signature: it would duplicate the
+ * standard contract inside a surface whose only justification is the compile-time deep import
+ * (ADR-022).
+ */
 export interface ScriptRunner {
     run(input: ScriptRunInput): ScriptRunResult;
 }

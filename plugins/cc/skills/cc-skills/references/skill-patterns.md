@@ -330,7 +330,9 @@ IF file is document:
 - Claude spends turns on composition, not reconstructing boilerplate
 - Helpers handle complexity; Claude handles orchestration
 
-> For superskill plugin skills, executable logic lives at `plugins/<plugin>/scripts/<feature>/` — see [scripts-and-install.md](scripts-and-install.md).
+> For superskill plugin skills, executable logic lives at `plugins/<plugin>/scripts/<feature>/` —
+> invoked via `node "$(superskill script path …)"`, not imported from the skill folder. See
+> [scripts-and-install.md](scripts-and-install.md).
 
 ### Example Structure
 
@@ -348,13 +350,10 @@ The following functions are in `plugins/<plugin>/scripts/<feature>/helpers/`:
 
 ### Usage
 
-Generate a Python script that imports and composes these helpers:
+Compose helpers through the standard staged-path contract (not a skill-folder import):
 
-    from helpers import fetch_events, join_users, compute_funnel
-
-    events = fetch_events("signup", last_7_days)
-    enriched = join_users(events, "users_canonical")
-    funnel = compute_funnel(["signup", "activate", "paid"], enriched)
+    node "$(superskill script path <plugin> <feature>/compute_funnel.mjs)" \
+      --source signup --steps signup,activate,paid
 ```
 
 ### When to Use

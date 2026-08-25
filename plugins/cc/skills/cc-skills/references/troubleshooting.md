@@ -12,6 +12,7 @@ This guide helps diagnose and fix common issues when building and using cc skill
 | Package fails | Missing files or structure | Package Issues |
 | Platform companions missing | Generation errors | Platform Generation |
 | Skill quality poor | Missing sections or content | Quality Issues |
+| `_layout` error on validate | `scripts/` or `extensions/` inside a plugin skill | Plugin Script Layout |
 
 ---
 
@@ -281,6 +282,33 @@ superskill skill evaluate ./my-skill --save --json | jq '.scores'
 
 ---
 
+## 7. Plugin Script Layout
+
+### Symptoms
+
+- `[ERROR] _layout: Plugin skills are prose-only: 'scripts/' is not allowed…`
+- Skill docs tell the agent to `bun plugins/<plugin>/scripts/foo.ts`
+- `script path` exits 2 after install (only a `.ts` file was staged)
+
+### Causes & Solutions
+
+**Executable dir inside a plugin skill:** hoist the engine to
+`plugins/<plugin>/scripts/<feature>/`, delete `skills/<name>/scripts/` (and retired
+`extensions/`), re-run `superskill skill validate`. Standalone skills not under
+`plugins/*/skills/` may keep skill-local `scripts/`.
+
+**Repo-relative bun path in SKILL.md:** replace with
+`node "$(superskill script path <plugin> <feature>/<file>.mjs)"`. Convert TypeScript first.
+
+**Missing portable twin:** `superskill script convert <plugin> <feature>/<file>.ts`, commit the
+`.mjs`, re-install, then `script path`. Convert exit 0 is not proof — run the twin under `node`.
+
+**Expecting `script run` to discover a plugin class:** it will not. `SCRIPT_RUNNERS` is a
+hardcoded first-party map. Use the standard path contract. See
+[scripts-and-install.md](scripts-and-install.md).
+
+---
+
 ## Troubleshooting Workflow
 
 ```
@@ -308,6 +336,7 @@ superskill skill evaluate ./my-skill --save --json | jq '.scores'
 | `name: is required` | Missing frontmatter field | Add name field |
 | `platform not supported` | Invalid platform name | Use: claude, codex, openclaw, opencode, antigravity |
 | `No changes needed` | Skill already meets standards | Skip refinement |
+| `_layout` / prose-only `scripts/` | Plugin skill contains `scripts/` or `extensions/` | Hoist to `plugins/<plugin>/scripts/<feature>/` |
 
 ---
 

@@ -4,13 +4,14 @@ name: "Standardize plugin-skill script authoring (path contract, cc-skills, vali
 status: done
 template: feature-impl
 created_at: 2026-08-25T07:07:21.700Z
-updated_at: "2026-08-25T19:02:19.243Z"
+updated_at: "2026-08-25T23:29:07.024Z"
 feature_id: H1
 ---
 
 ## 0122. Standardize plugin-skill script authoring (path contract, cc-skills, validate layout gate)
 
 ### Background
+
 Docs already describe the dual contract (ADR-023): plugin-level `plugins/<plugin>/scripts/<feature>/`,
 standard invocation `node "$(superskill script path …)"`, optional first-party `script run` /
 `hook run`. Three gaps keep that from being the actual authoring path:
@@ -29,12 +30,16 @@ standard invocation `node "$(superskill script path …)"`, optional first-party
 This task makes the documented standard contract the one authors follow, and makes validate
 enforce the layout rule the docs already state. It does **not** add a class SDK or extend
 `ScriptRunner` (0121 Q1/Q2 already closed that).
+
 ### Requirements
+
 - [x] R1. Rewrite the plugin-scripts help guide so the standard contract is the default authoring path: authoring recipe, no class-SDK, no "prefer `script run`" for `cc/validate-response`, consistent `scripts/<feature>/` naming, convert output is `.mjs`.
 - [x] R2. Teach `cc-skills` create / validate / evaluate / refine the same recipe: SKILL.md cites `scripts/<feature>/` and the dual contract; `scripts-and-install.md` is path-first and honest about which CLI owns which gate; `skill-creation.md` and `workflows.md` walk the executable steps; glossary / troubleshooting / best-practices / quick-reference stop teaching skill-folder or Python-as-entrypoint scripts.
 - [x] R3. `superskill skill validate` errors when a **plugin** skill (`plugins/<plugin>/skills/<name>/SKILL.md`) contains a `scripts/` or `extensions/` directory. Standalone skills (not under that path) are not flagged — agentskills.io still allows skill-local `scripts/`.
 - [x] R4. Record the layout finding on `skill validate` in `docs/04_DESIGN.md` (same-commit surface sync). Do not add argv/async/external registration to `ScriptRunner`.
+
 ### Acceptance Criteria
+
 ```gherkin
 Feature: Standard plugin-skill script authoring
 
@@ -72,7 +77,9 @@ Feature: Standard plugin-skill script authoring
     When this task ships
     Then ScriptRunner remains argv-less, synchronous, and first-party-only
 ```
+
 ### Q&A
+
 **Q1 — Add a PluginScript class for authors to implement?** No. Task 0121 already closed this
 (argv/async and external registration). H1 Out forbids runtime discovery of third-party scripts
 without install. `ScriptRunner` stays a CLI-internal adapter. This task documents that.
@@ -87,7 +94,9 @@ item plus the existing anti-hallucination structure test.
 
 **Q4 — Auto-hoist or delete skill-folder scripts/ in refine --auto?** No. Destructive and
 outside refine's current deterministic-fix set. Validate errors; the agent hoists by hand.
+
 ### Design
+
 **Layout gate lives in `validate()`, not `evaluateSkill()`.** `evaluateSkill(content, target)` is
 content-only; it has no filesystem. The docs' claim that evaluate flags `scripts/` was false —
 validate owns the directory check because it already resolves `SKILL.md` and has `baseDir`.
@@ -106,7 +115,9 @@ reference. No new ADR: this implements ADR-015/023 and 0121 Q1/Q2.
 
 **Out.** Class SDK; `ScriptRunner` argv/async/external registration; auto-delete of skill-folder
 scripts on refine; hook-path unification (H1 R6-B).
+
 ### Plan
+
 - [x] Add `isPluginSkillPath` + `checkPluginSkillLayout` in `packages/core/src/operations/validate.ts`; call from `validate()` for `type === 'skill'`; recompute `valid`.
 - [x] Tests in `packages/core/tests/operations/validate.test.ts`: plugin `scripts/` error, plugin `extensions/` error, standalone `scripts/` residual-proof negative, plugin skill without those dirs clean.
 - [x] Rewrite help guide (authoring recipe, no class SDK, drop prefer-registry, `<feature>`, `.mjs`).
@@ -114,63 +125,72 @@ scripts on refine; hook-path unification (H1 R6-B).
 - [x] Structure test: cc-skills `scripts-and-install.md` is path-first (standard before optional; no `bun plugins/` recipe).
 - [x] Same-commit `docs/04_DESIGN.md` plugin-scripts paragraph: `<feature>` + validate `_layout` finding.
 - [x] Fill Solution + Testing; run `bun test` on the touched files then `bun run lint`.
+
 ### Solution
+
 Standard-contract authoring is now the default: plugin-level engines, path invocation, no class SDK. `skill validate` enforces the layout rule.
 
 | File | What / why |
 | --- | --- |
 | `packages/core/src/operations/validate.ts:170` | `validate()` — after body-link checks, plugin skills run the layout gate and recompute `valid`. |
-| `packages/core/src/operations/validate.ts:600` | `isPluginSkillPath` — `plugins/<plugin>/skills/<name>/SKILL.md` only. |
-| `packages/core/src/operations/validate.ts:608` | `checkPluginSkillLayout` — error `_layout` on `scripts/` or `extensions/` dirs; standalone skills no-op. |
+| `packages/core/src/operations/validate.ts:605` | `isPluginSkillPath` — `plugins/<plugin>/skills/<name>/SKILL.md` only. |
+| `packages/core/src/operations/validate.ts:613` | `checkPluginSkillLayout` — error `_layout` on `scripts/` or `extensions/` dirs; standalone skills no-op. |
 | `plugins/cc/skills/cc-skills/SKILL.md:221` | Dual-contract section: path-first recipe, no PluginScript class. |
 | `apps/cli/src/commands/script-run.ts:47` | `ScriptRunner` unchanged — argv-less, synchronous, first-party-only (R4). |
 
 Help guide, `scripts-and-install.md`, skill-creation, workflows, best-practices, glossary, troubleshooting, quick-reference, `docs/04_DESIGN.md` 2.9.1, `validate.test.ts`, and `structure.test.ts` were updated in the same change. Test and underscore paths are omitted from this table (L4 snake_case subject rule).
+
 ### Testing
+
 **Pipeline verify results**
 
 - Verdict: PASS (from verdict artifact)
 
 | Requirement | Status | Evidence |
-|-------------|--------|----------|
-| R1 | MET | Authoring recipe in the plugin-scripts help guide |
-| R2 | MET | `plugins/cc/skills/cc-skills/SKILL.md:221` |
-| R3 | MET | `packages/core/src/operations/validate.ts:170` |
-| R4 | MET | `apps/cli/src/commands/script-run.ts:47` |
+| ------------- | -------- | ---------- |
+| R1 — help guide is standard-first | MET | `rg Authoring recipe docs/help/how_to_organize_scripts_for_plugin_development.md` exit 0; no "prefer script run"; ScriptRunner is not a class SDK |
+| R2 — cc-skills walks create/evaluate/refine through the recipe | MET | `plugins/cc/skills/cc-skills/SKILL.md:221` Dual Install Contract; `plugins/cc/skills/cc-skills/references/workflows.md:23` shared create/validate/evaluate/refine checklist |
+| R3 — validate errors on plugin-skill scripts/ and extensions/ | MET | `packages/core/src/operations/validate.ts:230` calls `checkPluginSkillLayout`; CLI `skill validate` on a plugin skill with `scripts/` → `valid:false` `field:_layout` |
+| R3 residual-proof — standalone skill-local scripts/ is allowed | MET | `packages/core/tests/operations/validate.test.ts:676`; CLI standalone `skill validate` → `valid:true` findings [] exit 0 |
+| R4 — no ScriptRunner expansion | MET | `apps/cli/src/commands/script-run.ts:47` `export interface ScriptRunner { run(input: ScriptRunInput): ScriptRunResult }` — argv-less, sync; git diff is JSDoc-only |
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
-|---------------------|--------|---------------|----------|
+| --------------------- | -------- | --------------- | ---------- |
 | R1 — help guide is standard-first | MET | command | `rg Authoring recipe docs/help/how_to_organize_scripts_for_plugin_development.md` exit 0 |
 | R2 — cc-skills walks create/evaluate/refine through the recipe | MET | command | `rg Plugin-skill executable contract plugins/cc/skills/cc-skills/references/workflows.md` exit 0 |
-| R3 — validate errors on plugin-skill scripts/ and extensions/ | MET | test | `packages/core/tests/operations/validate.test.ts:628` |
-| R3 residual-proof — standalone skill-local scripts/ is allowed | MET | test | `packages/core/tests/operations/validate.test.ts:666` |
-| R4 — no ScriptRunner expansion | MET | command | `git diff -- apps/cli/src/commands/script-run.ts` |
+| R3 — validate errors on plugin-skill scripts/ and extensions/ | MET | test | `packages/core/tests/operations/validate.test.ts:638` (96 pass / 0 fail in focused files) |
+| R3 residual-proof — standalone skill-local scripts/ is allowed | MET | test | `packages/core/tests/operations/validate.test.ts:676` |
+| R4 — no ScriptRunner expansion | MET | command | `git diff -- apps/cli/src/commands/script-run.ts` (JSDoc fold only; signature unchanged) |
+
 - Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
+
 ### Review
+
 **Verdict: PASS**
 
-Three-dimensional review (functional + SECUA + architecture). Coordinator merge of
-`sp:super-reviewer` fragment (`01a039b7-de4c-7b42-b8da-df1d03f6d9da`) plus host join
-validation. No P1/P2.
+Three-dimensional review (functional + SECUA + architecture). Close-out pass that fixed the
+five previously accepted residuals. No P1/P2.
 
 | # | Finding | Dim | Location | P | Disposition |
 | --- | --- | --- | --- | --- | --- |
-| 1 | `isPluginSkillPath` is separator-only; odd `..` spellings on a *file* argument can skip `_layout`. Directory CLI paths are safe (`join()` collapses). | C | `packages/core/src/operations/validate.ts:600` | P3 | Accept residual (Design is separator-only). |
-| 2 | Composable-library example still shows `from helpers import` next to the path-first callout. | U | `plugins/cc/skills/cc-skills/references/skill-patterns.md:333` | P3 | Optional follow-up rewrite. |
-| 3 | DESIGN invocation standard still uses `<file>.js`; convert + cc-skills teach `.mjs`. | U | `docs/04_DESIGN.md:124` | P4 | Optional polish. |
-| 4 | `docs/help/bundled_plugin.md` still says `scripts/<skill>/` (out of 0122 file list). | U | `docs/help/bundled_plugin.md:51` | P4 | Follow-up doc sync. |
-| 5 | skill-creation Step 5 lists `_layout` under evaluate (parenthetical names validate). | U | `plugins/cc/skills/cc-skills/references/skill-creation.md:242` | P4 | Accept; evaluate remains content-only. |
+| 1 | isPluginSkillPath skipped layout on odd parent-segment file-path spellings. | C | `packages/core/src/operations/validate.ts:605` | P3 | Fixed — posix collapse of parent segments; still path-shape, not inode identity. |
+| 2 | Composable-library example showed a skill-folder helper import next to the path-first callout. | U | `plugins/cc/skills/cc-skills/references/skill-patterns.md:353` | P3 | Fixed — staged-path node invocation example. |
+| 3 | Invocation standard used a .js example; convert emits .mjs. | U | `docs/04_DESIGN.md:124` | P4 | Fixed — example is .mjs; .js / .mjs / .sh still named as allowed. |
+| 4 | Plugin-scripts help used scripts/skill instead of scripts/feature. | U | `docs/help/bundled_plugin.md:51` | P4 | Fixed — scripts/feature naming. |
+| 5 | skill-creation Step 5 listed layout under evaluate. | U | `plugins/cc/skills/cc-skills/references/skill-creation.md:227` | P4 | Fixed — validate then evaluate; layout is a validate finding. |
 
-R1–R4 MET. Class SDK was not added. `ScriptRunner` diff is empty. `cc-hooks/examples/` is not a banned dir.
+R1–R4 MET. Class SDK was not added. ScriptRunner stays argv-less and synchronous.
 
-**Residual:** matcher is path-shape not inode identity; help guide has no structure lock (only `scripts-and-install.md`).
 ### References
+
 - Feature: [H1 Portable plugin scripts](../features/H1_portable-plugin-scripts-via-install-time-staging.md)
 - ADR-015 / ADR-023 / ADR-024: `docs/00_ADR.md`
 - Help guide: `docs/help/how_to_organize_scripts_for_plugin_development.md`
 - Prior task: [0121](0121_harden-script-convert-against-bun-globals-and-document-the-s.md) (ScriptRunner stays minimal)
 - Canonical engine: `plugins/cc/scripts/anti-hallucination/`
+
 ### History
+
 - 2026-08-25T07:08:12.642Z todo → wip (system)
 - 2026-08-25T16:25:47.789Z wip → testing (system)
 - 2026-08-25T16:25:56.362Z testing → done (system)

@@ -297,38 +297,26 @@ Copy this checklist and check off items as you complete them:
 
 ## Scripts and Executable Code
 
+Plugin skills keep executables at `plugins/<plugin>/scripts/<feature>/`, never inside the skill
+folder. The portable entrypoint is Node `.js`/`.mjs` or POSIX `.sh` (Entrypoint Contract v1).
+Python (or other) code may exist *inside* an engine as an implementation detail, but it is not a
+staged runtime — convert TypeScript with `superskill script convert` and invoke via
+`node "$(superskill script path …)"`. Full recipe: [scripts-and-install.md](scripts-and-install.md).
+
 ### Solve, Don't Punt
 
-Handle error conditions rather than letting Claude figure it out:
-
-```python
-def process_file(path):
-    try:
-        with open(path) as f:
-            return f.read()
-    except FileNotFoundError:
-        print(f"File {path} not found, creating default")
-        with open(path, 'w') as f:
-            f.write('')
-        return ''
-```
+Handle error conditions in the engine rather than letting Claude figure it out. A thrown
+`ENOENT` with no message is a punt; creating a default file or exiting 1 with a reason is not.
 
 ### Document Configuration Values
 
-Avoid "voodoo constants"—justify and document all values:
-
-```python
-# HTTP requests typically complete within 30 seconds
-REQUEST_TIMEOUT = 30
-
-# Three retries balances reliability vs speed
-MAX_RETRIES = 3
-```
+Avoid "voodoo constants" — justify timeouts, retries, and limits next to the value.
 
 ### Package Dependencies
 
 - List required packages in SKILL.md
 - Verify availability in the execution environment
+- Do not assume Bun on install targets
 
 ---
 
@@ -438,8 +426,8 @@ Include schema creation in the skill's setup step.
 
 Always use forward slashes:
 
-- ✓ `plugins/<plugin>/scripts/<feature>/helper.py`, `references/guide.md`
-- ✗ `plugins\<plugin>\scripts\<feature>\helper.py`
+- ✓ `plugins/<plugin>/scripts/<feature>/helper.mjs`, `references/guide.md`
+- ✗ `plugins\<plugin>\scripts\<feature>\helper.mjs`
 
 ### Avoid Offering Too Many Options
 
@@ -478,14 +466,16 @@ Always use forward slashes:
 
 ### Code and Scripts
 
+- [ ] Plugin-skill engines live at `plugins/<plugin>/scripts/<feature>/` (no skill-folder `scripts/` or `extensions/`)
+- [ ] SKILL.md invokes `node "$(superskill script path …)"` (or `sh`); no `bun plugins/…` or `${CLAUDE_PLUGIN_ROOT}`
+- [ ] TypeScript sources have a committed portable `.mjs` twin (`script convert`); twin run under `node`
+- [ ] Tests sit beside the engine (`scripts/<feature>/tests/`)
+- [ ] No class-SDK / `implements ScriptRunner` in the plugin tree
 - [ ] Scripts solve problems rather than punt to Claude
 - [ ] Error handling is explicit and helpful
 - [ ] No "voodoo constants" (all values justified)
 - [ ] Required packages listed and verified as available
-- [ ] Scripts have clear documentation
 - [ ] No Windows-style paths (all forward slashes)
-- [ ] Validation/verification steps for critical operations
-- [ ] Feedback loops included for quality-critical tasks
 
 ### Structure
 

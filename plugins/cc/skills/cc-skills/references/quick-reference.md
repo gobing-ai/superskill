@@ -271,6 +271,8 @@ superskill skill refine ./skills/my-skill
 - [ ] name and description fields present
 - [ ] Referenced files exist
 - [ ] Examples are complete
+- [ ] Plugin skills: no `scripts/` or `extensions/` inside the skill folder
+- [ ] Executables at `plugins/<plugin>/scripts/<feature>/`; SKILL.md uses `$(superskill script path …)`
 
 **Description:**
 - [ ] Third person format

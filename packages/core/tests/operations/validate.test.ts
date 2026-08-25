@@ -1,9 +1,15 @@
 import { describe, expect, it } from 'bun:test';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { ValidationResult } from '../../src/operations/validate';
-import { _validateContent, formatValidationResult, validate } from '../../src/operations/validate';
+import {
+    _validateContent,
+    checkPluginSkillLayout,
+    formatValidationResult,
+    isPluginSkillPath,
+    validate,
+} from '../../src/operations/validate';
 
 function fm(name: string, extra: Record<string, unknown> = {}, body = 'Body content for testing.'): string {
     const lines = [`name: ${name}`];
@@ -586,5 +592,123 @@ describe('_validateContent — invocation-mode mismatch (strict)', () => {
         const content = fm('x', { description: richDescription, 'disable-model-invocation': true });
         const result = _validateContent('skill', content);
         expect(result.findings.filter((f) => f.field === 'invocation-mode')).toHaveLength(0);
+    });
+});
+
+describe('isPluginSkillPath', () => {
+    it('matches plugins/<plugin>/skills/<name>/SKILL.md', () => {
+        expect(isPluginSkillPath('/repo/plugins/cc/skills/pdf-editor/SKILL.md')).toBe(true);
+        expect(isPluginSkillPath('plugins/cc/skills/pdf-editor/SKILL.md')).toBe(true);
+    });
+
+    it('normalizes Windows separators', () => {
+        expect(isPluginSkillPath('C:\\repo\\plugins\\cc\\skills\\pdf-editor\\SKILL.md')).toBe(true);
+    });
+
+    it('rejects standalone and non-SKILL.md paths', () => {
+        expect(isPluginSkillPath('/tmp/skills/pdf-editor/SKILL.md')).toBe(false);
+        expect(isPluginSkillPath('/repo/plugins/cc/skills/pdf-editor/references/SKILL.md')).toBe(false);
+        expect(isPluginSkillPath('/repo/plugins/cc/README.md')).toBe(false);
+    });
+
+    it('collapses .. segments before matching', () => {
+        expect(isPluginSkillPath('/repo/plugins/cc/skills/foo/../pdf-editor/SKILL.md')).toBe(true);
+    });
+
+    it('residual-proof: plugins/../skills/ is not a plugin skill after collapse', () => {
+        // Compound-carrying negative: the raw string contains plugins/, skills/, and SKILL.md,
+        // plus a `..` coupler — after collapse it is /repo/skills/pdf-editor/SKILL.md.
+        expect(isPluginSkillPath('/repo/plugins/../skills/pdf-editor/SKILL.md')).toBe(false);
+    });
+});
+
+describe('validate — plugin-skill layout (ADR-015)', () => {
+    const skillBody =
+        '---\nname: pdf-editor\ndescription: Rotate and merge PDF files\n---\n\nBody content for testing.';
+
+    function pluginSkillDir(): { root: string; skillDir: string; skillMd: string } {
+        const root = mkdtempSync(join(tmpdir(), 'superskill-layout-'));
+        const skillDir = join(root, 'plugins', 'demo', 'skills', 'pdf-editor');
+        mkdirSync(skillDir, { recursive: true });
+        const skillMd = join(skillDir, 'SKILL.md');
+        writeFileSync(skillMd, skillBody);
+        return { root, skillDir, skillMd };
+    }
+
+    it('errors when a plugin skill contains scripts/', async () => {
+        const { root, skillDir } = pluginSkillDir();
+        try {
+            mkdirSync(join(skillDir, 'scripts'));
+            const result = await validate('skill', skillDir);
+            const layout = result.findings.filter((f) => f.field === '_layout');
+            expect(result.valid).toBe(false);
+            expect(layout).toHaveLength(1);
+            expect(layout[0]?.severity).toBe('error');
+            expect(layout[0]?.message).toContain('scripts/');
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it('errors when a plugin skill contains retired extensions/', async () => {
+        const { root, skillDir } = pluginSkillDir();
+        try {
+            mkdirSync(join(skillDir, 'extensions'));
+            const result = await validate('skill', skillDir);
+            expect(result.valid).toBe(false);
+            expect(result.findings.some((f) => f.field === '_layout' && f.message.includes('extensions/'))).toBe(true);
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it('does not flag a plugin skill without executable subdirs', async () => {
+        const { root, skillDir } = pluginSkillDir();
+        try {
+            const result = await validate('skill', skillDir);
+            expect(result.findings.filter((f) => f.field === '_layout')).toHaveLength(0);
+            expect(result.valid).toBe(true);
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it('residual-proof: standalone skill-local scripts/ is allowed', async () => {
+        // Compound-carrying negative: a real scripts/ dir exists AND the path looks like a
+        // skill, but it is not under plugins/*/skills/ so the layout gate must not fire.
+        const root = mkdtempSync(join(tmpdir(), 'superskill-layout-standalone-'));
+        try {
+            const skillDir = join(root, 'skills', 'pdf-editor');
+            mkdirSync(join(skillDir, 'scripts'), { recursive: true });
+            writeFileSync(join(skillDir, 'SKILL.md'), skillBody);
+            const result = await validate('skill', skillDir);
+            expect(result.findings.filter((f) => f.field === '_layout')).toHaveLength(0);
+            expect(checkPluginSkillLayout(join(skillDir, 'SKILL.md'))).toHaveLength(0);
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it('does not treat a file named scripts as a banned directory', async () => {
+        const { root, skillDir, skillMd } = pluginSkillDir();
+        try {
+            writeFileSync(join(skillDir, 'scripts'), 'not a directory');
+            expect(checkPluginSkillLayout(skillMd)).toHaveLength(0);
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it('still flags scripts/ when the SKILL.md path contains .. segments', async () => {
+        const { root, skillDir } = pluginSkillDir();
+        try {
+            mkdirSync(join(skillDir, 'scripts'));
+            // Concatenate so join() cannot collapse `..` for us.
+            const sneaky = `${skillDir}/../pdf-editor/SKILL.md`;
+            const layout = checkPluginSkillLayout(sneaky).filter((f) => f.field === '_layout');
+            expect(layout).toHaveLength(1);
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
     });
 });

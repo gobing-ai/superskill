@@ -2,10 +2,10 @@
 doc: 04_DESIGN
 owns: SURFACE — concrete shapes: every CLI command, flag, config key, env var, table, DTO
 authority: derived
-version: 2.9.0
+version: 2.9.1
 derived_from: [00_ADR, 01_PRD, 02_ROADMAP]
 owner: Robin Min
-updated_at: 2026-08-13
+updated_at: 2026-08-25
 read_before: changing a command, flag, env var, or schema
 edit_rules: 99 §6.5
 sync: [T3]
@@ -116,12 +116,12 @@ Context hook sessions use `.session-<sha256-prefix>.json`, keyed by payload `ses
 
 ## Plugin-level scripts directory
 
-Executable logic a skill invokes at the user's install site lives in `plugins/<plugin>/scripts/<skill>/` (shared across the plugin's skills). NOT per-skill `scripts/` (reintroduces duplication); NOT `packages/*` (not part of the plugin install payload). Per ADR-023, delivery follows a **dual contract**:
+Executable logic a skill invokes at the user's install site lives in `plugins/<plugin>/scripts/<feature>/` (shared across the plugin's skills). NOT per-skill `scripts/` (reintroduces duplication); NOT `packages/*` (not part of the plugin install payload). Per ADR-023, delivery follows a **dual contract**:
 
 - **Native marketplace installs** (Claude/OMP/Grok): full plugin tree ships in the cache, including `scripts/`.
 - **Rulesync/Hermes class**: install stages scripts to `~/.agents/scripts/<plugin>/<feature>/` (tree shape preserved; fail-closed if absent). Staging entrypoint: `stagePluginScripts` in `apps/cli/src/commands/install.ts`; native-class skip gate: `needsSharedScriptsRoot`.
 
-**Invocation standard** for skill docs and other non-hook callers is the Entrypoint Contract v1 form `node "$(superskill script path <plugin> <feature>/<file>.js)" [args]` (portable Node `.js`/`.mjs` + POSIX `.sh`, no Bun-on-target). **Optional invocation** for engines the CLI deep-imports: `superskill script run <plugin> <id>` / `superskill hook run <plugin> <id>` (ADR-022, amended by ADR-024). Build-time conversion uses `superskill script convert <plugin> <relative.ts> [--out <path>]` to produce the portable `.mjs` twin consumed by installed targets (convert rejects sources whose bundle still references `Bun.*`, writing nothing). See the [plugin-scripts author guide](help/how_to_organize_scripts_for_plugin_development.md) for the dual contract.
+**Invocation standard** for skill docs and other non-hook callers is the Entrypoint Contract v1 form `node "$(superskill script path <plugin> <feature>/<file>.mjs)" [args]` (portable Node `.js`/`.mjs` + POSIX `.sh`, no Bun-on-target; `script convert` emits `.mjs`). **Optional invocation** for engines the CLI deep-imports: `superskill script run <plugin> <id>` / `superskill hook run <plugin> <id>` (ADR-022, amended by ADR-024). Build-time conversion uses `superskill script convert <plugin> <relative.ts> [--out <path>]` to produce the portable `.mjs` twin consumed by installed targets (convert rejects sources whose bundle still references `Bun.*`, writing nothing). See the [plugin-scripts author guide](help/how_to_organize_scripts_for_plugin_development.md) for the dual contract.
 
 | Surface | Path | Purpose |
 | --------- | ------ | --------- |
@@ -130,6 +130,7 @@ Executable logic a skill invokes at the user's install site lives in `plugins/<p
 | Shared logger | `plugins/cc/scripts/anti-hallucination/logger.ts` | Single shared copy (dedup'd from per-skill copies) |
 | Stop-hook config | `plugins/cc/hooks/hooks.json` | `Stop` command hook → `superskill hook run cc anti-hallucination` (portable PATH command; the dispatcher `apps/cli/src/commands/hook-run.ts` routes to the guard engine). Declares `minCliVersion` so an older CLI cannot install a contract it does not implement. |
 | Engine tests | `plugins/cc/scripts/anti-hallucination/tests/` | 2 test files (ah_guard, validate_response); counted in coverage gate |
+| Layout gate | `packages/core/src/operations/validate.ts` (`checkPluginSkillLayout`) | `skill validate` errors (`field: _layout`) when a plugin skill (`plugins/<plugin>/skills/<name>/SKILL.md`) contains `scripts/` or `extensions/`. Standalone skills are not flagged. |
 | Stdin reader | `apps/cli/src/stdin.ts` | `readStdinNonBlocking(firstByteMs, idleMs)` — the payload channel for `script run` / `hook run`. See the stdin contract below. |
 
 ### Stdin payload contract (`script run` / `hook run`)

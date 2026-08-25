@@ -4,7 +4,9 @@ Guidance for plugin authors on where executable logic lives in a superskill plug
 
 ## The two contracts
 
-Every script ships under exactly one **contract**, chosen per script:
+Every non-hook script is authored under the **standard** contract. A first-party pure engine may
+*also* register on the optional contract — that is extra, not a replacement. Hook scripts currently
+stay on `hook run` (H1 R6-B). Choose using the table:
 
 | Contract | How it ships to targets | How skills invoke it | When to choose |
 | --- | --- | --- | --- |
@@ -15,9 +17,23 @@ Within each contract, a script is still either a **hook script** (triggered by h
 
 ## Physical layout (unchanged — ADR-015)
 
-- Plugin-level only: `plugins/<plugin>/scripts/<feature>/` — shared across the plugin's skills, deduped. Source for both contracts lives here.
-- Skill folders are prose-only: `skills/<name>/` holds `SKILL.md`, references, agent metadata — **no executable `scripts/`**. Per-skill executables are forbidden (ADR-015 anti-pattern).
+- Plugin-level only: `plugins/<plugin>/scripts/<feature>/` — shared across the plugin's skills, deduped. Source for both contracts lives here. `<feature>` is the engine name (often the skill name, but one engine may serve several skills).
+- Skill folders are prose-only: `skills/<name>/` holds `SKILL.md`, references, agent metadata — **no executable `scripts/`**. Per-skill executables are forbidden (ADR-015 anti-pattern). `superskill skill validate` errors when a plugin skill (`plugins/<plugin>/skills/<name>/`) contains `scripts/` or the retired `extensions/` directory. Standalone skills (not under that path) may keep skill-local `scripts/` — that is the agentskills.io convention, not a superskill plugin layout.
 - Repo-root `scripts/` (when present) is build/release tooling only — never part of a plugin payload, never installed.
+- There is **no plugin-script class SDK.** Engines are ordinary processes (stdin / env / argv / exit). `ScriptRunner` / `HookRunner` are CLI-internal adapters for the optional registry, not interfaces authors implement in the plugin tree.
+
+## Authoring recipe (standard contract — default)
+
+For a plugin skill that needs an executable:
+
+1. **Write the engine** at `plugins/<plugin>/scripts/<feature>/` as TypeScript or a portable `.js`/`.sh`. Keep tests in `scripts/<feature>/tests/`. Skill folders stay prose-only.
+2. **If the source is TypeScript**, build the portable twin: `superskill script convert <plugin> <feature>/<file>.ts`. Convert writes a `#!/usr/bin/env node` **`.mjs`** beside the source (rejects leftover `Bun.*` in the bundle). Commit the `.mjs`.
+3. **Teach invocation in the skill** with command substitution, never a hardcoded path:
+   `node "$(superskill script path <plugin> <feature>/<file>.mjs)" [args]`
+4. **Install delivers the tree.** Re-install after changing the twin; do not copy by hand.
+5. **Reach for `script run` only** when the engine is a pure stdin/env validator, lives in *this* repo, needs no argv/async/FS, and you accept a superskill CLI release per fix. Then add a thin `ScriptRunner` in `apps/cli/src/commands/script-run.ts`. External plugins cannot self-register.
+
+Canonical shipped example: `plugins/cc/scripts/anti-hallucination/` (`validate_response.ts` + committed `.mjs` twin; skill docs teach the path form first).
 
 ## How install delivers scripts
 
@@ -58,9 +74,8 @@ node "$(superskill script path myplugin myfeat/tool.mjs)"
 "$(superskill script path myplugin myfeat/run.sh)"
 ```
 
-> When the engine is a pure CLI-deep-imported one (like `cc/validate-response`), prefer the
-> **optional** registry form (`superskill script run <plugin> <id>`) — no staged path, no separate
-> runtime. Use the `script path` form above when you need a real filesystem entrypoint.
+This is the **standard** form for every non-hook skill-doc caller, including engines that also have
+an optional registry id (`cc/validate-response`). The registry form is extra, not preferred.
 
 - Use command substitution `$(superskill script path …)` — never hardcode cache/repo/install paths; a skill doc that hardcodes any path is a bug.
 - Resolve at runtime, not at author time. The path depends on the user's install mode (project vs global) and target class.
@@ -108,7 +123,11 @@ superskill script convert cc anti-hallucination/validate_response.ts --dry-run
 
 ## Optional contract — binary registry
 
-When a script is a pure engine (no FS state, deterministic from input) and you accept that a fix requires a CLI release, register it instead of staging it:
+When a script is a pure engine (no FS state, deterministic from input) and you accept that a fix requires a CLI release, register it **in addition to** the staged twin — do not skip the standard contract.
+
+### There is no class for plugin authors to implement
+
+`ScriptRunner` is a CLI-internal adapter (`run({ stdinText, env }) => { stdout, exitCode }`) used only by the hardcoded `SCRIPT_RUNNERS` map in `apps/cli/src/commands/script-run.ts`. Authors do **not** export a class from `plugins/<plugin>/scripts/` and do **not** self-register. Flag-driven, async, or externally-maintained scripts stay on the standard contract.
 
 ### Non-hook: `script run`
 
