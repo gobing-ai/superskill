@@ -4,6 +4,22 @@ All notable changes to `@gobing-ai/superskill` are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Conventional Commits](https://www.conventionalcommits.org/).
 
+## [0.3.18] - 2026-08-25
+
+### Added
+
+- **Standardized plugin-skill script authoring — path contract, cc-skills recipe, validate layout gate (task 0122, feature H1).** Three gaps kept the ADR-023 dual contract from being the actual authoring path: the help guide still told authors to *prefer* `script run` for engines like `cc/validate-response`; `cc-skills` mixed `scripts/<skill>/` with `scripts/<feature>/` and said "Add skill-specific scripts" after scaffold; and `scripts-and-install.md` claimed validate/evaluate flag per-skill `scripts/` dirs when `validate.ts` never inspected the skill folder. Now the standard contract is the default: the plugin-scripts help guide is rewritten with an authoring recipe (layout → `script convert` → `node "$(superskill script path …)"` path invocation → tests beside the engine), explicitly states there is no plugin-script class SDK, and drops the prefer-registry guidance; `cc-skills` create / validate / evaluate / refine walk the same recipe with `scripts/<feature>/` naming and path-first invocation. `superskill skill validate` now errors (`field: _layout`) when a plugin skill (`plugins/<plugin>/skills/<name>/SKILL.md`) contains a `scripts/` or retired `extensions/` directory, via `isPluginSkillPath` + `checkPluginSkillLayout` in `packages/core/src/operations/validate.ts` — standalone skills (not under `plugins/*/skills/`) keep the agentskills.io skill-local `scripts/` convention, with residual-proof negative tests in `packages/core/tests/operations/validate.test.ts` and path-first structure tests in `plugins/cc/tests/structure.test.ts`. `ScriptRunner` stays argv-less, synchronous, and first-party-only (R4; JSDoc-only). Same-commit surface sync in `docs/04_DESIGN.md` (v2.9.1) and the feature AC block. (6902f58)
+
+### Documentation
+
+- **Task 0122 record added** — standardized plugin-skill script authoring (path contract, cc-skills, validate layout gate), status done, linked to feature H1. (ea67efe)
+
+### Other
+
+- **`.spur/config.yaml` upgraded to 1.2.** (8fb2388)
+- **`@gobing-ai/ts-*` dependencies bumped `0.4.31` → `0.4.42`** across the root catalog, `apps/cli`, and `bun.lock`. (1f36e73)
+- **`config/corpus-baseline.json` re-baselined.** En-dash escapes normalized to literal characters and the resolved 0089 `L4.anchor-subject-mismatch` warning dropped from the ratchet. (ebdd3ec)
+
 ## [0.3.17] - 2026-08-18
 
 ### Added
