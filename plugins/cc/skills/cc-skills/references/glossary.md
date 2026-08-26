@@ -61,6 +61,14 @@ skips validation — a malformed ingest file is rejected, not silently coerced.
 Avoid: "import", "apply" (apply is a separate evolve step that happens only after a proposal is
 accepted, not synonymous with ingest).
 
+**Static plane / usage plane** — the two things that can be scored. The **static plane** is the
+artifact: what the SKILL.md says, which every current scoring mode reads. The **usage plane** is
+behavior in real sessions — whether the skill fired, and how the run went. cc scores the static
+plane only; the usage plane is a named, unbuilt path blocked on a transcript source this repo owns
+([evaluation-framework.md](evaluation-framework.md) § The Usage Plane).
+Avoid: "static analysis" (implies code analysis, not prose scoring); claiming usage-plane coverage
+from static proxies — a trigger-branch count is not a firing rate.
+
 **Verdict** — the PASS/FAIL label attached to an aggregate score against the 0.70 threshold.
 Avoid: "result" (too generic — a QualityReport carries a verdict, not the reverse).
 
@@ -78,6 +86,14 @@ failure modes (sprawl/sediment/duplication/no-op/premature-completion/negation/c
 proposal cures.
 Avoid: "suggestion", "change request" (both used informally elsewhere; "proposal" is the exact
 stored-row term).
+
+**Filing bar** — the warrant test a proposal must clear *before* it is written: the failure traces
+to a missing or wrong instruction on a named owning surface, one reusable rule would have prevented
+it, and the gap recurs (or is severe enough alone). Distinct from the double-loop gate, which asks
+whether an already-drafted change is *safe*; the filing bar asks whether it should *exist*. Clearing
+nothing and reporting why is a valid outcome. Full test: [workflows.md](workflows.md) § The filing bar.
+Avoid: "quality gate", "threshold" (both name the mechanical accept-time checks — the bar is a
+judgment applied at draft time, not a score comparison).
 
 **Rollback** — restoring a prior accepted version of an entity file from its persisted version
 snapshot (`<path>.version-<proposalId>`), via `evolve --rollback <id> --confirm`. Requires explicit
