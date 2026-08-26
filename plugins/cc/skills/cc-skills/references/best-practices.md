@@ -52,6 +52,20 @@ use a library. There are many libraries available for PDF processing, but we
 recommend pdfplumber because it's easy to use and handles most cases well.
 ```
 
+### Add Only What Usage Proved Necessary
+
+Conciseness is a rule about what you *add*, not only about how you *word* it. A skill earns each
+line by having failed without it.
+
+**Never add content preemptively.** A rule written for a failure that has not happened is
+indistinguishable from a rule written for one that never will — and it costs context on every load
+either way. Edit the section a real run actually exercised: the trigger that failed to fire, the
+precondition that went unstated, the step the agent had to discover by trial and error. Replace that
+guidance in place rather than appending a paragraph beside it.
+
+The iteration loop itself is [skill-creation.md](skill-creation.md) § Step 8; the same discipline
+gates automated proposals in [workflows.md](workflows.md) § The filing bar.
+
 ### Set Appropriate Degrees of Freedom
 
 Match specificity to the task's fragility and variability:

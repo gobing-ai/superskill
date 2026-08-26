@@ -338,7 +338,7 @@ Test and re-evaluate
 
 ### Common Improvements
 
-- **Missing guidance**: Add workflow steps for uncovered edge cases
+- **Missing guidance**: Add workflow steps for edge cases a real run actually hit — not ones you anticipate ([best-practices.md](best-practices.md) § Add Only What Usage Proved Necessary)
 - **Token efficiency**: Move details to references/, tighten language
 - **New resources**: Add plugin-level scripts for repeated patterns (`plugins/<plugin>/scripts/<feature>/`), references for re-discovered info
 - **Clarity**: Improve description triggers, simplify instructions

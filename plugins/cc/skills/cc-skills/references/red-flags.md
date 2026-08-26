@@ -90,6 +90,7 @@ Organized into 10 categories (MECE-compliant):
 | Missing DO/DON'T rules | Unclear boundaries | Check for rules section |
 | Overly prescriptive instructions | Inflexibility | Check for conditional guidance |
 | Hardcoded examples without placeholders | Brittle content | Check for `{variable}` patterns |
+| Over-structured simple skill | Empty scaffolding costs context and hides the instruction | A short skill carrying Overview + Best Practices + Examples headings with a line or two under each — collapse to title + instructions |
 
 ## Quick Reference: Immediate Reject Patterns
 
