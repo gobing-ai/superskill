@@ -848,13 +848,44 @@ The script persists deterministic proposals and supporting rationale.
 
 The invoking agent reviews the proposal set before any apply step:
 
-1. Check that each proposal matches the actual findings
-2. Remove weak or redundant proposals
-3. Tighten descriptions and rationale where they are vague
-4. Confirm the proposal order matches risk and expected benefit
-5. Decide whether to apply, defer, or request more evidence
+The invoking agent applies the **filing bar** below to each proposal, then orders the survivors
+by frequency × severity. This review is part of the normal evolve flow — no separate CLI flag.
 
-This review is part of the normal evolve flow. It does not require a separate CLI flag.
+##### The filing bar (when a proposal is warranted)
+
+The CLI gate is mechanical — deterministic validate, Δ-margin, `anchor_hash` match, Skeptic veto.
+It answers *"is this change safe?"*, never *"should this change exist?"* That second question is
+this step's job, and it is the one that keeps skills from accreting.
+
+**Do not propose changes by default.** Ask: *would a competent agent, following the current
+instructions, still be expected to fail this way?* If yes, there is a gap. If no, defer.
+
+File a proposal only when **all** of these hold:
+
+- The failure traces to a missing, wrong, or underspecified instruction on a **named owning
+  surface** — this skill, another skill, or in-repo guidance.
+- You can state, in one sentence, the single reusable rule that surface should have carried.
+- Had that rule been present and followed, the observed failure would not have happened.
+- The gap appears in **more than one** signal, or a single occurrence is severe enough to prove
+  a missing contract on its own.
+
+Do **not** file when:
+
+- The existing instruction already required the correct behavior and the model ignored it.
+- The failure is model variance — same prompt, same tools, different choice.
+- The only available edit is restating, hedging, or bolting on more examples.
+- The real fix lives in code, schema, or CLI rather than an instruction surface.
+
+Two rules govern the edit itself:
+
+- **Replace, don't append.** Amending existing guidance in place beats adding another paragraph
+  beside it; appended prose is how a skill doubles in size without gaining a rule.
+- **Smallest expression wins.** State the intended behavioral rule and its owning surface first,
+  then make the minimum edit that expresses it.
+
+When nothing clears the bar, **file nothing and say why, per finding — that is a success, not an
+empty run.** A speculative change is worse than no change: it costs context on every future load
+and cannot be traced back to evidence when it later turns out to be wrong.
 
 #### Step 4: Apply or Roll Back
 ```bash
