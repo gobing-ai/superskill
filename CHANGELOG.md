@@ -4,6 +4,15 @@ All notable changes to `@gobing-ai/superskill` are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Conventional Commits](https://www.conventionalcommits.org/).
 
+## [0.3.19] - 2026-08-26
+
+### Documentation
+
+- **cc-skills absorbs skill-doctor's filing bar into the evolve loop.** `references/workflows.md` replaces the advisory evolve-review checklist with an explicit warrant test: file a proposal only when the failure traces to a missing/wrong instruction on a named owning surface, one reusable rule would have prevented it, and the gap recurs or is severe alone — with explicit do-not-file cases (model variance, ignored-but-present instructions, restating/hedging) and "file nothing and say why" as a success outcome. `SKILL.md` wires the same bar into the Skeptic step of the two-call seam: the mechanical gate decides whether a change is *safe*, never whether it should *exist*. (f32c6a4)
+- **update-skill residuals absorbed into the authoring references.** `best-practices.md` gains the iteration rule (add only what real usage proved necessary; replace guidance in place), `skill-creation.md` points its common-improvements guidance at it, and `red-flags.md` adds the over-structured-simple-skill flag — inverse of the existing missing-sections flag. (02dc4d3)
+- **Scorer contract and the usage plane recorded as unbuilt.** `evaluation-framework.md` corrects the stale trigger-accuracy wording (distinct trigger *branches*, synonym clusters collapse — not phrase counting), defines labeled score bands (`excellent` 1.0 / `adequate` 0.8 / `weak` 0.4 / `poor` 0.2) with mandatory cite-or-fail notes, and records `skill_coverage` plus transcript-grounded evolve as named paths blocked on a transcript source this repo owns (spur history lives in the spur product, not here). `glossary.md` adds the static-plane/usage-plane distinction and the filing-bar term. (ee0fbbe)
+- **Brainstorm record added** — absorb skill-doctor / update-skill into `cc-skills`: staged two-plane approach (Wave A prose + Wave B scorer craft now, Wave C usage plane gated on a source spike), pending operator taste-gate. (9de30eb)
+
 ## [0.3.18] - 2026-08-25
 
 ### Added
