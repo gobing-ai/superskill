@@ -301,7 +301,7 @@ export async function handleSkillAdd(
             const prefix = res.dryRun ? '[dry-run] Would install' : 'Installed';
             echo(`${prefix} ${res.installed.length} skill(s):`);
             for (const item of res.installed) {
-                echo(`  - ${item.name} -> ${item.canonicalPath}`);
+                echo(`  - ${item.name} -> ${item.canonicalPath} (${item.targets.join(', ')})`);
             }
         }
         return undefined;
