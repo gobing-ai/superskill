@@ -21,3 +21,11 @@
 - Earn maintainability: harden after a design is validated, not before.
 - Config only when behavior must vary; a value that never changes is a constant.
 - Out-of-scope findings are notes, not commits; improvements are new work items.
+
+## Tool boundaries
+
+- Read existing contents; use Glob for existence and `rg` for content search.
+- Edit partial changes; Write only new files or full rewrites, never task corpus or unsolicited docs.
+- Use Shell for build, test, lint, Git, and system work only when no dedicated tool fits.
+- Use agents for open-ended research or specialist work, not a single known-target lookup.
+- For core ambiguity, give 2–3 options and a recommendation; decide minor ambiguity and note it.

@@ -88,9 +88,9 @@ provides — declaring Claude Code's `Agent` on Grok (which uses
 ## Harness Row: spur + superskill
 
 The **harness** is the spur + superskill toolchain layered over a coding
-agent's native surface. A main agent should treat the harness as the
-preferred tool surface whenever it is present, falling back to native tools
-only for operations the harness does not cover.
+agent's native surface. Use it first for lifecycle data it owns. For direct
+file, search, web, and delegation work, prefer a purpose-built native tool;
+invoke a shell for a real CLI or only when no dedicated tool exists.
 
 | Harness surface | What it does | Native equivalent it replaces | Confidence |
 | --- | --- | --- | --- |
@@ -108,18 +108,21 @@ only for operations the harness does not cover.
 ### How main agents should declare preferred tool usage
 
 When the harness is present (i.e., `spur` and `superskill` resolve on `PATH`),
-a main agent manifest should include an explicit **preferred-tools** statement
-so the coding agent reaches for the harness before the native surface. The
-statement must:
+a main-agent manifest should include an explicit **preferred-tools** statement.
+The statement must:
 
 1. Name the harness binaries (`spur`, `superskill`) and the verbs the project
    uses day-to-day (`spur task`, `spur feature`, `superskill magent`,
    `superskill skill`).
-2. Pin the fallback: "fall back to native tools (`Read`/`Edit`/`Bash` or
-   equivalents) only for operations the harness does not cover."
+2. Pin the native ladder: purpose-built native tools first; shell-shaped tools
+   (`bash`, `Bash`, `shell`, `Shell`, `run_terminal_command`, `Python`, and
+   equivalents) last among built-ins because unbounded output floods context,
+   costs tokens, and a general shell shadows dedicated tools.
 3. Declare the task surface as the single source of truth: "task state lives
    in `docs/tasks/` via `spur task`; do not track work in free-form
    checklists."
+4. Pin search and web fallback orders: native search → `rg` / `sg` → raw text
+   tools; native web search/fetch → `curl` / `wget` / MCP or plugin surfaces.
 
 Example snippet for a Claude Code `CLAUDE.md`:
 
@@ -131,8 +134,12 @@ Example snippet for a Claude Code `CLAUDE.md`:
 - **Main-agent config:** `superskill magent` (scaffold / evaluate / refine /
   evolve) owns `CLAUDE.md` and cross-platform siblings.
 - **Skills:** `superskill skill` owns skill lifecycle.
-- **Fallback:** native `Read` / `Edit` / `Bash` / `Agent` for anything the
-  harness does not cover (ad-hoc reads, one-off shell, subagent dispatch).
+- **Native work:** use purpose-built file, search, web, and delegation tools
+  before shell-shaped tools. Shell is for real CLIs or missing native coverage;
+  bound output because unbounded shell output floods context, costs tokens, and shadows dedicated tools.
+- **Search:** native search → `rg` / `sg` → `grep` / `sed` / `awk` / `perl`.
+  `rg` and `sg` respect ignore rules and skip irrelevant files.
+- **Web:** native search/fetch → `curl` / `wget` / MCP or plugin surfaces.
 ```
 
 ---

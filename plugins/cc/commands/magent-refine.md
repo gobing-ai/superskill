@@ -8,12 +8,15 @@ allowed-tools: ["Read", "Write", "Glob", "Bash", "Skill"]
 
 Wraps **cc:cc-magents** skill.
 
-Run evaluation, apply deterministic structural fixes (missing fields, type coercion, whitespace), then re-evaluate — all in one step. Magents are frontmatter-OPTIONAL plain markdown (AGENTS.md/CLAUDE.md/GEMINI.md), and required-fields is empty for magents, so structural auto-apply is a clean no-op on frontmatter-less configs — body/section suggestions still surface. Delegates to **cc:cc-magents** skill.
+Run evaluation, apply deterministic structural fixes (missing fields, type coercion, whitespace),
+then re-evaluate. Magents are frontmatter-optional plain markdown, so `--auto` is usually a clean
+no-op on their body: it surfaces low-scoring dimensions but does not perform semantic rewrites.
+The invoking agent owns those edits under the **cc:cc-magents** workflow.
 
 ## When to Use
 
 - Improve magent config quality after scaffolding
-- Fix config issues without running evaluate separately
+- Apply low-risk structural fixes and surface semantic work
 - Preview fixes without writing with `--dry-run`
 
 ## Arguments
@@ -37,13 +40,17 @@ Run evaluation, apply deterministic structural fixes (missing fields, type coerc
 /cc:magent-refine ./CLAUDE.md --dry-run
 ```
 
-## Content Fix Types
+## Refinement Contract
 
-Beyond deterministic structural fixes, refine applies two named content fix types: **description
-prune** (three description rules: front-loaded identity, one trigger per branch, no body
-restatement) and the **pruning pass** (no-op hunt — delete don't trim; duplication collapse;
-sediment removal; disclosure moves). Single copy: **cc:cc-skills** workflows reference § "Content
-fix types".
+Follow **cc:cc-magents** workflows § "Main-Agent Evaluation and Refinement". Freeze requested
+layout and critical boundaries; fix contradictions and dead commands first; delete no-ops and
+sediment; collapse duplicate owners; move rarely needed depth to live authoritative links; add
+only missing non-inferable guidance. Preserve safety and verification inline on targets that do
+not receive rule modules.
+
+After semantic edits, assemble every target and re-run strict validation plus evaluation. Compare
+every dimension with baseline, not only the aggregate. Do not claim `--auto` applied a body change
+that it only suggested.
 
 ## Implementation
 

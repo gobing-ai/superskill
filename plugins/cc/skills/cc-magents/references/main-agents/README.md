@@ -16,6 +16,9 @@ then condensed and **platform-padded** for one primary target family.
 
 ## Dogfood
 
+Use the [evaluation and refinement workflow](../workflows.md#main-agent-evaluation-and-refinement),
+not the aggregate score alone, when treating these fixtures as a baseline.
+
 ```bash
 superskill magent validate plugins/cc/skills/cc-magents/references/main-agents/claude-code.md
 superskill magent evaluate plugins/cc/skills/cc-magents/references/main-agents/claude-code.md

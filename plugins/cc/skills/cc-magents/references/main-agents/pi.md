@@ -6,7 +6,7 @@ platforms: [claude-code, codex, pi, omp, openclaw, hermes, grok, opencode]
 
 # pi
 
-Harness-aware main agent for **Pi**. Prefer spur + superskill when present; fall back to native tools only for operations the harness does not cover.
+Harness-aware main agent for **Pi**. Use spur + superskill for lifecycle data they own; use purpose-built native tools for direct work.
 
 ## Project
 
@@ -32,17 +32,18 @@ When `spur` and `superskill` resolve on `PATH`, use them **first**:
 | Features | `spur feature create` / `advance` | Manual headings |
 | Constraints | `spur rule run` | Ad-hoc lint scripts |
 | Pipelines | `spur workflow run` | Hand-rolled prompts |
-| Main-agent lifecycle | `superskill magent scaffold|validate|evaluate|refine|evolve` | Hand-author AGENTS.md |
+| Main-agent lifecycle | `superskill magent <operation>` (use leaf `--help`) | Hand-author AGENTS.md |
 | Skills / agents / commands / hooks | `superskill skill|agent|command|hook` | Hand-author files |
 | Multi-target install | `superskill install <plugin> --targets ...` | Per-platform setup |
 
 Canonical patterns:
 
 ```bash
-spur task create "Implement auth" && spur task update 0082 wip
-spur task update 0082 --section Solution --from-file /tmp/solution.md
-spur task check 0082
-superskill magent scaffold general-agent --output AGENTS.md
+spur task create "Implement auth"
+spur task update <wbs> wip
+spur task update <wbs> --section Solution --from-file /tmp/solution.md
+spur task check <wbs>
+superskill magent scaffold AGENTS --target codex --output .
 superskill magent validate AGENTS.md && superskill magent evaluate AGENTS.md
 superskill install cc --targets codex,opencode,pi
 ```
@@ -52,6 +53,15 @@ superskill install cc --targets codex,opencode,pi
 ## Tool Discipline
 
 Prefer specialized tools over shell. On **Pi**: Four-tool core: `Read`/`Write`/`Edit`/`Bash`; extensions for more. Prefer harness CLIs via `Bash`.
+
+Use the domain harness for lifecycle data it owns. Otherwise prefer purpose-built native tools;
+shell-shaped tools (`bash`, `Bash`, `shell`, `Shell`, `run_terminal_command`, `Python`, and
+equivalents) rank last among built-ins because unbounded output floods context, costs tokens,
+and a general shell shadows dedicated tools. Shell remains correct for real CLIs such as `spur`
+and `superskill`.
+
+Search: native → `rg` / `sg` → `grep` / `sed` / `awk` / `perl`; `rg` and `sg` respect ignore
+rules. Web: native search/fetch → `curl` / `wget` / MCP or plugin surfaces.
 
 | Need | Prefer | Avoid |
 | --- | --- | --- |
@@ -69,7 +79,7 @@ Prefer specialized tools over shell. On **Pi**: Four-tool core: `Read`/`Write`/`
 4. `bun run spur-check` when present
 5. `git status` shows only intentional changes
 
-Never bypass with `--no-verify` or `--force`. Evidence before assertions. Confidence: **HIGH** (verified docs today), **MEDIUM** (may be stale), **LOW** (memory only — flag). Fail loud: never claim done if work was skipped.
+Never bypass verification; treat destructive `--force` as approval-required. Evidence before assertions. Confidence: **HIGH** (verified docs today), **MEDIUM** (may be stale), **LOW** (memory only — flag). Fail loud: never claim done if work was skipped.
 
 ## Conventions
 
@@ -105,4 +115,3 @@ Route facts to owning docs (`docs/00_ADR.md` decisions, `01_PRD.md` scope, `03_A
 ## Tone & Style
 
 Direct, technical, conclusion-first. No filler ("Great question", "As an AI", "I hope this helps"). Senior-engineer register throughout.
-

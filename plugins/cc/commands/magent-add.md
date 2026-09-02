@@ -1,6 +1,6 @@
 ---
-description: Create a new main agent config with scaffolding
-argument-hint: "<name> [--description <text>] [--target <platform>] [--output <dir>] [--template <tier>] [--tools <list>] [--force]"
+description: Scaffold a main-agent config seed from verified project facts
+argument-hint: "<name> [--description <text>] [--target <platform>] [--output <dir>] [--template <name>] [--tools <list>] [--force]"
 allowed-tools: ["Read", "Write", "Glob", "Bash", "Skill"]
 ---
 
@@ -8,7 +8,8 @@ allowed-tools: ["Read", "Write", "Glob", "Bash", "Skill"]
 
 Wraps **cc:cc-magents** skill.
 
-Scaffold a new main agent configuration file. Delegates to **cc:cc-magents** skill.
+Scaffold a main-agent configuration seed. Delegates to **cc:cc-magents** skill;
+the invoking agent must replace generic template prose with verified project facts.
 
 ## When to Use
 
@@ -19,11 +20,11 @@ Scaffold a new main agent configuration file. Delegates to **cc:cc-magents** ski
 
 | Argument | Description | Default |
 |----------|-------------|---------|
-| `<name>` | Name of the main-agent configuration | (required) |
-| `--description` | Free-text description of the config's purpose | auto-generated |
+| `<name>` | Output filename stem (`CLAUDE` creates `CLAUDE.md`) | (required) |
+| `--description` | Free-text description of the config's purpose | empty |
 | `--target` | Target platform | claude |
 | `--output` | Output directory | . |
-| `--template` | Template tier (e.g. minimal / standard / specialist) | default |
+| `--template` | Built-in magent template (currently `default`) | default |
 | `--tools` | Comma-separated tool names to pre-populate | — |
 | `--force` | Overwrite existing file | false |
 
@@ -31,10 +32,10 @@ Scaffold a new main agent configuration file. Delegates to **cc:cc-magents** ski
 ## Examples
 
 ```bash
-# Scaffold a CLAUDE.md for a Node.js project
-/cc:magent-add project-agent --target claude-code
-# Scaffold with a description and template tier
-/cc:magent-add api-agent --description "Dev agent for API service" --template standard
+# Scaffold CLAUDE.md in the current directory
+/cc:magent-add CLAUDE --target claude --description "Project main-agent config"
+# Scaffold AGENTS.md for Codex
+/cc:magent-add AGENTS --target codex --output .
 ```
 
 Delegates to **cc:cc-magents** skill:
@@ -50,9 +51,13 @@ superskill magent scaffold $ARGUMENTS
 
 ## Discovery Discipline
 
-Before scaffolding, run the grill-style discovery interview — explore sibling artifacts, the
-target repo, and prior evaluations first; then one question at a time, each with a recommended
-answer. Single copy: **cc:cc-skills** workflows reference § "Grill-style discovery".
+Before scaffolding, inspect the active instruction load graph, project docs, package scripts,
+sibling configs, and prior evaluations. Ask only for missing, stable facts the repository cannot
+answer. After generation, delete inferred boilerplate, insert exact verified commands and
+boundaries, then validate and evaluate. Follow **cc:cc-magents** workflows § "Create Workflow";
+the scaffold is not a finished config.
+
+Use `--force` only when replacement was requested and the existing file was inspected.
 
 ## Platform Notes
 

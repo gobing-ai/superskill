@@ -1,19 +1,21 @@
 ---
 description: Score main agent config across 5 quality dimensions
 argument-hint: "<nameOrPath> [--json] [--target <platform>] [--save] [--rubric <file>] [--ingest <file>] [--base-path <dir>]"
-allowed-tools: ["Read", "Write", "Glob", "Bash", "Skill"]
+allowed-tools: ["Read", "Grep", "Glob", "Bash", "Skill"]
 ---
 
 # Magent Evaluate
 
 Wraps **cc:cc-magents** skill.
 
-Score main agent config quality across 5 dimensions. **Evaluate only — make NO changes.** Delegates to **cc:cc-magents** skill.
+Score main-agent config quality across five dimensions, then conduct the semantic audit the
+heuristics cannot prove. **Evaluate only — make NO changes.** Delegates to **cc:cc-magents** skill.
 
 ## When to Use
 
 - Check current score without making changes
 - Compare scores before and after refinement
+- Audit a resolved multi-file or multi-target instruction set for drift and contradictions
 
 ## Arguments
 
@@ -50,6 +52,17 @@ Skill(skill="cc:cc-magents", args="evaluate $ARGUMENTS")
 ```bash
 superskill magent evaluate $ARGUMENTS
 ```
+
+## Evaluation Contract
+
+Follow **cc:cc-magents** workflows § "Main-Agent Evaluation and Refinement": resolve the actual
+load graph, run strict validation, record every baseline dimension, and report heuristic findings
+separately from semantic findings. Check authority and scope, stable/non-inferable content, live
+links, exact leaf-command help, the reasoned tool ladder, safety boundaries, and runnable gates.
+An aggregate score or exit code alone is not a PASS.
+
+For nested CLI paths, require the verb in the parent's `Commands` list and the exact leaf path in
+`Usage`; Commander can return parent help with exit 0 for an unknown child.
 
 ## Platform Notes
 

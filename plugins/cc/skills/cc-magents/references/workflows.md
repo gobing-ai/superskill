@@ -19,6 +19,11 @@ All `cc-magents` operations follow the shared **Meta-Agent Workflow Schema**:
 | 3 | Generate platform output | `generator.ts` | `WARN` for provisional platforms |
 | 4 | Validate output | `validate.ts` | `PASS` only when no errors |
 
+Before selecting a template, inspect the active instruction load graph, project
+docs, package scripts, and sibling configs. Ask only for missing, stable facts
+that cannot be inferred from the repository. Treat scaffold prose as a seed:
+delete generic defaults and never invent commands, paths, or platform support.
+
 ## Validate Workflow
 
 | Step | Phase | Owner | Decision |
@@ -27,6 +32,60 @@ All `cc-magents` operations follow the shared **Meta-Agent Workflow Schema**:
 | 2 | Check platform capability | `capabilities.ts` | `WARN` for low-confidence support |
 | 3 | Check safety coverage | `validate.ts` | `WARN` when approval boundaries are absent |
 | 4 | Return verdict | `validate.ts` | `PASS`, `WARN`, or `BLOCK` |
+
+## Main-Agent Evaluation and Refinement
+
+Run two lanes. The CLI lane supplies reproducible structural and heuristic
+evidence; the semantic lane checks whether the instructions are true, useful,
+and safe. A passing score cannot replace the semantic lane.
+
+### Evaluation lane
+
+1. **Resolve the load graph.** Identify root and closest manifests, imports,
+   scoped rules, platform overrides, and precedence. Evaluate the content each
+   target actually receives, not one source file in isolation.
+2. **Record a baseline.** Run strict validation and heuristic evaluation. Keep
+   the aggregate, every dimension, body size, and findings; use `--base-path`
+   when links are authored for a different destination.
+3. **Audit semantics.** Apply every row below and cite the file/line or command
+   output supporting each finding.
+4. **Return a verdict.** Separate deterministic scorer findings from semantic
+   findings. `PASS` requires no unresolved blocker; uncertainty is `WARN`, not
+   invented confidence.
+
+```bash
+superskill magent validate AGENTS.md --strict
+superskill magent evaluate AGENTS.md --json
+superskill magent refine AGENTS.md --dry-run
+```
+
+| Audit | Pass condition |
+| --- | --- |
+| Authority and scope | Higher-priority user/project/platform rules win; duplicate owners and contradictions are removed. |
+| Information budget | Root contains stable, non-inferable instructions; defaults, tutorials, stale inventories, and speculative rules do not consume every-request context. |
+| Command liveness | Every copy-pasteable command and flag resolves against current leaf `--help`; nested verbs appear in the parent's `Commands` list and the leaf `Usage` names the exact path. Exit code alone is insufficient. |
+| Tool selection | Domain harness for owned lifecycle work; otherwise purpose-built native tool first. Shell-shaped tools (`bash`, `Bash`, `shell`, `Shell`, `run_terminal_command`, `Python`, equivalents) are last among built-ins because unbounded output floods context, costs tokens, and a general shell shadows dedicated tools. |
+| Search and web | Native search → `rg` / `sg` → `grep` / `sed` / `awk` / `perl`; native web search/fetch → `curl` / `wget` / MCP or plugin surfaces. `rg` and `sg` respect ignore rules and avoid irrelevant files. |
+| Boundaries and gates | Always / ask-first / never boundaries, least privilege, destructive-action guards, secrets handling, and runnable completion gates retain their meaning. |
+| Disclosure and targets | Every relative link resolves and each fact has one owner. Replacement overrides are self-sufficient; targets that receive no rule modules retain critical safety and verification inline. |
+
+### Refinement lane
+
+1. Freeze the requested invariants and baseline: headings/order when required,
+   platform targets, critical constraints, command surface, and all dimension
+   scores.
+2. Fix contradictions, dead commands, and unsafe guidance first. Then delete
+   no-ops, collapse duplication, remove sediment, and move rarely needed depth
+   to a live owning document. Do not trade missing behavior for brevity.
+3. Add only missing non-inferable guidance: exact commands, the tool ladder and
+   its reason, authority, approval boundaries, or a runnable verification gate.
+   Do not add a rule for a hypothetical failure.
+4. Reassemble every target, resolve every link, re-run strict validation and
+   evaluation, and compare every dimension with baseline. Restore or revise a
+   change that regresses a dimension or drops a critical boundary.
+5. Report before/after evidence, residual uncertainty, and deliberately
+   deferred work. Do not claim semantic body changes were applied by
+   `refine --auto`; that command only applies deterministic structural fixes.
 
 ## Adapt Workflow
 
@@ -63,13 +122,19 @@ unsupported features.
 Embedded LLM review is performed by the invoking agent. There is no separate
 `--llm-eval` command path.
 
+Evolve only from evidence: a repeated failure, persisted score trend, confirmed
+command drift, or platform capability change. A proposal's `reason` names that
+evidence, why the chosen root or disclosed destination is authoritative, and
+the expected instruction-budget effect. Preserve the verbatim goal anchor and
+reject speculative rules added "for completeness."
+
 ## Harness-Usage Workflow
 
-When the spur + superskill harness is present (both binaries resolve on
-`PATH`), a main agent should instruct the coding agent to reach for the
-harness **first** for lifecycle work, falling back to native tools only for
-operations the harness does not cover. The main agent's manifest must name
-the harness verbs and pin the fallback explicitly (see
+When the spur + superskill harness is present, use it first for the lifecycle
+data it owns. For direct file, search, web, and delegation work, prefer the
+purpose-built native tool. A shell-shaped tool is appropriate for running the
+actual harness CLI or when no dedicated tool exists; bound its output. The
+main-agent manifest must name exact harness verbs and this fallback (see
 [platform-compatibility.md](platform-compatibility.md#harness-row-spur--superskill)
 for the preferred-tools statement template).
 
@@ -153,8 +218,8 @@ spur workflow continue <run-id>
 **Main-agent config (superskill magent):**
 
 ```bash
-# Scaffold a new platform-native config from a template
-superskill magent scaffold general-agent --output AGENTS.md
+# Scaffold CLAUDE.md in the current directory
+superskill magent scaffold CLAUDE --target claude --output .
 
 # Validate document and registry structure
 superskill magent validate AGENTS.md
@@ -164,7 +229,7 @@ superskill magent evaluate AGENTS.md --rubric <file> --json
 # ... Scorer persona scores offline ...
 superskill magent evaluate AGENTS.md --ingest <scores.json> --save
 
-# Refine: auto-suggest and persist
+# Refine: apply deterministic structural fixes and persist the post-score
 superskill magent refine AGENTS.md --auto --save
 
 # Evolve: two-call seam (envelope-out → Author → Skeptic → Judge → ingest-in)
@@ -210,11 +275,10 @@ auto-selects.
 - `spur` and `superskill` are Node/Bun CLIs — they run identically on every
   platform the harness supports. A main agent manifest should declare them as
   the preferred tool surface regardless of the host agent.
-- On platforms without native subagents (Codex, Pi, OpenCode), `spur task`
-  and `superskill` replace what would otherwise be `Agent`-dispatched work.
-  The main agent should instruct the coding agent to invoke the CLIs directly
-  via the native shell tool (`Bash`, `shell`, `bash`, `command`,
-  `run_terminal_command`).
+- Check the current capability matrix before naming a native subagent or other
+  platform tool; extensions and host versions can change the surface. Prefer
+  that purpose-built tool when present. Invoke `spur` / `superskill` through
+  the native shell only because they are real CLIs, and keep output bounded.
 - Skills delegation (`Skill()` / `cc:` namespace) is Claude Code-native. On
   other platforms, `superskill install` flattens skills to platform-native
   entries; the main agent should reference skills by name, never by `cc:`
@@ -231,4 +295,3 @@ auto-selects.
 | `PASS` | Output satisfies the requested platform and task requirements. |
 | `WARN` | Output is usable but has confidence, portability, or quality caveats. |
 | `BLOCK` | Output is unsafe, invalid, or missing required platform behavior. |
-

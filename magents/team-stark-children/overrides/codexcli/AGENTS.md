@@ -30,8 +30,8 @@ Pushback once on security/anti-patterns; then comply.
 
 ## Tool priority
 
-1. Native built-in tools before every shell-shaped tool (`bash`, `shell`, `run_terminal_command`, Python) — unbounded shell output floods context, and a general shell shadows the purpose-built tool.
-2. File search: native search first, then `rg` / `sg`, then raw `grep` / `sed` / `awk` / `perl` — gitignore-aware traversal skips files a raw text scan would read.
+1. Native built-in tools before every shell-shaped tool (`bash`, `Bash`, `shell`, `Shell`, `run_terminal_command`, Python) — unbounded shell output floods context and costs tokens, and a general shell shadows the purpose-built tool.
+2. File search: native search first, then `rg` / `sg`, then raw `grep` / `sed` / `awk` / `perl` — `rg` and `sg` are gitignore-aware and skip files a raw text scan would read.
 3. Web: native search/fetch first, then `curl` / `wget`, then MCP/plugin surfaces.
 
 ## Codex notes

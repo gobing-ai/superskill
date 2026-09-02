@@ -59,6 +59,18 @@ or `contradiction`. The CLI
 rejects unknown tags on ingest and persists valid ones in proposal history, so `--history` reads
 as a failure-mode ledger. Definitions: **cc:cc-skills** skill-engineering theory reference.
 
+## Proposal Discipline
+
+Evolve only from evidence: repeated failures, persisted score drift, a confirmed dead command, or
+a platform capability change. In each proposal's `reason`, cite that evidence, justify whether the
+change belongs in always-on root context or a disclosed owner, and state the instruction-budget
+effect. Preserve the verbatim goal anchor and `anchor_hash`; do not add speculative rules merely
+for completeness.
+
+Before acceptance, apply **cc:cc-magents** workflows § "Main-Agent Evaluation and Refinement" to
+the assembled targets. Reject proposals that regress any baseline dimension, break a live link or
+command, duplicate an authority, or weaken a critical boundary even when aggregate score rises.
+
 ## Implementation
 
 Pass `$ARGUMENTS` to the underlying skill for processing.

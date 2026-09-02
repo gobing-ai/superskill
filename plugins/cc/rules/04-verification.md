@@ -7,5 +7,7 @@ All must hold:
 3. `git status` shows only intentional changes.
 4. If a harness task was used: verify **PASS** with evidence — not self-report.
 5. Uncertainty and partial work stated explicitly (fail loud).
+6. User-visible behavior matches the request; browser-check UI paths and edges or state that they are untested.
 
 Never use `--no-verify` or new suppressions to force green without operator approval.
+CLI failures must report what failed and exit nonzero.

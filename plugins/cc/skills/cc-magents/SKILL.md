@@ -46,40 +46,43 @@ Main-agent support is capability-based. Each platform declares:
 Each platform's resolved values for these attributes live in the capability
 matrix at [references/platform-compatibility.md](references/platform-compatibility.md).
 
+A main-agent file is always-on context. Keep its root layer to stable,
+project-specific instructions the model cannot infer reliably: exact commands,
+authority and scope, tool choices, verification gates, and safety boundaries.
+Move deeper domain guidance to live, authority-owned links. A scaffold is a
+starting point, not evidence that any generated project fact is true.
+
 ### Harness awareness
 
-`superskill magent` is **harness-aware**: every operation assumes the harness
-(spur + superskill) is the preferred tool surface when present. A scaffolded
-or refined main agent must declare `spur task` / `spur feature` as the
-preferred work-tracking surface and `superskill magent` / `superskill skill`
-as the preferred lifecycle surface, falling back to native tools only for
-operations the harness does not cover. The scaffold, evaluate, refine, and
-evolve commands all emit and reward this declaration. See
+Use `superskill magent` for main-agent lifecycle work when the CLI is present.
+This does not make a general shell the preferred tool for ordinary file,
+search, or web work: use purpose-built native tools first and invoke a shell
+for a real CLI or when no dedicated tool exists. See
 [references/workflows.md](references/workflows.md#harness-usage-workflow) for
-canonical command patterns and the preferred-tools statement template.
+canonical commands and the tool-selection ladder.
 
 ## Operations
 
 | Operation | Command | Purpose |
 | --- | --- | --- |
-| add | `superskill magent scaffold <name>` | Create (synthesize) a new platform-native config from a template |
+| add | `superskill magent scaffold <name>` | Create a config seed from the built-in template |
 | validate | `superskill magent validate <nameOrPath>` | Validate document and registry structure |
 | evaluate | `superskill magent evaluate <nameOrPath>` | Two-call seam: envelope-out (`--rubric --json`) → Scorer → ingest-in (`--ingest --save`) |
-| refine | `superskill magent refine <nameOrPath>` | Recommend native splits, scoping, safety, and evidence improvements |
-| evolve | `superskill magent evolve <name>` | Two-call seam: envelope-out (`--propose-only --json`) → Author → Skeptic → Judge → ingest-in (`--ingest --accept`) |
+| refine | `superskill magent refine <nameOrPath>` | Classify structural fixes and surface low-scoring dimensions for review |
+| evolve | `superskill magent evolve <name>` | Propose longitudinal content changes through the Author → Skeptic → Judge seam |
 
 ## Quick Start
 
 ```bash
-# Create a new platform-native config from a template
-superskill magent scaffold general-agent --output AGENTS.md
+# Create CLAUDE.md in the current directory from the built-in template
+superskill magent scaffold CLAUDE --target claude --output .
 
 # Evaluate: envelope-out → Scorer → ingest-in
 superskill magent evaluate AGENTS.md --rubric <file> --json
 # ... Scorer persona scores offline ...
 superskill magent evaluate AGENTS.md --ingest <scores.json> --save
 
-# Preview and apply refinements non-interactively
+# Apply deterministic structural fixes non-interactively
 superskill magent refine AGENTS.md --auto --save
 
 # Evolve: envelope-out → Author → Skeptic → Judge → ingest-in
@@ -88,16 +91,17 @@ superskill magent evolve AGENTS.md --propose-only --json
 superskill magent evolve AGENTS.md --ingest <proposal.json> --accept <id>
 ```
 
-JSON output is supported on every command via `--json` for automation.
+`validate`, `evaluate`, and `evolve` support `--json`; `scaffold` and `refine`
+do not. Confirm the exact option surface with the leaf command's `--help`.
 
 ## Workflows
 
 | Workflow | Steps | Handler |
 | --- | --- | --- |
-| **Add** | template selection -> scaffold -> validate -> evaluate | `superskill magent scaffold` -> `superskill magent validate` -> `superskill magent evaluate` |
+| **Add** | inspect facts -> scaffold seed -> replace boilerplate -> validate -> evaluate | `superskill magent scaffold` -> invoking agent -> `validate` -> `evaluate` |
 | **Validate** | parse -> registry check -> structural lint | `superskill magent validate` |
 | **Evaluate** | envelope-out → Scorer scores offline → ingest-in (two-call seam) | `superskill magent evaluate --rubric --json` → Scorer → `superskill magent evaluate --ingest --save` |
-| **Refine** | auto-suggest -> review -> persist | `superskill magent refine --auto --save` |
+| **Refine** | structural preview/fix -> semantic audit/edit -> per-target verification | `superskill magent refine --dry-run` -> invoking agent -> `validate` / `evaluate` |
 | **Evolve** | envelope-out → Author → Skeptic → (Judge) → ingest-in (two-call seam) | `superskill magent evolve --propose-only --json` → Author/Skeptic/Judge → `superskill magent evolve --ingest --accept <id>` |
 
 Branching:
@@ -106,53 +110,43 @@ Branching:
 
 **Goal-anchor verbatim discipline.** The evolve seam passes each brief's goal anchor — original frontmatter, rubric criterion, and negative constraints — **verbatim** to the Author, Skeptic, and Judge personas. Do not summarize, compact, or paraphrase the anchor. The CLI double-loop gate (F024) enforces this via `anchor_hash`: if a persona strips or alters the anchor, the hash will not match and the gate rejects the proposal.
 
-See [references/workflows.md](references/workflows.md) for full step tables and
+Use the [main-agent evaluation and refinement workflow](references/workflows.md#main-agent-evaluation-and-refinement)
+for the semantic checks that CLI heuristics cannot prove. See
+[references/workflows.md](references/workflows.md) for full step tables and
 [references/platform-compatibility.md](references/platform-compatibility.md) for the platform capability matrix.
 
 ## Rubric and Evaluation Criteria
 
-When `superskill magent evaluate` runs against a main agent, the scorer
-applies the canonical rubric (owned at `packages/core/src/rubrics/magent.yaml`
-— read it there; do not restate weights here, they drift). The following
-dimensions are harness-aware: a manifest that properly positions the harness
-tools and accounts for cross-platform differences scores higher.
+`superskill magent evaluate` uses the canonical rubric at
+`packages/core/src/rubrics/magent.yaml`; read weights there rather than copying
+them. Its deterministic score is a signal, not a semantic proof:
 
-| Dimension | What the scorer rewards | Harness-aware signal |
-| --- | --- | --- |
-| **Harness positioning** | The manifest declares `spur task` / `spur feature` as the preferred work-tracking surface and `superskill magent` / `superskill skill` as the preferred lifecycle surface, with a named fallback to native tools. | A "Preferred tools (harness present)" section naming `spur` and `superskill` verbs. |
-| **Cross-platform coverage** | The manifest accounts for platform tool-surface differences (e.g. Claude `Agent` vs Grok `spawn_subagent`, `WebFetch` vs `web_search`) and does not assume a single native surface. | References to the lossy-mappings table or per-platform tool notes. |
-| **Lossy-mapping awareness** | The manifest notes where harness declarations do not survive `superskill install` conversion and names the workaround (e.g. skills by name, not `cc:` deep links; `superskill hook` for cross-platform hooks). | A loss-reporting or workaround note per lossy mapping. |
-| **Confidence honesty** | Platform claims mark confidence levels (HIGH/MEDIUM/LOW) honestly; provisional platforms (Antigravity, Pi, OpenClaw, Hermes, Grok) stay LOW until official docs exist. | Inline confidence markers on platform-specific claims. |
-| **Safety boundaries** | The manifest preserves approval boundaries and does not grant destructive tool permissions silently when porting across platforms. | No new `bypassPermissions` / `--dangerously-skip-permissions` declarations without an explicit guard. |
+| Dimension | Deterministic signal |
+| --- | --- |
+| **completeness** | Six governance areas appear inline or through live relative links: project, commands, verification, conventions, safety, docs. |
+| **platform-coverage** | Platforms are declared or detected in prose. |
+| **conciseness** | Body length is near the 1,000–8,000-character range with low no-op and within-body duplication density. |
+| **tone-consistency** | Tone, style, voice, personality, or forbidden-phrase signals are present consistently. |
+| **safety** | Safety vocabulary is present. This lexical proxy does not prove least privilege or correct approval boundaries. |
 
-### `superskill magent` commands are harness-aware
+The invoking human or LLM must separately audit precedence, assembled target
+content, command liveness, tool-selection rationale, disclosure links, and the
+meaning of safety and verification rules. Report heuristic findings and
+semantic findings separately; never tune prose merely to satisfy keywords.
 
-All five operations — **scaffold**, **validate**, **evaluate**, **refine**,
-**evolve** — emit and ingest harness-aware content:
-
-- **scaffold** emits a "Preferred tools (harness present)" section by default
-  when the harness is detected on `PATH`.
-- **evaluate** scores the harness-positioning and cross-platform-coverage
-  dimensions above; a manifest with no harness declaration caps at the
-  pre-harness baseline and cannot reach grade A.
-- **refine** recommends adding the harness declaration and fixing lossy
-  mappings when they are absent.
-- **evolve** proposes longitudinal improvements that keep the harness
-  declaration in sync as the spur/superskill CLI surface changes; the
-  goal-anchor verbatim discipline (F024) prevents a persona from stripping
-  the harness declaration during a rewrite.
-
-The two-call evaluate and evolve seams are platform-agnostic: the envelope
-JSON carries the manifest content + rubric + baseline, so the scorer and
-author/skeptic/judge personas run the same on every host agent.
+`refine --auto` applies only deterministic structural fixes and skips semantic
+body rewrites. The invoking agent owns those edits and must re-run validation
+and evaluation afterward. The evaluate and evolve two-call seams remain
+platform-agnostic because their envelopes carry the content, rubric, and
+baseline.
 
 ## Source Material
 
 The platform capability matrix lives in
 [references/platform-compatibility.md](references/platform-compatibility.md),
 with high-confidence entries verified on 2026-04-30. Provisional platforms such
-as Antigravity and Pi must remain marked as low confidence until official docs
-or reproducible product tests exist.
+as Antigravity must remain marked at the matrix's current confidence until
+official docs or reproducible product tests justify a change.
 
 ## Additional Resources
 
