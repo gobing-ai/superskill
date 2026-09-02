@@ -26,26 +26,32 @@ I have everything I need. Now I'll extract the learnings into clean markdown.
 - **Feature shippable gate reports FAIL while a covering task sits at `testing`:** the F3 scenario shows "linked but unverified" because the feature checker only honors verdicts from `done` tasks. The `testing → done` transition is what clears the scenario; a verify PASS written at `testing` is correct and sufficient, not a defect.
 - **`## Review` section ownership:** verify mode must not write `## Review`; it's owned by `/sp-dev-review`, and the `record` step backfills it only when bare. Historical P3 findings stay accurate as-of-review-time even if the verify fix pass resolves them — the Testing section documents the resolution.
 - **`spur task update --section` for prior-task resolution:** appending a dated `RESOLUTION (2026-08-09, task 0112)` into 0111's Q&A is the correct way to settle an earlier task's stale premise without erasing its historical probe record.
+
 # Wrap-up learnings — 2026-08-13 (feature A batch)
 
 ## 0115 (magent completeness disclosure-aware)
+
 - Scoring surfaces must be exercised with real filesystem fixtures, not mocked `existsSync`: the live-link tests (temp dir, no mock) caught nothing the mock would miss — but they also certify the actual `fs` seam. Keep real-fixture tests for fs-touching heuristics.
 - Biome `noAssignInExpressions` rejects the `while ((m = re.exec(body)) !== null)` idiom — `body.matchAll(re)` is the drop-in replacement and reads cleaner. Add to the mental lint checklist; implement agents will keep producing the exec-loop form.
 - A change to `evaluate()` signature (optional param) is byte-identical for absent callers only if the default path never touches the new seam (`basePath === undefined → return false` before any fs call). Test that equivalence explicitly (`toEqual` vs explicit-undefined).
 
 ## 0116 (contradiction failure mode)
+
 - Append-only enum growth with a frozen order: append last, derive types from the const, and let rejection messages self-enumerate via `join(', ')` — zero hand-maintained string lists. This survived review with no P1–P3.
 - Doc-surface parity sweeps (grep the whole repo for the old enumeration) are cheap and catch stale counts in command files that tests never read. Do the sweep in the same change, not as a follow-up.
 
 ## 0117 (magent template minimization investigation)
+
 - A scorer that measures "conciseness" as byte length will penalize any template with teaching prose that no dimension scores. Before blaming the template, attribute the body: measure how much of it is unscored padding. 70.1% here was enablement prose — a linkable restructure, not deletion.
 - Counterfactual matrices (0/3/5 platforms) beat single-point measurements when a dimension is a `min(n/N, 1)` clamp — they expose both the penalty magnitude and its legitimacy.
 - Investigation tickets that graduate implementation should write the follow-up ticket (0119) fully populated (Background/Requirements/AC/Design) in the same change — the decision is fresh, the context is loaded.
 
 ## 0118 (spur constitution template assessment)
+
 - Line-number citations in docs rot fast (two P4 citation errors in one task, both caught by verify's live re-read). Verify's `--fix all` correcting them in the same pass is the right loop — cite section headings, and when you cite lines, re-verify them at verify time.
 
 ## Batch (process)
+
 - The inline pipeline driver's native-subagent dispatch worked cleanly for all 16 agent.run stages; the one format-gate failure (0115) was fixed at root cause and re-ran green. The `test -s` gate on wrap capture files is the right success signal for agent-produced artifacts.
 - Feature-sync bounded wrapper suppressed redundant blocked syncs mid-batch (expected — feature stays backlog until the batch-once feature-transition).
 
@@ -85,6 +91,7 @@ I have everything I need. Now I'll extract the learnings into clean markdown.
 - **`...(opts.basePath ? { basePath } : {})` silently drops an explicit empty `--base-path ""`** — the dirname fallback is right (empty dir is meaningless), but the guard is implicit; P4-flagged for a comment.
 - **`basePath` default is computed in two places** (heuristic path and `emitEnvelope` baseline) — parity documented at `:222-226` but not enforced; a future change to one default silently diverges the envelope baseline from the default report.
 - **basePath tests assert only the completeness note, not the area identity** the link matched — a wrong-area keyword match would still yield `6/6`. Advisory P4, but a caution for delta-isolation tests.
+
 # Wrap-up learnings — 2026-09-01 (feature B: 0123 + 0124)
 
 ## 0123 (install provenance manifest)
@@ -127,3 +134,43 @@ I have everything I need. Now I'll extract the learnings into clean markdown.
 - Version-only stale with identical files used to render `(0 file(s) changed: )`. Omit the empty path list.
 - `isTarget` must use `TARGETS.includes`, not a hand-copied union.
 - Shippable FAIL while the last covering task is still `wip` is expected; per-task Verdict stays independent.
+**Doc-evolve wrapup (0125) — audit clean, no repairs applied.**
+
+Detection run against the task's changeset (`magents/team-stark-children/*` + `plugins/cc/rules/01|02`, docs-only, uncommitted):
+
+- **00_ADR.md** — no drift. `magents/` bundling/published-content entries (lines 516–518, 565) still true; the task's decisions are product content, recorded in feature C, no T1. Frontmatter `updated_at: 2026-08-31` plausible.
+- **03_ARCHITECTURE.md** — no drift. No claims on magent package layout, rule-module count, or overrides mechanics; `select-magent.ts` one-liner matches unchanged code.
+- **04_DESIGN.md** — no T3 fired (no command/flag/config/schema/DTO change). No `spur status` / `spur init` dead-verb propagation (grep: zero hits across all four targets); the drift class was confined to the magent package and fixed there.
+- **docs/design/*** — no repair per §4.2: phase docs are dated working records, not in the authority chain; nothing authoritative depends on them, and editing them would falsify history. 04's links to them are correctly labeled as phase design docs.
+- **Flagged, not repaired (out of enumerated scope):** feature C shipped with no `docs/05_FEATURES.md` row — a T4 miss (feature B has a row at line 39, C has none). Recommend adding the row in the same commit that lands this changeset.
+
+No task/feature corpus written. Learnings artifact at `.spur/run/wrapup-learnings.md`:
+
+# Wrap-up learnings
+
+## 2026-09-02
+
+### 0125 — Refresh the team-stark-children magent package to SOTA
+
+#### Conventions
+
+- Verify every `spur <noun> <verb>` / `superskill <noun> <verb>` string in agent-facing docs by mechanical extraction against the binary's own `--help` (`rg -o` sweep, then resolve each noun/verb), never by eye. The extraction sweep is what caught the dead `spur status` / `spur init`; the real verbs are `spur self status` / `spur self init` (spur 0.3.71+).
+- Plugin rules reach only claude + antigravity (`plugins/cc/rules/` installs to `.claude/rules/` and `.agents/rules/`, select-magent.ts). A doctrine meant for all nine targets must live in the root AGENTS.md and be mirrored into each `overrides/<target>/AGENTS.md` — overrides replace the root layer, never append.
+- Derive a compression budget from the rubric weights before writing, not by taste: at safety 4/7 the aggregate-0.90 ceiling was 9,905 chars, so the target was 9,500 with 405 chars of margin. A round "≤10,000" target would have failed the gate at 0.8982.
+- Rules that agents must keep under pressure carry their failure mode, not just the order ("shell-shaped tools last — unbounded output floods context and shadows the purpose-built tool"). A bare ranking is forgotten; a ranking with its reason can be re-derived.
+
+#### Patterns
+
+- Order of operations for a doc-refresh task: drift repair first (mechanical, stops the rewrite from carrying stale verbs forward), then compression (frees budget), then new doctrine (spends it), then the quality gate. Authoring doctrine first pushes the file further from target and forces a second pass.
+- Relocate displaced depth into the existing rule modules along their themes instead of adding a new module — a fifth `plugins/cc/rules/*.md` makes `CLAUDE.md`'s inline module list stale and triggers a second sync obligation.
+- The scorer is the instrument, not the subject: never tune `packages/core/src/quality/*` or the rubric to flatter the artifact being scored; that voids the gate that proves the work.
+- Every acceptance-criteria row carried executable evidence (command + observed result), not prose claims — this is what made the pipeline verify PASS without re-investigation.
+
+#### Gotchas / errors fixed
+
+- `scoreSafety`'s keywordDensity matches whole words bounded by whitespace or `.,;:!?`: `[CRITICAL]`, `safety`, `never`, `block` scored; `security` was boundary-blocked (followed by `/` or `-`) and contributed nothing. Rewriting markers during compression silently moves the score — assert the four boundary-sensitive matches survive the rewrite.
+- The CLI's "N safety markers found" note is naive substring counting and disagrees with the real whole-word scorer. Trust the regex in `heuristics.ts`, not the note.
+- The CLI reports the rubric-weighted aggregate, not `computeAggregate`'s equal weighting (`apps/cli/src/operations/evaluate.ts:208` overwrites it) — reproduce the weighted sum when computing a budget by hand.
+- opencode, hermes, grok, and omp receive no plugin rules at install time, so the CRITICAL safety table and verification gate cannot be relocated out of the root file — compress them in place.
+- The "~32 KiB Codex cap" is asserted in a comment in the codex override, not enforced by any code — treat it as a documented budget checked with `wc -c`, not as a gate.
+- Doc-side audit after the task: the dead-verb class did not propagate into the numbered docs (`docs/00`, `03`, `04`, `docs/design/*` carry no `spur status` / `spur init`), and a docs-only changeset fires no T3 sync trigger. Open follow-up: feature C shipped without a `docs/05_FEATURES.md` row (T4) — flagged, not repaired, as 05 was outside the wrapup's enumerated repair scope.
