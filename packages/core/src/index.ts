@@ -20,10 +20,12 @@ export type { ContentType } from './content/types';
 export * from './content/types';
 export * from './mapper';
 export * from './marketplace';
-export * from './operations/migrate';
 // ── Operations ───────────────────────────────────────────────────────────────
+export * from './operations/install-manifest';
+export * from './operations/migrate';
 export * from './operations/package';
 export * from './operations/scaffold';
+export * from './operations/update';
 export * from './operations/validate';
 // ── Pipeline ─────────────────────────────────────────────────────────────────
 export * from './pipeline/adapt-command';

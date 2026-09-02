@@ -195,10 +195,19 @@ async function collectFiles(
 }
 
 /**
- * Compute SHA-256 hash of text content.
+ * Compute SHA-256 hash of UTF-8 text or raw file bytes.
+ *
+ * @param content String (hashed as UTF-8) or on-disk bytes.
+ * @returns 64-character lowercase hex digest.
  */
-export function computeContentHash(content: string): string {
-    return createHash('sha256').update(content, 'utf-8').digest('hex');
+export function computeContentHash(content: string | Uint8Array): string {
+    const hash = createHash('sha256');
+    if (typeof content === 'string') {
+        hash.update(content, 'utf-8');
+    } else {
+        hash.update(content);
+    }
+    return hash.digest('hex');
 }
 
 /**

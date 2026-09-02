@@ -640,7 +640,8 @@ describe('fetch.ts - materializeRepoSubdir (T2/R3 shared fetch primitive)', () =
 
         const destDir = await mkdtemp(join(tmpdir(), 'superskill-materialize-'));
         try {
-            await materializeRepoSubdir('owner/repo', '.claude-plugin', destDir, { fetchFn });
+            const materialized = await materializeRepoSubdir('owner/repo', '.claude-plugin', destDir, { fetchFn });
+            expect(materialized.sha).toBe('abc');
 
             expect(existsSync(join(destDir, 'marketplace.json'))).toBe(true);
             expect(existsSync(join(destDir, 'other.txt'))).toBe(true);

@@ -525,6 +525,8 @@ function computeSnapshotHash(files: SkillSnapshotFile[]): string {
  *
  * Rejects when the tree cannot be fetched or `subdir` contains no blobs. The caller asserts any
  * locator-derived path segments before the first mkdir.
+ *
+ * @returns The fetched {@link RepoTree} (callers may ignore it; install records `sha` as `resolvedRef`).
  */
 export async function materializeRepoSubdir(
     ownerRepo: string,
@@ -536,7 +538,7 @@ export async function materializeRepoSubdir(
         fetchFn?: typeof fetch;
         ghTokenRunner?: () => string | null;
     } = {},
-): Promise<void> {
+): Promise<RepoTree> {
     const fetchFn = options.fetchFn ?? fetch;
     const tree = await fetchRepoTree(ownerRepo, options.ref, options.getToken, fetchFn, options.ghTokenRunner);
     if (!tree) {
@@ -568,6 +570,7 @@ export async function materializeRepoSubdir(
             await writeFile(dest, text);
         }),
     );
+    return tree;
 }
 
 /**

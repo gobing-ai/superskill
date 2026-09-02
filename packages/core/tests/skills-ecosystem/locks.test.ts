@@ -7,6 +7,7 @@ import {
     addSkillToGlobalLock,
     addSkillToLocalLock,
     computeCanonicalSkillFolderHash,
+    computeContentHash,
     computeStructuredContentHash,
     getGlobalLockPath,
     getLocalLockPath,
@@ -76,6 +77,14 @@ describe('locks.ts - Dual lock read/writers & hash invariant', () => {
         const secondHash = await computeCanonicalSkillFolderHash(secondDir);
 
         expect(firstHash).not.toBe(secondHash);
+    });
+
+    it('hashes UTF-8 strings and raw bytes to the same digest for the same payload', () => {
+        const text = 'hello\n';
+        const expected = createHash('sha256').update(text, 'utf-8').digest('hex');
+        expect(computeContentHash(text)).toBe(expected);
+        expect(computeContentHash(Buffer.from(text, 'utf-8'))).toBe(expected);
+        expect(computeContentHash(new Uint8Array(Buffer.from(text, 'utf-8')))).toBe(expected);
     });
 
     it('orders framed hash paths by UTF-8 bytes rather than the host locale', () => {
