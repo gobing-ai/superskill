@@ -85,3 +85,45 @@ I have everything I need. Now I'll extract the learnings into clean markdown.
 - **`...(opts.basePath ? { basePath } : {})` silently drops an explicit empty `--base-path ""`** — the dirname fallback is right (empty dir is meaningless), but the guard is implicit; P4-flagged for a comment.
 - **`basePath` default is computed in two places** (heuristic path and `emitEnvelope` baseline) — parity documented at `:222-226` but not enforced; a future change to one default silently diverges the envelope baseline from the default report.
 - **basePath tests assert only the completeness note, not the area identity** the link matched — a wrong-area keyword match would still yield `6/6`. Advisory P4, but a caution for delta-isolation tests.
+# Wrap-up learnings — 2026-09-01 (feature B: 0123 + 0124)
+
+## 0123 (install provenance manifest)
+
+### Conventions discovered
+
+- **Two snapshots, not one.** Installed bytes are target-transformed; upstream comparison must hash the resolved plugin source tree. Using installed hashes for staleness creates false positives.
+- **Plugin-keyed per-target path.** `<scopeRoot>/.superskill/manifests/<target>/<plugin>/.superskill-manifest.json`. Identity is the safe path segment, never a field inside untrusted JSON.
+- **Native dests can live under `$HOME` while project `scopeRoot` is cwd.** Snapshot paths must stay in-scope; filter out-of-scope receipts instead of throwing after a successful dispatch.
+
+### Errors hit and resolved
+
+- Empty dest inventory was treated as success (`continue`). R5 requires fail-loud: throw per target when dispatch completed and no in-scope files resolved.
+- Native claude/omp/grok dest walks were missing; tests that mocked empty dests went green. Seed dest files in native mocks; invert the empty-dest test to expect throw.
+- `skills: [] as string[]` in rulesync stubs fails CLI typecheck against `RulesyncSkill[]`. Annotate the helper as `GenerateResult`.
+- `spur task update --section` on an `AM` (index=skeleton, worktree=refined) task file can rewrite from the staged skeleton and drop Design/Plan/Solution. After every section write, `spur task show` and confirm other sections survived.
+
+### Gotchas
+
+- Focused `bun test <files>` exits 1 from bunfig 90/90 on unloaded files even when 0 tests fail. Judge the pass/fail counts, not the process exit.
+- Dry-run must write no manifest. Manifest write is after successful dispatch, before the success line.
+
+## 0124 (update verb)
+
+### Conventions discovered
+
+- **`listResolvablePlugins(undefined)` is CWD, not the packaged marketplace.** Bundled names must go through `resolveInstalledPackageRoot()` + that package's `.claude-plugin/marketplace.json`, same as install self-location.
+- **Discovery must be scoped to selected `--targets`.** Walking every target dir then reading only selected ones reports false "reinstall to adopt" for a plugin manifested on another target.
+- **0123 configured-path locators are plugin roots**, not marketplace.json. `resolvePlugin` throws; snapshot the directory and re-install via `pluginPath`.
+- **Merge rank stale > unavailable**, but **exit code from unmerged rows**, so a mixed-channel plugin still re-installs and still yields exit 2 when a sibling lookup failed.
+
+### Patterns that worked
+
+- Core comparison stays pure; CLI owns I/O, stdout, exit, and `executeInstall`. Tests inject `executeInstall`, `npmLatest`, and `listBundledPlugins`.
+- `--check` is strictly read-only. Bundled stale prints `npm i -g @gobing-ai/superskill@latest` once and never copy-patches the running CLI.
+- Review P2s fixed in-host before verify (same as 0123), then `--fix all` added the missing discovery/arg-assertion tests.
+
+### Gotchas
+
+- Version-only stale with identical files used to render `(0 file(s) changed: )`. Omit the empty path list.
+- `isTarget` must use `TARGETS.includes`, not a hand-copied union.
+- Shippable FAIL while the last covering task is still `wip` is expected; per-task Verdict stays independent.

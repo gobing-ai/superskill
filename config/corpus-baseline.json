@@ -3768,6 +3768,14 @@
             "severity": "warning",
             "reason": "Terminal legacy task/feature accepted warning (corpus ratchet reconcile, ADR-062); preserve historical record, require current and new findings to pass.",
             "since": "2026-08-25"
+        },
+        {
+            "kind": "feature",
+            "id": "F3",
+            "code": "L4.scenario-unverified",
+            "severity": "warning",
+            "reason": "Done feature whose covering tasks (0073, 0086, 0111) predate PASS verdict artifacts; preserve the historical record. New work must still ship MET verdicts for linked scenarios.",
+            "since": "2026-09-01"
         }
     ]
 }
