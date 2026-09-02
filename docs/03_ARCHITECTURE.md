@@ -5,7 +5,7 @@ authority: derived
 version: 2.12.0
 derived_from: [00_ADR, 01_PRD]
 owner: Robin Min
-updated_at: 2026-08-13
+updated_at: 2026-09-01
 read_before: cross-module, seam, or schema work
 edit_rules: 99 §6.4
 sync: [T1]
@@ -114,9 +114,11 @@ packages/core/src/                # ── Reusable domain logic (@gobing-ai/sup
 │   └── yaml-utils.ts             # YAML transform helpers
 │
 ├── operations/                   # ── Reusable operation APIs with no app dependency ──
+│   ├── install-manifest.ts       # Install provenance DTO, path, snapshot, atomic write (ADR-035)
 │   ├── migrate.ts                # Deterministic skill merge/migration core
 │   ├── package.ts                # Package content for distribution
 │   ├── scaffold.ts               # Scaffold content files from templates
+│   ├── update.ts                 # Pure marketplace/bundled comparison + aggregate exit (ADR-035)
 │   └── validate.ts               # Syntax and layout verification engine
 │
 ├── skills-ecosystem/             # Loose SKILL.md discovery, fetch, install, emit, and lock interop
@@ -144,7 +146,8 @@ apps/cli/src/                     # ── CLI app (@gobing-ai/superskill) ─�
 │   ├── script-convert.ts         # portable .mjs build command
 │   ├── script-path.ts            # staged plugin entrypoint resolver
 │   ├── script-run.ts             # registered plugin script dispatcher
-│   └── skill.ts                  # superskill skill subcommands
+│   ├── skill.ts                  # superskill skill subcommands
+│   └── update.ts                 # superskill update check / re-install (ADR-035)
 │
 ├── operations/                   # ── CLI adapters and store-backed workflows ──
 │   ├── evaluate.ts               # App-owned scoring workflow: CLI envelope output + store persistence

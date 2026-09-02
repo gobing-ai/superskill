@@ -10,7 +10,7 @@ parent_wbs: null
 tags: [bug,install,antigravity-cli,agy,antigravity-ide,rulesync,targets,regression]
 dependencies: ["0044","0045"]
 created_at: 2026-07-07T07:15:46.276Z
-updated_at: 2026-07-07T08:11:52.478Z
+updated_at: "2026-09-01T05:53:15.374Z"
 ---
 
 ## 0072. Fix antigravity-cli / antigravity-ide routing — superskill writes skills to ~/.agents/skills/ but agy reads ~/.gemini/antigravity-cli/skills/
@@ -290,7 +290,7 @@ Implementation completed. Change map (all in this working tree, uncommitted as o
 | `.wolf/buglog.json` | Appended `bug-034` (the next free id): error message, file, root cause, fix, tags (`install`, `antigravity-cli`, `agy`, `antigravity-ide`, `rulesync`, `targets`, `regression`, `eb183b4`, `task-0072`), `related_bugs: []`, `occurrences: 1`, `last_seen: 2026-07-07T07:50:00Z`. | R9 |
 | `docs/tasks/0072_*.md` | This file — the task itself. | (tracking) |
 
-No code logic changes beyond the `TARGET_TO_RULESYNC` map. The hooks pass (`TARGET_TO_RULESYNC_HOOKS` at `targets.ts:40-45`) was already correct (per the 2026-06-23 amendment's own exception for hooks). `TARGET_TO_AGENT_NAME` was already correct. `TARGET_SKILLS_RELDIR` is project-mode only and unchanged.
+No code logic changes beyond the `TARGET_TO_RULESYNC` map. The hooks pass (`TARGET_TO_RULESYNC_HOOKS` at `packages/core/src/targets.ts:41`) was already correct (per the 2026-06-23 amendment's own exception for hooks). `TARGET_TO_AGENT_NAME` was already correct. `TARGET_SKILLS_RELDIR` is project-mode only and unchanged.
 
 **Live verification (T12, AC1-AC2, AC10):** `superskill install ~/xprojects/spur-new/plugins/sp --marketplace ~/xprojects/spur-new/.claude-plugin/marketplace.json --targets antigravity-cli` against an isolated `$HOME` (tmp dir) lands 47 sp-* skills at `~/.gemini/antigravity-cli/skills/`, including `sp-dev-brainstorm`, `sp-super-coder`, `sp-dev-idea`, `sp-dev-arch`, `sp-wayfinder` (all of which were missing from the user's real `~/.gemini/antigravity-cli/skills/` pre-fix). Tmp dir cleaned.
 

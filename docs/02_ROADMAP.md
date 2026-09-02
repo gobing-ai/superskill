@@ -5,7 +5,7 @@ authority: derived
 version: 3.8.0
 derived_from: [00_ADR, 01_PRD]
 owner: Robin Min
-updated_at: 2026-08-12
+updated_at: 2026-09-01
 read_before: placing work in a phase; edit when phase status changes
 edit_rules: 99 §6.3
 sync: [T5]
@@ -23,6 +23,7 @@ sync: [T5]
 - [x] Target taxonomy + live `superskill.jsonc` defaults
 - [x] Marketplace manifest resolver — `--marketplace` local/GitHub locator (ADR-011, ADR-034)
 - [x] `superskill install <plugin>` — plugin → `.rulesync/` → `rulesync.generate()` → targets
+- [x] Install provenance manifest + `superskill update [--check]` (ADR-035, feature B)
 - [x] Conversion pipeline: slash dialect, colon→hyphen, frontmatter normalization
 - [x] Feature dispatch: skills, commands, subagents, hooks, MCP, Claude Code marketplace
 - [x] Target agents: Claude Code, Codex, Pi, omp, OpenCode, antigravity-cli, antigravity-ide, Hermes

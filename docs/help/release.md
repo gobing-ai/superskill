@@ -59,7 +59,8 @@ staging lived in `prepublishOnly`, `npm pack` packed whatever stale copies happe
 5. **Post-release smoke** (manual, cannot be a merge gate — it needs a published package):
    `bun add -g @gobing-ai/superskill`, then from an unrelated empty directory run
    `superskill install cc --magent <name> --dry-run` and confirm the plugin root resolves with no
-   `--marketplace` flag.
+   `--marketplace` flag. Then run `superskill update --check` against that install and confirm the
+   notification path reports `up to date` (or a single stale row if you installed an older package).
 
 ## Release path
 

@@ -4,7 +4,7 @@ owns: WHY — which cross-cutting decision was made, and the one-line reason
 authority: authoritative
 version: 1.11.0
 owner: Robin Min
-updated_at: 2026-08-12
+updated_at: 2026-08-31
 read_before: any structural change; add a dated entry before diverging from a decision
 edit_rules: 99 §6.1
 sync: [T1, T2]
@@ -142,7 +142,6 @@ Reversals = new entries naming what they supersede. Burned numbers get a `Skippe
 **Detail:** see 03 §Target taxonomy and §Data flow; 04 §Target taxonomy. Verified against `rulesync@8.28.1`: `Config.getOutputRoots()` defaults to `process.cwd()`; zero `os.homedir()` references in `src/`; `PiSkill`/`AntigravitySharedSkill`/`CodexCliSkill` `getSettablePaths({ global })` return relative subdirs only (e.g. Pi global → `.pi/agent/skills`, antigravity-cli global → `.gemini/antigravity-cli/skills`). Supersedes the hand-authored global-path tables previously in design-doc-phase1 and 04.
 
 **Amendment (2026-06-21, task 0045 R1).** `RulesyncOptions` gains an optional `outputRoot?: string` that overrides the root rulesync writes into. When omitted, the original ADR-010 derivation holds (`global ? homedir() : process.cwd()`). This widens — does not replace — the original decision: production install never sets `outputRoot` (global → `$HOME` is correct), but tests and a future `--output <dir>` flag can isolate writes to a temp root. The override is threaded uniformly into `runRulesync`, surrogate copies (hermes/omp), and Pi native-agent dispatch, closing the gap where the rulesync skill payload silently ignored `outputRoot` and leaked to `$HOME`/`cwd`. Additionally, `executeInstall` pre-creates per-target skills parent dirs (via `TARGET_SKILLS_RELDIR`, project mode) before rulesync writes, preventing an `ENOENT mkdir` crash on `install --no-global` from a clean cwd (task 0045 R2).
-
 
 **Amendment (2026-06-23).** Pi, codex, and antigravity (cli + ide) now all route to the `codexcli` rulesync target, which writes skills to `~/.agents/skills/` (global) / `.agents/skills/` (project). Research confirms Pi, OMP, and Antigravity 2.0 all natively support `~/.agents/skills/`. This eliminates duplicate skill copies when an agent reads from both its own directory and `~/.agents/skills/`. OMP's superskill-owned copy step is removed — it reads from `~/.agents/skills/` natively. Only hermes retains a superskill copy (from opencode). `TARGET_TO_RULESYNC` updated: `pi` and `antigravity-*` now map to `'codexcli'`. `TARGET_SKILLS_RELDIR` updated to match.
 
@@ -356,6 +355,7 @@ Number burned — same off-sequence jump as ADR-025. Never assigned a decision; 
 **Status:** Accepted · **Date:** 2026-07-25
 
 **Decision.** Standalone, zero-dependency port of `vercel-labs/skills` into `packages/core/src/skills-ecosystem/` to enable `superskill skill add/list/remove/update` with full `npx skills` lock and layout compatibility:
+
 1. **Port vs depend:** Native TypeScript port in core rather than an npm runtime dependency, keeping `superskill` self-contained and auditable.
 2. **Lock-schema parity:** Dual-schema lock system maintaining project-scoped `./skills-lock.json` (Local v1) and user-scoped `~/.agents/.skill-lock.json` (Global v3). Version-mismatch reads preserve and warn; silent overwrites/wipes are strictly prohibited.
 3. **Noun-group verb placement:** Subcommands registered under the existing `superskill skill` group (`add`, `list`, `remove`, `update`), keeping `superskill install` untouched.
@@ -566,3 +566,40 @@ Also recorded: `plugins/` and `magents/` became **published content** under this
 ADR, so their contents reach every consumer. The release checklist
 (`docs/help/release.md`) makes the publish-surface content review — personal
 data, repo-foreign content, credentials — an explicit pre-publish step.
+
+---
+
+## ADR-035: Pull-model update visibility via install-time provenance manifest
+
+**Status:** Accepted (design) · **Date:** 2026-08-31
+
+**Decision.** `superskill install` writes a per-target-scope provenance manifest
+(plugin id, install channel, upstream version, marketplace locator, install
+timestamp, per-file content hashes) next to the installed capabilities, and a
+new `superskill update [plugin] [--check]` verb reports/reconciles staleness —
+hybrid compare, version-first, hash-authoritative: bundled-channel installs
+compare against the published npm version; marketplace installs compare the
+recorded `plugin.json`/`marketplace.json` version first, falling back to the
+ADR-031 canonical hash when versions tie (local dev marketplaces iterate
+without bumps). Push-style notification (release feeds, in-agent banners,
+auto-update) is explicitly deferred.
+
+**Why.** Installed copies carry no provenance today, so upstream churn (several
+versions in a day — real user feedback) is invisible; the repo already
+versionizes plugins with a machine-guarded single-version invariant
+(`check-publish-manifest` on the publish path, `bump-ver` atomic write), so the
+version is a trustworthy compare signal that only needs to cross the install
+boundary.
+
+**Why these primitives:** staleness compares `upstreamVersion` (guarded
+trustworthy) with the ADR-031 length-framed canonical hash as tie-breaker and
+per-file hash map to name changed files; upstream re-resolution reuses
+ADR-034's `--marketplace` locator recorded at install time. No new transport,
+no new workspace package, and no change to the build/release/publish pipeline —
+only additive scope: a release-smoke `update --check` step in the release
+checklist and bundled-channel `update` printing the package-manager upgrade
+command (the bundle is version-locked to the CLI).
+
+**Detail:** see `docs/design/skill-update-notification.md` (surface + schema +
+diff algorithm); `docs/04_DESIGN.md` updates land in the same commit as the
+verb (T3).

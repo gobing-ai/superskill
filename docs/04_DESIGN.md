@@ -5,7 +5,7 @@ authority: derived
 version: 2.9.1
 derived_from: [00_ADR, 01_PRD, 02_ROADMAP]
 owner: Robin Min
-updated_at: 2026-08-25
+updated_at: 2026-08-31
 read_before: changing a command, flag, env var, or schema
 edit_rules: 99 §6.5
 sync: [T3]
@@ -21,6 +21,8 @@ sync: [T3]
 ```text
 superskill install <plugin> [--marketplace <locator>] [--targets <list>] [--no-global]
     [--magent <name>] [--marketplace-source <directory|github>] [--dry-run] [--verbose]
+
+superskill update [plugin] [--check] [--targets <list>] [--marketplace <locator>] [--no-global]
 ```
 
 | Input | Shape and precedence |
@@ -34,6 +36,27 @@ superskill install <plugin> [--marketplace <locator>] [--targets <list>] [--no-g
 | `plugins` | `{ name: string, path: string }[]`; matching path is used when `--marketplace` is absent |
 | `targets` | `Target[]`; an empty array means all targets |
 | `features` | Any of `skills`, `commands`, `subagents`, `hooks`, `mcp`; defaults to all five |
+
+### Update verb + provenance manifest
+
+`superskill update` is the pull-model check/reconcile surface (ADR-035, task 0124).
+
+| Input | Shape |
+| --- | --- |
+| `[plugin]` | Optional bare segment. Omitted → all known candidates (plugin-keyed manifests, configured plugins, bundled marketplace names). Explicit plugin is always a candidate |
+| `--check` | Report only; never writes manifests or dest files. Exit 1 if any stale row and no unavailable row |
+| `--targets` / `--no-global` / `--marketplace` | Same semantics as install. `--marketplace` overrides the recorded locator |
+
+Manifest path: `<scopeRoot>/.superskill/manifests/<target>/<plugin>/.superskill-manifest.json` (`scopeRoot` = `outputRoot`, else `$HOME` global / cwd project). Schema v1 records plugin, target, channel (`bundled` \| `marketplace`), `upstreamVersion`, optional locator/tree SHA, `installedAt`, `superskillVersion`, and two snapshots (`installed` + `upstream`) of per-file SHA-256 maps plus ADR-031 `canonicalHash`.
+
+| Result row | Meaning | Exit |
+| --- | --- | --- |
+| `up to date` | Version and (marketplace) upstream hash match | 0 if all current/legacy |
+| `stale: …` | Version or hash differs; one row per plugin (current upstream, no history) | `--check` → 1 |
+| `installed before manifest support - reinstall to adopt` | Known candidate, missing/corrupt/unsupported manifest | 0 (guidance) |
+| `upstream unavailable (<locator>)` | Locator or npm lookup failed; other rows still print | 2 (wins over 1) |
+
+Bare `update` re-runs `executeInstall` for stale **marketplace** plugins (0123 refreshes the manifest) and prints `npm i -g @gobing-ai/superskill@latest` once for stale **bundled** plugins. `--check` is read-only.
 
 Feature selection filters canonical mapper output. Native Claude/OMP/Grok installation rejects a
 partial feature set because those host installers operate on the full plugin package.

@@ -5,7 +5,7 @@ authority: derived
 version: 6.3.0
 derived_from: [01_PRD, 02_ROADMAP]
 owner: Robin Min
-updated_at: 2026-08-12
+updated_at: 2026-09-01
 read_before: finding a feature's state; edit when a feature's status changes
 edit_rules: 99 §6.6
 sync: [T4]
@@ -36,6 +36,7 @@ Design: [design-doc-phase1.md](design/design-doc-phase1.md)
 | G12 | [Plugin → .rulesync/ mapper](features/G12_plugin-rulesync-mapper.md) | — | ✅ | `mapper.ts` |
 | G13 | [Conversion pipeline + rulesync integration](features/G13_conversion-pipeline-rulesync-integration.md) | G11 | ✅ | `pipeline/*`, `rulesync.ts` |
 | F3 | [superskill install command + target dispatch](features/F3_superskill-install-command-marketplace-registration.md) | G11, G12, G13, G14 | ✅ | `commands/install.ts` |
+| B | [Skill update notification — install manifest and update verb](features/B_skill-update-notification-install-manifest-and-update-verb.md) | F3 | ✅ | `operations/install-manifest.ts`, `operations/update.ts`, `commands/update.ts` |
 | E2 | [Tests + verification](features/E2_tests-verification.md) | G11–F3, G14 | ✅ | `tests/*` |
 | G14 | [Marketplace manifest resolver](features/G14_marketplace-manifest-resolver.md) | — | ✅ | `marketplace.ts` |
 
