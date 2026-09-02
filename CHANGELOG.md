@@ -4,6 +4,30 @@ All notable changes to `@gobing-ai/superskill` are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Conventional Commits](https://www.conventionalcommits.org/).
 
+## [0.3.20] - 2026-09-02
+
+### Added
+
+- **Install wire-up: `executeInstall` records provenance, new `update` verb ships (task 0124, R2).** `apps/cli/src/commands/install.ts` extends `executeInstall` to record provenance and registers the `update` subcommand, which compares manifests against upstream and re-installs stale marketplace plugins or reports stale bundled plugins. (238cd49)
+- **Install provenance manifest and update comparison (task 0124, R1).** `packages/core/src/operations/install.ts` adds per-target install manifests recording installed file hashes against upstream snapshots, plus a pure update-comparison operation that detects stale plugins. `computeContentHash` extends to accept raw bytes; `materializeRepoSubdir` returns the fetched tree so callers can record the resolved ref. (5dd66a0)
+
+### Fixed
+
+- **`skill add` install output shows the actual target agents.** The success line printed only the canonical path, implying a single-agent install when emission actually covers all targets (or the `-a` subset). (eb4c80d)
+
+### Documentation
+
+- **`team-stark-children` magent package — copy-edit follow-up to the SOTA refresh (task 0125, feature C).** Mirror phrasing polish in `AGENTS.md` and both platform overrides (cost / shadow reasons made explicit; gitignore rationale restated), and add the CRITICAL tool-permissions row to the safety table. No rule-module depth change. (f007769)
+- **`team-stark-children` magent package refreshed to SOTA (task 0125, feature C).** `magents/team-stark-children/AGENTS.md` and both platform overrides tighten the tool-priority ladder; the file compresses from 17,480 → 9,184 chars with all 16 headings preserved. `plugins/cc/skills/cc-magents/` syncs to the new `superskill magent` runtime — dead `spur status` / `spur init` invocations replaced with `spur self status` / `spur self init`, live nouns (`message`, `projects`, `self`, `builder`) + `superskill script` documented, nine target IDs surfaced — across the agent, four commands, and the skill references (workflows, platform-compatibility, main-agents/*). Displaced depth from the prior AGENTS.md lives in rule modules 01–02; `superskill magent evaluate` returns aggregate 0.9135 (gate 0.90), safety baseline 0.5714 unchanged. (fce808b)
+- **Install manifest and update verb documented (task 0123, feature B).** ADR-035 captures the design and risk tradeoffs; `docs/04_DESIGN.md` and `docs/05_FEATURES.md` carry the surface and feature status; tasks 0123/0124 record the AC and implementation; roadmap, architecture, design, features, and release docs synced in the same commit. (ac03fe1)
+
+### Other
+
+- **Spur `.spur` cleaned for spur 1.2 (bundled workflows/templates).** Legacy `.spur/workflows/` copies removed (workflows now ship bundled with `@gobing-ai/spur`); legacy `.spur/templates/` removed where present; `.spur/config.yaml` comments the stale `workflows.paths` and fixes the name/schema header. Full backup at `~/.config/spur/spur-cleanup-backup-20260831-2151.tgz`. (e658917)
+- **`@gobing-ai/ts-*` dependencies bumped `0.4.42` → `0.4.51`** across the root catalog, `apps/cli`, and `bun.lock`. (67c53ee)
+- **Corpus baseline and wrap-up memory updated.** (eb30bce)
+- **Wrap-up memory updated.** (827ded0)
+
 ## [0.3.19] - 2026-08-26
 
 ### Documentation
