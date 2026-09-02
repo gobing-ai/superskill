@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, spyOn } from 'bun:test';
+import { afterEach, describe, expect, it, mock, spyOn } from 'bun:test';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -58,6 +58,7 @@ function makeResult(overrides: Partial<GenerateResult> = {}): GenerateResult {
 }
 
 afterEach(() => {
+    mock.restore();
     process.chdir(originalCwd);
     if (tempDir) {
         rmSync(tempDir, { recursive: true, force: true });
@@ -65,10 +66,17 @@ afterEach(() => {
     }
 });
 
+function seedPiSkill(workspace: string, plugin: string): void {
+    const dest = join(workspace, '.agents', 'skills', `${plugin}-a`, 'SKILL.md');
+    mkdirSync(join(workspace, '.agents', 'skills', `${plugin}-a`), { recursive: true });
+    writeFileSync(dest, '# skill\n');
+}
+
 describe('executeInstall — minCliVersion compat gate', () => {
     it('warns and skips pi hooks when CLI is below the floor (skills still install)', async () => {
         const workspace = createTempWorkspace();
         createPluginWithFloor(workspace, '99.0.0', 'floorblock');
+        seedPiSkill(workspace, 'floorblock');
         const stdout = spyOn(process.stdout, 'write').mockImplementation(() => true);
 
         await executeInstall(
@@ -106,6 +114,7 @@ describe('executeInstall — minCliVersion compat gate', () => {
             }),
         );
         process.chdir(workspace);
+        seedPiSkill(workspace, 'nofloor');
 
         const stdout = spyOn(process.stdout, 'write').mockImplementation(() => true);
         await executeInstall(
@@ -129,6 +138,7 @@ describe('executeInstall — minCliVersion compat gate', () => {
         const workspace = createTempWorkspace();
         // Floor of 0.0.1 is satisfied by any real CLI version
         createPluginWithFloor(workspace, '0.0.1', 'lowfloor');
+        seedPiSkill(workspace, 'lowfloor');
         const stdout = spyOn(process.stdout, 'write').mockImplementation(() => true);
 
         await executeInstall(
@@ -148,6 +158,7 @@ describe('executeInstall — minCliVersion compat gate', () => {
     it('preserves minCliVersion through the Claude→canonical hooks conversion', async () => {
         const workspace = createTempWorkspace();
         createPluginWithFloor(workspace, '99.0.0', 'mappreserves');
+        seedPiSkill(workspace, 'mappreserves');
         const stdout = spyOn(process.stdout, 'write').mockImplementation(() => true);
 
         await executeInstall(

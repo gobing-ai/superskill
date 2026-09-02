@@ -238,6 +238,9 @@ describe('executeInstall — Pi/omp/hermes hook enablement (F028)', () => {
         // plugin. The old pi-hooks-style .omp/hooks.json is no longer emitted by install.ts.
         const workspace = createTempWorkspace();
         createPluginWithHooks(workspace, 'omphooks');
+        const ompDest = join(workspace, '.omp', 'plugins', 'omphooks', 'plugin.json');
+        mkdirSync(join(workspace, '.omp', 'plugins', 'omphooks'), { recursive: true });
+        writeFileSync(ompDest, '{}\n');
         const stdout = spyOn(process.stdout, 'write').mockImplementation(() => true);
         let ompInstallArgs: unknown[] | null = null;
 

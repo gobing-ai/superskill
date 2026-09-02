@@ -11,7 +11,7 @@ import {
     writeFileSync,
 } from 'node:fs';
 import { homedir } from 'node:os';
-import { basename, join, relative, resolve } from 'node:path';
+import { basename, isAbsolute, join, relative, resolve } from 'node:path';
 import {
     adaptMagentForTarget,
     adaptSubagentToCodex,
@@ -20,7 +20,9 @@ import {
     assertSafePathSegment,
     CLAUDE_PACKAGE_FILES,
     getGitHubToken,
+    type InstallManifestV1,
     isClaudeImportStyle,
+    listRegularFilesUnder,
     listResolvablePlugins,
     listRuleMarkdownFiles,
     type MapFeature,
@@ -36,6 +38,7 @@ import {
     resolvePlugin,
     rewriteSkillReferences,
     runRulesync,
+    snapshotFiles,
     stageMagentsFromDir,
     TARGET_GLOBAL_SKILLS_RELDIR,
     TARGET_SKILLS_RELDIR,
@@ -43,6 +46,7 @@ import {
     TARGETS,
     type Target,
     translateSlashCommands,
+    writeInstallManifest,
 } from '@gobing-ai/superskill-core';
 import { NodeProcessExecutor, type ProcessExecutor } from '@gobing-ai/ts-runtime';
 import { echo, echoError } from '@gobing-ai/ts-utils';
@@ -152,6 +156,7 @@ interface InstallDependencies {
         registration: MarketplaceRegistration,
         marketplaceName: string,
         plugin: string,
+        global: boolean,
     ) => Promise<void>;
     /** Spawn `omp plugin marketplace add` + `omp plugin install`. Mockable for tests. */
     runOmpInstall?: (
@@ -173,6 +178,13 @@ interface InstallDependencies {
     ) => Promise<void>;
     /** Process execution port behind the default native installers; tests inject a recording fake. */
     processExecutor?: ProcessExecutor;
+    /**
+     * Provenance writer. Production uses the core atomic writer; tests inject a
+     * recording/throwing fake so manifest-write failure is observable without FS races.
+     */
+    writeInstallManifest?: typeof writeInstallManifest;
+    /** Frozen ISO-8601 UTC timestamp for the manifest `installedAt` field. */
+    nowIso?: string;
 }
 
 interface InstallResultCounts {
@@ -187,6 +199,25 @@ export interface PluginResolution {
     pluginRoot: string;
     marketplaceRoot?: string;
     marketplaceName?: string;
+    /** How the plugin was resolved — bundled package vs marketplace/local locator. */
+    channel: 'bundled' | 'marketplace';
+    /** Marketplace entry version, else plugin.json version, else `cliVersion` for bundled. */
+    upstreamVersion: string;
+    /** Re-resolvable locator: explicit `--marketplace` verbatim, else an absolute local root. */
+    marketplaceLocator?: string;
+}
+
+/** Remote marketplace cache root plus optional Git tree SHA from cold-cache materialization. */
+export interface RemoteMarketplaceResolution {
+    root: string;
+    resolvedRef?: string;
+}
+
+/** Per-target install inventory used to write one provenance manifest. */
+interface TargetInstallReceipt {
+    target: Target;
+    scopeRoot: string;
+    files: string[];
 }
 
 // ── Remote marketplace locators (R2/R3/R4/T3) ───────────────────────────────
@@ -242,7 +273,7 @@ export function marketplaceCacheRoot(): string {
 export async function resolveRemoteMarketplace(
     locator: string,
     deps: { fetchFn?: typeof fetch } = {},
-): Promise<string> {
+): Promise<RemoteMarketplaceResolution> {
     const parsed = parseRemoteMarketplaceLocator(locator);
     if (!parsed) {
         throw new Error(
@@ -259,16 +290,17 @@ export async function resolveRemoteMarketplace(
         existsSync(join(cacheRoot, 'marketplace.json')) ||
         existsSync(join(cacheRoot, '.claude-plugin', 'marketplace.json'))
     ) {
-        return cacheRoot;
+        return { root: cacheRoot };
     }
 
     const token = await getGitHubToken();
     try {
-        await materializeRepoSubdir(`${parsed.owner}/${parsed.repo}`, parsed.subdir ?? '', cacheRoot, {
+        const tree = await materializeRepoSubdir(`${parsed.owner}/${parsed.repo}`, parsed.subdir ?? '', cacheRoot, {
             ref: parsed.ref === 'HEAD' ? undefined : parsed.ref,
             getToken: () => token,
             fetchFn: deps.fetchFn,
         });
+        return { root: cacheRoot, resolvedRef: tree.sha };
     } catch (err) {
         throw new Error(
             `Failed to resolve marketplace '${locator}' from ${parsed.owner}/${parsed.repo}` +
@@ -276,7 +308,6 @@ export async function resolveRemoteMarketplace(
                 ` into cache ${cacheRoot}: ${err instanceof Error ? err.message : String(err)}`,
         );
     }
-    return cacheRoot;
 }
 
 /** Execute the full install flow: resolve → map → pipeline → rulesync → dispatch. */
@@ -289,7 +320,7 @@ export async function executeInstall(
     const runRulesyncImpl = dependencies.runRulesync ?? runRulesync;
     const executor = dependencies.processExecutor ?? defaultProcessExecutor;
     const runClaudeInstallImpl =
-        dependencies.runClaudeInstall ?? ((r, m, p) => defaultRunClaudeInstall(r, m, p, executor));
+        dependencies.runClaudeInstall ?? ((r, m, p, g) => defaultRunClaudeInstall(r, m, p, g, executor));
     const runOmpInstallImpl =
         dependencies.runOmpInstall ?? ((r, m, p, g) => defaultRunOmpInstall(r, m, p, g, executor));
     const runGrokInstallImpl =
@@ -325,13 +356,30 @@ export async function executeInstall(
     // A remote `--marketplace` locator (GitHub URL / owner/repo shorthand) is
     // materialized into a local cache root first (R2/R4); the cache root then
     // feeds the unchanged local resolve flow.
+    const originalMarketplaceLocator = options.marketplacePath;
     let marketplacePath = options.marketplacePath;
+    let resolvedRef: string | undefined;
     if (marketplacePath && isRemoteMarketplaceLocator(marketplacePath)) {
         if (options.verbose) echo(`Resolving remote marketplace '${marketplacePath}'...`);
-        marketplacePath = await resolveRemoteMarketplace(marketplacePath);
+        const remote = await resolveRemoteMarketplace(marketplacePath);
+        marketplacePath = remote.root;
+        resolvedRef = remote.resolvedRef;
     }
     const resolution = resolvePluginRoot(plugin, marketplacePath, options.pluginPath);
+    if (originalMarketplaceLocator) {
+        resolution.marketplaceLocator = originalMarketplaceLocator;
+    }
     const pluginRoot = resolution.pluginRoot;
+    const outputRoot = options.outputRoot ?? (options.global ? resolveHomeDir() : process.cwd());
+    const receipts = new Map<Target, TargetInstallReceipt>();
+    const addReceiptFiles = (target: Target, files: readonly string[]): void => {
+        let receipt = receipts.get(target);
+        if (!receipt) {
+            receipt = { target, scopeRoot: outputRoot, files: [] };
+            receipts.set(target, receipt);
+        }
+        receipt.files.push(...files);
+    };
 
     if (options.verbose) echo(`Plugin root: ${pluginRoot}`);
 
@@ -339,6 +387,7 @@ export async function executeInstall(
     const outputDir = '.rulesync';
     if (options.verbose) echo('Mapping plugin to .rulesync/ canonical layout...');
     const mapResult = mapPluginToRulesync(pluginRoot, plugin, outputDir, { features: options.features });
+    const mappedSkillNames = readMappedSkillNames(outputDir, plugin);
     if (options.verbose) {
         echo(
             `  Skills: ${mapResult.skills}, Commands: ${mapResult.commands}, Subagents: ${mapResult.subagents}, Magents: ${mapResult.magents}, Hooks: ${mapResult.hooks}, MCP: ${mapResult.mcp}, Scripts: ${mapResult.scripts}`,
@@ -447,6 +496,17 @@ export async function executeInstall(
                 resultCounts.commandsCount += result.commandsCount;
                 resultCounts.subagentsCount += result.subagentsCount;
                 resultCounts.hooksCount += result.hooksCount;
+                addReceiptFiles(
+                    target,
+                    expandInstallPaths(outputRoot, [
+                        ...result.skillsPaths,
+                        ...result.commandsPaths,
+                        ...result.subagentsPaths,
+                        ...result.hooksPaths,
+                        ...result.mcpPaths,
+                        ...result.rulesPaths,
+                    ]),
+                );
                 // Per-target summary surfaces the targets that were previously silent on success.
                 // Count actual installed skills outside dry-run; rulesync's diff count can be zero on reinstall.
                 if (options.verbose) {
@@ -483,6 +543,7 @@ export async function executeInstall(
                     },
                 );
                 resultCounts.hooksCount += hookResult.hooksCount;
+                addReceiptFiles(target, expandInstallPaths(outputRoot, hookResult.hooksPaths));
             }
         }
         if (options.verbose) {
@@ -492,7 +553,6 @@ export async function executeInstall(
         }
     }
     // Step 4: Dispatch non-rulesync targets + emit hooks for uncovered targets
-    const outputRoot = options.outputRoot ?? (options.global ? resolveHomeDir() : process.cwd());
     const marketplaceName = resolution.marketplaceName ?? 'superskill';
     const marketplaceRoot = resolution.marketplaceRoot ?? process.cwd();
     const registration = resolveMarketplaceRegistration(
@@ -510,7 +570,13 @@ export async function executeInstall(
                 // correct name so we never rm -rf the wrong directory.
                 const cacheDir = join(resolveHomeDir(), '.claude', 'plugins', 'cache', marketplaceName);
                 if (existsSync(cacheDir)) rmSync(cacheDir, { recursive: true, force: true });
-                await runClaudeInstallImpl(registration, marketplaceName, plugin);
+                await runClaudeInstallImpl(registration, marketplaceName, plugin, options.global);
+                for (const root of new Set([resolveHomeDir(), outputRoot])) {
+                    const claudeCache = join(root, '.claude', 'plugins', 'cache', marketplaceName, plugin);
+                    if (existsSync(claudeCache)) addReceiptFiles(target, listRegularFilesUnder(claudeCache));
+                }
+                const claudeScoped = join(outputRoot, '.claude', 'plugins');
+                if (existsSync(claudeScoped)) addReceiptFiles(target, pluginPrefixedEntries(claudeScoped, plugin));
             }
         }
 
@@ -518,8 +584,16 @@ export async function executeInstall(
             const srcTarget = 'opencode';
             const dest = join(outputRoot, '.hermes', 'skills');
             if (options.verbose) echo(`Copying to Hermes (via opencode rulesync): ${dest}...`);
-            if (!options.dryRun)
-                copyDirectory(join(rulesyncSourceRoot(targetInputRoots.get(srcTarget), outputDir), 'skills'), dest);
+            if (!options.dryRun) {
+                const copied = copyDirectory(
+                    join(rulesyncSourceRoot(targetInputRoots.get(srcTarget), outputDir), 'skills'),
+                    dest,
+                );
+                addReceiptFiles(
+                    target,
+                    copied.filter((file) => isPluginOwnedPath(file, plugin)),
+                );
+            }
             // Rung (c): copy-step — hermes hooks via canonical hooks.json copy (design §1.2, §2.1).
             // Skipped when the CLI is below the plugin's minCliVersion (hooks would fail-open at runtime).
             if (!hooksBlockedByCliVersion) {
@@ -530,6 +604,7 @@ export async function executeInstall(
                     plugin,
                 );
                 hookEmitResults.push(hookResult);
+                if (hookResult.path) addReceiptFiles(target, expandInstallPaths(outputRoot, [hookResult.path]));
                 if (options.verbose) echo(`  ${hookResult.message}`);
             } else if (options.verbose) {
                 echo('  Hermes hooks: skipped (CLI below plugin minCliVersion)');
@@ -551,6 +626,8 @@ export async function executeInstall(
                         ...options,
                         skipHooks: hooksBlockedByCliVersion,
                     });
+                    addReceiptFiles(target, listRegularFilesUnder(installPath));
+                    addReceiptFiles(target, hookResult.files);
                     if (options.verbose) echo(`  ${hookResult.message}`);
                 } else if (options.verbose) {
                     echo('  OMP install path not found in registry — skipping post-processing');
@@ -566,10 +643,11 @@ export async function executeInstall(
             if (options.verbose) echo('Grok: registering marketplace and installing plugin...');
             if (!options.dryRun) {
                 await runGrokInstallImpl(registration, marketplaceName, plugin, pluginRoot);
+                const grokInstallPath = await resolveGrokInstallPath(plugin, executor);
+                if (grokInstallPath) addReceiptFiles(target, listRegularFilesUnder(grokInstallPath));
                 if (options.verbose) {
-                    const installPath = await resolveGrokInstallPath(plugin, executor);
-                    if (installPath) {
-                        echo(`  Grok install path: ${installPath}`);
+                    if (grokInstallPath) {
+                        echo(`  Grok install path: ${grokInstallPath}`);
                     } else {
                         echo('  Grok install path not found via plugin list — install may still have succeeded');
                     }
@@ -633,6 +711,7 @@ export async function executeInstall(
                         pi: { extensions: piExtensions.map((e) => `./${basename(e)}`) },
                     };
                     writeFileSync(join(piPluginsDir, 'package.json'), `${JSON.stringify(pkgJson, null, 2)}\n`);
+                    addReceiptFiles(target, listRegularFilesUnder(piPluginsDir));
                     // Register in Pi's settings.json packages
                     const piSettingsPath = join(outputRoot, '.pi', 'agent', 'settings.json');
                     try {
@@ -663,6 +742,7 @@ export async function executeInstall(
                     plugin,
                 );
                 hookEmitResults.push(hookResult);
+                if (hookResult.path) addReceiptFiles(target, expandInstallPaths(outputRoot, [hookResult.path]));
                 if (options.verbose) echo(`  ${hookResult.message}`);
             } else if (options.verbose) {
                 echo('  Pi hooks: skipped (CLI below plugin minCliVersion)');
@@ -681,6 +761,7 @@ export async function executeInstall(
                     const skillExists = (bare: string) => existsSync(join(pluginRoot, 'skills', bare));
                     const adapted = adaptSubagentToPi(source, expectedName, plugin, skillExists);
                     writeFileSync(join(piAgentsDir, `${expectedName}.md`), adapted);
+                    addReceiptFiles(target, [join(piAgentsDir, `${expectedName}.md`)]);
                 }
                 if (options.verbose) echo(`  Pi agents: dispatched to ${piAgentsDir}`);
             }
@@ -701,6 +782,7 @@ export async function executeInstall(
                     const source = readFileSync(join(agentsDir, entry), 'utf-8');
                     const adapted = adaptSubagentToCodex(source, expectedName, plugin);
                     writeFileSync(join(codexAgentsDir, `${expectedName}.toml`), adapted);
+                    addReceiptFiles(target, [join(codexAgentsDir, `${expectedName}.toml`)]);
                 }
                 if (options.verbose) echo(`  Codex agents: dispatched to ${codexAgentsDir}`);
             }
@@ -719,15 +801,30 @@ export async function executeInstall(
         }
     }
     // Magents optional: plugins without magents/ (and no --magent) no-op cleanly.
-    emitMagents(plugin, targets, outputDir, outputRoot, options);
+    const magentFiles = emitMagents(plugin, targets, outputDir, outputRoot, options);
+    for (const [target, files] of magentFiles) {
+        addReceiptFiles(target, files);
+    }
     // Plugin-level rules optional: plugins without rules/ no-op cleanly.
-    emitPluginRules(pluginRoot, targets, outputRoot, options);
+    const ruleFilesWritten = emitPluginRules(pluginRoot, targets, outputRoot, options);
+    for (const [target, files] of ruleFilesWritten) {
+        addReceiptFiles(target, files);
+    }
     // Plugin-level scripts → shared agents scripts root for rulesync + hermes only.
     // Native class (claude/omp/grok) already receives scripts/ via host plugin install (R3-B / R6);
     // do not invent ~/.agents/scripts as a required second tree for native-only installs (AC5).
     const needsSharedScriptsRoot = targets.some((t) => t !== 'claude' && t !== 'omp' && t !== 'grok');
     if (needsSharedScriptsRoot) {
-        stagePluginScripts(outputDir, plugin, outputRoot, options, mapResult.scripts);
+        const scriptCount = stagePluginScripts(outputDir, plugin, outputRoot, options, mapResult.scripts);
+        if (scriptCount > 0 && !options.dryRun) {
+            const scriptDest = join(outputRoot, '.agents', 'scripts', plugin);
+            const scriptFiles = listRegularFilesUnder(scriptDest);
+            for (const target of targets) {
+                if (target !== 'claude' && target !== 'omp' && target !== 'grok') {
+                    addReceiptFiles(target, scriptFiles);
+                }
+            }
+        }
     } else if (options.verbose && mapResult.scripts > 0) {
         echo('  Plugin scripts: native targets include scripts/ via host plugin install (no shared-root stage)');
     }
@@ -748,6 +845,20 @@ export async function executeInstall(
         // before any dispatch. Dry-run suppresses writes to the install targets, not to staging.
         echo('[DRY-RUN] No files were written to install targets (.rulesync/ staging was refreshed).');
     } else {
+        writeInstallProvenance({
+            plugin,
+            targets,
+            outputRoot,
+            pluginRoot,
+            resolution,
+            resolvedRef,
+            receipts,
+            addReceiptFiles,
+            mappedSkillNames,
+            useGlobalSkillsLayout: options.global && options.outputRoot === undefined,
+            writer: dependencies.writeInstallManifest ?? writeInstallManifest,
+            nowIso: dependencies.nowIso ?? new Date().toISOString(),
+        });
         echo(`Installed '${plugin}' to ${targets.length} target(s).`);
     }
 }
@@ -789,6 +900,7 @@ async function defaultRunClaudeInstall(
     registration: MarketplaceRegistration,
     marketplaceName: string,
     plugin: string,
+    global: boolean,
     executor: ProcessExecutor = defaultProcessExecutor,
 ): Promise<void> {
     // Same defense as grok/omp install helpers: marketplace + plugin key the
@@ -807,7 +919,7 @@ async function defaultRunClaudeInstall(
 
     // Install the plugin from the registered marketplace.
     await runCheckedCommand(
-        ['claude', 'plugin', 'install', `${plugin}@${marketplaceName}`],
+        ['claude', 'plugin', 'install', `${plugin}@${marketplaceName}`, '--scope', global ? 'user' : 'project'],
         'claude plugin install',
         executor,
     );
@@ -1072,14 +1184,15 @@ export function emitMagents(
     outputDir: string,
     outputRoot: string,
     options: InstallOptions,
-): void {
+): Map<Target, string[]> {
+    const written = new Map<Target, string[]>();
     const stagedRoot = join(outputDir, 'magents');
-    if (!existsSync(stagedRoot)) return;
+    if (!existsSync(stagedRoot)) return written;
     const staged = readdirSync(stagedRoot).filter((e) => {
         const stat = lstatSync(join(stagedRoot, e));
         return stat.isDirectory();
     });
-    if (staged.length === 0) return;
+    if (staged.length === 0) return written;
 
     // Selection policy (plugins without magents must no-op cleanly):
     // - --magent <name> → require a match (plugin-prefixed or bare marketplace name).
@@ -1104,13 +1217,13 @@ export function emitMagents(
         const pluginOwned = staged.filter((s) => s === plugin || s.startsWith(`${plugin}-`));
         if (pluginOwned.length === 1) {
             const [only] = pluginOwned;
-            if (!only) return;
+            if (!only) return written;
             selected = [only];
         } else if (pluginOwned.length === 0 && staged.length === 0) {
             if (options.verbose) {
                 echo(`  Magents: none staged for '${plugin}' — skipping main-agent emission`);
             }
-            return;
+            return written;
         } else {
             if (options.verbose) {
                 echo(
@@ -1118,7 +1231,7 @@ export function emitMagents(
                         `pass --magent <name> to install. Staged: ${staged.join(', ')}`,
                 );
             }
-            return;
+            return written;
         }
     }
 
@@ -1135,12 +1248,16 @@ export function emitMagents(
                 }
                 if (!options.dryRun) {
                     mkdirSync(destDir, { recursive: true });
+                    const destFiles = written.get(target) ?? [];
                     for (const name of CLAUDE_PACKAGE_FILES) {
                         const src = join(sourceDir, name);
                         if (!existsSync(src)) continue;
                         const raw = readFileSync(src, 'utf-8');
-                        writeFileSync(join(destDir, name), adaptMagentForTarget(raw, plugin, target));
+                        const destPath = join(destDir, name);
+                        writeFileSync(destPath, adaptMagentForTarget(raw, plugin, target));
+                        destFiles.push(destPath);
                     }
+                    written.set(target, destFiles);
                 }
                 emitted++;
                 continue;
@@ -1165,6 +1282,9 @@ export function emitMagents(
                 const adapted = adaptMagentForTarget(assembly.content, plugin, target);
                 mkdirSync(destDir, { recursive: true });
                 writeFileSync(destPath, adapted);
+                const destFiles = written.get(target) ?? [];
+                destFiles.push(destPath);
+                written.set(target, destFiles);
             }
             emitted++;
         }
@@ -1172,6 +1292,7 @@ export function emitMagents(
     if (options.verbose && emitted > 0) {
         echo(`  Magents emitted: ${emitted}`);
     }
+    return written;
 }
 
 /**
@@ -1184,10 +1305,11 @@ export function emitPluginRules(
     targets: Target[],
     outputRoot: string,
     options: InstallOptions,
-): void {
+): Map<Target, string[]> {
+    const written = new Map<Target, string[]>();
     const rulesDir = join(pluginRoot, 'rules');
     const ruleFiles = listRuleMarkdownFiles(rulesDir);
-    if (ruleFiles.length === 0) return;
+    if (ruleFiles.length === 0) return written;
 
     for (const target of targets) {
         const rel = magentRulesRelDir(target);
@@ -1204,11 +1326,16 @@ export function emitPluginRules(
         }
         if (options.dryRun) continue;
         mkdirSync(rulesDest, { recursive: true });
+        const destFiles: string[] = [];
         for (const src of ruleFiles) {
             const name = src.split(/[/\\]/).pop() ?? 'rule.md';
-            copyFileSync(src, join(rulesDest, name));
+            const destPath = join(rulesDest, name);
+            copyFileSync(src, destPath);
+            destFiles.push(destPath);
         }
+        written.set(target, destFiles);
     }
+    return written;
 }
 
 /**
@@ -1441,7 +1568,7 @@ export function resolvePluginRoot(
                 ['skills', 'commands', 'agents', 'hooks', 'hooks.json', 'plugin.json'].includes(entry),
             )
         ) {
-            return { pluginRoot };
+            return withSourceMeta(plugin, { pluginRoot }, 'marketplace');
         }
         throw new Error(`Configured path for plugin '${plugin}' is not a plugin directory: ${pluginRoot}`);
     }
@@ -1466,7 +1593,11 @@ export function resolvePluginRoot(
                 assertSafePathSegment(marketplaceName, 'marketplace name');
             }
         }
-        return { pluginRoot: resolved.pluginRoot, marketplaceRoot: manifestRoot, marketplaceName };
+        return withSourceMeta(
+            plugin,
+            { pluginRoot: resolved.pluginRoot, marketplaceRoot: manifestRoot, marketplaceName },
+            'marketplace',
+        );
     }
 
     // Step 4: installed package root self-location (R6/T5). Probes the bundled
@@ -1479,10 +1610,11 @@ export function resolvePluginRoot(
         if (existsSync(pkgManifest)) {
             const pkgResolved = resolvePlugin(pkgManifest, plugin);
             if (pkgResolved) {
-                return {
-                    pluginRoot: pkgResolved.pluginRoot,
-                    marketplaceRoot: pkgResolved.marketplaceRoot,
-                };
+                return withSourceMeta(
+                    plugin,
+                    { pluginRoot: pkgResolved.pluginRoot, marketplaceRoot: pkgResolved.marketplaceRoot },
+                    'bundled',
+                );
             }
         }
         const pkgFallback = join(installedRoot, 'plugins', plugin);
@@ -1490,7 +1622,7 @@ export function resolvePluginRoot(
             existsSync(pkgFallback) &&
             readdirSync(pkgFallback).some((d) => ['skills', 'commands', 'agents', 'hooks', 'hooks.json'].includes(d))
         ) {
-            return { pluginRoot: pkgFallback };
+            return withSourceMeta(plugin, { pluginRoot: pkgFallback }, 'bundled');
         }
     }
 
@@ -1499,7 +1631,7 @@ export function resolvePluginRoot(
         existsSync(fallback) &&
         readdirSync(fallback).some((d) => ['skills', 'commands', 'agents', 'hooks', 'hooks.json'].includes(d))
     )
-        return { pluginRoot: fallback };
+        return withSourceMeta(plugin, { pluginRoot: resolve(fallback) }, 'marketplace');
 
     const available = listResolvablePlugins(marketplacePath);
     const msg =
@@ -1527,6 +1659,59 @@ export function prepareTargetRulesyncInput(sourceRoot: string, target: Target, p
 function rulesyncSourceRoot(inputRoot: string | undefined, fallbackRoot: string): string {
     if (!inputRoot) return fallbackRoot;
     return join(inputRoot, '.rulesync');
+}
+
+function withSourceMeta(
+    plugin: string,
+    base: { pluginRoot: string; marketplaceRoot?: string; marketplaceName?: string },
+    channel: 'bundled' | 'marketplace',
+): PluginResolution {
+    const upstreamVersion =
+        channel === 'bundled'
+            ? cliVersion
+            : (readMarketplacePluginVersion(base.marketplaceRoot, plugin) ??
+              readPluginJsonVersion(base.pluginRoot) ??
+              cliVersion);
+    return {
+        ...base,
+        channel,
+        upstreamVersion,
+        ...(channel === 'marketplace' ? { marketplaceLocator: resolve(base.marketplaceRoot ?? base.pluginRoot) } : {}),
+    };
+}
+
+/** Read a plugin version from either supported local marketplace-manifest path. */
+export function readMarketplacePluginVersion(marketplaceRoot: string | undefined, plugin: string): string | undefined {
+    if (!marketplaceRoot) return undefined;
+    for (const candidate of [
+        join(marketplaceRoot, '.claude-plugin', 'marketplace.json'),
+        join(marketplaceRoot, 'marketplace.json'),
+    ]) {
+        if (!existsSync(candidate)) continue;
+        try {
+            const parsed = JSON.parse(readFileSync(candidate, 'utf-8')) as {
+                plugins?: Array<{ name?: string; version?: string }>;
+            };
+            const version = parsed.plugins?.find((entry) => entry.name === plugin)?.version;
+            if (typeof version === 'string' && version.length > 0) return version;
+        } catch {
+            // Unparseable marketplace file — try the next candidate.
+        }
+    }
+    return undefined;
+}
+
+/** Read the optional version from a plugin root's `plugin.json`. */
+export function readPluginJsonVersion(pluginRoot: string): string | undefined {
+    const manifestPath = join(pluginRoot, 'plugin.json');
+    if (!existsSync(manifestPath)) return undefined;
+    try {
+        const parsed = JSON.parse(readFileSync(manifestPath, 'utf-8')) as { version?: string };
+        if (typeof parsed.version === 'string' && parsed.version.length > 0) return parsed.version;
+    } catch {
+        return undefined;
+    }
+    return undefined;
 }
 
 /**
@@ -1593,10 +1778,11 @@ export function copyDirectory(
     source: string,
     destination: string,
     options: { skipDirectoryNames?: Set<string> } = {},
-): void {
-    if (!existsSync(source)) return;
+): string[] {
+    if (!existsSync(source)) return [];
 
     mkdirSync(destination, { recursive: true });
+    const written: string[] = [];
     for (const entry of readdirSync(source)) {
         if (options.skipDirectoryNames?.has(entry)) continue;
 
@@ -1605,21 +1791,170 @@ export function copyDirectory(
         const stat = lstatSync(sourcePath);
         if (stat.isSymbolicLink()) continue;
         if (stat.isDirectory()) {
-            copyDirectory(sourcePath, destinationPath, options);
+            written.push(...copyDirectory(sourcePath, destinationPath, options));
         } else {
             copyFileSync(sourcePath, destinationPath);
+            written.push(destinationPath);
         }
+    }
+    return written;
+}
+
+function expandInstallPaths(scopeRoot: string, paths: readonly string[]): string[] {
+    const files: string[] = [];
+    for (const p of paths) {
+        const abs = isAbsolute(p) ? p : join(scopeRoot, p);
+        if (!existsSync(abs)) continue;
+        const st = lstatSync(abs);
+        if (st.isSymbolicLink()) continue;
+        if (st.isDirectory()) {
+            files.push(...listRegularFilesUnder(abs));
+            continue;
+        }
+        if (st.isFile()) files.push(abs);
+    }
+    return files;
+}
+
+function isPluginOwnedPath(absPath: string, plugin: string): boolean {
+    const base = basename(absPath);
+    if (base === plugin || base.startsWith(`${plugin}-`)) return true;
+    const parts = absPath.split(/[/\\]/);
+    return parts.some((part) => part === plugin || part.startsWith(`${plugin}-`));
+}
+
+function enumeratePluginOwnedDests(
+    target: Target,
+    plugin: string,
+    scopeRoot: string,
+    mappedSkillNames: ReadonlySet<string>,
+    useGlobalSkillsLayout: boolean,
+): string[] {
+    const files: string[] = [];
+    const skillsRel = useGlobalSkillsLayout
+        ? (TARGET_GLOBAL_SKILLS_RELDIR[target] ?? TARGET_SKILLS_RELDIR[target])
+        : TARGET_SKILLS_RELDIR[target];
+    if (skillsRel) {
+        const skillsDir = join(scopeRoot, skillsRel);
+        for (const name of mappedSkillNames) {
+            const dest = join(skillsDir, name);
+            if (existsSync(dest)) files.push(...listRegularFilesUnder(dest));
+        }
+    }
+    if (target === 'hermes') {
+        files.push(...pluginPrefixedEntries(join(scopeRoot, '.hermes', 'skills'), plugin));
+    }
+    if (target === 'pi') {
+        files.push(...pluginPrefixedEntries(join(scopeRoot, '.pi', 'agent', 'agents'), plugin));
+        const piPluginDir = join(scopeRoot, '.pi', 'agent', 'plugins', plugin);
+        if (existsSync(piPluginDir)) files.push(...listRegularFilesUnder(piPluginDir));
+    }
+    if (target === 'codex') {
+        files.push(...pluginPrefixedEntries(join(scopeRoot, '.codex', 'agents'), plugin));
+    }
+    if (target === 'claude') {
+        const claudeRoot = join(scopeRoot, '.claude', 'plugins');
+        files.push(...pluginPrefixedEntries(claudeRoot, plugin));
+    }
+    if (target === 'omp') {
+        const ompRoot = join(scopeRoot, '.omp', 'plugins');
+        files.push(...pluginPrefixedEntries(ompRoot, plugin));
+    }
+    if (target === 'grok') {
+        const grokRoot = join(scopeRoot, '.grok');
+        if (existsSync(grokRoot)) files.push(...pluginPrefixedEntries(grokRoot, plugin));
+    }
+    const scriptsDir = join(scopeRoot, '.agents', 'scripts', plugin);
+    if (existsSync(scriptsDir) && target !== 'claude' && target !== 'omp' && target !== 'grok') {
+        files.push(...listRegularFilesUnder(scriptsDir));
+    }
+    return files;
+}
+
+function pluginPrefixedEntries(dir: string, plugin: string): string[] {
+    if (!existsSync(dir)) return [];
+    const files: string[] = [];
+    for (const entry of readdirSync(dir)) {
+        if (entry !== plugin && !entry.startsWith(`${plugin}-`)) continue;
+        const full = join(dir, entry);
+        const st = lstatSync(full);
+        if (st.isSymbolicLink()) continue;
+        if (st.isDirectory()) files.push(...listRegularFilesUnder(full));
+        else if (st.isFile()) files.push(full);
+    }
+    return files;
+}
+
+function writeInstallProvenance(args: {
+    plugin: string;
+    targets: Target[];
+    outputRoot: string;
+    pluginRoot: string;
+    resolution: PluginResolution;
+    resolvedRef?: string;
+    receipts: Map<Target, TargetInstallReceipt>;
+    addReceiptFiles: (target: Target, files: readonly string[]) => void;
+    mappedSkillNames: ReadonlySet<string>;
+    useGlobalSkillsLayout: boolean;
+    writer: typeof writeInstallManifest;
+    nowIso: string;
+}): void {
+    const upstreamFiles = listRegularFilesUnder(args.pluginRoot);
+    if (upstreamFiles.length === 0) {
+        throw new Error(`Install provenance inventory is empty for upstream plugin root: ${args.pluginRoot}`);
+    }
+    const upstream = snapshotFiles(args.pluginRoot, upstreamFiles);
+    for (const target of args.targets) {
+        args.addReceiptFiles(
+            target,
+            enumeratePluginOwnedDests(
+                target,
+                args.plugin,
+                args.outputRoot,
+                args.mappedSkillNames,
+                args.useGlobalSkillsLayout,
+            ),
+        );
+        const collected = args.receipts.get(target)?.files ?? [];
+        const unique: string[] = [];
+        const seen = new Set<string>();
+        const scopeRoot = resolve(args.outputRoot);
+        for (const file of collected) {
+            const abs = resolve(file);
+            if (seen.has(abs) || !existsSync(abs)) continue;
+            const st = lstatSync(abs);
+            if (st.isSymbolicLink() || !st.isFile()) continue;
+            // Host install trees can sit under $HOME while project scopeRoot is cwd.
+            const rel = relative(scopeRoot, abs);
+            if (rel.startsWith('..') || rel === '' || isAbsolute(rel)) continue;
+            seen.add(abs);
+            unique.push(abs);
+        }
+        if (unique.length === 0) {
+            throw new Error(
+                `Install provenance inventory did not resolve any installed files for plugin '${args.plugin}' target '${target}'`,
+            );
+        }
+        const installed = snapshotFiles(args.outputRoot, unique);
+        const manifest: InstallManifestV1 = {
+            schemaVersion: 1,
+            plugin: args.plugin,
+            target,
+            channel: args.resolution.channel,
+            upstreamVersion: args.resolution.upstreamVersion,
+            ...(args.resolution.marketplaceLocator !== undefined
+                ? { marketplaceLocator: args.resolution.marketplaceLocator }
+                : {}),
+            ...(args.resolvedRef !== undefined ? { resolvedRef: args.resolvedRef } : {}),
+            installedAt: args.nowIso,
+            superskillVersion: cliVersion,
+            installed,
+            upstream,
+        };
+        args.writer(args.outputRoot, target, args.plugin, manifest);
     }
 }
 
-/**
- * Count the actual skill directories under a given path. A "skill" is a
- * directory containing a `SKILL.md` file (the format rulesync emits and
- * Antigravity / Codex / Pi / OMP / opencode all consume). This reflects the
- * user-visible inventory at the path, not a diff count.
- *
- * Returns 0 if the path does not exist (caller decides whether to fall back).
- */
 /**
  * Mirror rulesync's `getHomeDirectory()` resolution: prefer the `HOME_DIR`
  * environment variable, fall back to `os.homedir()`. Both `countSkillsInDir`
@@ -1633,6 +1968,7 @@ function resolveHomeDir(): string {
     return process.env.HOME_DIR ?? homedir();
 }
 
+/** Count skill directories (dirs containing `SKILL.md`) under `skillsDir`. */
 function countSkillsInDir(skillsDir: string): number {
     if (!existsSync(skillsDir)) return 0;
     let count = 0;

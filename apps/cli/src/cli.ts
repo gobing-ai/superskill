@@ -8,6 +8,7 @@ import { registerScriptConvert } from './commands/script-convert';
 import { registerScriptPath } from './commands/script-path';
 import { registerScriptRun } from './commands/script-run';
 import { registerSkill } from './commands/skill';
+import { registerUpdate } from './commands/update';
 import { cliVersion } from './version';
 
 /** Create the superskill CLI program. */
@@ -18,6 +19,7 @@ export function createProgram(): Command {
         .version(cliVersion);
 
     registerInstall(program);
+    registerUpdate(program);
 
     registerAgent(program);
     registerSkill(program);

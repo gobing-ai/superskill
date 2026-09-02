@@ -17,6 +17,7 @@ import {
     resolveRemoteMarketplace,
     runCheckedCommand,
 } from '../../src/commands/install';
+import { cliVersion } from '../../src/version';
 
 const originalCwd = process.cwd();
 let tempDir: string | undefined;
@@ -25,6 +26,12 @@ function createTempWorkspace(): string {
     tempDir = mkdtempSync(join(tmpdir(), 'superskill-install-test-'));
     process.chdir(tempDir);
     return tempDir;
+}
+
+function seedFile(root: string, ...parts: string[]): void {
+    const dest = join(root, ...parts);
+    mkdirSync(join(dest, '..'), { recursive: true });
+    writeFileSync(dest, 'seed\n');
 }
 
 function createPlugin(root: string, pluginName = 'demo'): string {
@@ -297,6 +304,7 @@ describe('executeInstall', () => {
     it('installs omp natively via marketplace add + plugin install (task 0073)', async () => {
         const workspace = createTempWorkspace();
         createPlugin(workspace, 'm2');
+        seedFile(workspace, '.omp', 'plugins', 'm2', 'plugin.json');
         const stdout = spyOn(process.stdout, 'write').mockImplementation(() => true);
 
         let rulesyncTargets: string[] = [];
@@ -438,6 +446,7 @@ describe('executeInstall', () => {
         // volatile wrapper that the callback mutates, then unwrap for checks.
         const volArg: { args: { source: string; name: string; plugin: string } | null } = { args: null };
         process.chdir(workspace);
+        seedFile(workspace, '.claude', 'plugins', 'cache', 'test-marketplace', 'market', 'plugin.json');
 
         const stdout = spyOn(process.stdout, 'write').mockImplementation(() => true);
 
@@ -480,6 +489,7 @@ describe('executeInstall', () => {
             args: null,
         };
         process.chdir(workspace);
+        seedFile(workspace, '.claude', 'plugins', 'cache', 'superskill', 'cc', 'plugin.json');
         spyOn(process.stdout, 'write').mockImplementation(() => true);
         // T6/AC7: --marketplace-source is deprecated — warn on stderr, keep behavior.
         const stderr = spyOn(process.stderr, 'write').mockImplementation(() => true);
@@ -552,6 +562,7 @@ describe('executeInstall', () => {
         spyOn(process.stdout, 'write').mockImplementation(() => true);
 
         process.chdir(workspace);
+        seedFile(workspace, '.claude', 'plugins', 'cache', 'test-mkp', 'market', 'plugin.json');
         await executeInstall(
             'market',
             ['claude'],
@@ -576,11 +587,13 @@ describe('executeInstall', () => {
         expect(c1.args[0]).toBe('plugin');
         expect(c1.args[1]).toBe('install');
         expect(c1.args[2]).toBe('market@test-mkp');
+        expect(c1.args.slice(3)).toEqual(['--scope', 'project']);
     });
 
     it('installs grok natively via marketplace add + path install (task 0078)', async () => {
         const workspace = createTempWorkspace();
         createPlugin(workspace, 'm-grok');
+        seedFile(workspace, '.grok', 'm-grok', 'plugin.json');
         const stdout = spyOn(process.stdout, 'write').mockImplementation(() => true);
 
         let rulesyncTargets: string[] = [];
@@ -840,7 +853,58 @@ describe('resolvePluginRoot — plugin name safety', () => {
     it('resolves a configured direct plugin directory', () => {
         const root = createTempWorkspace();
         const pluginRoot = createPlugin(root, 'configured');
-        expect(resolvePluginRoot('configured', undefined, pluginRoot).pluginRoot).toBe(pluginRoot);
+        const resolution = resolvePluginRoot('configured', undefined, pluginRoot);
+        expect(resolution.pluginRoot).toBe(pluginRoot);
+        expect(resolution.channel).toBe('marketplace');
+        expect(resolution.marketplaceLocator).toBe(pluginRoot);
+        expect(resolution.upstreamVersion).toBe(cliVersion);
+    });
+});
+
+describe('resolvePluginRoot — install source metadata', () => {
+    it('prefers the marketplace entry version over plugin.json', () => {
+        const root = createTempWorkspace();
+        const pluginRoot = createPlugin(root, 'demo');
+        writeFileSync(join(pluginRoot, 'plugin.json'), JSON.stringify({ name: 'demo', version: '0.1.0' }));
+        mkdirSync(join(root, '.claude-plugin'), { recursive: true });
+        const marketplacePath = join(root, '.claude-plugin', 'marketplace.json');
+        writeFileSync(
+            marketplacePath,
+            JSON.stringify({ plugins: [{ name: 'demo', source: './plugins/demo', version: '9.9.9' }] }),
+        );
+
+        const resolution = resolvePluginRoot('demo', marketplacePath);
+        expect(resolution.channel).toBe('marketplace');
+        expect(resolution.upstreamVersion).toBe('9.9.9');
+        expect(resolution.marketplaceLocator).toBe(root);
+    });
+
+    it('falls back to plugin.json version when the marketplace entry has none', () => {
+        const root = createTempWorkspace();
+        const pluginRoot = createPlugin(root, 'demo');
+        writeFileSync(join(pluginRoot, 'plugin.json'), JSON.stringify({ name: 'demo', version: '3.1.4' }));
+        mkdirSync(join(root, '.claude-plugin'), { recursive: true });
+        writeFileSync(
+            join(root, '.claude-plugin', 'marketplace.json'),
+            JSON.stringify({ plugins: [{ name: 'demo', source: './plugins/demo' }] }),
+        );
+
+        expect(resolvePluginRoot('demo').upstreamVersion).toBe('3.1.4');
+    });
+
+    it('falls back to cliVersion when plugin.json is missing or unparseable', () => {
+        const root = createTempWorkspace();
+        createPlugin(root, 'demo');
+        writeFileSync(join(root, 'plugins', 'demo', 'plugin.json'), '{');
+        mkdirSync(join(root, '.claude-plugin'), { recursive: true });
+        writeFileSync(
+            join(root, '.claude-plugin', 'marketplace.json'),
+            JSON.stringify({ plugins: [{ name: 'demo', source: './plugins/demo' }] }),
+        );
+        // Unparseable sibling is skipped; the valid .claude-plugin manifest still resolves.
+        writeFileSync(join(root, 'marketplace.json'), '{not-json');
+
+        expect(resolvePluginRoot('demo').upstreamVersion).toBe(cliVersion);
     });
 });
 
@@ -933,7 +997,7 @@ describe('resolveRemoteMarketplace — cache + offline contract (R4/R9/AC6)', ()
                 throw new Error('network must not be reached');
             }) as unknown as typeof fetch,
         });
-        expect(result).toBe(cacheRoot);
+        expect(result.root).toBe(cacheRoot);
     });
 
     it('fails a cold cache with an actionable error naming the fetch target and cache path', async () => {
@@ -1009,10 +1073,12 @@ describe('resolveRemoteMarketplace — cache + offline contract (R4/R9/AC6)', ()
         const home = createTempWorkspace();
         process.env.HOME_DIR = home;
 
-        const cacheRoot = await resolveRemoteMarketplace(locator, { fetchFn: ccRepoFetch() });
+        const resolved = await resolveRemoteMarketplace(locator, { fetchFn: ccRepoFetch() });
+        const cacheRoot = resolved.root;
 
         expect(cacheRoot).toBe(join(marketplaceCacheRoot(), 'gobing-ai', 'superskill', 'HEAD'));
         expect(existsSync(join(cacheRoot, '.claude-plugin', 'marketplace.json'))).toBe(true);
+        expect(resolved.resolvedRef).toBe('abc');
 
         // The materialized cache root feeds the unchanged local resolve flow.
         const resolution = resolvePluginRoot('cc', cacheRoot);
@@ -1101,6 +1167,7 @@ describe('executeInstall - codex native agent dispatch (task 0111)', () => {
         writeFileSync(join(pluginRoot, 'agents', 'coder.md'), '---\nname: coder\ndescription: Test\n---\n\nBody.');
         const outRoot = join(workspace, 'out');
         mkdirSync(outRoot, { recursive: true });
+        seedFile(outRoot, '.agents', 'skills', 'demo-a', 'SKILL.md');
 
         await executeInstall(
             'demo',
@@ -1119,6 +1186,7 @@ describe('executeInstall - codex native agent dispatch (task 0111)', () => {
         rmSync(join(pluginRoot, 'agents'), { recursive: true, force: true });
         const outRoot = join(workspace, 'out');
         mkdirSync(outRoot, { recursive: true });
+        seedFile(outRoot, '.agents', 'skills', 'demo-a', 'SKILL.md');
 
         await executeInstall(
             'demo',
