@@ -23,6 +23,12 @@ When `spur` and/or `superskill` are on `PATH`, use them **before** native tools 
 - Inventing CLI flags from memory — use `spur <noun> --help` or `sp:spur-cli`.
 - Maintaining parallel TODO.md that drifts from the WBS.
 
+## Live nouns (spur 0.3.71+)
+
+`task`, `feature`, `rule`, `workflow`, `agent`, `history`, `message`, `projects`, `self`,
+`team`, `builder`. Project scaffold and status are `spur self init` / `spur self status` —
+`spur status` / `spur init` are not top-level verbs. Plugin scripts run via `superskill script`.
+
 ## Fallback
 
 Native Read/Edit/Bash (or platform equivalents) only when the harness does not cover the operation.

@@ -29,11 +29,16 @@ Pushback once; then comply.
 
 | Need | Tool |
 | --- | --- |
-| Read / edit | Pi `Read` / `Edit` |
-| Shell | Pi `Bash` |
-| Search | `rg` via shell |
+| Read / edit / write | Pi `Read` / `Edit` / `Write` (before shell cat/sed) |
+| Search | `rg` via shell; native find/grep before shell |
 | Delegate | Pi `subagent` → `expert-*` when installed |
 | Lifecycle | `spur` / `superskill` |
+
+## Tool priority
+
+1. Native built-in tools (`Read`/`Edit`/`Glob`/`Grep`) before every shell-shaped tool (`bash`, `Shell`, `run_terminal_command`, Python) — unbounded shell output floods context, and a general shell shadows the purpose-built tool.
+2. File search: native first, then `rg` / `sg`, then raw `grep` / `sed` / `awk` / `perl` — gitignore-aware traversal skips files a raw text scan would read.
+3. Web: native search/fetch first, then `curl` / `wget`, then MCP/plugin surfaces.
 
 Always-on when installed: `anti-hallucination`.
 

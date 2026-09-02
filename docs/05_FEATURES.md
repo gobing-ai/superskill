@@ -31,12 +31,13 @@ Design: [design-doc-phase1.md](design/design-doc-phase1.md)
 ### Feature list
 
 | ID | Feature | Deps | Status | Files |
-|----|---------|------|--------|-------|
+| ---- | --------- | ------ | -------- | ------- |
 | G11 | [Target taxonomy + config schema](features/G11_target-taxonomy-config-schema.md) | — | ✅ | `targets.ts`, `config.ts` |
 | G12 | [Plugin → .rulesync/ mapper](features/G12_plugin-rulesync-mapper.md) | — | ✅ | `mapper.ts` |
 | G13 | [Conversion pipeline + rulesync integration](features/G13_conversion-pipeline-rulesync-integration.md) | G11 | ✅ | `pipeline/*`, `rulesync.ts` |
 | F3 | [superskill install command + target dispatch](features/F3_superskill-install-command-marketplace-registration.md) | G11, G12, G13, G14 | ✅ | `commands/install.ts` |
 | B | [Skill update notification — install manifest and update verb](features/B_skill-update-notification-install-manifest-and-update-verb.md) | F3 | ✅ | `operations/install-manifest.ts`, `operations/update.ts`, `commands/update.ts` |
+| C | [SOTA refresh of the team-stark-children magent package](features/C_sota-refresh-of-the-team-stark-children-magent-package.md) | — | ✅ | `magents/team-stark-children/**`, `plugins/cc/rules/01-discipline.md`, `plugins/cc/rules/02-harness-first.md` |
 | E2 | [Tests + verification](features/E2_tests-verification.md) | G11–F3, G14 | ✅ | `tests/*` |
 | G14 | [Marketplace manifest resolver](features/G14_marketplace-manifest-resolver.md) | — | ✅ | `marketplace.ts` |
 
@@ -49,7 +50,7 @@ Design: [design-doc-phase1.md](design/design-doc-phase1.md)
 ### Foundation (already done)
 
 | Item | Status |
-|------|--------|
+| ------ | -------- |
 | Project scaffold | ✅ |
 | Biome + TypeScript gates | ✅ |
 | bun:test suite (2 tests, 100%) | ✅ |
@@ -72,7 +73,7 @@ G14 ──────────────┘
 Each feature becomes one task file. Recommended order and granularity:
 
 | Order | Feature | Task | Size | Rationale |
-|-------|---------|------|------|-----------|
+| ------- | --------- | ------ | ------ | ----------- |
 | 1 | G11 | `F001-target-taxonomy-config` | S (1 file + tests) | Foundation — unblocks G13. Smallest possible increment. |
 | 2 | G12 | `F002-plugin-mapper` | S (1 file + tests) | Independent of G11. Can run in parallel. |
 | 3 | G14 | `F006-marketplace-resolver` | S (1 file + tests) | Independent. Resolves plugin roots; unblocks F3. |
@@ -93,7 +94,7 @@ Design: [design-doc-phase2.md](design/design-doc-phase2.md)
 ### Feature list
 
 | ID | Feature | Deps | Size | Status | Files |
-|----|---------|------|------|--------|-------|
+| ---- | --------- | ------ | ------ | -------- | ------- |
 | G21 | [Template + content-IO foundation + scaffold](features/G21_template-content-io-foundation-scaffold-operation.md) | — | M | ✅ | `content/*` (5), `templates/*/default.md` (5), `operations/scaffold.ts` |
 | F4 | [SQLite data store (via @gobing-ai/ts-db)](features/F4_sqlite-data-store.md) | G21 | M | ✅ | `store/schema.ts`, `store/db.ts`, `store/evaluations.ts`, `store/proposals.ts` |
 | G22 | [Quality dimension definitions](features/G22_quality-dimension-definitions.md) | G21 | M | ✅ | `quality/dimensions.ts` + 5 type-specific evaluators |
@@ -103,6 +104,7 @@ Design: [design-doc-phase2.md](design/design-doc-phase2.md)
 | G26 | [Evolve operation](features/G26_evolve-operation.md) | G21, F4, G24 | M | ✅ | `operations/evolve.ts` |
 | F5 | [Five type command files](features/F5_five-type-command-files.md) | G21–G26 | M | ✅ | `commands/helpers.ts` + `commands/{agent,skill,command,hook,magent}.ts` + `cli.ts` |
 | E3 | [Phase 2 tests](features/E3_phase-2-tests.md) | G21–F5 | M | ✅ | `apps/cli/tests/{content,scaffold,validate,evaluate,refine,evolve,store,commands}.test.ts` |
+
 ### Dependency graph
 
 ```
@@ -123,7 +125,7 @@ G21 is no longer parallel with F4/G22 — it owns the shared `content/*` primiti
 ### Foundation (carried forward from Phase 1)
 
 | Item | Status |
-|------|--------|
+| ------ | -------- |
 | Project scaffold + tooling | ✅ |
 | Spur rule catalog (21 rules) | ✅ |
 | Documentation 00–05 | ✅ |
@@ -133,7 +135,7 @@ G21 is no longer parallel with F4/G22 — it owns the shared `content/*` primiti
 ### Task creation plan
 
 | Order | Feature | Task | Rationale |
-|-------|---------|------|-----------|
+| ------- | --------- | ------ | ----------- |
 | 1 | G21 | `F007-template-scaffold` | **Foundation, must land first.** `content/*` primitives + templates + scaffold. F4–G26 import it. Adds the `yaml` dep (ADR-012). |
 | 2 | F4 | `F008-sqlite-store` | Depends on G21 (`content/paths.ts`). DB open/migration, evaluations CRUD, proposals CRUD. Foundation for G24/G26. |
 | 3 | G22 | `F009-quality-dimensions` | Depends on G21 (`parseFrontmatter`, `ContentType`, `REQUIRED_FIELDS`). Dimension schemas + scoring for all 5 types. Foundation for G23/G24. |
@@ -151,7 +153,7 @@ G21 is no longer parallel with F4/G22 — it owns the shared `content/*` primiti
 Each type has 5 dimensions scored 0.0–1.0 (see design §3):
 
 | Type | Dimension 1 | Dimension 2 | Dimension 3 | Dimension 4 | Dimension 5 |
-|------|------------|------------|------------|------------|------------|
+| ------ | ------------ | ------------ | ------------ | ------------ | ------------ |
 | Skill | completeness | clarity | trigger-accuracy | anti-hallucination | conciseness |
 | Command | completeness | clarity | argument-hints | tool-references | slash-syntax |
 | Agent | completeness | role-clarity | tool-selection | skill-linkage | model-fit |
@@ -169,12 +171,13 @@ Cleanup/consolidation only — touches `plugins/cc/`, not the CLI. Renames `rd3`
 ### Feature list
 
 | ID | Feature | Deps | Size | Status | Files |
-|----|---------|------|------|--------|-------|
+| ---- | --------- | ------ | ------ | -------- | ------- |
 | H3 | [Namespace migration (`rd3`→`cc`) + companion configs](features/H3_namespace-migration-rd3-cc-companion-configs.md) | — | M | ✅ | `plugins/cc/**` (~123 files w/ `rd3`) |
 | H4 | [Skill + expert-subagent rewrite → `superskill`](features/H4_skill-expert-subagent-rewrite-superskill.md) | H3 | M | ✅ | `plugins/cc/skills/*/SKILL.md` (5), `plugins/cc/agents/expert-*.md` (5) |
 | H5 | [Slash-command disposition + `hooks.json` fix](features/H5_slash-command-disposition-hooks-json-fix.md) | H3 | M | ✅ | `plugins/cc/commands/*.md` (17), `plugins/cc/hooks/hooks.json` |
 | H6 | [Embedded-code deletion](features/H6_embedded-code-deletion.md) | H4, H5 | S | ✅ | delete `plugins/cc/skills/*/{scripts,templates,tests}/`, `cc-hooks/{emitters,schema}/`, `references/scripts-usage.md` |
 | I1 | [Binary-on-PATH + Phase 3 verification](features/I1_binary-on-path-phase-3-verification.md) | H3–H6 | S | ✅ | `apps/cli/package.json` (verify bin), docs/runbook; no plugin code |
+
 ```
 H3 (rename rd3→cc)   ← must land first; every ref-bearing file depends on the final names
   │
@@ -196,7 +199,7 @@ H3 (rename rd3→cc)   ← must land first; every ref-bearing file depends on th
 ### Task creation plan
 
 | Order | Feature | Task | Rationale |
-|-------|---------|------|-----------|
+| ------- | --------- | ------ | ----------- |
 | 1 | H3 | `F016-namespace-migration` | **Must land first.** Global `rd3`→`cc` string migration (skill dir names kept; refs → `cc:cc-*`). Companion configs (`metadata.openclaw`, `agents/openai.yaml`) renamed in lockstep. Invariant: `rg rd3 plugins/cc/` → 0. |
 | 2 | H4 | `F017-skill-subagent-rewrite` | Depends on H3 (final names). Rewrite 5 `SKILL.md` + 5 `expert-*.md` to call bare `superskill <type> <op>`; fix hardcoded `plugins/rd3/...` paths; drop deleted-op rows. |
 | 3 | H5 | `F018-command-disposition-hooks` | Depends on H3. Rewrite 17 commands → `superskill` verb; delete 8 orphans; strip dangling `hooks.json` entries (ship empty/minimal). Runs parallel to H4. |
@@ -220,13 +223,14 @@ drive the non-determinism through clean I/O seams (P4-D2). Touches the CLI (`ope
 ### Feature list
 
 | ID | Feature | Deps | Size | Status | Files |
-|----|---------|------|------|--------|-------|
+| ---- | --------- | ------ | ------ | -------- | ------- |
 | G31 | [Rubric config format + package defaults + override resolution](features/G31_rubric-config-format-package-defaults-override-resolution.md) | — | M | ✅ | `quality/rubric.ts`, `rubrics/<type>.yaml` (5), `quality/dimensions.ts` (weights) |
 | G32 | [Scorer seam (`evaluate --rubric`/`--ingest`)](features/G32_scorer-seam-evaluate-rubric-ingest.md) | G31 | M | ✅ | `operations/evaluate.ts`, `store/schema.ts` (rubric_version), `commands/helpers.ts` |
 | G33 | [Generation seam (`evolve --propose-only --json`/`--ingest`)](features/G33_generation-seam-evolve-propose-only-json-ingest.md) | G31 | M | ✅ | `operations/evolve.ts` (replace `generateChanges` placeholder), `commands/helpers.ts` |
 | G34 | [Double-loop gate (validate + Δ-margin + anchor)](features/G34_double-loop-gate-adversarial-safeguards.md) | G32, G33 | M | ✅ | `operations/evolve.ts` (gate on ingest), `operations/validate.ts` (precondition) |
 | H7 | [`cc` skill + Spur personas + hide `validate` (P4-D3)](features/H7_cc-skill-spur-personas-hide-validate-p4-d3.md) | G32, G33, G34 | M | ✅ | `plugins/cc/skills/cc-*/SKILL.md`, `plugins/cc/agents/expert-*.md`, delete `commands/hook-validate.md` |
 | G35 | [Empirical behavior gate (`evolve --eval-gate`)](features/G35_empirical-behavior-gate-evolve-eval-gate.md) | G34 | M | ✅ | `quality/eval-cases.ts`, `quality/replay.ts`, `operations/{replay-runner,pairwise-judge,noise-floor}.ts`, `operations/evolve.ts` (gate + persistence), `commands/helpers.ts` |
+
 ```
 G31 (rubric config)   ← fitness function; both seams read it
   │
@@ -244,7 +248,7 @@ G31 (rubric config)   ← fitness function; both seams read it
 ### Foundation (carried forward)
 
 | Item | Status |
-|------|--------|
+| ------ | -------- |
 | `evaluate`/`evolve` machinery (G24/G26) | ✅ (the seams extend these, not replace) |
 | `ProposedChange`/`applyChange`/`computeTrends`/`stepVerify` | ✅ (reused by G33/G34) |
 | SQLite store + DAOs (F4) | ✅ (G32 adds `rubric_version` stamping) |
@@ -253,7 +257,7 @@ G31 (rubric config)   ← fitness function; both seams read it
 ### Task creation plan
 
 | Order | Feature | Task | Rationale |
-|-------|---------|------|-----------|
+| ------- | --------- | ------ | ----------- |
 | 1 | G31 | `F021-rubric-config` | **Foundation.** Versioned, user-overridable rubric YAML (unified shape) + 5 package defaults + override resolution. Dimension names reuse `DIMENSION_REGISTRY` keys; weights make rubric aggregate weighted. |
 | 2 | G32 | `F022-scorer-seam` | Depends on G31. `evaluate --rubric <file> --json` emits the score envelope; `evaluate --ingest <scores.json> --save` validates against rubric schema + persists with `scorer: rubric` marker + `rubric_version`. Trends compare same-version only. |
 | 3 | G33 | `F023-generation-seam` | Depends on G31. Replace `generateChanges` placeholder; `evolve --propose-only --json` emits per-dimension generation briefs (with immutable goal anchor); `evolve --ingest <proposal.json>` accepts authored `ProposedChange[]`. Parallel to G32. |
@@ -281,7 +285,7 @@ targets (codex, opencode, antigravity-cli/ide) — `runRulesync` already forward
 ### Feature list
 
 | ID | Feature | Deps | Size | Status | Files |
-|----|---------|------|------|--------|-------|
+| ---- | --------- | ------ | ------ | -------- | ------- |
 | F6 | [Surface hook counts in install + validation checklist](features/F6_surface-hook-counts-in-install-validation-checklist.md) | — | S | ✅ | `commands/install.ts` (`InstallResultCounts` + accumulate) |
 | H8 | [Pi/omp/hermes hook enablement (shim/copy)](features/H8_pi-omp-hermes-hook-enablement.md) | F6 | M | ✅ | `commands/install.ts` (copy/shim step), shim assets |
 | H9 | [`cc:cc-hooks` re-author + `hook emit` wrapper](features/H9_cc-cc-hooks-re-author-hook-emit-wrapper.md) | F6 | M | ✅ | `commands/hook.ts` (`emit`), `plugins/cc/skills/cc-hooks/SKILL.md`, `plugins/cc/agents/expert-hook.md` |
@@ -320,7 +324,7 @@ G43 (adapt gap + phase closing gate) ── independent
 ### Foundation (carried forward)
 
 | Item | Status |
-|------|--------|
+| ------ | -------- |
 | Phase 4 generation seam (G33) | ✅ (G42 refinement depends on it) |
 | rulesync `HookDefinitionSchema` + per-tool matrix | ✅ (vendored; H9 authors against it) |
 | Phase 3 thin `cc:cc-hooks` skill | ✅ (H9 re-authors it) |
@@ -328,7 +332,7 @@ G43 (adapt gap + phase closing gate) ── independent
 ### Task creation plan
 
 | Order | Feature | Task | Rationale |
-|-------|---------|------|-----------|
+| ------- | --------- | ------ | ----------- |
 | 1 | F6 | `F027-install-hook-counts` | **Smallest, foundational.** Add `hooksCount` to `InstallResultCounts`, accumulate `result.hooksCount`, print it. Validation checklist (event-name fidelity for 4 ✅ targets). No `rulesync.ts` change. |
 | 2 | G43 | `F032-adapt-gap` | Independent + small. Confirm the deleted `adapt` adapters' behavior is covered by `pipeline/convert.ts`; add only the missing transform. Closes a Phase 3 deletion debt. |
 | 3 | G41 | `F030-skill-package` | Independent. Restore `superskill skill package <name>` — re-spec the deleted `package.ts` against the content-IO layer. Deterministic. |
@@ -345,7 +349,7 @@ G43 (adapt gap + phase closing gate) ── independent
 ## Cross-repo: anti-hallucination migration (task 0041)
 
 | ID | Feature | Status | Files |
-|----|---------|--------|-------|
+| ---- | --------- | -------- | ------- |
 | AH1 | Engine + prose relocated to superskill | ✅ | `plugins/cc/scripts/anti-hallucination/`, `plugins/cc/skills/anti-hallucination/` |
 | AH2 | Claude Stop-hook re-homed | ✅ | `plugins/cc/hooks/hooks.json` |
 | AH3 | Delete from Spur + dedup logger | 💤 | Blocked by AH4 (enforcement gap) |
