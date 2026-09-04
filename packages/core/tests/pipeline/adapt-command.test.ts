@@ -6,7 +6,7 @@ describe('adaptCommandToSkill', () => {
         const source = '---\nargument-hint: <task>\ndescription: Run a task\n---\n\nRun a task.';
         const result = adaptCommandToSkill(source, 'cc-skill-add', 'cc');
 
-        expect(result).toContain('name: cc-skill-add');
+        expect(result).toContain('name: "cc-skill-add"');
         expect(result).toContain('disable-model-invocation: true');
     });
 
@@ -43,7 +43,7 @@ describe('adaptCommandToSkill', () => {
         const source = '# Run\n\nRun a task command.';
         const result = adaptCommandToSkill(source, 'cc-run', 'cc');
 
-        expect(result).toContain('name: cc-run');
+        expect(result).toContain('name: "cc-run"');
         expect(result).toContain('disable-model-invocation: true');
         expect(result).toContain('description:');
     });
@@ -52,7 +52,7 @@ describe('adaptCommandToSkill', () => {
         const source = '---\nname: old-name\ndescription: Test\n---\n\nBody.';
         const result = adaptCommandToSkill(source, 'cc-new-name', 'cc');
 
-        expect(result).toContain('name: cc-new-name');
+        expect(result).toContain('name: "cc-new-name"');
         expect(result).not.toMatch(/^name: old-name/m);
     });
 

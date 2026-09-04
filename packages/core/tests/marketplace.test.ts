@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it } from 'bun:test';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { listResolvablePlugins, resolvePlugin } from '../src/marketplace';
 
@@ -247,5 +248,75 @@ describe('listResolvablePlugins', () => {
     it('returns empty when no manifest found', () => {
         tmpDir = mkdtempSync('superskill-mp-');
         expect(listResolvablePlugins(tmpDir)).toEqual([]);
+    });
+});
+
+describe('resolvePlugin — real-path containment (R2/F2)', () => {
+    let mpDir: string;
+    let outsideDir: string;
+
+    afterEach(() => {
+        if (mpDir) rmSync(mpDir, { recursive: true, force: true });
+        if (outsideDir) rmSync(outsideDir, { recursive: true, force: true });
+    });
+
+    function writeManifest(source: string): string {
+        const claudePluginDir = join(mpDir, '.claude-plugin');
+        mkdirSync(claudePluginDir, { recursive: true });
+        const manifestPath = join(claudePluginDir, 'marketplace.json');
+        writeFileSync(
+            manifestPath,
+            JSON.stringify({
+                name: 'demo-marketplace',
+                owner: { name: 'Demo Team', email: 'demo@example.com' },
+                plugins: [{ name: 'demo', source }],
+            }),
+        );
+        return manifestPath;
+    }
+
+    // Residual-proof (F2): the compound half is the symlinked source leaf escaping the
+    // root; the bare half is an equivalent real in-root layout that must still resolve.
+    it('rejects a source that is a symlink escaping the marketplace root after resolution', () => {
+        mpDir = mkdtempSync(join(tmpdir(), 'superskill-mp-in-'));
+        outsideDir = mkdtempSync(join(tmpdir(), 'superskill-mp-out-'));
+        mkdirSync(join(outsideDir, 'skills'), { recursive: true });
+        symlinkSync(outsideDir, join(mpDir, 'escape'));
+        const manifestPath = writeManifest('./escape');
+
+        expect(() => resolvePlugin(manifestPath, 'demo')).toThrow(
+            /escapes the marketplace root after symlink resolution/,
+        );
+    });
+
+    it('still resolves an in-root symlink whose real target stays inside the root', () => {
+        mpDir = mkdtempSync(join(tmpdir(), 'superskill-mp-in-'));
+        mkdirSync(join(mpDir, 'real-plugin', 'skills'), { recursive: true });
+        symlinkSync(join(mpDir, 'real-plugin'), join(mpDir, 'alias'));
+        const manifestPath = writeManifest('./alias');
+
+        const result = resolvePlugin(manifestPath, 'demo');
+        expect(result).not.toBeNull();
+    });
+
+    it('rejects a pluginRoot metadata leaf that symlinks out while the source stays lexical', () => {
+        mpDir = mkdtempSync(join(tmpdir(), 'superskill-mp-in-'));
+        outsideDir = mkdtempSync(join(tmpdir(), 'superskill-mp-out-'));
+        mkdirSync(join(outsideDir, 'skills'), { recursive: true });
+        symlinkSync(outsideDir, join(mpDir, 'escape'));
+        const claudePluginDir = join(mpDir, '.claude-plugin');
+        mkdirSync(claudePluginDir, { recursive: true });
+        const manifestPath = join(claudePluginDir, 'marketplace.json');
+        writeFileSync(
+            manifestPath,
+            JSON.stringify({
+                metadata: { pluginRoot: '.' },
+                plugins: [{ name: 'demo', source: './escape' }],
+            }),
+        );
+
+        expect(() => resolvePlugin(manifestPath, 'demo')).toThrow(
+            /escapes the marketplace root after symlink resolution/,
+        );
     });
 });

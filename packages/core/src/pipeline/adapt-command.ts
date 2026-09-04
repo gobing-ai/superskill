@@ -27,7 +27,7 @@ export function adaptCommandToSkill(source: string, expectedName: string, plugin
             .slice(0, 5)
             .find((l) => l.trim() && !l.startsWith('#'));
         const description = firstLine?.trim() || `${expectedName} command`;
-        result = `---\nname: ${expectedName}\ndescription: ${quoteYaml(description)}\ndisable-model-invocation: true\n---\n\n${source}`;
+        result = `---\nname: ${quoteYaml(expectedName)}\ndescription: ${quoteYaml(description)}\ndisable-model-invocation: true\n---\n\n${source}`;
     }
     return rewritePluginTreeMarkdownLinks(rewriteSkillReferences(result, pluginPrefix), pluginPrefix);
 }
@@ -68,6 +68,6 @@ function normalizeCommandFrontmatter(content: string, expectedName: string): str
             lines: ['disable-model-invocation: true'],
             shouldInject: (seen) => !seen.some((l) => /^disable-model-invocation:\s*/.test(l)),
         },
-        fallbackBlock: `---\nname: ${expectedName}\ndisable-model-invocation: true\n---`,
+        fallbackBlock: `---\nname: ${quoteYaml(expectedName)}\ndisable-model-invocation: true\n---`,
     });
 }

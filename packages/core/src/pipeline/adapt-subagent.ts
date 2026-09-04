@@ -34,7 +34,7 @@ export function adaptSubagentToSkill(source: string, expectedName: string, plugi
             .slice(0, 5)
             .find((l) => l.trim() && !l.startsWith('#'));
         const description = firstLine?.trim() || `${expectedName} subagent`;
-        result = `---\nname: ${expectedName}\ndescription: ${quoteYaml(description)}\n---\n\n${source}`;
+        result = `---\nname: ${quoteYaml(expectedName)}\ndescription: ${quoteYaml(description)}\n---\n\n${source}`;
     }
     return rewritePluginTreeMarkdownLinks(rewriteSkillReferences(result, pluginPrefix), pluginPrefix);
 }
@@ -46,7 +46,7 @@ export function adaptSubagentToSkill(source: string, expectedName: string, plugi
 function normalizeSubagentFrontmatter(content: string, expectedName: string): string {
     return walkFrontmatter(content, {
         expectedName,
-        fallbackBlock: `---\nname: ${expectedName}\n---`,
+        fallbackBlock: `---\nname: ${quoteYaml(expectedName)}\n---`,
     });
 }
 
@@ -79,7 +79,7 @@ export function adaptSubagentToPi(
         body = fm.body.trim();
     } catch {
         // No parseable frontmatter — emit a minimal Pi agent
-        const minimal = `---\nname: ${expectedName}\n---\n\n${source}`;
+        const minimal = `---\nname: ${quoteYaml(expectedName)}\n---\n\n${source}`;
         return rewriteSkillReferences(minimal, pluginPrefix);
     }
 
@@ -99,11 +99,13 @@ export function adaptSubagentToPi(
     const skillsCsv = skillsList.join(', ');
 
     // Build Pi-native YAML frontmatter — field order: name, description, tools, model, skill
-    const fields: string[] = [`name: ${expectedName}`];
+    const fields: string[] = [`name: ${quoteYaml(expectedName)}`];
     if (description) fields.push(`description: ${quoteYaml(description)}`);
     if (piTools) fields.push(`tools: ${piTools}`);
     if (model) fields.push(`model: ${quoteYaml(model)}`);
-    if (skillsCsv) fields.push(`skill: ${skillsCsv}`);
+    // R6/F6: quote each emitted name at the final emission point — the logical CSV in
+    // skillsCsv stays unquoted for path/reference rewriting and runtime notes.
+    if (skillsCsv) fields.push(`skill: ${skillsList.map((name) => quoteYaml(name)).join(', ')}`);
 
     const runtimeNotes = buildPiRuntimeNotes(parseToolsList(rawToolsStr), skillsCsv);
     const finalBody = runtimeNotes ? `${body}\n\n${runtimeNotes}` : body;

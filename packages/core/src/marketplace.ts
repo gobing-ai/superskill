@@ -1,6 +1,7 @@
-import { existsSync, readdirSync, readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, realpathSync } from 'node:fs';
 import { basename, dirname, join, resolve } from 'node:path';
 import { z } from 'zod';
+import { pathIsOrUnder } from './content/paths';
 
 /** A single plugin entry in a marketplace manifest. */
 const pluginEntrySchema = z
@@ -181,6 +182,21 @@ export function resolvePlugin(marketplacePath: string | undefined, pluginName: s
     } catch {
         throw new Error(`Plugin root not found: ${pluginRoot}`);
     }
+
+    // Authoritative inode boundary (R2/F2): the lexical checks above stay as fast
+    // actionable pre-filters, but a symlinked source leaf, `pluginRoot` metadata, or
+    // symlinked parent component can resolve the plugin outside the marketplace root
+    // while every lexical path remains inside it. Compare canonical real paths —
+    // equality or a descendant is accepted; ancestor/sibling/cross-root is rejected.
+    const realMarketplaceRoot = realpathSync(marketplaceRoot);
+    const realPluginRoot = realpathSync(pluginRoot);
+    if (!pathIsOrUnder(realMarketplaceRoot, realPluginRoot)) {
+        throw new Error(
+            `Plugin root for '${pluginName}' escapes the marketplace root after symlink resolution: ` +
+                `'${realPluginRoot}' is not inside '${realMarketplaceRoot}'.`,
+        );
+    }
+
     const hasSkills = dirents.includes('skills');
     const hasCommands = dirents.includes('commands');
     const hasAgents = dirents.includes('agents');

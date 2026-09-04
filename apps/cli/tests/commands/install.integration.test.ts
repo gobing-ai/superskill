@@ -273,7 +273,8 @@ describe('executeInstall', () => {
             join(capturedInputRoot, '.rulesync', 'skills', 'demo-run', 'SKILL.md'),
             'utf-8',
         );
-        expect(skillContent).toContain('name: demo-run');
+        // R6 (task 0126): generated YAML names are emitted only as quoted scalars.
+        expect(skillContent).toContain('name: "demo-run"');
         expect(skillContent).toContain('disable-model-invocation: true');
         // demo:dev-run → demo-dev-run (scoped to plugin prefix)
         expect(skillContent).toContain('Use demo-dev-run');

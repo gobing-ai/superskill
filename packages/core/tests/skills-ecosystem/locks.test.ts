@@ -1,6 +1,6 @@
-import { describe, expect, it } from 'bun:test';
+import { describe, expect, it, spyOn } from 'bun:test';
 import { createHash } from 'node:crypto';
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
@@ -16,6 +16,8 @@ import {
     readLocalLock,
     removeSkillFromGlobalLock,
     removeSkillFromLocalLock,
+    SkillMutationContentionError,
+    withSkillMutationGuard,
     writeGlobalLock,
     writeLocalLock,
 } from '../../src/skills-ecosystem/locks';
@@ -410,5 +412,350 @@ describe('locks.ts - Dual lock read/writers & hash invariant', () => {
         expect(lock.skills['skill-a']?.skillFolderHash).toBe('abc');
         expect(lock.skills['skill-b']?.skillPath).toBe('skills/skill-b/SKILL.md');
         expect(lock.skills['skill-b']?.skillFolderHash).toBe('def');
+    });
+});
+
+describe('locks.ts - per-scope mutation guard (R3/F3)', () => {
+    const localEntry = { source: 'x', sourceType: 'local', computedHash: 'h' };
+
+    it('blocks a second mutator until the first releases, then lets it run (serialization half)', async () => {
+        const dir = mkdtempSync(join(tmpdir(), 'guard-serial-'));
+        const lockPath = join(dir, 'skills-lock.json');
+        try {
+            await addSkillToLocalLock('alpha', localEntry, { cwd: dir });
+
+            const events: string[] = [];
+            let releaseHeld!: () => void;
+            const held = new Promise<void>((resolve) => {
+                releaseHeld = resolve;
+            });
+
+            const first = withSkillMutationGuard(lockPath, async () => {
+                events.push('add-enter');
+                await held;
+                events.push('add-exit');
+            });
+            // Atomic-mkdir acquisition promises no FIFO order, so wait until the
+            // first mutator observably holds the guard before scheduling the
+            // contender — otherwise either order is legal and the assertion flakes.
+            while (!events.includes('add-enter')) {
+                await new Promise((resolve) => setTimeout(resolve, 5));
+            }
+            const second = withSkillMutationGuard(lockPath, async () => {
+                events.push('remove-enter');
+                events.push('remove-exit');
+            });
+
+            await new Promise((resolve) => setTimeout(resolve, 300));
+            expect(events).toEqual(['add-enter']);
+
+            releaseHeld();
+            await first;
+            await second;
+            expect(events).toEqual(['add-enter', 'add-exit', 'remove-enter', 'remove-exit']);
+        } finally {
+            rmSync(dir, { recursive: true, force: true });
+        }
+    });
+
+    // Residual-proof (F3): the compound fixture composes guard + read-modify-write
+    // helpers exactly as operations.ts does; without the guard this add/remove pair
+    // interleaves from the same base snapshot and loses one mutation.
+    it('keeps the union of a concurrent add and remove under the guard composition', async () => {
+        const dir = mkdtempSync(join(tmpdir(), 'guard-union-'));
+        const lockPath = join(dir, 'skills-lock.json');
+        try {
+            await addSkillToLocalLock('alpha', localEntry, { cwd: dir });
+
+            let releaseHeld!: () => void;
+            const held = new Promise<void>((resolve) => {
+                releaseHeld = resolve;
+            });
+            const first = withSkillMutationGuard(lockPath, async () => {
+                await held;
+                await addSkillToLocalLock('beta', localEntry, { cwd: dir });
+            });
+            const second = withSkillMutationGuard(lockPath, async () => {
+                await removeSkillFromLocalLock('alpha', dir);
+            });
+
+            await new Promise((resolve) => setTimeout(resolve, 300));
+            releaseHeld();
+            await first;
+            await second;
+
+            const finalLock = await readLocalLock(dir);
+            expect(Object.keys(finalLock.skills).sort()).toEqual(['beta']);
+        } finally {
+            rmSync(dir, { recursive: true, force: true });
+        }
+    });
+
+    it('steals a guard abandoned by a dead owner and cleans it up', async () => {
+        const dir = mkdtempSync(join(tmpdir(), 'guard-stale-'));
+        const lockPath = join(dir, 'skills-lock.json');
+        const guardDir = `${lockPath}.mutation-lock`;
+        try {
+            const dead = Bun.spawnSync(['true']);
+            mkdirSync(guardDir);
+            writeFileSync(join(guardDir, 'owner'), `${JSON.stringify({ pid: dead.pid, acquiredAt: 'stale' })}\n`);
+
+            const result = await withSkillMutationGuard(lockPath, async () => 'ran');
+            expect(result).toBe('ran');
+            expect(existsSync(guardDir)).toBe(false);
+        } finally {
+            rmSync(dir, { recursive: true, force: true });
+        }
+    });
+
+    it('throws SkillMutationContentionError when the guard stays held past the bounded wait', async () => {
+        const dir = mkdtempSync(join(tmpdir(), 'guard-contend-'));
+        const lockPath = join(dir, 'skills-lock.json');
+        const guardDir = `${lockPath}.mutation-lock`;
+        try {
+            // Unparseable owner metadata reads as conservatively live, so the waiter
+            // must retry until the deadline instead of stealing.
+            mkdirSync(guardDir);
+            writeFileSync(join(guardDir, 'owner'), 'not-json');
+
+            const realNow = Date.now.bind(Date);
+            const start = realNow();
+            const spy = spyOn(Date, 'now').mockImplementation(() => realNow() + (realNow() - start < 25 ? 0 : 11_000));
+            try {
+                await expect(withSkillMutationGuard(lockPath, async () => 'x')).rejects.toThrow(
+                    SkillMutationContentionError,
+                );
+            } finally {
+                spy.mockRestore();
+            }
+        } finally {
+            rmSync(dir, { recursive: true, force: true });
+        }
+    });
+
+    it('reports contention for a live owner whose pid is not a number', async () => {
+        const dir = mkdtempSync(join(tmpdir(), 'guard-owner2-'));
+        const lockPath = join(dir, 'skills-lock.json');
+        const guardDir = `${lockPath}.mutation-lock`;
+        try {
+            mkdirSync(guardDir);
+            writeFileSync(join(guardDir, 'owner'), `${JSON.stringify({ pid: 'not-a-number' })}\n`);
+
+            const realNow = Date.now.bind(Date);
+            const start = realNow();
+            const spy = spyOn(Date, 'now').mockImplementation(() => realNow() + (realNow() - start < 25 ? 0 : 11_000));
+            try {
+                await expect(withSkillMutationGuard(lockPath, async () => 'x')).rejects.toThrow(/contention/i);
+            } finally {
+                spy.mockRestore();
+            }
+        } finally {
+            rmSync(dir, { recursive: true, force: true });
+        }
+    });
+
+    it('runs unserialized when the guard parent chain is broken by a regular file', async () => {
+        const dir = mkdtempSync(join(tmpdir(), 'guard-broken-'));
+        try {
+            const blocker = join(dir, 'blocker');
+            writeFileSync(blocker, 'a file, not a directory');
+            const lockPath = join(blocker, 'skills-lock.json');
+
+            const result = await withSkillMutationGuard(lockPath, async () => 'unserialized');
+            expect(result).toBe('unserialized');
+            expect(existsSync(`${lockPath}.mutation-lock`)).toBe(false);
+        } finally {
+            rmSync(dir, { recursive: true, force: true });
+        }
+    });
+});
+
+describe('locks.ts - corrupt lock preservation (R4/F4)', () => {
+    it('readLocalLock reports malformed JSON as a warning and preserves the original bytes', async () => {
+        const dir = mkdtempSync(join(tmpdir(), 'lock-corrupt-'));
+        const lockPath = join(dir, 'skills-lock.json');
+        try {
+            const original = '{ this is not json';
+            writeFileSync(lockPath, original);
+
+            const lock = await readLocalLock(dir);
+            expect(lock.warning).toContain('JSON parse error');
+            expect(lock.warning).toContain('repair or remove');
+            expect(Object.keys(lock.skills)).toEqual([]);
+            expect(readFileSync(lockPath, 'utf-8')).toBe(original);
+        } finally {
+            rmSync(dir, { recursive: true, force: true });
+        }
+    });
+
+    it('readLocalLock rejects a non-object skills shape instead of synthesizing an empty lock', async () => {
+        const dir = mkdtempSync(join(tmpdir(), 'lock-shape-'));
+        const lockPath = join(dir, 'skills-lock.json');
+        try {
+            const original = '{"version":1,"skills":[]}';
+            writeFileSync(lockPath, original);
+
+            const lock = await readLocalLock(dir);
+            expect(lock.warning).toContain('invalid version/skills shape');
+            expect(readFileSync(lockPath, 'utf-8')).toBe(original);
+        } finally {
+            rmSync(dir, { recursive: true, force: true });
+        }
+    });
+
+    it('readLocalLock rejects a non-object top level instead of synthesizing an empty lock', async () => {
+        const dir = mkdtempSync(join(tmpdir(), 'lock-top-'));
+        const lockPath = join(dir, 'skills-lock.json');
+        try {
+            writeFileSync(lockPath, '[1,2]');
+            const lock = await readLocalLock(dir);
+            expect(lock.warning).toContain('top-level shape is not a JSON object');
+        } finally {
+            rmSync(dir, { recursive: true, force: true });
+        }
+    });
+
+    it('readGlobalLock reports a corrupt global lock the same way (env-scoped)', async () => {
+        const dir = mkdtempSync(join(tmpdir(), 'lock-gcorrupt-'));
+        try {
+            const env = { XDG_STATE_HOME: dir };
+            const lockPath = getGlobalLockPath(env);
+            mkdirSync(join(dir, 'skills'), { recursive: true });
+            const original = '{ broken';
+            writeFileSync(lockPath, original);
+
+            const lock = await readGlobalLock(env);
+            expect(lock.warning).toContain('JSON parse error');
+            expect(readFileSync(lockPath, 'utf-8')).toBe(original);
+        } finally {
+            rmSync(dir, { recursive: true, force: true });
+        }
+    });
+
+    it('treats a non-directory lock ancestor (ENOTDIR) as absence, not corruption', async () => {
+        const dir = mkdtempSync(join(tmpdir(), 'lock-enotdir-'));
+        try {
+            const blocker = join(dir, 'blocker');
+            writeFileSync(blocker, 'file');
+            const cwd = join(blocker, 'project');
+
+            const lock = await readLocalLock(cwd);
+            expect(lock.warning).toBeUndefined();
+            expect(Object.keys(lock.skills)).toEqual([]);
+        } finally {
+            rmSync(dir, { recursive: true, force: true });
+        }
+    });
+
+    it('writeLocalLock refuses to replace a corrupt on-disk lock and preserves its bytes', async () => {
+        const dir = mkdtempSync(join(tmpdir(), 'lock-writecorrupt-'));
+        const lockPath = join(dir, 'skills-lock.json');
+        try {
+            const original = '{ corrupt bytes';
+            writeFileSync(lockPath, original);
+
+            await expect(
+                writeLocalLock(
+                    { version: 1, skills: { a: { source: 's', sourceType: 'local', computedHash: 'h' } } },
+                    dir,
+                ),
+            ).rejects.toThrow(/corrupt/);
+            expect(readFileSync(lockPath, 'utf-8')).toBe(original);
+        } finally {
+            rmSync(dir, { recursive: true, force: true });
+        }
+    });
+
+    it('writeLocalLock refuses an invalid on-disk version shape and preserves bytes', async () => {
+        const dir = mkdtempSync(join(tmpdir(), 'lock-writever-'));
+        const lockPath = join(dir, 'skills-lock.json');
+        try {
+            const original = '{"version":"one","skills":{}}';
+            writeFileSync(lockPath, original);
+
+            await expect(writeLocalLock({ version: 1, skills: {} }, dir)).rejects.toThrow(/invalid version shape/);
+            expect(readFileSync(lockPath, 'utf-8')).toBe(original);
+        } finally {
+            rmSync(dir, { recursive: true, force: true });
+        }
+    });
+
+    it('writeLocalLock creates a fresh lock only when none exists (ENOENT-only init)', async () => {
+        const dir = mkdtempSync(join(tmpdir(), 'lock-init-'));
+        try {
+            await writeLocalLock(
+                { version: 1, skills: { a: { source: 's', sourceType: 'local', computedHash: 'h' } } },
+                dir,
+            );
+            const lock = await readLocalLock(dir);
+            expect(lock.warning).toBeUndefined();
+            expect(lock.skills['a']?.source).toBe('s');
+        } finally {
+            rmSync(dir, { recursive: true, force: true });
+        }
+    });
+});
+
+describe('locks.ts - prototype-safe skill records (R5/F5)', () => {
+    const protoEntry = { source: 'x', sourceType: 'local', computedHash: 'h' };
+
+    // Residual-proof (F5): both halves carried — reading an untrusted __proto__ key
+    // must yield an own data key AND the write path must serialize it back out as an
+    // own JSON key (a read-only fix would still orphan the install on round-trip).
+    it('reads a __proto__ skills key as an own data key and round-trips it through write', async () => {
+        const dir = mkdtempSync(join(tmpdir(), 'lock-proto-'));
+        const lockPath = join(dir, 'skills-lock.json');
+        try {
+            writeFileSync(
+                lockPath,
+                '{"version":1,"skills":{"__proto__":{"source":"x","sourceType":"local","computedHash":"h"}}}',
+            );
+
+            const lock = await readLocalLock(dir);
+            expect(lock.warning).toBeUndefined();
+            expect(Object.keys(lock.skills)).toContain('__proto__');
+            expect('__proto__' in lock.skills).toBe(true);
+
+            await writeLocalLock(lock, dir);
+            const reread = JSON.parse(readFileSync(lockPath, 'utf-8')) as { skills: Record<string, unknown> };
+            expect(Object.keys(reread.skills)).toContain('__proto__');
+        } finally {
+            rmSync(dir, { recursive: true, force: true });
+        }
+    });
+
+    it('addSkillToLocalLock and removeSkillFromLocalLock round-trip a __proto__ identity', async () => {
+        const dir = mkdtempSync(join(tmpdir(), 'lock-proto-add-'));
+        try {
+            await addSkillToLocalLock('__proto__', protoEntry, { cwd: dir });
+            let lock = await readLocalLock(dir);
+            expect(Object.keys(lock.skills)).toContain('__proto__');
+
+            expect(await removeSkillFromLocalLock('__proto__', dir)).toBe(true);
+            lock = await readLocalLock(dir);
+            expect(Object.keys(lock.skills)).toEqual([]);
+        } finally {
+            rmSync(dir, { recursive: true, force: true });
+        }
+    });
+
+    it('global add/remove round-trips a __proto__ identity (env-scoped)', async () => {
+        const dir = mkdtempSync(join(tmpdir(), 'lock-proto-global-'));
+        try {
+            const env = { XDG_STATE_HOME: dir };
+            await addSkillToGlobalLock(
+                '__proto__',
+                { source: 'x', sourceType: 'github', sourceUrl: 'https://github.com/x', skillFolderHash: 'h' },
+                { env },
+            );
+            let lock = await readGlobalLock(env);
+            expect(Object.keys(lock.skills)).toContain('__proto__');
+
+            expect(await removeSkillFromGlobalLock('__proto__', env)).toBe(true);
+            lock = await readGlobalLock(env);
+            expect(Object.keys(lock.skills)).toEqual([]);
+        } finally {
+            rmSync(dir, { recursive: true, force: true });
+        }
     });
 });

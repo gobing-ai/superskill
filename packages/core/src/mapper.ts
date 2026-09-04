@@ -17,6 +17,7 @@ import { pathsNestOrEqual } from './content/paths';
 import { adaptCommandToSkill } from './pipeline/adapt-command';
 import { adaptSubagentToSkill } from './pipeline/adapt-subagent';
 import { rewriteSkillReferences } from './pipeline/rewrite-references';
+import { quoteYaml } from './pipeline/yaml-utils';
 
 type JsonObject = Record<string, unknown>;
 
@@ -95,7 +96,7 @@ function setSkillName(content: string, newName: string): string {
     const bounds = findFrontmatterBounds(content);
     if (!bounds) {
         // No frontmatter block — prepend one (mirrors the command/subagent stub path).
-        return `---\nname: ${newName}\n---\n\n${content}`;
+        return `---\nname: ${quoteYaml(newName)}\n---\n\n${content}`;
     }
     const opener = content.slice(0, bounds.rawStart);
     const raw = content.slice(bounds.rawStart, bounds.rawEnd);
@@ -103,7 +104,7 @@ function setSkillName(content: string, newName: string): string {
     const lines = raw.length === 0 ? [] : raw.split(/\r?\n/);
     // Drop every existing name: line — the mapper owns the canonical name.
     const rest = lines.filter((line) => !/^name:\s*/.test(line));
-    const newYaml = [`name: ${newName}`, ...rest].join(eol);
+    const newYaml = [`name: ${quoteYaml(newName)}`, ...rest].join(eol);
     return opener + newYaml + content.slice(bounds.rawEnd);
 }
 

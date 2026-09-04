@@ -209,7 +209,7 @@ describe('mapPluginToRulesync', () => {
         mapPluginToRulesync(FIXTURE_DIR, 'demo', outDir);
 
         const skillA = readFileSync(join(outDir, 'skills', 'demo-a', 'SKILL.md'), 'utf-8');
-        expect(skillA).toContain('name: demo-a');
+        expect(skillA).toContain('name: "demo-a"');
         expect(skillA).toContain('# demo-a');
         expect(skillA).toContain('This is skill A.');
 
@@ -255,9 +255,9 @@ describe('mapPluginToRulesync', () => {
         mapPluginToRulesync(pluginDir, 'cc', outDir);
 
         const written = readFileSync(join(outDir, 'skills', 'cc-authoring', 'SKILL.md'), 'utf-8');
-        expect(written).toContain('name: cc-authoring');
+        expect(written).toContain('name: "cc-authoring"');
         expect(written).toContain('name: my-example-skill');
-        expect(written.indexOf('name: cc-authoring')).toBeLessThan(written.indexOf('description: teaches'));
+        expect(written.indexOf('name: "cc-authoring"')).toBeLessThan(written.indexOf('description: teaches'));
     });
 
     it('converts UserPromptSubmit (Claude Code native) to canonical beforeSubmitPrompt', () => {
@@ -357,7 +357,7 @@ describe('mapPluginToRulesync', () => {
         const outDir = join(tmpDir, '.rulesync');
         mapPluginToRulesync(pluginDir, 'demo', outDir);
         const out = readFileSync(join(outDir, 'skills', 'demo-a', 'SKILL.md'), 'utf-8');
-        expect(out).toContain('---\r\nname: demo-a\r\n');
+        expect(out).toContain('---\r\nname: "demo-a"\r\n');
         expect(out).toContain('name: example');
         expect(out.includes('name: old')).toBe(false);
     });
@@ -375,7 +375,7 @@ describe('mapPluginToRulesync', () => {
         expect(existsSync(join(outDir, 'skills', 'demo-alpha', 'SKILL.md'))).toBe(true);
         expect(existsSync(join(outDir, 'skills', 'demo-beta', 'SKILL.md'))).toBe(true);
         const alpha = readFileSync(join(outDir, 'skills', 'demo-alpha', 'SKILL.md'), 'utf-8');
-        expect(alpha).toContain('name: demo-alpha');
+        expect(alpha).toContain('name: "demo-alpha"');
         expect(alpha).toContain('# alpha');
         expect(alpha).toContain('This is skill Alpha in directory layout.');
     });

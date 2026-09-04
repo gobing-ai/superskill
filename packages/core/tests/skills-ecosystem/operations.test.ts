@@ -3,6 +3,7 @@ import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { mkdir, mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import type { cloneRepo } from '../../src/skills-ecosystem/fetch';
 import { cleanAndCreateDir } from '../../src/skills-ecosystem/installer';
 import { getGlobalLockPath, readGlobalLock, writeGlobalLock } from '../../src/skills-ecosystem/locks';
 import { addSkills, listSkills, removeSkills, updateSkills } from '../../src/skills-ecosystem/operations';
@@ -579,5 +580,41 @@ describe('operations.ts - Skill ecosystem domain operations (add, list, remove, 
         expect(res.error).toContain('gone-skill: No skills found in source');
 
         await rm(testHome, { recursive: true, force: true });
+    });
+
+    it('returns a structured failure without clone fallback when blob acquisition hits a limit (R9)', async () => {
+        const testHome = await makeHome('ops-limit-');
+        try {
+            let cloneCalls = 0;
+            const tree = Array.from({ length: 257 }, (_, i) => ({
+                path: `skills/skill-${i}/SKILL.md`,
+                type: 'blob',
+                sha: `s${i}`,
+            }));
+            const fetchFn = (async (urlStr: string | URL | Request) => {
+                const url = String(urlStr);
+                if (url.includes('/git/trees/')) {
+                    return new Response(JSON.stringify({ sha: 'tree-sha', branch: 'main', tree }), { status: 200 });
+                }
+                return new Response('not found', { status: 404 });
+            }) as unknown as typeof fetch;
+
+            const res = await addSkills('github:owner/repo', {
+                global: true,
+                homeDir: testHome,
+                env: {},
+                fetchFn,
+                cloneRepoFn: (async () => {
+                    cloneCalls++;
+                    return testHome;
+                }) as unknown as typeof cloneRepo,
+            });
+
+            expect(res.success).toBe(false);
+            expect(res.error).toContain('over the 256 cap');
+            expect(cloneCalls).toBe(0);
+        } finally {
+            await rm(testHome, { recursive: true, force: true });
+        }
     });
 });

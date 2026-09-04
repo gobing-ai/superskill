@@ -82,6 +82,82 @@ export class GitCloneError extends Error {
     }
 }
 
+/**
+ * R9/F9 acquisition-bound violation: a repository's fetch fan-out or payload size
+ * exceeded the hard caps. Thrown — never converted to a null/empty result — so callers
+ * cannot mistake a bounded refusal for "nothing found" and fall back to an unbounded path.
+ */
+export class AcquisitionLimitError extends Error {
+    constructor(message: string) {
+        super(message);
+        this.name = 'AcquisitionLimitError';
+    }
+}
+
+/** Maximum candidate SKILL.md paths fetched per tryBlobInstall call. */
+export const MAX_CANDIDATE_SKILL_PATHS = 256;
+/** Maximum files materialized per materializeRepoSubdir call. */
+export const MAX_MATERIALIZED_FILES = 2048;
+/** Maximum concurrent outbound fetches across the blob/download/materialize fan-outs. */
+const MAX_CONCURRENT_FETCHES = 8;
+/** Hard read caps (bytes): tree JSON, raw file text, download-manifest JSON. */
+const MAX_TREE_JSON_BYTES = 16 * 1024 * 1024;
+const MAX_RAW_FILE_BYTES = 2 * 1024 * 1024;
+const MAX_DOWNLOAD_JSON_BYTES = 32 * 1024 * 1024;
+
+/**
+ * Map over `items` with at most `limit` in-flight workers (R9). Results keep input
+ * order; worker rejections propagate (already-launched workers run to their next await).
+ */
+async function mapWithConcurrency<T, R>(
+    items: readonly T[],
+    limit: number,
+    worker: (item: T, index: number) => Promise<R>,
+): Promise<R[]> {
+    const results = new Array<R>(items.length);
+    let next = 0;
+    const runners = Array.from({ length: Math.min(limit, items.length) }, async () => {
+        for (;;) {
+            const index = next++;
+            if (index >= items.length) return;
+            results[index] = await worker(items[index] as T, index);
+        }
+    });
+    await Promise.all(runners);
+    return results;
+}
+
+/**
+ * Stream a response body to text with a hard byte cap (R9): oversized payloads reject
+ * with {@link AcquisitionLimitError} instead of allocating without bound.
+ */
+async function readBodyBounded(response: Response, limitBytes: number, label: string): Promise<string> {
+    const body = response.body;
+    if (!body) {
+        const text = await response.text();
+        if (Buffer.byteLength(text) > limitBytes) {
+            throw new AcquisitionLimitError(`${label} exceeds the ${limitBytes}-byte read cap`);
+        }
+        return text;
+    }
+    const reader = body.getReader();
+    const chunks: Uint8Array[] = [];
+    let total = 0;
+    for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        if (value) {
+            total += value.byteLength;
+            if (total > limitBytes) {
+                await reader.cancel().catch(() => {});
+                throw new AcquisitionLimitError(`${label} exceeds the ${limitBytes}-byte read cap`);
+            }
+            chunks.push(value);
+        }
+    }
+    return Buffer.concat(chunks.map((chunk) => Buffer.from(chunk))).toString('utf-8');
+}
+
 /** Info extracted from a GitHub repository URL. */
 export interface GitHubRepoInfo {
     owner: string;
@@ -353,10 +429,19 @@ export async function fetchRepoTree(
             }
 
             if (response.ok) {
-                const data = (await response.json()) as { sha: string; tree: TreeEntry[] };
+                const treeJson = await readBodyBounded(
+                    response,
+                    MAX_TREE_JSON_BYTES,
+                    `repository tree for ${ownerRepo}`,
+                );
+                const data = JSON.parse(treeJson) as { sha: string; tree: TreeEntry[] };
                 return { sha: data.sha, branch, tree: data.tree };
             }
-        } catch {
+        } catch (error) {
+            // R9/F9: an acquisition limit is a bounded refusal, not "branch not found" —
+            // never swallow it into the next-branch loop (which would end in a clone
+            // fallback that repeats the same unbounded acquisition).
+            if (error instanceof AcquisitionLimitError) throw error;
             // try next branch or fail
         }
     }
@@ -398,19 +483,25 @@ export async function tryBlobInstall(
         }
     }
 
-    const mdFetches = await Promise.all(
-        skillMdPaths.map(async (mdPath) => {
-            try {
-                const url = `https://raw.githubusercontent.com/${ownerRepo}/${tree.branch}/${mdPath}`;
-                const res = await fetchFn(url);
-                if (!res.ok) return null;
-                const text = await res.text();
-                return { mdPath, content: text };
-            } catch {
-                return null;
-            }
-        }),
-    );
+    // R9/F9: bound the SKILL.md fan-out before launching any fetches.
+    if (skillMdPaths.length > MAX_CANDIDATE_SKILL_PATHS) {
+        throw new AcquisitionLimitError(
+            `Repository ${ownerRepo} exposes ${skillMdPaths.length} candidate SKILL.md paths, over the ${MAX_CANDIDATE_SKILL_PATHS} cap`,
+        );
+    }
+
+    const mdFetches = await mapWithConcurrency(skillMdPaths, MAX_CONCURRENT_FETCHES, async (mdPath) => {
+        try {
+            const url = `https://raw.githubusercontent.com/${ownerRepo}/${tree.branch}/${mdPath}`;
+            const res = await fetchFn(url);
+            if (!res.ok) return null;
+            const text = await readBodyBounded(res, MAX_RAW_FILE_BYTES, `SKILL.md at ${mdPath} in ${ownerRepo}`);
+            return { mdPath, content: text };
+        } catch (error) {
+            if (error instanceof AcquisitionLimitError) throw error;
+            return null;
+        }
+    });
 
     const parsedSkills: Array<{
         mdPath: string;
@@ -457,22 +548,26 @@ export async function tryBlobInstall(
     }
 
     const source = ownerRepo.toLowerCase();
-    const downloads = await Promise.all(
-        filteredSkills.map(async (skill) => {
-            try {
-                const [owner, repo] = source.split('/');
-                if (!owner || !repo) return null;
-                const downloadBase = process.env.SKILLS_DOWNLOAD_URL?.trim() || DEFAULT_DOWNLOAD_BASE_URL;
-                const url = `${downloadBase}/api/download/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/${encodeURIComponent(skill.slug)}`;
-                const res = await fetchFn(url);
-                if (!res.ok) return null;
-                const downloadData = (await res.json()) as SkillDownloadResponse;
-                return { skill, download: downloadData };
-            } catch {
-                return null;
-            }
-        }),
-    );
+    const downloads = await mapWithConcurrency(filteredSkills, MAX_CONCURRENT_FETCHES, async (skill) => {
+        try {
+            const [owner, repo] = source.split('/');
+            if (!owner || !repo) return null;
+            const downloadBase = process.env.SKILLS_DOWNLOAD_URL?.trim() || DEFAULT_DOWNLOAD_BASE_URL;
+            const url = `${downloadBase}/api/download/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/${encodeURIComponent(skill.slug)}`;
+            const res = await fetchFn(url);
+            if (!res.ok) return null;
+            const downloadJson = await readBodyBounded(
+                res,
+                MAX_DOWNLOAD_JSON_BYTES,
+                `download manifest for ${skill.slug} in ${ownerRepo}`,
+            );
+            const downloadData = JSON.parse(downloadJson) as SkillDownloadResponse;
+            return { skill, download: downloadData };
+        } catch (error) {
+            if (error instanceof AcquisitionLimitError) throw error;
+            return null;
+        }
+    });
 
     if (downloads.some((d) => !d?.download)) return null;
 
@@ -549,27 +644,31 @@ export async function materializeRepoSubdir(
     }
     const prefix = subdir ? (subdir.endsWith('/') ? subdir : `${subdir}/`) : '';
     const blobs = tree.tree.filter((e) => e.type === 'blob' && e.path.startsWith(prefix));
-    if (blobs.length === 0) {
+    const materializable = blobs.filter((blob) => blob.path.slice(prefix.length) !== '');
+    if (materializable.length === 0) {
         throw new Error(`No files found under '${subdir || '/'}' in ${ownerRepo}`);
     }
+    // R9/F9: bound the materialized-file fan-out before any mkdir/write.
+    if (materializable.length > MAX_MATERIALIZED_FILES) {
+        throw new AcquisitionLimitError(
+            `Subdir '${subdir || '/'}' in ${ownerRepo} contains ${materializable.length} files, over the ${MAX_MATERIALIZED_FILES} materialization cap`,
+        );
+    }
     const token = options.getToken ? options.getToken() : null;
-    await Promise.all(
-        blobs.map(async (blob) => {
-            const rel = blob.path.slice(prefix.length);
-            if (!rel) return;
-            const url = `https://raw.githubusercontent.com/${ownerRepo}/${tree.branch}/${blob.path}`;
-            const headers: Record<string, string> = { 'User-Agent': 'superskill-core' };
-            if (token) headers.Authorization = `Bearer ${token}`;
-            const res = await fetchFn(url, { headers });
-            if (!res.ok) {
-                throw new Error(`Failed to fetch ${url}: HTTP ${res.status}`);
-            }
-            const text = await res.text();
-            const dest = join(destDir, rel);
-            await mkdir(dirname(dest), { recursive: true });
-            await writeFile(dest, text);
-        }),
-    );
+    await mapWithConcurrency(materializable, MAX_CONCURRENT_FETCHES, async (blob) => {
+        const rel = blob.path.slice(prefix.length);
+        const url = `https://raw.githubusercontent.com/${ownerRepo}/${tree.branch}/${blob.path}`;
+        const headers: Record<string, string> = { 'User-Agent': 'superskill-core' };
+        if (token) headers.Authorization = `Bearer ${token}`;
+        const res = await fetchFn(url, { headers });
+        if (!res.ok) {
+            throw new Error(`Failed to fetch ${url}: HTTP ${res.status}`);
+        }
+        const text = await readBodyBounded(res, MAX_RAW_FILE_BYTES, `blob ${blob.path} in ${ownerRepo}`);
+        const dest = join(destDir, rel);
+        await mkdir(dirname(dest), { recursive: true });
+        await writeFile(dest, text);
+    });
     return tree;
 }
 

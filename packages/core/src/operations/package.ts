@@ -1,7 +1,7 @@
 import { cpSync, existsSync, mkdirSync, rmSync, statSync } from 'node:fs';
 import { basename, dirname, join, resolve } from 'node:path';
 import { cwd } from 'node:process';
-import { resolveContentPath } from '../content/identity';
+import { resolveContentName, resolveContentPath } from '../content/identity';
 import { pathsNestOrEqual } from '../content/paths';
 
 /** Options for the package operation. */
@@ -12,29 +12,56 @@ export interface PackageOptions {
     includeCompanions?: boolean;
 }
 
-/** Result from packaging a skill. */
-interface SkillDir {
-    /** Absolute path to the skill directory. */
+/**
+ * Resolved packaging source (R8/F8): identity of the primary entry plus how to treat
+ * the surrounding directory. `directoryForm` is true only when the source is the
+ * canonical directory form (…/SKILL.md or a directory path); a bare flat `skill.md`
+ * is packaged alone — no companions, no references, no implicit parent bundle.
+ */
+interface ResolvedSkillEntry {
+    /** Directory anchoring companions/references (parent of the entry file). */
     dir: string;
-    /** Name of the skill directory. */
+    /** Bundle/skill identity — output directory name. */
     name: string;
+    /** Primary entry file; becomes `<output>/SKILL.md`. Copy is required, not best-effort. */
+    entryPath: string;
+    /** True when the source is the canonical directory form. */
+    directoryForm: boolean;
 }
 
 /**
- * Resolve a skill name to its directory.
+ * Resolve a skill name to its packaging source.
  *
  * Uses `resolveContentPath` from content/identity.ts (F007) — the canonical
  * content-IO path resolver, not bespoke resolution.
  */
-function resolveSkillDir(name: string): SkillDir {
+function resolveSkillEntry(name: string): ResolvedSkillEntry {
     const skillPath = resolveContentPath('skill', name);
     if (!skillPath) {
         throw Object.assign(new Error(`Skill not found: ${name}`), { code: 'ENOENT' });
     }
-    // If the resolved path is a directory, it IS the skill directory.
-    // Otherwise (a .md file), the skill directory is its parent.
-    const dir = statSync(skillPath).isDirectory() ? skillPath : dirname(skillPath);
-    return { dir, name: basename(dir) };
+    // If the resolved path is a directory, it IS the skill directory (defensive;
+    // resolveContentPath returns files for every documented match shape).
+    if (statSync(skillPath).isDirectory()) {
+        return {
+            dir: skillPath,
+            name: basename(skillPath),
+            entryPath: join(skillPath, 'SKILL.md'),
+            directoryForm: true,
+        };
+    }
+    if (basename(skillPath) === 'SKILL.md') {
+        // Canonical directory form: companions/references come from the parent dir.
+        return {
+            dir: dirname(skillPath),
+            name: basename(dirname(skillPath)),
+            entryPath: skillPath,
+            directoryForm: true,
+        };
+    }
+    // Flat form (R8): a bare `skill.md` outside a canonical directory. The file is the
+    // whole bundle; its parent directory name is NOT the skill identity.
+    return { dir: dirname(skillPath), name: resolveContentName(skillPath), entryPath: skillPath, directoryForm: false };
 }
 
 /**
@@ -43,15 +70,6 @@ function resolveSkillDir(name: string): SkillDir {
 function copyDirIfExists(src: string, dest: string): void {
     if (existsSync(src)) {
         cpSync(src, dest, { recursive: true });
-    }
-}
-
-/**
- * Copy a single file if it exists. No-op on missing source.
- */
-function copyFileIfExists(src: string, dest: string): void {
-    if (existsSync(src)) {
-        cpSync(src, dest);
     }
 }
 
@@ -70,7 +88,28 @@ const COMPANION_ENTRIES = ['metadata.openclaw', 'agents'] as const;
  * @returns     Absolute path to the output bundle directory.
  */
 export async function packageSkill(name: string, opts: PackageOptions = {}): Promise<string> {
-    const { dir: skillDir, name: skillName } = resolveSkillDir(name);
+    const entry = resolveSkillEntry(name);
+
+    // Required primary entry (R8/F8): fail before any output cleanup — a missing or
+    // non-regular entry must never silently package an empty bundle, and must never
+    // delete a previous good output first.
+    let entryStat: { isFile: () => boolean };
+    try {
+        entryStat = statSync(entry.entryPath);
+    } catch (error) {
+        throw Object.assign(
+            new Error(
+                `Cannot package skill '${name}': primary entry '${entry.entryPath}' is missing (${error instanceof Error ? error.message : String(error)}).`,
+            ),
+            { code: 'ENOENT' },
+        );
+    }
+    if (!entryStat.isFile()) {
+        throw new Error(`Cannot package skill '${name}': primary entry '${entry.entryPath}' is not a regular file.`);
+    }
+
+    const skillName = entry.name;
+    const skillDir = entry.dir;
     const outputDir = join(opts.output ?? cwd(), skillName);
 
     // The clean step below recursively deletes outputDir. If outputDir overlaps
@@ -92,19 +131,27 @@ export async function packageSkill(name: string, opts: PackageOptions = {}): Pro
     }
     mkdirSync(outputDir, { recursive: true });
 
-    // Core: SKILL.md + references/
-    copyFileIfExists(join(skillDir, 'SKILL.md'), join(outputDir, 'SKILL.md'));
-    copyDirIfExists(join(skillDir, 'references'), join(outputDir, 'references'));
+    // Core: the primary entry copy is required (R8) — never best-effort.
+    cpSync(entry.entryPath, join(outputDir, 'SKILL.md'));
+    if (entry.directoryForm) {
+        copyDirIfExists(join(skillDir, 'references'), join(outputDir, 'references'));
 
-    // Companion configs (only when --include-companions)
-    if (opts.includeCompanions) {
-        for (const entry of COMPANION_ENTRIES) {
-            const src = join(skillDir, entry);
-            const dest = join(outputDir, entry);
-            if (existsSync(src)) {
-                cpSync(src, dest, { recursive: true });
+        // Companion configs (only when --include-companions; directory form only —
+        // a flat skill.md has no canonical companions).
+        if (opts.includeCompanions) {
+            for (const companion of COMPANION_ENTRIES) {
+                const src = join(skillDir, companion);
+                const dest = join(outputDir, companion);
+                if (existsSync(src)) {
+                    cpSync(src, dest, { recursive: true });
+                }
             }
         }
+    }
+
+    // Postcondition (R8): a successful package always contains a regular SKILL.md.
+    if (!existsSync(join(outputDir, 'SKILL.md'))) {
+        throw new Error(`Packaging invariant violated for '${name}': output bundle ${outputDir} has no SKILL.md.`);
     }
 
     return outputDir;

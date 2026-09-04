@@ -113,9 +113,17 @@ function checkBodyLinks(body: string, baseDir: string): Finding[] {
         const matchLine = (body.slice(0, match.index ?? 0).match(/\n/g)?.length ?? 0) + 1;
         if (fencedLines.has(matchLine)) continue;
         const linkText = match[1];
-        const target = match[2];
+        const rawTarget = match[2];
+        if (!rawTarget) continue;
+        // Extract the actual link destination per CommonMark inline-link syntax (R10/F10):
+        // `<dest>` form ends at the first unescaped `>`; bare form ends at the first
+        // unescaped whitespace (an optional `"title"` may follow). Classifying the raw
+        // text instead misreads `(<a.md> "x)")` and resolves malformed hrefs to
+        // nonexistent files.
+        const target = extractLinkDestination(rawTarget);
         if (!target) continue;
-        // Skip anchor-only links and any scheme-qualified URL (http:, https:, mailto:, etc.)
+        // Re-classify the extracted destination: scheme/anchor detection must run on the
+        // real destination, not the raw text.
         if (/^#/.test(target)) continue;
         if (/^[a-z][a-z0-9+.-]*:/i.test(target)) continue;
         // Strip anchor (#...) and query (?...) suffixes before resolving the file path
@@ -123,10 +131,64 @@ function checkBodyLinks(body: string, baseDir: string): Finding[] {
         if (!filePart) continue;
         const resolved = join(baseDir, filePart);
         if (!existsSync(resolved)) {
-            findings.push(`Broken body link: [${linkText}](${target}) → target not found: ${resolved}`);
+            findings.push(`Broken body link: [${linkText}](${rawTarget}) → target not found: ${resolved}`);
         }
     }
     return findings.map((message) => ({ severity: 'warning' as const, field: '_links', message }));
+}
+
+/**
+ * Extract the link destination from the text between `(` and `)` of an inline link
+ * (R10/F10). Handles: `<...>` pointed form (through the first unescaped `>`, with
+ * backslash unescaping); bare form terminated by the first unescaped whitespace
+ * (trailing title/parenthesized junk ignored). Returns '' for an empty destination.
+ * Backslash escapes apply to ASCII punctuation only (CommonMark); percent-decoding is
+ * guarded: invalid sequences fall back to the raw text.
+ */
+function extractLinkDestination(raw: string): string {
+    let dest: string;
+    const trimmed = raw.trim();
+    const isEscapable = (ch: string) => /[!-/:-@[-`{-~]/.test(ch); // ASCII punctuation
+    if (trimmed.startsWith('<')) {
+        let escaped = '';
+        let closed = false;
+        for (let i = 1; i < trimmed.length; i++) {
+            const ch = trimmed.charAt(i);
+            const next = trimmed.charAt(i + 1);
+            if (ch === '\\' && next !== '' && isEscapable(next)) {
+                escaped += next;
+                i++;
+                continue;
+            }
+            if (ch === '>') {
+                closed = true;
+                break;
+            }
+            escaped += ch;
+        }
+        if (!closed) return '';
+        dest = escaped;
+    } else {
+        let escaped = '';
+        for (let i = 0; i < trimmed.length; i++) {
+            const ch = trimmed.charAt(i);
+            const next = trimmed.charAt(i + 1);
+            if (ch === '\\' && next !== '' && isEscapable(next)) {
+                escaped += next;
+                i++;
+                continue;
+            }
+            if (/\s/.test(ch)) break;
+            escaped += ch;
+        }
+        dest = escaped;
+    }
+    if (!dest) return '';
+    try {
+        return decodeURIComponent(dest);
+    } catch {
+        return dest;
+    }
 }
 
 /**

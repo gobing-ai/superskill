@@ -555,11 +555,117 @@ describe('validate — body-link integrity', () => {
             rmSync(dir, { recursive: true, force: true });
         }
     });
+
+    // Residual-proof (F10/R10): each valid-destination fixture pairs the normalized
+    // form against a file that exists ONLY under the normalized name — a validator
+    // that treats angle brackets/titles/encodings as filename bytes fails the compound
+    // half even if it still passes plain links (the bare half).
+    it('does not flag an angle-bracket destination containing spaces when the file exists', async () => {
+        const { mkdtempSync, rmSync, writeFileSync } = await import('node:fs');
+        const { tmpdir } = await import('node:os');
+        const dir = mkdtempSync(`${tmpdir()}/superskill-link-`);
+        try {
+            writeFileSync(`${dir}/guide file.md`, '# Guide');
+            writeFileSync(
+                `${dir}/SKILL.md`,
+                '---\nname: link-test\ndescription: Tests angle links\n---\n\nSee [Guide](<guide file.md>).',
+            );
+            const result = await validate('skill', dir);
+            expect(result.findings.filter((f) => f.field === '_links')).toHaveLength(0);
+        } finally {
+            rmSync(dir, { recursive: true, force: true });
+        }
+    });
+
+    it('reports a missing angle-bracket destination by its normalized name', async () => {
+        const { mkdtempSync, rmSync, writeFileSync } = await import('node:fs');
+        const { tmpdir } = await import('node:os');
+        const dir = mkdtempSync(`${tmpdir()}/superskill-link-`);
+        try {
+            writeFileSync(
+                `${dir}/SKILL.md`,
+                '---\nname: link-test\ndescription: Tests angle links\n---\n\nSee [Guide](<missing file.md>).',
+            );
+            const result = await validate('skill', dir);
+            const linkFinding = result.findings.find((f) => f.field === '_links');
+            expect(linkFinding).toBeDefined();
+            expect(linkFinding?.message).toContain('missing file.md');
+        } finally {
+            rmSync(dir, { recursive: true, force: true });
+        }
+    });
+
+    it('accepts an unquoted destination followed by an optional title', async () => {
+        const { mkdtempSync, rmSync, writeFileSync } = await import('node:fs');
+        const { tmpdir } = await import('node:os');
+        const dir = mkdtempSync(`${tmpdir()}/superskill-link-`);
+        try {
+            writeFileSync(`${dir}/setup.md`, '# Setup');
+            writeFileSync(
+                `${dir}/SKILL.md`,
+                '---\nname: link-test\ndescription: Tests titled links\n---\n\nSee [Setup](setup.md "Setup Guide").',
+            );
+            const result = await validate('skill', dir);
+            expect(result.findings.filter((f) => f.field === '_links')).toHaveLength(0);
+        } finally {
+            rmSync(dir, { recursive: true, force: true });
+        }
+    });
+
+    it('decodes percent-encoded local path characters before the filesystem check', async () => {
+        const { mkdtempSync, rmSync, writeFileSync } = await import('node:fs');
+        const { tmpdir } = await import('node:os');
+        const dir = mkdtempSync(`${tmpdir()}/superskill-link-`);
+        try {
+            writeFileSync(`${dir}/my notes.md`, '# Notes');
+            writeFileSync(
+                `${dir}/SKILL.md`,
+                '---\nname: link-test\ndescription: Tests encoded links\n---\n\nSee [Notes](my%20notes.md).',
+            );
+            const result = await validate('skill', dir);
+            expect(result.findings.filter((f) => f.field === '_links')).toHaveLength(0);
+        } finally {
+            rmSync(dir, { recursive: true, force: true });
+        }
+    });
+
+    it('strips query and fragment before resolving a destination', async () => {
+        const { mkdtempSync, rmSync, writeFileSync } = await import('node:fs');
+        const { tmpdir } = await import('node:os');
+        const dir = mkdtempSync(`${tmpdir()}/superskill-link-`);
+        try {
+            writeFileSync(`${dir}/spec.md`, '# Spec');
+            writeFileSync(
+                `${dir}/SKILL.md`,
+                '---\nname: link-test\ndescription: Tests query links\n---\n\nSee [Spec](spec.md?v=2#intro).',
+            );
+            const result = await validate('skill', dir);
+            expect(result.findings.filter((f) => f.field === '_links')).toHaveLength(0);
+        } finally {
+            rmSync(dir, { recursive: true, force: true });
+        }
+    });
+
+    it('falls back to the raw path on invalid percent-encoding instead of throwing', async () => {
+        const { mkdtempSync, rmSync, writeFileSync } = await import('node:fs');
+        const { tmpdir } = await import('node:os');
+        const dir = mkdtempSync(`${tmpdir()}/superskill-link-`);
+        try {
+            writeFileSync(`${dir}/raw%zzpath.md`, '# Raw');
+            writeFileSync(
+                `${dir}/SKILL.md`,
+                '---\nname: link-test\ndescription: Tests invalid encoding\n---\n\nSee [Raw](raw%zzpath.md).',
+            );
+            const result = await validate('skill', dir);
+            expect(result.findings.filter((f) => f.field === '_links')).toHaveLength(0);
+        } finally {
+            rmSync(dir, { recursive: true, force: true });
+        }
+    });
 });
 
-// ── Invocation axis — mode/description mismatch (task 0070 R3) ───────────────
-
 describe('_validateContent — invocation-mode mismatch (strict)', () => {
+    // (task 0070 R3) — invocation axis: mode/description mismatch
     const richDescription =
         '"Use when releasing, deploying, or tagging; triggers on release requests, deploy requests, whenever a version bump lands"';
 

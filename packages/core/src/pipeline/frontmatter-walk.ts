@@ -1,3 +1,5 @@
+import { quoteYaml } from './yaml-utils';
+
 /**
  * Shared frontmatter-block walker for the adapt-* stages.
  *
@@ -63,7 +65,7 @@ export function walkFrontmatter(content: string, opts: FrontmatterWalkOptions): 
                 inFrontmatter = true;
                 pastOpener = true;
                 out.push(line);
-                out.push(`name: ${opts.expectedName}${cr}`);
+                out.push(`name: ${quoteYaml(opts.expectedName)}${cr}`);
                 injectedName = true;
                 continue;
             }

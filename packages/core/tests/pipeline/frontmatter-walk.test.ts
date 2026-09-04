@@ -26,7 +26,7 @@ describe('walkFrontmatter — opener handling', () => {
         const out = walkFrontmatter(input, baseOpts);
         const lines = out.split('\n');
         expect(lines[0]).toBe('---');
-        expect(lines[1]).toBe('name: my-command');
+        expect(lines[1]).toBe('name: "my-command"');
         expect(lines[2]).toBe('description: hi');
     });
 
@@ -41,10 +41,10 @@ describe('walkFrontmatter — opener handling', () => {
                 shouldInject: () => true,
             },
         });
-        expect(out).toContain('---\r\nname: my-command\r\n');
+        expect(out).toContain('---\r\nname: "my-command"\r\n');
         expect(out).toContain('disable-model-invocation: true\r\n---\r\n');
         // No bare LF-only name line (would appear as "name: my-command\n" without \r).
-        expect(out.includes('name: my-command\n') && !out.includes('name: my-command\r\n')).toBe(false);
+        expect(out.includes('name: "my-command"\n') && !out.includes('name: "my-command"\r\n')).toBe(false);
     });
 
     it('preserves preamble lines that appear before the opening ---', () => {
@@ -55,15 +55,15 @@ describe('walkFrontmatter — opener handling', () => {
         const lines = out.split('\n');
         expect(lines[0]).toBe('<!-- preamble -->');
         expect(lines[1]).toBe('---');
-        expect(lines[2]).toBe('name: my-command');
+        expect(lines[2]).toBe('name: "my-command"');
     });
 
     it('drops a pre-existing name: line inside the block (walker owns the name)', () => {
         const input = '---\nname: old-name\ndescription: hi\n---\nbody';
         const out = walkFrontmatter(input, baseOpts);
         const lines = out.split('\n');
-        expect(lines[1]).toBe('name: my-command');
-        expect(lines.some((l) => l === 'name: old-name')).toBe(false);
+        expect(lines[1]).toBe('name: "my-command"');
+        expect(lines.some((l) => l === 'name: "old-name"') || lines.some((l) => l === 'name: old-name')).toBe(false);
         // Only one name: line survives.
         const nameCount = lines.filter((l) => /^name:\s/.test(l)).length;
         expect(nameCount).toBe(1);
@@ -76,7 +76,7 @@ describe('walkFrontmatter — opener handling', () => {
         const input = '---\nName: Title-Case\ndescription: hi\n---\nbody';
         const out = walkFrontmatter(input, baseOpts);
         const lines = out.split('\n');
-        expect(lines[1]).toBe('name: my-command');
+        expect(lines[1]).toBe('name: "my-command"');
         expect(lines).toContain('Name: Title-Case');
     });
 });
@@ -208,7 +208,7 @@ describe('walkFrontmatter — name: line edge cases', () => {
         const input = '---\nname: old\ndescription: keep\n---\nbody';
         const out = walkFrontmatter(input, baseOpts);
         const lines = out.split('\n');
-        expect(lines[1]).toBe('name: my-command');
+        expect(lines[1]).toBe('name: "my-command"');
         expect(lines[2]).toBe('description: keep');
     });
 

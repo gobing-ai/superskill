@@ -14,7 +14,7 @@ describe('adaptSubagentToSkill', () => {
         const source = '---\ndescription: An expert agent\ntools: [Read, Glob]\nmodel: inherit\n---\n\nBody.';
         const result = adaptSubagentToSkill(source, 'cc-expert-agent', 'cc');
 
-        expect(result).toContain('name: cc-expert-agent');
+        expect(result).toContain('name: "cc-expert-agent"');
     });
 
     it('does NOT set disable-model-invocation (Refinement #6)', () => {
@@ -49,7 +49,7 @@ describe('adaptSubagentToSkill', () => {
         const source = '# Expert Agent\n\nAn agent.';
         const result = adaptSubagentToSkill(source, 'cc-expert', 'cc');
 
-        expect(result).toContain('name: cc-expert');
+        expect(result).toContain('name: "cc-expert"');
         expect(result).toContain('description:');
     });
 });
@@ -98,6 +98,8 @@ describe('adaptSubagentToPi', () => {
         expect(descIdx).toBeLessThan(toolsIdx);
         expect(toolsIdx).toBeLessThan(modelIdx);
         expect(modelIdx).toBeLessThan(skillIdx);
+        // R6: each skill name is quoted at the final emission point (unquoted revert would be silent)
+        expect(result).toMatch(/^skill: "cc-cc-agents"$/m);
     });
 
     it('normalizes tools to Pi format (Read→read, Glob→find, ls)', () => {
@@ -214,7 +216,7 @@ describe('adaptSubagentToPi', () => {
         const skillExists = setupPluginWithSkills([]);
         const source = 'Plain text with no frontmatter at all.';
         const result = adaptSubagentToPi(source, 'cc-test', 'cc', skillExists);
-        expect(result).toContain('name: cc-test');
+        expect(result).toContain('name: "cc-test"');
     });
 
     it('skillExists=()=>true keeps a body-discovered skill (zero filesystem, R3)', () => {

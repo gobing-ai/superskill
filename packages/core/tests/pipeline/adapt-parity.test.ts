@@ -129,7 +129,7 @@ description: A command.
 
 Run the thing.`;
             const result = applyCommandPipeline(cmd, 'my-cmd', 'codex');
-            expect(result).toContain('name: my-cmd');
+            expect(result).toContain('name: "my-cmd"');
         });
 
         it('replaces existing name with the canonical expectedName in command frontmatter', () => {
@@ -142,7 +142,7 @@ Run the thing.`;
             // adaptCommandToSkill canonicalizes the name to expectedName — the
             // source's own name: is dropped (production behavior).
             const result = applyCommandPipeline(cmd, 'my-cmd', 'codex');
-            expect(result).toContain('name: my-cmd');
+            expect(result).toContain('name: "my-cmd"');
             expect(result).not.toContain('name: existing-name');
         });
 
@@ -153,7 +153,7 @@ description: A subagent.
 
 You are a helper.`;
             const result = applySubagentPipeline(subagent, 'helper', 'codex');
-            expect(result).toContain('name: helper');
+            expect(result).toContain('name: "helper"');
         });
     });
 
@@ -209,7 +209,7 @@ See wt:publish-to-x for publishing.`;
             const result = applyCommandPipeline(cmd, 'runner', 'codex');
 
             // Name injected
-            expect(result).toContain('name: runner');
+            expect(result).toContain('name: "runner"');
             // Slash translated (codex dialect)
             expect(result).toContain('$rd3-dev-run');
             // Colon refs rewritten in prose (scoped to PLUGIN='rd3')

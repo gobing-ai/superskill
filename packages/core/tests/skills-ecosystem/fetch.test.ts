@@ -1,9 +1,10 @@
 import { describe, expect, it } from 'bun:test';
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
+    AcquisitionLimitError,
     cleanupTempDir,
     cloneRepo,
     fetchRepoTree,
@@ -687,5 +688,199 @@ describe('fetch.ts - materializeRepoSubdir (T2/R3 shared fetch primitive)', () =
         } finally {
             await rm(destDir, { recursive: true, force: true });
         }
+    });
+});
+
+describe('fetch.ts - bounded acquisition (R9/F9)', () => {
+    function treeFetch(tree: Array<{ path: string; type: string; sha: string }>): typeof fetch {
+        return (async (urlStr: string | URL | Request) => {
+            const url = String(urlStr);
+            if (url.includes('/git/trees/')) {
+                return new Response(JSON.stringify({ sha: 'tree-sha', branch: 'main', tree }), { status: 200 });
+            }
+            return new Response('not found', { status: 404 });
+        }) as unknown as typeof fetch;
+    }
+
+    it('throws naming the candidate cap before fetching any SKILL.md at 257 candidates', async () => {
+        const tree = Array.from({ length: 257 }, (_, i) => ({
+            path: `skills/skill-${i}/SKILL.md`,
+            type: 'blob',
+            sha: `s${i}`,
+        }));
+        let rawFetches = 0;
+        const fetchFn = (async (urlStr: string | URL | Request) => {
+            if (String(urlStr).includes('raw.githubusercontent.com')) rawFetches++;
+            return treeFetch(tree)(urlStr);
+        }) as unknown as typeof fetch;
+
+        await expect(tryBlobInstall('owner/repo', { ref: 'main', fetchFn })).rejects.toThrow(AcquisitionLimitError);
+        await expect(tryBlobInstall('owner/repo', { ref: 'main', fetchFn })).rejects.toThrow(/over the 256 cap/);
+        expect(rawFetches).toBe(0);
+    });
+
+    it('accepts exactly 256 candidates and keeps raw fetches within the 8-way concurrency cap', async () => {
+        const count = 256;
+        const tree = Array.from({ length: count }, (_, i) => ({
+            path: `skills/skill-${i}/SKILL.md`,
+            type: 'blob',
+            sha: `s${i}`,
+        }));
+        let inFlight = 0;
+        let peak = 0;
+        const fetchFn = (async (urlStr: string | URL | Request) => {
+            const url = String(urlStr);
+            if (url.includes('/git/trees/')) {
+                return new Response(JSON.stringify({ sha: 'tree-sha', branch: 'main', tree }), { status: 200 });
+            }
+            if (url.includes('raw.githubusercontent.com')) {
+                inFlight++;
+                peak = Math.max(peak, inFlight);
+                const i = Number(url.match(/skill-(\d+)\//)?.[1] ?? 0);
+                const body = `---\nname: Skill ${i}\ndescription: fixture ${i}\n---\n# Skill ${i}`;
+                await new Promise((resolve) => setTimeout(resolve, 5));
+                inFlight--;
+                return new Response(body, { status: 200 });
+            }
+            if (url.includes('/api/download/')) {
+                const slug = decodeURIComponent(url.split('/api/download/owner/repo/')[1] ?? '');
+                return new Response(
+                    JSON.stringify({ files: [{ path: 'SKILL.md', contents: `# ${slug}` }], hash: `h-${slug}` }),
+                    { status: 200 },
+                );
+            }
+            return new Response('not found', { status: 404 });
+        }) as unknown as typeof fetch;
+
+        const result = await tryBlobInstall('owner/repo', { ref: 'main', fetchFn });
+        expect(result?.skills.length).toBe(count);
+        expect(peak).toBeGreaterThan(1);
+        expect(peak).toBeLessThanOrEqual(8);
+    }, 20000);
+
+    it('throws naming the materialization cap before writing any file at 2049 blobs', async () => {
+        const tree = Array.from({ length: 2049 }, (_, i) => ({
+            path: `.claude-plugin/file-${i}.txt`,
+            type: 'blob',
+            sha: `b${i}`,
+        }));
+        let rawFetches = 0;
+        const fetchFn = (async (urlStr: string | URL | Request) => {
+            if (String(urlStr).includes('raw.githubusercontent.com')) rawFetches++;
+            return treeFetch(tree)(urlStr);
+        }) as unknown as typeof fetch;
+
+        const destDir = await mkdtemp(join(tmpdir(), 'superskill-matcap-'));
+        try {
+            await expect(materializeRepoSubdir('owner/repo', '.claude-plugin', destDir, { fetchFn })).rejects.toThrow(
+                /over the 2048/,
+            );
+            expect(rawFetches).toBe(0);
+            expect(readdirSync(destDir)).toEqual([]);
+        } finally {
+            await rm(destDir, { recursive: true, force: true });
+        }
+    });
+
+    it('caps an individual raw read: a 2 MiB + 1 byte SKILL.md throws without materializing', async () => {
+        const tree = [{ path: 'skills/big/SKILL.md', type: 'blob', sha: 'big' }];
+        const oversized = 'x'.repeat(2 * 1024 * 1024 + 1);
+        const fetchFn = (async (urlStr: string | URL | Request) => {
+            const url = String(urlStr);
+            if (url.includes('/git/trees/')) {
+                return new Response(JSON.stringify({ sha: 'tree-sha', branch: 'main', tree }), { status: 200 });
+            }
+            if (url.includes('raw.githubusercontent.com')) {
+                return new Response(oversized, { status: 200 });
+            }
+            return new Response('not found', { status: 404 });
+        }) as unknown as typeof fetch;
+
+        await expect(tryBlobInstall('owner/repo', { ref: 'main', fetchFn })).rejects.toThrow(/byte read cap/);
+    });
+
+    it('accepts a SKILL.md at exactly the 2 MiB raw cap', async () => {
+        const tree = [{ path: 'skills/exact/SKILL.md', type: 'blob', sha: 'exact' }];
+        const head = '---\nname: Exact\ndescription: at cap\n---\n';
+        const exact = head + 'x'.repeat(2 * 1024 * 1024 - Buffer.byteLength(head));
+        expect(Buffer.byteLength(exact)).toBe(2 * 1024 * 1024);
+        const fetchFn = (async (urlStr: string | URL | Request) => {
+            const url = String(urlStr);
+            if (url.includes('/git/trees/')) {
+                return new Response(JSON.stringify({ sha: 'tree-sha', branch: 'main', tree }), { status: 200 });
+            }
+            if (url.includes('raw.githubusercontent.com')) {
+                return new Response(exact, { status: 200 });
+            }
+            if (url.includes('/api/download/')) {
+                return new Response(
+                    JSON.stringify({ files: [{ path: 'SKILL.md', contents: '# Exact' }], hash: 'h-exact' }),
+                    { status: 200 },
+                );
+            }
+            return new Response('not found', { status: 404 });
+        }) as unknown as typeof fetch;
+
+        const result = await tryBlobInstall('owner/repo', { ref: 'main', fetchFn });
+        expect(result?.skills.length).toBe(1);
+    });
+
+    // Residual-proof (R9/F9): the tree-response cap has both halves — exactly-at parses,
+    // just-over is a terminal error naming the cap. Without these, a widened limit or a
+    // dropped bounded read would regress silently.
+    it('caps the tree response: 16 MiB + 1 byte throws naming the cap, exactly 16 MiB parses', async () => {
+        const buildTreeJson = (padBytes: number) => {
+            const head = '{"sha":"tree-sha","branch":"main","tree":[],"pad":"';
+            return `${head}${'x'.repeat(padBytes)}"}`;
+        };
+        const base = Buffer.byteLength(buildTreeJson(0));
+
+        const exact = buildTreeJson(16 * 1024 * 1024 - base);
+        expect(Buffer.byteLength(exact)).toBe(16 * 1024 * 1024);
+        const exactFetch = (async (urlStr: string | URL | Request) => {
+            if (String(urlStr).includes('/git/trees/')) return new Response(exact, { status: 200 });
+            return new Response('not found', { status: 404 });
+        }) as unknown as typeof fetch;
+        const ok = await fetchRepoTree('owner/repo', 'main', () => null, exactFetch);
+        expect(ok?.tree).toEqual([]);
+
+        const over = buildTreeJson(16 * 1024 * 1024 - base + 1);
+        const overFetch = (async (urlStr: string | URL | Request) => {
+            if (String(urlStr).includes('/git/trees/')) return new Response(over, { status: 200 });
+            return new Response('not found', { status: 404 });
+        }) as unknown as typeof fetch;
+        await expect(fetchRepoTree('owner/repo', 'main', () => null, overFetch)).rejects.toThrow(
+            /repository tree for owner\/repo exceeds the 16777216-byte read cap/,
+        );
+    });
+
+    it('caps the download manifest: 32 MiB + 1 byte throws naming the cap, exactly 32 MiB installs', async () => {
+        const tree = [{ path: 'skills/dl/SKILL.md', type: 'blob', sha: 'dl' }];
+        const buildDownloadJson = (padBytes: number) => {
+            const head = '{"files":[{"path":"SKILL.md","contents":"# Dl"}],"hash":"h","pad":"';
+            return `${head}${'x'.repeat(padBytes)}"}`;
+        };
+        const base = Buffer.byteLength(buildDownloadJson(0));
+        const rawSkill = '---\nname: Dl\ndescription: dl\n---\n# Dl';
+        const fetchWith = (downloadJson: string) =>
+            (async (urlStr: string | URL | Request) => {
+                const url = String(urlStr);
+                if (url.includes('/git/trees/')) {
+                    return new Response(JSON.stringify({ sha: 'tree-sha', branch: 'main', tree }), { status: 200 });
+                }
+                if (url.includes('raw.githubusercontent.com')) return new Response(rawSkill, { status: 200 });
+                if (url.includes('/api/download/')) return new Response(downloadJson, { status: 200 });
+                return new Response('not found', { status: 404 });
+            }) as unknown as typeof fetch;
+
+        const over = buildDownloadJson(32 * 1024 * 1024 - base + 1);
+        await expect(tryBlobInstall('owner/repo', { ref: 'main', fetchFn: fetchWith(over) })).rejects.toThrow(
+            /download manifest for .* exceeds the 33554432-byte read cap/,
+        );
+
+        const exact = buildDownloadJson(32 * 1024 * 1024 - base);
+        expect(Buffer.byteLength(exact)).toBe(32 * 1024 * 1024);
+        const result = await tryBlobInstall('owner/repo', { ref: 'main', fetchFn: fetchWith(exact) });
+        expect(result?.skills.length).toBe(1);
     });
 });

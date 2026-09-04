@@ -74,6 +74,49 @@ describe('dedupeLines', () => {
     it('returns empty string for all-blank input', () => {
         expect(dedupeLines('\n\n')).toBe('');
     });
+
+    // Residual-proof (F7/R7): each fixture carries both halves — the outside-fence
+    // normalization that must keep applying (bare half) and the inside-fence bytes
+    // that must survive untouched (compound half: ATX-looking comments, blank runs,
+    // and shorter embedded fence sequences).
+    it('preserves duplicate ATX comments and blank runs inside a backtick fence byte-for-byte', () => {
+        const text = [
+            '# Guide',
+            '',
+            '```sh',
+            '# setup',
+            'cd .',
+            '',
+            '',
+            '# setup',
+            '```',
+            '',
+            '```sh',
+            '# setup',
+            '```',
+            '',
+        ].join('\n');
+        expect(dedupeLines(text)).toBe('# Guide\n\n```sh\n# setup\ncd .\n\n\n# setup\n```\n\n```sh\n# setup\n```');
+    });
+
+    it('preserves tilde-fenced content byte-for-byte including heading-lookalikes and blank runs', () => {
+        const text = ['~~~', '## not a heading', '', '', '## not a heading', '~~~', '', '', 'tail'].join('\n');
+        expect(dedupeLines(text)).toBe('~~~\n## not a heading\n\n\n## not a heading\n~~~\n\ntail');
+    });
+
+    it('only closes a fence on the opener marker at at least the opener width', () => {
+        const text = ['````md', '```sh', 'echo hi', '```', 'still fenced', '````', '', '# After'].join('\n');
+        expect(dedupeLines(text)).toBe(text.trimEnd());
+    });
+
+    it('accepts an indented opener and keeps its content verbatim', () => {
+        const text = ['text', '', '  ```sh', '# dup', '', '# dup', '  ```', '', '# dup'].join('\n');
+        expect(dedupeLines(text)).toBe('text\n\n  ```sh\n# dup\n\n# dup\n  ```\n\n# dup');
+    });
+
+    it('still deduplicates headings and blank runs outside fences (bare half)', () => {
+        expect(dedupeLines('# A\n# A\n\n\n\n# B')).toBe('# A\n\n# B');
+    });
 });
 
 describe('mergeSkillFrontmatter', () => {

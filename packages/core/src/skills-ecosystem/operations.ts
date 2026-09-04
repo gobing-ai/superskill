@@ -15,8 +15,11 @@ import {
 } from './installer';
 import {
     computeCanonicalSkillFolderHash,
+    getGlobalLockPath,
+    getLocalLockPath,
     readGlobalLock,
     readLocalLock,
+    withSkillMutationGuard,
     writeGlobalLock,
     writeLocalLock,
 } from './locks';
@@ -154,15 +157,27 @@ async function addResolvedSkills(
         }
 
         const ownerRepo = parsed.type === 'github' ? getOwnerRepo(parsed) : null;
-        const blobRes = ownerRepo
-            ? await tryBlobInstall(ownerRepo, {
-                  subpath: parsed.subpath,
-                  skillFilter: parsed.skillFilter,
-                  ref: parsed.ref,
-                  fetchFn: options.fetchFn,
-                  includeInternal: true,
-              })
-            : null;
+        // R9/F9: a blob-install error (acquisition limit, malformed tree payload, …) is
+        // terminal — it must not fall through to a full git clone, which repeats the
+        // same unbounded fan-out the limit exists to bound. Clone only on a clean,
+        // empty/absent blob result.
+        let blobRes: Awaited<ReturnType<typeof tryBlobInstall>> = null;
+        if (ownerRepo) {
+            try {
+                blobRes = await tryBlobInstall(ownerRepo, {
+                    subpath: parsed.subpath,
+                    skillFilter: parsed.skillFilter,
+                    ref: parsed.ref,
+                    fetchFn: options.fetchFn,
+                    includeInternal: true,
+                });
+            } catch (error) {
+                return {
+                    success: false,
+                    error: `Failed to fetch skill source '${source}': ${error instanceof Error ? error.message : String(error)}`,
+                };
+            }
+        }
 
         if (blobRes?.skills.length) {
             discoveredSkills = blobRes.skills;
@@ -214,107 +229,133 @@ async function addResolvedSkills(
             };
         }
 
-        const installedItems: InstalledSkillItem[] = [];
-        const transaction = new FilesystemTransaction();
+        // R3/F3: the mutation closure runs under the per-scope guard (except dry-run,
+        // which never writes). Lock parameters are passed in so the guarded path can
+        // re-read the authoritative lock inside the critical section instead of
+        // relying on the pre-discovery snapshot taken above.
+        const runMutation = async (
+            globalLock: Awaited<ReturnType<typeof readGlobalLock>> | undefined,
+            localLock: Awaited<ReturnType<typeof readLocalLock>> | undefined,
+        ): Promise<AddSkillsResult> => {
+            const installedItems: InstalledSkillItem[] = [];
+            const transaction = new FilesystemTransaction();
 
-        try {
-            for (const skill of discoveredSkills) {
-                const skillName = sanitizeName(skill.name);
-                const skillSourceInput =
-                    isBlobResult && 'repoPath' in skill
-                        ? skill
-                        : 'path' in skill
-                          ? skill.path
-                          : (parsed.localPath ?? parsed.url);
+            try {
+                for (const skill of discoveredSkills) {
+                    const skillName = sanitizeName(skill.name);
+                    const skillSourceInput =
+                        isBlobResult && 'repoPath' in skill
+                            ? skill
+                            : 'path' in skill
+                              ? skill.path
+                              : (parsed.localPath ?? parsed.url);
 
-                if (options.dryRun) {
-                    const canonicalBase = getCanonicalSkillsDir(global, cwd, homeDir);
+                    if (options.dryRun) {
+                        const canonicalBase = getCanonicalSkillsDir(global, cwd, homeDir);
+                        installedItems.push({
+                            name: skillName,
+                            canonicalPath: resolve(canonicalBase, skillName),
+                            targets: targetAgents,
+                        });
+                        continue;
+                    }
+
+                    const emitRes = await emitSkillForTargets(skillSourceInput, targetAgents, {
+                        global,
+                        cwd,
+                        homeDir,
+                        mode: options.mode,
+                        env,
+                        name: skillName,
+                        transaction,
+                    });
+
+                    if (!emitRes.success) {
+                        throw new Error(`Failed to emit skill '${skillName}': ${emitRes.error || 'Unknown error'}`);
+                    }
+
+                    const canonicalPath = emitRes.canonicalPath;
+                    const computedHash = await computeCanonicalSkillFolderHash(canonicalPath);
+
+                    if (global && globalLock) {
+                        const now = new Date().toISOString();
+                        const existing = globalLock.skills[skillName];
+                        globalLock.skills[skillName] = {
+                            source: lockSource,
+                            sourceType: parsed.type,
+                            sourceUrl: parsed.url,
+                            ...(parsed.ref ? { ref: parsed.ref } : {}),
+                            ...(lockSkillPath ? { skillPath: lockSkillPath } : {}),
+                            skillFolderHash: computedHash,
+                            installedAt: existing?.installedAt ?? now,
+                            updatedAt: now,
+                        };
+                    } else if (localLock) {
+                        localLock.skills[skillName] = {
+                            source: lockSource,
+                            sourceUrl: parsed.url,
+                            sourceType: parsed.type,
+                            ...(parsed.ref ? { ref: parsed.ref } : {}),
+                            ...(lockSkillPath ? { skillPath: lockSkillPath } : {}),
+                            computedHash,
+                        };
+                    }
+
                     installedItems.push({
                         name: skillName,
-                        canonicalPath: resolve(canonicalBase, skillName),
+                        canonicalPath,
                         targets: targetAgents,
                     });
-                    continue;
                 }
 
-                const emitRes = await emitSkillForTargets(skillSourceInput, targetAgents, {
-                    global,
-                    cwd,
-                    homeDir,
-                    mode: options.mode,
-                    env,
-                    name: skillName,
-                    transaction,
-                });
-
-                if (!emitRes.success) {
-                    throw new Error(`Failed to emit skill '${skillName}': ${emitRes.error || 'Unknown error'}`);
+                if (!options.dryRun) {
+                    if (global && globalLock) {
+                        await writeGlobalLock(globalLock, env, homeDir);
+                    } else if (localLock) {
+                        await writeLocalLock(localLock, cwd);
+                    }
                 }
+                await transaction.commit();
 
-                const canonicalPath = emitRes.canonicalPath;
-                const computedHash = await computeCanonicalSkillFolderHash(canonicalPath);
-
-                if (global && globalLock) {
-                    const now = new Date().toISOString();
-                    const existing = globalLock.skills[skillName];
-                    globalLock.skills[skillName] = {
-                        source: lockSource,
-                        sourceType: parsed.type,
-                        sourceUrl: parsed.url,
-                        ...(parsed.ref ? { ref: parsed.ref } : {}),
-                        ...(lockSkillPath ? { skillPath: lockSkillPath } : {}),
-                        skillFolderHash: computedHash,
-                        installedAt: existing?.installedAt ?? now,
-                        updatedAt: now,
-                    };
-                } else if (localLock) {
-                    localLock.skills[skillName] = {
-                        source: lockSource,
-                        sourceUrl: parsed.url,
-                        sourceType: parsed.type,
-                        ...(parsed.ref ? { ref: parsed.ref } : {}),
-                        ...(lockSkillPath ? { skillPath: lockSkillPath } : {}),
-                        computedHash,
+                return {
+                    success: true,
+                    dryRun: options.dryRun,
+                    installed: installedItems,
+                };
+            } catch (error) {
+                try {
+                    await transaction.rollback();
+                } catch (rollbackError) {
+                    return {
+                        success: false,
+                        error: `${error instanceof Error ? error.message : String(error)}; ${
+                            rollbackError instanceof Error ? rollbackError.message : String(rollbackError)
+                        }`,
                     };
                 }
-
-                installedItems.push({
-                    name: skillName,
-                    canonicalPath,
-                    targets: targetAgents,
-                });
-            }
-
-            if (!options.dryRun) {
-                if (global && globalLock) {
-                    await writeGlobalLock(globalLock, env, homeDir);
-                } else if (localLock) {
-                    await writeLocalLock(localLock, cwd);
-                }
-            }
-            await transaction.commit();
-
-            return {
-                success: true,
-                dryRun: options.dryRun,
-                installed: installedItems,
-            };
-        } catch (error) {
-            try {
-                await transaction.rollback();
-            } catch (rollbackError) {
                 return {
                     success: false,
-                    error: `${error instanceof Error ? error.message : String(error)}; ${
-                        rollbackError instanceof Error ? rollbackError.message : String(rollbackError)
-                    }`,
+                    error: error instanceof Error ? error.message : String(error),
                 };
             }
-            return {
-                success: false,
-                error: error instanceof Error ? error.message : String(error),
-            };
+        };
+
+        if (options.dryRun) {
+            return await runMutation(globalLock, localLock);
         }
+
+        const lockPath = global ? getGlobalLockPath(env, homeDir) : getLocalLockPath(cwd);
+        return await withSkillMutationGuard(lockPath, async () => {
+            // Authoritative re-read inside the guard: the pre-discovery snapshot may be
+            // stale the moment another process commits (R3/F3 last-writer-wins).
+            const freshGlobal = global ? await readGlobalLock(env, homeDir) : undefined;
+            const freshLocal = global ? undefined : await readLocalLock(cwd);
+            const freshWarning = freshGlobal?.warning ?? freshLocal?.warning;
+            if (freshWarning) {
+                return { success: false, error: lockVersionError(freshWarning) };
+            }
+            return await runMutation(freshGlobal, freshLocal);
+        });
     } finally {
         if (tempDir) {
             await cleanupTempDir(tempDir);
@@ -448,73 +489,79 @@ export async function removeSkills(names: string[], options: RemoveSkillsOptions
     const env = options.env ?? process.env;
     const targets = options.targets ?? [...TARGETS];
 
-    const globalLock = global ? await readGlobalLock(env, homeDir) : undefined;
-    const localLock = global ? undefined : await readLocalLock(cwd);
-    const lock = globalLock ?? localLock;
-    if (!lock) {
-        return { success: false, removed: [], error: 'Failed to load skill lock' };
-    }
-    if (lock.warning) {
-        return { success: false, removed: [], error: lockVersionError(lock.warning) };
-    }
+    // R3/F3: remove is a read-modify-write over the lock; hold the per-scope mutation
+    // guard across the authoritative lock read, filesystem removals, lock write, and
+    // transaction commit/rollback.
+    const lockPath = global ? getGlobalLockPath(env, homeDir) : getLocalLockPath(cwd);
+    return await withSkillMutationGuard(lockPath, async () => {
+        const globalLock = global ? await readGlobalLock(env, homeDir) : undefined;
+        const localLock = global ? undefined : await readLocalLock(cwd);
+        const lock = globalLock ?? localLock;
+        if (!lock) {
+            return { success: false, removed: [], error: 'Failed to load skill lock' };
+        }
+        if (lock.warning) {
+            return { success: false, removed: [], error: lockVersionError(lock.warning) };
+        }
 
-    const lockKeys = Object.keys(lock.skills);
-    const identities = names.map((rawName) => {
-        const matched = resolveSkillsToRemove([rawName], [rawName, ...lockKeys], lockKeys)[0];
-        return matched ?? sanitizeName(rawName);
-    });
-    const transaction = new FilesystemTransaction();
-    const removedList: string[] = [];
+        const lockKeys = Object.keys(lock.skills);
+        const identities = names.map((rawName) => {
+            const matched = resolveSkillsToRemove([rawName], [rawName, ...lockKeys], lockKeys)[0];
+            return matched ?? sanitizeName(rawName);
+        });
+        const transaction = new FilesystemTransaction();
+        const removedList: string[] = [];
 
-    try {
-        for (const identity of [...new Set(identities)]) {
-            const removeResult = await removeSkillFromTargets(identity, targets, {
-                global,
-                cwd,
-                homeDir,
-                env,
-                lockKeys,
-                transaction,
-            });
-            if (!removeResult.success) {
-                throw new Error(
-                    `Failed to remove skill '${identity}': ${removeResult.error ?? 'filesystem mutation failed'}`,
-                );
+        try {
+            for (const identity of [...new Set(identities)]) {
+                const removeResult = await removeSkillFromTargets(identity, targets, {
+                    global,
+                    cwd,
+                    homeDir,
+                    env,
+                    lockKeys,
+                    transaction,
+                });
+                if (!removeResult.success) {
+                    throw new Error(
+                        `Failed to remove skill '${identity}': ${removeResult.error ?? 'filesystem mutation failed'}`,
+                    );
+                }
+
+                delete lock.skills[removeResult.skillName];
+                removedList.push(removeResult.skillName);
             }
 
-            delete lock.skills[removeResult.skillName];
-            removedList.push(removeResult.skillName);
-        }
-
-        if (global && globalLock) {
-            await writeGlobalLock(globalLock, env, homeDir);
-        } else if (localLock) {
-            await writeLocalLock(localLock, cwd);
-        }
-        await transaction.commit();
-    } catch (error) {
-        try {
-            await transaction.rollback();
-        } catch (rollbackError) {
+            if (global && globalLock) {
+                await writeGlobalLock(globalLock, env, homeDir);
+            } else if (localLock) {
+                await writeLocalLock(localLock, cwd);
+            }
+            await transaction.commit();
+        } catch (error) {
+            try {
+                await transaction.rollback();
+            } catch (rollbackError) {
+                return {
+                    success: false,
+                    removed: [],
+                    error: `${error instanceof Error ? error.message : String(error)}; ${
+                        rollbackError instanceof Error ? rollbackError.message : String(rollbackError)
+                    }`,
+                };
+            }
             return {
                 success: false,
                 removed: [],
-                error: `${error instanceof Error ? error.message : String(error)}; ${
-                    rollbackError instanceof Error ? rollbackError.message : String(rollbackError)
-                }`,
+                error: error instanceof Error ? error.message : String(error),
             };
         }
-        return {
-            success: false,
-            removed: [],
-            error: error instanceof Error ? error.message : String(error),
-        };
-    }
 
-    return {
-        success: true,
-        removed: removedList,
-    };
+        return {
+            success: true,
+            removed: removedList,
+        };
+    });
 }
 
 /** Options for updating installed skills. */

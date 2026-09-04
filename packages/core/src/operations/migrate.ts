@@ -87,21 +87,44 @@ export function mergeSkillBodies(sources: ParsedFrontmatter[]): string {
  *
  * Only ATX headings (`^#{1,6} `) are deduplicated — when two merged sources share
  * a `# Title` or `## Examples`, the heading is kept once. Content lines (prose,
- * code fences, braces, list items) are preserved verbatim, because identical
- * content lines are legitimately repeated across skills and dropping them
- * corrupts structure (e.g. a stray closing ``` or `}` deleted as a "duplicate").
+ * braces, list items) are preserved verbatim, because identical content lines are
+ * legitimately repeated across skills and dropping them corrupts structure (e.g. a
+ * stray closing ``` or `}` deleted as a "duplicate").
+ *
+ * Fenced code blocks (R7/F7) are preserved byte-for-byte: inside a fence, `#` lines
+ * are comments (not headings), blank runs are formatting, and fence-like lines are
+ * structural. A closing fence must reuse the opener's character with at least its
+ * width (CommonMark), so a shorter embedded sequence stays content.
  */
 export function dedupeLines(text: string): string {
     const seenHeadings = new Set<string>();
     const out: string[] = [];
     let prevBlank = false;
+    let fenceMarker: string | null = null;
+    let fenceWidth = 0;
     for (const line of text.split('\n')) {
+        if (fenceMarker !== null) {
+            out.push(line);
+            const closer = line.match(/^\s*(`{3,}|~{3,})\s*$/);
+            const closerMark = closer?.[1]?.[0];
+            if (closerMark && closer[1] && closerMark === fenceMarker && closer[1].length >= fenceWidth) {
+                fenceMarker = null;
+            }
+            continue;
+        }
         if (line === '') {
             if (!prevBlank) out.push('');
             prevBlank = true;
             continue;
         }
         prevBlank = false;
+        const openerMark = line.match(/^\s*(`{3,}|~{3,})/)?.[1];
+        if (openerMark) {
+            fenceMarker = openerMark[0] ?? null;
+            fenceWidth = openerMark.length;
+            out.push(line);
+            continue;
+        }
         if (/^#{1,6} /.test(line)) {
             if (seenHeadings.has(line)) continue;
             seenHeadings.add(line);

@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto';
-import { mkdir, readdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
+import { mkdir, readdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { dirname, join, relative } from 'node:path';
 
@@ -211,26 +211,57 @@ export function computeContentHash(content: string | Uint8Array): string {
 }
 
 /**
+ * Absence codes for a lock path: ENOENT (no such entry) and ENOTDIR (a path ancestor
+ * is a non-directory, so the lock file cannot exist there at all). Both mean the lock
+ * is absent — there are no user bytes to preserve — so they synthesize the empty state
+ * instead of the R4 corruption warning; the real failure then surfaces at the mutation
+ * site (e.g. emit mkdir) with an actionable message. A warning for ENOTDIR would tell
+ * the operator to "repair or remove" a lock file that cannot exist, mispointing the fix.
+ */
+function isLockAbsenceCode(error: unknown): boolean {
+    const code = (error as NodeJS.ErrnoException)?.code;
+    return code === 'ENOENT' || code === 'ENOTDIR';
+}
+
+/**
  * R3 on-disk guard for the raw writers: a caller-constructed lock object must not
  * clobber an on-disk lock whose version differs from the one this build understands
- * (newer OR older) — migration is an explicit act, never a silent overwrite. A
- * missing or unparseable file is safe to (re)create.
+ * (newer OR older) — migration is an explicit act, never a silent overwrite. Only an
+ * absent lock (see {@link isLockAbsenceCode}) is safe to (re)create: a corrupt or
+ * unreadable on-disk lock blocks the write so original bytes are never replaced by a
+ * fresh object (R4).
  */
 async function assertOnDiskVersionMatches(
     lockPath: string,
     supported: number,
     kind: 'local' | 'global',
 ): Promise<void> {
+    let content: string;
     try {
-        const disk = JSON.parse(await readFile(lockPath, 'utf-8')) as { version?: unknown };
-        if (typeof disk.version === 'number' && disk.version !== supported) {
-            throw new Error(
-                `Cannot write ${kind} lock: on-disk lock version (${disk.version}) differs from supported version (${supported}). Lock preserved untouched; migrate explicitly.`,
-            );
-        }
+        content = await readFile(lockPath, 'utf-8');
     } catch (error) {
-        if (error instanceof Error && error.message.startsWith('Cannot write')) throw error;
-        // Missing or corrupt file: writing a fresh lock is the recovery path.
+        if (isLockAbsenceCode(error)) return;
+        throw new Error(
+            `Cannot write ${kind} lock: on-disk lock at ${lockPath} is unreadable (${error instanceof Error ? error.message : String(error)}). Lock preserved untouched; repair or remove the file explicitly.`,
+        );
+    }
+    let disk: { version?: unknown };
+    try {
+        disk = JSON.parse(content) as { version?: unknown };
+    } catch (error) {
+        throw new Error(
+            `Cannot write ${kind} lock: on-disk lock at ${lockPath} is corrupt (JSON parse error: ${error instanceof Error ? error.message : String(error)}). Lock preserved untouched; repair or remove the file explicitly.`,
+        );
+    }
+    if (typeof disk.version !== 'number') {
+        throw new Error(
+            `Cannot write ${kind} lock: on-disk lock at ${lockPath} has an invalid version shape (${JSON.stringify(disk.version)}). Lock preserved untouched; repair or remove the file explicitly.`,
+        );
+    }
+    if (disk.version !== supported) {
+        throw new Error(
+            `Cannot write ${kind} lock: on-disk lock version (${disk.version}) differs from supported version (${supported}). Lock preserved untouched; migrate explicitly.`,
+        );
     }
 }
 
@@ -245,41 +276,239 @@ async function writeLockAtomically(lockPath: string, content: string): Promise<v
     }
 }
 
+// ── Per-scope mutation guard (R3/F3) ─────────────────────────────────────────
+// Atomic rename prevents torn lock writes but not stale read-modify-write snapshots:
+// two concurrent mutators both read the same base and one install silently vanishes
+// from the lock. Mutating operations therefore hold one exclusive guard per lock path
+// across the authoritative read, filesystem mutation, lock write, and transaction
+// commit/rollback. The guard is an atomic same-parent mkdir, so it works across
+// separate CLI processes; a same-process Promise.all of mutators serializes on it.
+
+const MUTATION_GUARD_SUFFIX = '.mutation-lock';
+const MUTATION_GUARD_MAX_WAIT_MS = 10_000;
+const MUTATION_GUARD_RETRY_MS = 50;
+
+/** Named contention error: the guard stayed held for the whole bounded wait. */
+export class SkillMutationContentionError extends Error {
+    constructor(lockPath: string) {
+        super(
+            `Skill lock contention: another process holds the mutation guard for '${lockPath}' ` +
+                `(waited ${MUTATION_GUARD_MAX_WAIT_MS}ms). Retry the operation once the holder exits.`,
+        );
+        this.name = 'SkillMutationContentionError';
+    }
+}
+
+function mutationGuardPath(lockPath: string): string {
+    return `${lockPath}${MUTATION_GUARD_SUFFIX}`;
+}
+
+/**
+ * True when the nearest existing ancestor of `dir` is a non-directory — i.e. the path
+ * chain is broken by a file (an `rm -rf`-style cleanup cannot fix it, and every mkdir
+ * beneath it fails with ENOTDIR/EEXIST). Probes upward because a plain `stat(dir)`
+ * fails ENOTDIR itself when dir's own ancestor is the offending file, so ENOENT and
+ * ENOTDIR both continue the walk. ENOENT at the filesystem root ends the walk as "not
+ * broken"; any other stat error also reports "not broken" so callers keep their
+ * fail-loud rethrow.
+ */
+async function nearestExistingAncestorIsNonDirectory(dir: string): Promise<boolean> {
+    let probe = dir;
+    for (;;) {
+        try {
+            return !(await stat(probe)).isDirectory();
+        } catch (error) {
+            const code = (error as NodeJS.ErrnoException)?.code;
+            if (code !== 'ENOENT' && code !== 'ENOTDIR') return false;
+            const parent = dirname(probe);
+            if (parent === probe) return false;
+            probe = parent;
+        }
+    }
+}
+
+/** Best-effort dead-owner probe from the guard's owner metadata (PID + timestamp). */
+async function mutationGuardOwnerIsDead(guardDir: string): Promise<boolean> {
+    try {
+        const raw = await readFile(join(guardDir, 'owner'), 'utf-8');
+        const owner = JSON.parse(raw) as { pid?: unknown };
+        if (typeof owner.pid !== 'number') return false;
+        try {
+            process.kill(owner.pid, 0);
+            return false; // signal 0 delivered — owner alive
+        } catch {
+            return true; // ESRCH — owner gone
+        }
+    } catch {
+        return false; // no readable metadata — treat as live (conservative)
+    }
+}
+
+/**
+ * Run `fn` while holding the exclusive per-lock mutation guard (R3). Acquisition is an
+ * atomic exclusive-create `mkdir`; the wait is bounded at 10 seconds; a dead owner
+ * (per PID metadata) permits one atomic rename-steal takeover. Release always happens
+ * in `finally`, including on rollback paths.
+ */
+export async function withSkillMutationGuard<T>(lockPath: string, fn: () => Promise<T>): Promise<T> {
+    const guardDir = mutationGuardPath(lockPath);
+    // Broken chain: an ancestor of the guard/lock path is a non-directory (node reports
+    // EEXIST or ENOTDIR depending on where the recursive mkdir collides). The guard can
+    // then neither be created nor held by any process — every mutator hits the same
+    // broken chain — so `fn` runs without serialization and the first real mutation
+    // inside it (emit mkdir / lock write) fails loudly on that chain with the actionable
+    // error. Any other parent-creation failure still throws: mutating unserialized on a
+    // creatable guard parent would be a silent skip.
+    try {
+        await mkdir(dirname(guardDir), { recursive: true });
+    } catch (error) {
+        if (!(await nearestExistingAncestorIsNonDirectory(dirname(guardDir)))) throw error;
+        return await fn();
+    }
+    const deadline = Date.now() + MUTATION_GUARD_MAX_WAIT_MS;
+    let staleRecovered = false;
+    let acquired = false;
+    while (Date.now() < deadline) {
+        try {
+            await mkdir(guardDir); // no recursive: EEXIST is the held signal
+            acquired = true;
+            break;
+        } catch (error) {
+            if ((error as NodeJS.ErrnoException)?.code !== 'EEXIST') throw error;
+            if (!staleRecovered && (await mutationGuardOwnerIsDead(guardDir))) {
+                // Atomic steal: rename first so a competing waiter can never delete a
+                // freshly (re)acquired guard. One takeover attempt per waiter.
+                const stolen = `${guardDir}.stale-${randomUUID()}`;
+                try {
+                    await rename(guardDir, stolen);
+                    staleRecovered = true;
+                    await rm(stolen, { recursive: true, force: true }).catch(() => {});
+                } catch {
+                    // Another waiter won the steal (or the holder released) — keep retrying.
+                }
+                continue;
+            }
+            await new Promise((resolveSleep) => setTimeout(resolveSleep, MUTATION_GUARD_RETRY_MS));
+        }
+    }
+    if (!acquired) throw new SkillMutationContentionError(lockPath);
+    try {
+        await writeFile(
+            join(guardDir, 'owner'),
+            `${JSON.stringify({ pid: process.pid, acquiredAt: new Date().toISOString() })}\n`,
+            'utf-8',
+        ).catch(() => {});
+        return await fn();
+    } finally {
+        await rm(guardDir, { recursive: true, force: true }).catch(() => {});
+    }
+}
+
+// ── Prototype-safe skill-key records (R5/F5) ─────────────────────────────────
+// Sanitized identities are untrusted data; `__proto__` is a legal sanitizeName output.
+// Plain object literals hand those keys to the inherited setter, silently orphaning the
+// installation. Every accepted skills map is normalized into a null-prototype record so
+// reads, writes, deletes, `in`, Object.keys, and JSON round-trips treat every identity
+// as an own data key — without changing sanitizeName's vendor-compatible output.
+
+function emptySkillRecord<T>(): Record<string, T> {
+    return Object.create(null) as Record<string, T>;
+}
+
+/** Fresh local lock for a project with no prior state (null-prototype records, R5). */
+function emptyLocalLock(): LocalSkillLockFile {
+    return {
+        version: LOCAL_LOCK_VERSION,
+        skills: emptySkillRecord<LocalSkillLockEntry>(),
+    };
+}
+
+/** Fresh global lock for a machine with no prior state (null-prototype records, R5). */
+function emptyGlobalLock(): GlobalSkillLockFile {
+    return {
+        version: GLOBAL_LOCK_VERSION,
+        skills: emptySkillRecord<GlobalSkillLockEntry>(),
+        dismissed: emptySkillRecord<boolean>(),
+    };
+}
+
+function toOwnKeyRecord<T>(skills: unknown): Record<string, T> {
+    const record = emptySkillRecord<T>();
+    if (skills && typeof skills === 'object' && !Array.isArray(skills)) {
+        for (const [key, value] of Object.entries(skills as Record<string, T>)) {
+            record[key] = value;
+        }
+    }
+    return record;
+}
+
 /**
  * Read project local skill lock file.
- * Preserves newer lock files untouched with a warning flag (R3).
+ * Preserves newer/older lock files untouched with a warning flag (R3). Only an absent
+ * lock (ENOENT, or ENOTDIR — an ancestor is not a directory — see {@link
+ * isLockAbsenceCode}) synthesizes the canonical empty state; any other unreadable/invalid
+ * file (R4/F4)
+ * yields a warning-bearing lock with empty skills so downstream writers refuse to act
+ * and the original bytes stay untouched.
  */
 export async function readLocalLock(cwd?: string): Promise<LocalSkillLockFile> {
     const lockPath = getLocalLockPath(cwd);
+    let content: string;
     try {
-        const content = await readFile(lockPath, 'utf-8');
-        const parsed = JSON.parse(content) as LocalSkillLockFile;
-
-        if (typeof parsed.version !== 'number' || !parsed.skills) {
-            return { version: LOCAL_LOCK_VERSION, skills: {} };
-        }
-
-        if (parsed.version > LOCAL_LOCK_VERSION) {
-            return {
-                ...parsed,
-                warning: `Local skill lock version (${parsed.version}) is newer than supported version (${LOCAL_LOCK_VERSION}). Lock preserved untouched.`,
-            };
-        }
-
-        if (parsed.version < LOCAL_LOCK_VERSION) {
-            // R3: never auto-wipe on version mismatch — the vendor's wipe-on-bump is
-            // explicitly NOT ported. Preserve the older lock and flag it; writers
-            // refuse warned locks, so migration is always an explicit caller act.
-            return {
-                ...parsed,
-                warning: `Local skill lock version (${parsed.version}) is older than current version (${LOCAL_LOCK_VERSION}). Lock preserved untouched; migrate explicitly.`,
-            };
-        }
-
-        return parsed;
-    } catch {
-        return { version: LOCAL_LOCK_VERSION, skills: {} };
+        content = await readFile(lockPath, 'utf-8');
+    } catch (error) {
+        if (isLockAbsenceCode(error)) return emptyLocalLock();
+        return corruptLocalLock(lockPath, `read error: ${error instanceof Error ? error.message : String(error)}`);
     }
+    let parsed: unknown;
+    try {
+        parsed = JSON.parse(content);
+    } catch (error) {
+        return corruptLocalLock(
+            lockPath,
+            `JSON parse error: ${error instanceof Error ? error.message : String(error)}`,
+        );
+    }
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+        return corruptLocalLock(lockPath, 'top-level shape is not a JSON object');
+    }
+    const record = parsed as { version?: unknown; skills?: unknown };
+    if (
+        typeof record.version !== 'number' ||
+        !record.skills ||
+        typeof record.skills !== 'object' ||
+        Array.isArray(record.skills)
+    ) {
+        return corruptLocalLock(lockPath, 'invalid version/skills shape');
+    }
+    const skills = toOwnKeyRecord<LocalSkillLockEntry>(record.skills);
+    if (record.version > LOCAL_LOCK_VERSION) {
+        return {
+            ...(parsed as LocalSkillLockFile),
+            skills,
+            warning: `Local skill lock version (${record.version}) is newer than supported version (${LOCAL_LOCK_VERSION}). Lock preserved untouched.`,
+        };
+    }
+    if (record.version < LOCAL_LOCK_VERSION) {
+        // R3: never auto-wipe on version mismatch — the vendor's wipe-on-bump is
+        // explicitly NOT ported. Preserve the older lock and flag it; writers
+        // refuse warned locks, so migration is always an explicit caller act.
+        return {
+            ...(parsed as LocalSkillLockFile),
+            skills,
+            warning: `Local skill lock version (${record.version}) is older than current version (${LOCAL_LOCK_VERSION}). Lock preserved untouched; migrate explicitly.`,
+        };
+    }
+    return { ...(parsed as LocalSkillLockFile), skills };
+}
+
+/** Corrupt/unreadable local lock: skills empty (nothing readable), warning present (R4). */
+function corruptLocalLock(lockPath: string, reason: string): LocalSkillLockFile {
+    return {
+        version: LOCAL_LOCK_VERSION,
+        skills: emptySkillRecord<LocalSkillLockEntry>(),
+        warning: `Local skill lock at ${lockPath} is unreadable/corrupt (${reason}). Lock preserved untouched; repair or remove the file explicitly.`,
+    };
 }
 
 /**
@@ -299,7 +528,7 @@ export async function writeLocalLock(lock: LocalSkillLockFile, cwd?: string): Pr
 
     const lockPath = getLocalLockPath(cwd);
     await assertOnDiskVersionMatches(lockPath, LOCAL_LOCK_VERSION, 'local');
-    const sortedSkills: Record<string, LocalSkillLockEntry> = {};
+    const sortedSkills = emptySkillRecord<LocalSkillLockEntry>();
     for (const key of Object.keys(lock.skills).sort()) {
         const item = lock.skills[key];
         if (item) {
@@ -353,40 +582,76 @@ export async function removeSkillFromLocalLock(skillName: string, cwd?: string):
 
 /**
  * Read global skill lock file.
- * Preserves newer lock files untouched with a warning flag (R3).
+ * Preserves newer/older lock files untouched with a warning flag (R3). Only an absent
+ * lock (ENOENT, or ENOTDIR — an ancestor is not a directory — see {@link
+ * isLockAbsenceCode}) synthesizes the canonical empty state; any other unreadable/invalid
+ * file (R4/F4)
+ * yields a warning-bearing lock with empty skills so downstream writers refuse to act
+ * and the original bytes stay untouched.
  */
 export async function readGlobalLock(
     env?: Record<string, string | undefined>,
     homeDir?: string,
 ): Promise<GlobalSkillLockFile> {
     const lockPath = getGlobalLockPath(env, homeDir);
+    let content: string;
     try {
-        const content = await readFile(lockPath, 'utf-8');
-        const parsed = JSON.parse(content) as GlobalSkillLockFile;
-
-        if (typeof parsed.version !== 'number' || !parsed.skills) {
-            return { version: GLOBAL_LOCK_VERSION, skills: {}, dismissed: {} };
-        }
-
-        if (parsed.version > GLOBAL_LOCK_VERSION) {
-            return {
-                ...parsed,
-                warning: `Global skill lock version (${parsed.version}) is newer than supported version (${GLOBAL_LOCK_VERSION}). Lock preserved untouched.`,
-            };
-        }
-
-        if (parsed.version < GLOBAL_LOCK_VERSION) {
-            // R3: vendor wipe-on-bump explicitly NOT ported — preserve + warn.
-            return {
-                ...parsed,
-                warning: `Global skill lock version (${parsed.version}) is older than current version (${GLOBAL_LOCK_VERSION}). Lock preserved untouched; migrate explicitly.`,
-            };
-        }
-
-        return parsed;
-    } catch {
-        return { version: GLOBAL_LOCK_VERSION, skills: {}, dismissed: {} };
+        content = await readFile(lockPath, 'utf-8');
+    } catch (error) {
+        if (isLockAbsenceCode(error)) return emptyGlobalLock();
+        return corruptGlobalLock(lockPath, `read error: ${error instanceof Error ? error.message : String(error)}`);
     }
+    let parsed: unknown;
+    try {
+        parsed = JSON.parse(content);
+    } catch (error) {
+        return corruptGlobalLock(
+            lockPath,
+            `JSON parse error: ${error instanceof Error ? error.message : String(error)}`,
+        );
+    }
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+        return corruptGlobalLock(lockPath, 'top-level shape is not a JSON object');
+    }
+    const record = parsed as { version?: unknown; skills?: unknown; dismissed?: unknown };
+    if (
+        typeof record.version !== 'number' ||
+        !record.skills ||
+        typeof record.skills !== 'object' ||
+        Array.isArray(record.skills)
+    ) {
+        return corruptGlobalLock(lockPath, 'invalid version/skills shape');
+    }
+    const skills = toOwnKeyRecord<GlobalSkillLockEntry>(record.skills);
+    const dismissed = toOwnKeyRecord<boolean>(record.dismissed);
+    if (record.version > GLOBAL_LOCK_VERSION) {
+        return {
+            ...(parsed as GlobalSkillLockFile),
+            skills,
+            dismissed,
+            warning: `Global skill lock version (${record.version}) is newer than supported version (${GLOBAL_LOCK_VERSION}). Lock preserved untouched.`,
+        };
+    }
+    if (record.version < GLOBAL_LOCK_VERSION) {
+        // R3: vendor wipe-on-bump explicitly NOT ported — preserve + warn.
+        return {
+            ...(parsed as GlobalSkillLockFile),
+            skills,
+            dismissed,
+            warning: `Global skill lock version (${record.version}) is older than current version (${GLOBAL_LOCK_VERSION}). Lock preserved untouched; migrate explicitly.`,
+        };
+    }
+    return { ...(parsed as GlobalSkillLockFile), skills, dismissed };
+}
+
+/** Corrupt/unreadable global lock: skills/dismissed empty (nothing readable), warning present (R4). */
+function corruptGlobalLock(lockPath: string, reason: string): GlobalSkillLockFile {
+    return {
+        version: GLOBAL_LOCK_VERSION,
+        skills: emptySkillRecord<GlobalSkillLockEntry>(),
+        dismissed: emptySkillRecord<boolean>(),
+        warning: `Global skill lock at ${lockPath} is unreadable/corrupt (${reason}). Lock preserved untouched; repair or remove the file explicitly.`,
+    };
 }
 
 /** Alias for readGlobalLock for vendor compatibility. */
@@ -414,7 +679,7 @@ export async function writeGlobalLock(
     const lockPath = getGlobalLockPath(env, homeDir);
     await assertOnDiskVersionMatches(lockPath, GLOBAL_LOCK_VERSION, 'global');
 
-    const sortedSkills: Record<string, GlobalSkillLockEntry> = {};
+    const sortedSkills = emptySkillRecord<GlobalSkillLockEntry>();
     for (const key of Object.keys(lock.skills).sort()) {
         const item = lock.skills[key];
         if (item) {
@@ -422,10 +687,18 @@ export async function writeGlobalLock(
         }
     }
 
+    const sortedDismissed = emptySkillRecord<boolean>();
+    for (const key of Object.keys(lock.dismissed ?? {}).sort()) {
+        const dismissedFlag = lock.dismissed?.[key];
+        if (dismissedFlag !== undefined) {
+            sortedDismissed[key] = dismissedFlag;
+        }
+    }
+
     const output: GlobalSkillLockFile = {
         version: GLOBAL_LOCK_VERSION,
         skills: sortedSkills,
-        ...(lock.dismissed ? { dismissed: lock.dismissed } : {}),
+        dismissed: sortedDismissed,
         ...(lock.lastSelectedAgents ? { lastSelectedAgents: lock.lastSelectedAgents } : {}),
     };
 

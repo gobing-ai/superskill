@@ -148,17 +148,71 @@ describe('packageSkill', () => {
         expect(existsSync(join(skillDir, 'SKILL.md'))).toBe(true);
     });
 
-    it('refuses an output that is an ancestor of the source (flat .md parent-dir case)', async () => {
-        // Flat-layout skill: skills/flat.md → resolveSkillDir yields dir=skills/,
-        // name='skills', so outputDir = <tmpDir>/skills — the source's own parent
-        // tree, containing every other skill.
+    it('packages a flat .md beside sibling skills without sweeping the shared parent', async () => {
+        // Flat-layout skill (R8/F8): skills/flat.md → name='flat' (filename-derived),
+        // dir=skills/. External output bundles to <output>/flat — a sibling tree of
+        // skills/ — so the shared parent and every sibling skill survive untouched.
         writeFileSync(join(tmpDir, 'skills', 'flat.md'), SKILL_MD);
 
-        await expect(packageSkill(join(tmpDir, 'skills', 'flat.md'), { output: tmpDir })).rejects.toThrow(
-            'overlaps the source',
-        );
+        const bundleDir = await packageSkill(join(tmpDir, 'skills', 'flat.md'), { output: tmpDir });
+        expect(bundleDir).toBe(join(tmpDir, 'flat'));
+        expect(readdirSync(bundleDir).sort()).toEqual(['SKILL.md']);
         expect(existsSync(join(tmpDir, 'skills', 'flat.md'))).toBe(true);
         expect(existsSync(join(skillDir, 'SKILL.md'))).toBe(true);
+    });
+
+    it('refuses an output that is an ancestor of a flat source whose parent dir name equals the file stem', async () => {
+        // Residual flat ancestor case (R8): x/flat/flat.md packaged to output x
+        // derives the bundle dir <x>/flat — the source's own parent directory. The
+        // clean step would delete the shared parent (and the source with it); refuse.
+        const flatDir = join(tmpDir, 'flat');
+        mkdirSync(flatDir, { recursive: true });
+        writeFileSync(join(flatDir, 'flat.md'), SKILL_MD);
+
+        await expect(packageSkill(join(flatDir, 'flat.md'), { output: tmpDir })).rejects.toThrow('overlaps the source');
+        expect(existsSync(join(flatDir, 'flat.md'))).toBe(true);
+        expect(existsSync(join(skillDir, 'SKILL.md'))).toBe(true);
+    });
+
+    it('cleans stale output from a previous package before repackaging', async () => {
+        // R8: output cleanup is required so artifacts of a prior package cannot leak
+        // into the new bundle (the rmSync arm of the clean step).
+        const outputDir = join(tmpDir, 'dist');
+        const stale = join(outputDir, 'test-skill');
+        mkdirSync(stale, { recursive: true });
+        writeFileSync(join(stale, 'stale-artifact.txt'), 'old package contents');
+
+        await packageSkill(skillDir, { output: outputDir });
+
+        expect(existsSync(join(outputDir, 'test-skill', 'stale-artifact.txt'))).toBe(false);
+        expect(existsSync(join(outputDir, 'test-skill', 'SKILL.md'))).toBe(true);
+    });
+
+    it('fails before output cleanup when the resolved SKILL.md is a bare directory (defensive dir-form, R8)', async () => {
+        // resolveContentPath treats an existing <dir>/SKILL.md as canonical even when
+        // SKILL.md is itself a directory; the defensive dir-form branch then resolves
+        // the primary entry to a nested path that does not exist. The missing-entry
+        // ENOENT must fire BEFORE the clean step — a previous good bundle survives.
+        const badDir = join(tmpDir, 'skills', 'bad-skill');
+        mkdirSync(join(badDir, 'SKILL.md'), { recursive: true });
+        const outputDir = join(tmpDir, 'dist');
+        const prevBundle = join(outputDir, 'bad-skill');
+        mkdirSync(prevBundle, { recursive: true });
+        writeFileSync(join(prevBundle, 'SKILL.md'), 'previous good package');
+
+        await expect(packageSkill(badDir, { output: outputDir })).rejects.toThrow('is missing');
+        expect(readFileSync(join(prevBundle, 'SKILL.md'), 'utf-8')).toBe('previous good package');
+    });
+
+    it('fails loudly when the resolved primary entry is not a regular file (R8)', async () => {
+        // Nested SKILL.md directory: entry resolves through the defensive dir-form
+        // branch to <bad>/SKILL.md/SKILL.md; the isFile stat must reject it before
+        // any output is created.
+        const badDir = join(tmpDir, 'skills', 'bad-skill');
+        mkdirSync(join(badDir, 'SKILL.md', 'SKILL.md'), { recursive: true });
+
+        await expect(packageSkill(badDir, { output: join(tmpDir, 'dist') })).rejects.toThrow('is not a regular file');
+        expect(existsSync(join(tmpDir, 'dist', 'bad-skill'))).toBe(false);
     });
 
     it('handles skill without companions gracefully', async () => {
