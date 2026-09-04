@@ -16,7 +16,7 @@
     ├── [done] **F5**: Five type command files ([F5_five-type-command-files.md](./F5_five-type-command-files.md))
     ├── [done] **F6**: Surface hook counts in install + validation checklist ([F6_surface-hook-counts-in-install-validation-checklist.md](./F6_surface-hook-counts-in-install-validation-checklist.md))
     └── [done] **F7**: Install dest fidelity: flattened path rewrite + plugin-scoped prune ([F7_install-dest-fidelity-flattened-path-rewrite-plugin-scoped-prune.md](./F7_install-dest-fidelity-flattened-path-rewrite-plugin-scoped-prune.md))
-[backlog] **G**: Package Core ([G_package-core.md](./G_package-core.md))
+[done] **G**: Package Core ([G_package-core.md](./G_package-core.md))
     ├── [backlog] **G1**: Install pipeline (legacy Phase 1) ([G1_install-pipeline-legacy-phase-1.md](./G1_install-pipeline-legacy-phase-1.md))
         ├── [done] **G11**: Target taxonomy + config schema ([G11_target-taxonomy-config-schema.md](./G11_target-taxonomy-config-schema.md))
         ├── [done] **G12**: Plugin → .rulesync/ mapper ([G12_plugin-rulesync-mapper.md](./G12_plugin-rulesync-mapper.md))
