@@ -182,6 +182,57 @@ describe('registerScriptConvert CLI', () => {
         expect(scriptCmd?.commands.some((c) => c.name() === 'convert')).toBe(true);
     });
 
+    it('rejects locator escapes before the existence probe (F3, task 0127 AC4)', async () => {
+        const decoy = join(projectDir, 'outside.ts');
+        writeFileSync(decoy, 'export const leaked = 1;\n');
+        const cases: Array<[plugin: string, rel: string, message: RegExp]> = [
+            ['cc', '../outside.ts', /Invalid relative path/],
+            ['cc', 'a/../../outside.ts', /Invalid relative path/],
+            ['cc', '../../../apps/cli/src/index.ts', /Invalid relative path/],
+            ['cc', '/etc/passwd', /Invalid relative path/],
+            ['cc', 'C:\\Windows\\notepad.exe', /Invalid relative path/],
+            ['cc', 'a//b.ts', /Invalid relative path/],
+            ['../cc', 'ok.ts', /single path segment/],
+        ];
+        for (const [plugin, rel, message] of cases) {
+            const program = new Command().name('superskill');
+            const exits: number[] = [];
+            registerScriptConvert(program, {
+                exit: (code) => {
+                    exits.push(code);
+                    throw new Error(`exit ${code}`);
+                },
+            });
+            await expect(
+                program.parseAsync(['node', 'superskill', 'script', 'convert', plugin, rel, '--dry-run']),
+            ).rejects.toThrow(/exit 1/);
+            expect(exits).toEqual([1]);
+            expect(joined(stderrSpy)).toMatch(message);
+            expect(joined(stdoutSpy)).toBe('');
+            expect(existsSync(join(projectDir, 'plugins', plugin, 'scripts', rel.replace(/\.[^.]+$/, '.mjs')))).toBe(
+                false,
+            );
+            stderrSpy.mockClear();
+            stdoutSpy.mockClear();
+        }
+        expect(existsSync(decoy)).toBe(true);
+        expect(existsSync(decoy.replace(/\.ts$/, '.mjs'))).toBe(false);
+    });
+
+    it('still converts a nested safe relative path and file..ts (F3, task 0127 AC4)', async () => {
+        seedSource('nested/ok.ts');
+        seedSource('file..ts');
+        const program = new Command().name('superskill');
+        registerScriptConvert(program);
+        await program.parseAsync(['node', 'superskill', 'script', 'convert', 'cc', 'nested/ok.ts', '--dry-run']);
+        expect(joined(stdoutSpy)).toContain('(dry-run)');
+        expect(existsSync(join(projectDir, 'plugins', 'cc', 'scripts', 'nested', 'ok.mjs'))).toBe(false);
+        stdoutSpy.mockClear();
+        await program.parseAsync(['node', 'superskill', 'script', 'convert', 'cc', 'file..ts', '--dry-run']);
+        expect(joined(stdoutSpy)).toContain('file..ts');
+        expect(existsSync(join(projectDir, 'plugins', 'cc', 'scripts', 'file..mjs'))).toBe(false);
+    });
+
     it('exits 1 when the source script does not exist', async () => {
         const program = new Command().name('superskill');
         const exits: number[] = [];
@@ -247,7 +298,7 @@ describe('registerScriptConvert CLI', () => {
     /** Write a minimal entrypoint .ts under the temp projectRoot the CLI action resolves. */
     function seedSource(name: string, content?: string): string {
         const srcPath = join(projectDir, 'plugins', 'cc', 'scripts', name);
-        mkdirSync(join(projectDir, 'plugins', 'cc', 'scripts'), { recursive: true });
+        mkdirSync(join(srcPath, '..'), { recursive: true });
         writeFileSync(
             srcPath,
             content ?? 'function main() { return 0; }\nif (import.meta.main) process.exit(main());\n',

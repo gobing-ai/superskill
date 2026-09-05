@@ -1,5 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it, spyOn } from 'bun:test';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import {
+    existsSync,
+    mkdirSync,
+    mkdtempSync,
+    readdirSync,
+    readFileSync,
+    rmSync,
+    symlinkSync,
+    writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { ProcessExecutor, ProcessOptions } from '@gobing-ai/ts-runtime';
@@ -283,6 +292,87 @@ describe('executeInstall', () => {
 
         // Staging lived outside the workspace and is gone after the failure.
         expect(stagedInputRoot.startsWith(workspace)).toBe(false);
+        expect(existsSync(join(workspace, '.rulesync'))).toBe(false);
+        stdout.mockRestore();
+    });
+
+    it('isolates concurrent executeInstall staging at a shared-cwd barrier (F2, task 0127 AC3)', async () => {
+        const workspace = createTempWorkspace();
+        createPlugin(workspace, 'alpha');
+        createPlugin(workspace, 'beta');
+        const stdout = spyOn(process.stdout, 'write').mockImplementation(() => true);
+
+        const waiters: Array<() => void> = [];
+        const captured: Array<{ plugin: string; root: string; skills: string[] }> = [];
+        const hold = (plugin: string): Promise<void> => {
+            const seen = new Set(captured.map((row) => row.plugin));
+            seen.add(plugin);
+            if (seen.has('alpha') && seen.has('beta')) {
+                for (const resume of waiters) resume();
+                return Promise.resolve();
+            }
+            return new Promise((resolve) => {
+                waiters.push(resolve);
+            });
+        };
+        const emptyRulesync = {
+            rulesCount: 0,
+            rulesPaths: [] as string[],
+            ignoreCount: 0,
+            ignorePaths: [] as string[],
+            mcpCount: 0,
+            mcpPaths: [] as string[],
+            commandsCount: 0,
+            commandsPaths: [] as string[],
+            subagentsCount: 0,
+            subagentsPaths: [] as string[],
+            skillsCount: 0,
+            skillsPaths: [] as string[],
+            hooksCount: 0,
+            hooksPaths: [] as string[],
+            permissionsCount: 0,
+            permissionsPaths: [] as string[],
+            skills: [],
+            hasDiff: false,
+        };
+
+        const inspect = (plugin: string) => async (_targets: unknown, _features: unknown, inputRoot: string) => {
+            const skillsDir = join(inputRoot, '.rulesync', 'skills');
+            const skills = existsSync(skillsDir) ? readdirSync(skillsDir) : [];
+            if (!captured.some((row) => row.plugin === plugin)) {
+                captured.push({ plugin, root: inputRoot, skills });
+            }
+            await hold(plugin);
+            return emptyRulesync;
+        };
+
+        await Promise.all([
+            executeInstall(
+                'alpha',
+                ['codex'],
+                { global: false, dryRun: true, verbose: false },
+                { runRulesync: inspect('alpha') },
+            ),
+            executeInstall(
+                'beta',
+                ['codex'],
+                { global: false, dryRun: true, verbose: false },
+                { runRulesync: inspect('beta') },
+            ),
+        ]);
+
+        expect(captured).toHaveLength(2);
+        const alpha = captured.find((row) => row.plugin === 'alpha');
+        const beta = captured.find((row) => row.plugin === 'beta');
+        expect(alpha).toBeDefined();
+        expect(beta).toBeDefined();
+        expect(alpha?.root).not.toBe(beta?.root);
+        expect(alpha?.skills).toContain('alpha-a');
+        expect(alpha?.skills).not.toContain('beta-a');
+        expect(beta?.skills).toContain('beta-a');
+        expect(beta?.skills).not.toContain('alpha-a');
+        expect(existsSync(alpha?.root ?? '')).toBe(false);
+        expect(existsSync(beta?.root ?? '')).toBe(false);
         expect(existsSync(join(workspace, '.rulesync'))).toBe(false);
         stdout.mockRestore();
     });

@@ -156,7 +156,7 @@ interface RunnerStub {
         agent: string,
         opts: { input: string; systemPrompt: string },
     ): Promise<{
-        exitCode: number | null;
+        exitCode?: number | null;
         stdout: string;
         stderr: string;
         signal?: string;
@@ -211,6 +211,20 @@ describe('TsAiRunnerBackend', () => {
         const backend = new TsAiRunnerBackend('codex', stubRunner as unknown as AiRunner);
         await expect(backend.run('skill text', 'test prompt')).rejects.toThrow(
             "Replay backend: agent 'codex' failed (terminated by signal SIGTERM)",
+        );
+    });
+
+    it('fails closed on a missing status before scoring plausible stdout', async () => {
+        const stubRunner: RunnerStub = {
+            runPromptCommand: async () => ({
+                stdout: 'looks valid',
+                stderr: 'no status',
+                durationMs: 5,
+            }),
+        };
+        const backend = new TsAiRunnerBackend('claude', stubRunner as unknown as AiRunner);
+        await expect(backend.run('skill text', 'test prompt')).rejects.toThrow(
+            "Replay backend: agent 'claude' failed (missing status). stderr: no status",
         );
     });
 

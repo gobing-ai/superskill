@@ -786,6 +786,55 @@ cases:
         expect(rows.some((row) => row.dimensions.empirical)).toBe(false);
     });
 
+    it('--eval-gate rolls back when the replay runner throws (F5, task 0127 AC7)', async () => {
+        await seedHistory(adapter, [0.9, 0.5]);
+        writeWidgetEvalCases();
+        const before = readFileSync(join(dir, 'widget.md'), 'utf-8');
+        const pid = 'skill-evolve-empirical-throw-001';
+        await new ProposalDao(adapter).insertProposal({
+            content_type: 'skill',
+            content_name: 'widget',
+            baseline_id: 1,
+            proposal_json: {
+                proposal_id: pid,
+                changes: [
+                    {
+                        dimension: 'body',
+                        location: 'body',
+                        current: 'Body content here',
+                        proposed: 'Body content here with empirical better',
+                        reason: 'exercise thrown runner rollback',
+                    },
+                ],
+            },
+        });
+
+        class ThrowingReplayBackend implements ReplayBackend {
+            async run(): Promise<string> {
+                throw new Error("Replay backend: agent 'claude' failed (exit code 2). stderr: boom");
+            }
+        }
+
+        await expect(
+            evolve('skill', 'widget', {
+                adapter,
+                acceptId: pid,
+                skipDeltaGate: true,
+                evalGate: true,
+                replayBackend: new ThrowingReplayBackend(),
+            }),
+        ).rejects.toThrow("Replay backend: agent 'claude' failed (exit code 2)");
+
+        expect(readFileSync(join(dir, 'widget.md'), 'utf-8')).toBe(before);
+        const proposal = (await new ProposalDao(adapter).getProposals('skill', 'widget')).find(
+            (row) => (row.proposal_json as { proposal_id?: string }).proposal_id === pid,
+        );
+        expect(proposal?.status).toBe('draft');
+        expect(proposal?.verify_id).toBeNull();
+        const rows = await new EvaluationDao(adapter).getEvaluations('skill', 'widget');
+        expect(rows.some((row) => row.operation === 'evolve')).toBe(false);
+    });
+
     it('--eval-gate accepts rubric cases using replayed candidate/baseline outputs and persists noise data', async () => {
         await seedHistory(adapter, [0.9, 0.5]);
         writeWidgetRubricEvalCases();

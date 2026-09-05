@@ -70,6 +70,22 @@ describe('commandScaffold', () => {
         const result = await commandScaffold({ name: 'my-command', force: true });
         expect(result).toBeUndefined();
     });
+
+    it('handleCommandScaffold forwards tools to the scaffold operation (F9, task 0127 AC12)', async () => {
+        const exit = spyOn(process, 'exit').mockImplementation(() => undefined as never);
+        try {
+            const { handleCommandScaffold } = await import('../../src/commands/command');
+            await handleCommandScaffold({ name: 'my-command', tools: 'Read,Write,Bash' });
+            expect(scaffoldOp.scaffold).toHaveBeenCalledWith(
+                'command',
+                'my-command',
+                expect.objectContaining({ tools: 'Read,Write,Bash' }),
+            );
+        } finally {
+            exit.mockRestore();
+            process.exitCode = 0;
+        }
+    });
 });
 
 describe('commandValidate', () => {

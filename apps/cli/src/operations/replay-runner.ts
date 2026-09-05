@@ -85,7 +85,9 @@ export class TsAiRunnerBackend implements ReplayBackend {
             const where =
                 result.exitCode === null
                     ? `terminated by signal ${result.signal ?? 'unknown'}`
-                    : `exit code ${String(result.exitCode)}`;
+                    : result.exitCode === undefined
+                      ? 'missing status'
+                      : `exit code ${String(result.exitCode)}`;
             const trimmed = (result.stderr ?? '').trim();
             const excerpt = trimmed.length > 500 ? `${trimmed.slice(0, 500)}…` : trimmed;
             throw new Error(`Replay backend: agent '${this.agent}' failed (${where}). stderr: ${excerpt || '(empty)'}`);

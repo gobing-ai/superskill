@@ -208,6 +208,38 @@ describe('magent command module', () => {
         }
     });
 
+    it('handleMagentScaffold forwards tools and rejects a skills alias at the type seam (F9, task 0127 AC12)', async () => {
+        const exit = spyOn(process, 'exit').mockImplementation(() => undefined as never);
+        try {
+            const { handleMagentScaffold } = await import('../../src/commands/magent');
+            await handleMagentScaffold({ name: 'main', tools: ['Read', 'Write'] });
+            expect(scaffoldOp.scaffold).toHaveBeenLastCalledWith(
+                'magent',
+                'main',
+                expect.objectContaining({ tools: ['Read', 'Write'] }),
+            );
+        } finally {
+            exit.mockRestore();
+            process.exitCode = 0;
+        }
+    });
+
+    it('handleMagentEvaluate forwards basePath to the evaluate operation (F9, task 0127 AC12)', async () => {
+        const exit = spyOn(process, 'exit').mockImplementation(() => undefined as never);
+        try {
+            const { handleMagentEvaluate } = await import('../../src/commands/magent');
+            await handleMagentEvaluate({ nameOrPath: 'main', basePath: '/custom/base' });
+            expect(evaluateOp.evaluate).toHaveBeenLastCalledWith(
+                'magent',
+                'main',
+                expect.objectContaining({ basePath: '/custom/base' }),
+            );
+        } finally {
+            exit.mockRestore();
+            process.exitCode = 0;
+        }
+    });
+
     it('forwards magent evaluate basePath to the evaluate operation (0120 R3)', async () => {
         const { magentEvaluate, registerMagent } = await import('../../src/commands/magent');
 

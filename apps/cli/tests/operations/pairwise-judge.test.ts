@@ -171,6 +171,19 @@ describe('TsAiRunnerJudgeBackend', () => {
             'terminated by signal SIGKILL',
         );
     });
+
+    it('fails closed on a missing judge status before parseJudgeResponse', async () => {
+        const runner = {
+            runPromptCommand: async () => ({
+                stdout: '{"winner":"A","margin":1}',
+                stderr: 'no status',
+            }),
+        };
+        const backend = new TsAiRunnerJudgeBackend('claude', runner as never);
+        await expect(backend.judge(clarityRubric, 'Explain', 'cand', 'base')).rejects.toThrow(
+            "Pairwise judge backend: agent 'claude' failed (missing status). stderr: no status",
+        );
+    });
 });
 
 describe('createJudgeBackend', () => {

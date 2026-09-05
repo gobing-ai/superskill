@@ -112,6 +112,18 @@ describe('resolveScriptPath', () => {
 
     it('rejects absolute paths as rel', () => {
         expect(() => resolveScriptPath({ plugin: 'cc', rel: '/etc/passwd' })).toThrow(UsageError);
+        expect(() => resolveScriptPath({ plugin: 'cc', rel: 'C:\\Windows\\notepad.exe' })).toThrow(UsageError);
+        expect(() => resolveScriptPath({ plugin: 'cc', rel: 'D:/abs/script.ts' })).toThrow(UsageError);
+    });
+
+    it('rejects empty segments / repeated separators in rel', () => {
+        expect(() => resolveScriptPath({ plugin: 'cc', rel: 'a//b.ts' })).toThrow(UsageError);
+        expect(() => resolveScriptPath({ plugin: 'cc', rel: 'a\\\\b.ts' })).toThrow(UsageError);
+    });
+
+    it('rejects an unsafe plugin segment before probing', () => {
+        expect(() => resolveScriptPath({ plugin: '../cc', rel: 'ok.ts' })).toThrow(/single path segment/);
+        expect(() => resolveScriptPath({ plugin: 'cc/evil', rel: 'ok.ts' })).toThrow(/single path segment/);
     });
 
     it('allows filenames that contain ".." as a substring but not as a segment', () => {
