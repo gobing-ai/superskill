@@ -11,7 +11,7 @@ priority: P2
 tags: []
 dependencies: []
 created_at: 2026-07-15T17:52:21.692Z
-updated_at: 2026-07-15T18:33:14.229Z
+updated_at: "2026-09-05T05:08:45.813Z"
 ---
 
 ## 0082. Enhance cc-magents meta-skill: platform-compatibility matrix, workflows harness-usage, SKILL.md rubric/eval for spur+superskill awareness
@@ -93,9 +93,11 @@ Three files touched, all under `plugins/cc/skills/cc-magents/`. No code changes 
 - [x] P4. Update `SKILL.md` rubric/eval criteria to reward harness-awareness and cross-platform coverage.
 - [x] P5. Run `bun run lint` + `bun test plugins/cc/tests/structure.test.ts` to verify no breakage.
 ### Solution
-- `plugins/cc/skills/cc-magents/references/platform-compatibility.md:1-150` (was 1-14) — Expanded to a full matrix: main-agent capability matrix (9 platforms), native tool-surface matrix, a dedicated "Harness Row: spur + superskill" section documenting all 10 harness verbs with confidence levels, a preferred-tools statement template showing how main agents should declare harness usage, a lossy-mappings table with 11 rows of source→target losses and recommended workarounds, and confidence notes (HIGH/MEDIUM/LOW) sourced to `docs/about_main_agent.md` and CLI `--help` output verified 2026-07-15.
-- `plugins/cc/skills/cc-magents/references/workflows.md:66-210` (new section, file now 1-219) — Added "Harness-Usage Workflow" section with a "Use this first" table mapping work types to harness verbs, canonical command patterns for `spur task/feature/rule/workflow` and `superskill magent/skill/install`, and cross-platform notes covering platforms without native subagents, skills delegation portability, and hook portability.
-- `plugins/cc/skills/cc-magents/SKILL.md:49-59` (Harness awareness subsection) and `plugins/cc/skills/cc-magents/SKILL.md:112-147` (Rubric and Evaluation Criteria section) — Added "Harness awareness" subsection under Core Principle documenting that `superskill magent` scaffold/evaluate/refine/evolve are harness-aware. Added "Rubric and Evaluation Criteria" section with 5 scored dimensions (harness positioning, cross-platform coverage, lossy-mapping awareness, confidence honesty, safety boundaries) and a per-operation table confirming each `superskill magent` command emits and ingests harness-aware content.
+**Evidence note (2026-09-04):** This is the retained historical report for task 0082. Its line references now identify the pre-follow-up Git snapshot below; the prior line labels and results remain historical. Follow-up only: `plugins/cc/skills/cc-magents/SKILL.md:11` and `plugins/cc/skills/cc-magents/references/workflows.md:3` now own the workflow and supersede the old platform inventories and score-driven guidance; they do not replace the historical verification below.
+
+- `git show 3a03876980ac25d62a80d499b6c2fbc824bda55c:plugins/cc/skills/cc-magents/references/platform-compatibility.md` (previously cited lines 1-150) (was 1-14) — Expanded to a full matrix: main-agent capability matrix (9 platforms), native tool-surface matrix, a dedicated "Harness Row: spur + superskill" section documenting all 10 harness verbs with confidence levels, a preferred-tools statement template showing how main agents should declare harness usage, a lossy-mappings table with 11 rows of source→target losses and recommended workarounds, and confidence notes (HIGH/MEDIUM/LOW) sourced to `docs/about_main_agent.md` and CLI `--help` output verified 2026-07-15.
+- `git show 3a03876980ac25d62a80d499b6c2fbc824bda55c:plugins/cc/skills/cc-magents/references/workflows.md` (previously cited lines 66-210) (new section, file now 1-219) — Added "Harness-Usage Workflow" section with a "Use this first" table mapping work types to harness verbs, canonical command patterns for `spur task/feature/rule/workflow` and `superskill magent/skill/install`, and cross-platform notes covering platforms without native subagents, skills delegation portability, and hook portability.
+- `git show 3a03876980ac25d62a80d499b6c2fbc824bda55c:plugins/cc/skills/cc-magents/SKILL.md` (previously cited lines 49-59) (Harness awareness subsection) and `git show 3a03876980ac25d62a80d499b6c2fbc824bda55c:plugins/cc/skills/cc-magents/SKILL.md` (previously cited lines 112-147) (Rubric and Evaluation Criteria section) — Added "Harness awareness" subsection under Core Principle documenting that `superskill magent` scaffold/evaluate/refine/evolve are harness-aware. Added "Rubric and Evaluation Criteria" section with 5 scored dimensions (harness positioning, cross-platform coverage, lossy-mapping awareness, confidence honesty, safety boundaries) and a per-operation table confirming each `superskill magent` command emits and ingests harness-aware content.
 
 **Verification**
 
