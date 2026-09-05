@@ -176,25 +176,30 @@ export function resolvePlugin(marketplacePath: string | undefined, pluginName: s
 
     const pluginRoot = resolve(marketplaceRoot, pluginRootBase, source);
 
-    let dirents: string[];
-    try {
-        dirents = readdirSync(pluginRoot);
-    } catch {
-        throw new Error(`Plugin root not found: ${pluginRoot}`);
-    }
-
     // Authoritative inode boundary (R2/F2): the lexical checks above stay as fast
     // actionable pre-filters, but a symlinked source leaf, `pluginRoot` metadata, or
     // symlinked parent component can resolve the plugin outside the marketplace root
     // while every lexical path remains inside it. Compare canonical real paths —
     // equality or a descendant is accepted; ancestor/sibling/cross-root is rejected.
     const realMarketplaceRoot = realpathSync(marketplaceRoot);
-    const realPluginRoot = realpathSync(pluginRoot);
+    let realPluginRoot: string;
+    try {
+        realPluginRoot = realpathSync(pluginRoot);
+    } catch {
+        throw new Error(`Plugin root not found: ${pluginRoot}`);
+    }
     if (!pathIsOrUnder(realMarketplaceRoot, realPluginRoot)) {
         throw new Error(
             `Plugin root for '${pluginName}' escapes the marketplace root after symlink resolution: ` +
                 `'${realPluginRoot}' is not inside '${realMarketplaceRoot}'.`,
         );
+    }
+
+    let dirents: string[];
+    try {
+        dirents = readdirSync(pluginRoot);
+    } catch {
+        throw new Error(`Plugin root not found: ${pluginRoot}`);
     }
 
     const hasSkills = dirents.includes('skills');

@@ -629,6 +629,23 @@ describe('validate — body-link integrity', () => {
         }
     });
 
+    it('keeps percent-encoded query and fragment separators as filename characters', async () => {
+        const dir = mkdtempSync(`${tmpdir()}/superskill-link-`);
+        try {
+            writeFileSync(`${dir}/hash#notes.md`, '# Hash');
+            writeFileSync(`${dir}/query?notes.md`, '# Query');
+            writeFileSync(
+                `${dir}/SKILL.md`,
+                '---\nname: link-test\ndescription: Tests encoded separators\n---\n\n' +
+                    'See [Hash](hash%23notes.md) and [Query](query%3Fnotes.md).',
+            );
+            const result = await validate('skill', dir);
+            expect(result.findings.filter((f) => f.field === '_links')).toHaveLength(0);
+        } finally {
+            rmSync(dir, { recursive: true, force: true });
+        }
+    });
+
     it('strips query and fragment before resolving a destination', async () => {
         const { mkdtempSync, rmSync, writeFileSync } = await import('node:fs');
         const { tmpdir } = await import('node:os');

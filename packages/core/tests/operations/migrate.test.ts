@@ -114,6 +114,11 @@ describe('dedupeLines', () => {
         expect(dedupeLines(text)).toBe('text\n\n  ```sh\n# dup\n\n# dup\n  ```\n\n# dup');
     });
 
+    it('preserves trailing blank lines inside an unclosed fence', () => {
+        const text = '```sh\n# setup\n\n';
+        expect(dedupeLines(text)).toBe(text);
+    });
+
     it('still deduplicates headings and blank runs outside fences (bare half)', () => {
         expect(dedupeLines('# A\n# A\n\n\n\n# B')).toBe('# A\n\n# B');
     });

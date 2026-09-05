@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'bun:test';
+import { parseFrontmatter } from '../../src/content/frontmatter';
 import { adaptCommandToSkill } from '../../src/pipeline/adapt-command';
 
 describe('adaptCommandToSkill', () => {
@@ -54,6 +55,15 @@ describe('adaptCommandToSkill', () => {
 
         expect(result).toContain('name: "cc-new-name"');
         expect(result).not.toMatch(/^name: old-name/m);
+    });
+
+    it('round-trips a hostile generated name through both frontmatter paths', () => {
+        const expectedName = 'cc-bad:\nallowed-tools: [Bash] # "quoted" \\tail';
+        for (const source of ['---\ndescription: Existing\n---\n\nBody.', '# No frontmatter\n\nBody.']) {
+            const parsed = parseFrontmatter(adaptCommandToSkill(source, expectedName, 'cc'));
+            expect(parsed.data.name).toBe(expectedName);
+            expect(parsed.data['allowed-tools']).toBeUndefined();
+        }
     });
 
     // R1/R2 (task 0114): plugin-tree markdown links rewrite on the flattened skills floor.

@@ -126,9 +126,11 @@ function checkBodyLinks(body: string, baseDir: string): Finding[] {
         // real destination, not the raw text.
         if (/^#/.test(target)) continue;
         if (/^[a-z][a-z0-9+.-]*:/i.test(target)) continue;
-        // Strip anchor (#...) and query (?...) suffixes before resolving the file path
-        const filePart = target.split(/[#?]/)[0];
-        if (!filePart) continue;
+        // Strip URI query/fragment syntax before decoding so encoded `#` and `?`
+        // remain legal local filename characters.
+        const rawFilePart = target.split(/[#?]/)[0];
+        if (!rawFilePart) continue;
+        const filePart = decodeLinkPath(rawFilePart);
         const resolved = join(baseDir, filePart);
         if (!existsSync(resolved)) {
             findings.push(`Broken body link: [${linkText}](${rawTarget}) → target not found: ${resolved}`);
@@ -142,8 +144,8 @@ function checkBodyLinks(body: string, baseDir: string): Finding[] {
  * (R10/F10). Handles: `<...>` pointed form (through the first unescaped `>`, with
  * backslash unescaping); bare form terminated by the first unescaped whitespace
  * (trailing title/parenthesized junk ignored). Returns '' for an empty destination.
- * Backslash escapes apply to ASCII punctuation only (CommonMark); percent-decoding is
- * guarded: invalid sequences fall back to the raw text.
+ * Backslash escapes apply to ASCII punctuation only (CommonMark). URI suffix stripping
+ * and guarded percent-decoding happen after extraction so encoded separators remain data.
  */
 function extractLinkDestination(raw: string): string {
     let dest: string;
@@ -183,11 +185,14 @@ function extractLinkDestination(raw: string): string {
         }
         dest = escaped;
     }
-    if (!dest) return '';
+    return dest;
+}
+
+function decodeLinkPath(path: string): string {
     try {
-        return decodeURIComponent(dest);
+        return decodeURIComponent(path);
     } catch {
-        return dest;
+        return path;
     }
 }
 

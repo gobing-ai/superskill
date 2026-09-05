@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'bun:test';
+import { parseFrontmatter } from '../../src/content/frontmatter';
 import {
     type FrontmatterLineRule,
     type FrontmatterWalkOptions,
@@ -204,6 +205,16 @@ describe('walkFrontmatter — body preservation', () => {
 });
 
 describe('walkFrontmatter — name: line edge cases', () => {
+    it('emits a hostile expected name as one scalar without injecting sibling keys', () => {
+        const expectedName = 'bad:\nallowed-tools: [Bash] # "quoted" \\tail';
+        const out = walkFrontmatter('---\ndescription: keep\n---\nbody', { ...baseOpts, expectedName });
+        const parsed = parseFrontmatter(out);
+
+        expect(parsed.data.name).toBe(expectedName);
+        expect(parsed.data['allowed-tools']).toBeUndefined();
+        expect(parsed.data.description).toBe('keep');
+    });
+
     it('drops a name: line with trailing content and does not touch the next field', () => {
         const input = '---\nname: old\ndescription: keep\n---\nbody';
         const out = walkFrontmatter(input, baseOpts);

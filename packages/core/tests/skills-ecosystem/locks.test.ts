@@ -554,15 +554,20 @@ describe('locks.ts - per-scope mutation guard (R3/F3)', () => {
         }
     });
 
-    it('runs unserialized when the guard parent chain is broken by a regular file', async () => {
+    it('fails closed when the guard parent chain is broken by a regular file', async () => {
         const dir = mkdtempSync(join(tmpdir(), 'guard-broken-'));
         try {
             const blocker = join(dir, 'blocker');
             writeFileSync(blocker, 'a file, not a directory');
             const lockPath = join(blocker, 'skills-lock.json');
 
-            const result = await withSkillMutationGuard(lockPath, async () => 'unserialized');
-            expect(result).toBe('unserialized');
+            let callbackRan = false;
+            await expect(
+                withSkillMutationGuard(lockPath, async () => {
+                    callbackRan = true;
+                }),
+            ).rejects.toThrow();
+            expect(callbackRan).toBe(false);
             expect(existsSync(`${lockPath}.mutation-lock`)).toBe(false);
         } finally {
             rmSync(dir, { recursive: true, force: true });
@@ -632,7 +637,7 @@ describe('locks.ts - corrupt lock preservation (R4/F4)', () => {
         }
     });
 
-    it('treats a non-directory lock ancestor (ENOTDIR) as absence, not corruption', async () => {
+    it('reports a non-directory lock ancestor (ENOTDIR) instead of synthesizing absence', async () => {
         const dir = mkdtempSync(join(tmpdir(), 'lock-enotdir-'));
         try {
             const blocker = join(dir, 'blocker');
@@ -640,7 +645,8 @@ describe('locks.ts - corrupt lock preservation (R4/F4)', () => {
             const cwd = join(blocker, 'project');
 
             const lock = await readLocalLock(cwd);
-            expect(lock.warning).toBeUndefined();
+            expect(lock.warning).toContain('read error');
+            expect(lock.warning).toContain('not a directory');
             expect(Object.keys(lock.skills)).toEqual([]);
         } finally {
             rmSync(dir, { recursive: true, force: true });
@@ -680,6 +686,20 @@ describe('locks.ts - corrupt lock preservation (R4/F4)', () => {
         }
     });
 
+    it('writeLocalLock refuses an invalid on-disk skills shape and preserves bytes', async () => {
+        const dir = mkdtempSync(join(tmpdir(), 'lock-writeshape-'));
+        const lockPath = join(dir, 'skills-lock.json');
+        try {
+            const original = '{"version":1,"skills":[]}';
+            writeFileSync(lockPath, original);
+
+            await expect(writeLocalLock({ version: 1, skills: {} }, dir)).rejects.toThrow(/invalid skills shape/);
+            expect(readFileSync(lockPath, 'utf-8')).toBe(original);
+        } finally {
+            rmSync(dir, { recursive: true, force: true });
+        }
+    });
+
     it('writeLocalLock creates a fresh lock only when none exists (ENOENT-only init)', async () => {
         const dir = mkdtempSync(join(tmpdir(), 'lock-init-'));
         try {
@@ -689,7 +709,7 @@ describe('locks.ts - corrupt lock preservation (R4/F4)', () => {
             );
             const lock = await readLocalLock(dir);
             expect(lock.warning).toBeUndefined();
-            expect(lock.skills['a']?.source).toBe('s');
+            expect(lock.skills.a?.source).toBe('s');
         } finally {
             rmSync(dir, { recursive: true, force: true });
         }

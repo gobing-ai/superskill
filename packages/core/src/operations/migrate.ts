@@ -131,7 +131,9 @@ export function dedupeLines(text: string): string {
         }
         out.push(line);
     }
-    while (out.length > 0 && out[out.length - 1] === '') out.pop();
+    if (fenceMarker === null) {
+        while (out.length > 0 && out[out.length - 1] === '') out.pop();
+    }
     return out.join('\n');
 }
 

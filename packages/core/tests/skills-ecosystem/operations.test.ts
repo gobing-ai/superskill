@@ -339,7 +339,7 @@ describe('operations.ts - Skill ecosystem domain operations (add, list, remove, 
         await rm(testHome, { recursive: true, force: true });
     });
 
-    it('reports emit failures when the canonical root is not writable', async () => {
+    it('fails closed when the canonical lock parent is not a directory', async () => {
         const testHome = await makeHome('ops-emit-fail-');
         const sourceDir = join(testHome, 'src-skill');
         await makeSource(sourceDir, skillMd('Emit Fail Skill'));
@@ -349,7 +349,8 @@ describe('operations.ts - Skill ecosystem domain operations (add, list, remove, 
         const res = await addSkills(sourceDir, { global: true, homeDir: testHome, env: {} });
 
         expect(res.success).toBe(false);
-        expect(res.error).toContain('Failed to emit skill');
+        expect(res.error).toContain('lock version is incompatible');
+        expect(res.error).toContain('ENOTDIR');
 
         await rm(testHome, { recursive: true, force: true });
     });

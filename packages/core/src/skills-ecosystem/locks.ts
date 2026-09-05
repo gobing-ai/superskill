@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto';
-import { mkdir, readdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
+import { mkdir, readdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { dirname, join, relative } from 'node:path';
 
@@ -211,16 +211,12 @@ export function computeContentHash(content: string | Uint8Array): string {
 }
 
 /**
- * Absence codes for a lock path: ENOENT (no such entry) and ENOTDIR (a path ancestor
- * is a non-directory, so the lock file cannot exist there at all). Both mean the lock
- * is absent — there are no user bytes to preserve — so they synthesize the empty state
- * instead of the R4 corruption warning; the real failure then surfaces at the mutation
- * site (e.g. emit mkdir) with an actionable message. A warning for ENOTDIR would tell
- * the operator to "repair or remove" a lock file that cannot exist, mispointing the fix.
+ * Only ENOENT means a lock is absent. Every other read failure is surfaced so callers
+ * cannot replace operator state after misclassifying an unreadable path as a fresh lock.
  */
 function isLockAbsenceCode(error: unknown): boolean {
     const code = (error as NodeJS.ErrnoException)?.code;
-    return code === 'ENOENT' || code === 'ENOTDIR';
+    return code === 'ENOENT';
 }
 
 /**
@@ -245,22 +241,33 @@ async function assertOnDiskVersionMatches(
             `Cannot write ${kind} lock: on-disk lock at ${lockPath} is unreadable (${error instanceof Error ? error.message : String(error)}). Lock preserved untouched; repair or remove the file explicitly.`,
         );
     }
-    let disk: { version?: unknown };
+    let disk: unknown;
     try {
-        disk = JSON.parse(content) as { version?: unknown };
+        disk = JSON.parse(content);
     } catch (error) {
         throw new Error(
             `Cannot write ${kind} lock: on-disk lock at ${lockPath} is corrupt (JSON parse error: ${error instanceof Error ? error.message : String(error)}). Lock preserved untouched; repair or remove the file explicitly.`,
         );
     }
-    if (typeof disk.version !== 'number') {
+    if (!disk || typeof disk !== 'object' || Array.isArray(disk)) {
         throw new Error(
-            `Cannot write ${kind} lock: on-disk lock at ${lockPath} has an invalid version shape (${JSON.stringify(disk.version)}). Lock preserved untouched; repair or remove the file explicitly.`,
+            `Cannot write ${kind} lock: on-disk lock at ${lockPath} has an invalid top-level shape. Lock preserved untouched; repair or remove the file explicitly.`,
         );
     }
-    if (disk.version !== supported) {
+    const record = disk as { version?: unknown; skills?: unknown };
+    if (typeof record.version !== 'number') {
         throw new Error(
-            `Cannot write ${kind} lock: on-disk lock version (${disk.version}) differs from supported version (${supported}). Lock preserved untouched; migrate explicitly.`,
+            `Cannot write ${kind} lock: on-disk lock at ${lockPath} has an invalid version shape (${JSON.stringify(record.version)}). Lock preserved untouched; repair or remove the file explicitly.`,
+        );
+    }
+    if (!record.skills || typeof record.skills !== 'object' || Array.isArray(record.skills)) {
+        throw new Error(
+            `Cannot write ${kind} lock: on-disk lock at ${lockPath} has an invalid skills shape. Lock preserved untouched; repair or remove the file explicitly.`,
+        );
+    }
+    if (record.version !== supported) {
+        throw new Error(
+            `Cannot write ${kind} lock: on-disk lock version (${record.version}) differs from supported version (${supported}). Lock preserved untouched; migrate explicitly.`,
         );
     }
 }
@@ -303,30 +310,6 @@ function mutationGuardPath(lockPath: string): string {
     return `${lockPath}${MUTATION_GUARD_SUFFIX}`;
 }
 
-/**
- * True when the nearest existing ancestor of `dir` is a non-directory — i.e. the path
- * chain is broken by a file (an `rm -rf`-style cleanup cannot fix it, and every mkdir
- * beneath it fails with ENOTDIR/EEXIST). Probes upward because a plain `stat(dir)`
- * fails ENOTDIR itself when dir's own ancestor is the offending file, so ENOENT and
- * ENOTDIR both continue the walk. ENOENT at the filesystem root ends the walk as "not
- * broken"; any other stat error also reports "not broken" so callers keep their
- * fail-loud rethrow.
- */
-async function nearestExistingAncestorIsNonDirectory(dir: string): Promise<boolean> {
-    let probe = dir;
-    for (;;) {
-        try {
-            return !(await stat(probe)).isDirectory();
-        } catch (error) {
-            const code = (error as NodeJS.ErrnoException)?.code;
-            if (code !== 'ENOENT' && code !== 'ENOTDIR') return false;
-            const parent = dirname(probe);
-            if (parent === probe) return false;
-            probe = parent;
-        }
-    }
-}
-
 /** Best-effort dead-owner probe from the guard's owner metadata (PID + timestamp). */
 async function mutationGuardOwnerIsDead(guardDir: string): Promise<boolean> {
     try {
@@ -336,8 +319,8 @@ async function mutationGuardOwnerIsDead(guardDir: string): Promise<boolean> {
         try {
             process.kill(owner.pid, 0);
             return false; // signal 0 delivered — owner alive
-        } catch {
-            return true; // ESRCH — owner gone
+        } catch (error) {
+            return (error as NodeJS.ErrnoException)?.code === 'ESRCH';
         }
     } catch {
         return false; // no readable metadata — treat as live (conservative)
@@ -352,19 +335,7 @@ async function mutationGuardOwnerIsDead(guardDir: string): Promise<boolean> {
  */
 export async function withSkillMutationGuard<T>(lockPath: string, fn: () => Promise<T>): Promise<T> {
     const guardDir = mutationGuardPath(lockPath);
-    // Broken chain: an ancestor of the guard/lock path is a non-directory (node reports
-    // EEXIST or ENOTDIR depending on where the recursive mkdir collides). The guard can
-    // then neither be created nor held by any process — every mutator hits the same
-    // broken chain — so `fn` runs without serialization and the first real mutation
-    // inside it (emit mkdir / lock write) fails loudly on that chain with the actionable
-    // error. Any other parent-creation failure still throws: mutating unserialized on a
-    // creatable guard parent would be a silent skip.
-    try {
-        await mkdir(dirname(guardDir), { recursive: true });
-    } catch (error) {
-        if (!(await nearestExistingAncestorIsNonDirectory(dirname(guardDir)))) throw error;
-        return await fn();
-    }
+    await mkdir(dirname(guardDir), { recursive: true });
     const deadline = Date.now() + MUTATION_GUARD_MAX_WAIT_MS;
     let staleRecovered = false;
     let acquired = false;
@@ -445,9 +416,7 @@ function toOwnKeyRecord<T>(skills: unknown): Record<string, T> {
 /**
  * Read project local skill lock file.
  * Preserves newer/older lock files untouched with a warning flag (R3). Only an absent
- * lock (ENOENT, or ENOTDIR — an ancestor is not a directory — see {@link
- * isLockAbsenceCode}) synthesizes the canonical empty state; any other unreadable/invalid
- * file (R4/F4)
+ * lock (ENOENT) synthesizes the canonical empty state; any other unreadable/invalid file (R4/F4)
  * yields a warning-bearing lock with empty skills so downstream writers refuse to act
  * and the original bytes stay untouched.
  */
@@ -583,9 +552,7 @@ export async function removeSkillFromLocalLock(skillName: string, cwd?: string):
 /**
  * Read global skill lock file.
  * Preserves newer/older lock files untouched with a warning flag (R3). Only an absent
- * lock (ENOENT, or ENOTDIR — an ancestor is not a directory — see {@link
- * isLockAbsenceCode}) synthesizes the canonical empty state; any other unreadable/invalid
- * file (R4/F4)
+ * lock (ENOENT) synthesizes the canonical empty state; any other unreadable/invalid file (R4/F4)
  * yields a warning-bearing lock with empty skills so downstream writers refuse to act
  * and the original bytes stay untouched.
  */

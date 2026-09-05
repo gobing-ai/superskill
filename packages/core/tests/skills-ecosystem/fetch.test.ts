@@ -782,6 +782,27 @@ describe('fetch.ts - bounded acquisition (R9/F9)', () => {
         }
     });
 
+    it('accepts exactly 2048 materialized files', async () => {
+        const count = 2048;
+        const tree = Array.from({ length: count }, (_, i) => ({
+            path: `.claude-plugin/file-${i}.txt`,
+            type: 'blob',
+            sha: `b${i}`,
+        }));
+        const fetchFn = (async (urlStr: string | URL | Request) => {
+            if (String(urlStr).includes('/git/trees/')) return treeFetch(tree)(urlStr);
+            return new Response('x', { status: 200 });
+        }) as unknown as typeof fetch;
+
+        const destDir = await mkdtemp(join(tmpdir(), 'superskill-matcap-exact-'));
+        try {
+            await materializeRepoSubdir('owner/repo', '.claude-plugin', destDir, { fetchFn });
+            expect(readdirSync(destDir)).toHaveLength(count);
+        } finally {
+            await rm(destDir, { recursive: true, force: true });
+        }
+    }, 20000);
+
     it('caps an individual raw read: a 2 MiB + 1 byte SKILL.md throws without materializing', async () => {
         const tree = [{ path: 'skills/big/SKILL.md', type: 'blob', sha: 'big' }];
         const oversized = 'x'.repeat(2 * 1024 * 1024 + 1);

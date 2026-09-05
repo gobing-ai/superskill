@@ -60,7 +60,7 @@ export function getProposalsDir(opts?: PathOptions): string {
 export function pathsNestOrEqual(a: string, b: string): boolean {
     const ra = canonicalizeForContainment(a);
     const rb = canonicalizeForContainment(b);
-    if (parse(ra).root !== parse(rb).root) return false;
+    if (parse(ra).root !== parse(rb).root) return true;
     return isContainedRelative(relative(ra, rb)) || isContainedRelative(relative(rb, ra));
 }
 

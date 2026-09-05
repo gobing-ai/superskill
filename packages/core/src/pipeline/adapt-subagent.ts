@@ -103,9 +103,8 @@ export function adaptSubagentToPi(
     if (description) fields.push(`description: ${quoteYaml(description)}`);
     if (piTools) fields.push(`tools: ${piTools}`);
     if (model) fields.push(`model: ${quoteYaml(model)}`);
-    // R6/F6: quote each emitted name at the final emission point — the logical CSV in
-    // skillsCsv stays unquoted for path/reference rewriting and runtime notes.
-    if (skillsCsv) fields.push(`skill: ${skillsList.map((name) => quoteYaml(name)).join(', ')}`);
+    // Pi's skill field is one comma-separated scalar, not a YAML sequence.
+    if (skillsCsv) fields.push(`skill: ${quoteYaml(skillsCsv)}`);
 
     const runtimeNotes = buildPiRuntimeNotes(parseToolsList(rawToolsStr), skillsCsv);
     const finalBody = runtimeNotes ? `${body}\n\n${runtimeNotes}` : body;
