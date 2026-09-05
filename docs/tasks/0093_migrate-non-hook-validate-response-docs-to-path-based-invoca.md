@@ -12,7 +12,7 @@ priority: P2
 tags: []
 dependencies: ["0089","0091"]
 created_at: 2026-07-17T06:14:00.910Z
-updated_at: 2026-08-01T00:24:29.745Z
+updated_at: "2026-09-05T04:00:57.756Z"
 ---
 
 ## 0093. Migrate non-hook validate-response docs to path-based invocation
@@ -112,13 +112,13 @@ and states no script files are installed. Feature **A** dual contract (R4-B / R5
 4. [ ] Patch SKILL.md, README row, guard-implementation pointer as needed.
 5. [ ] Run greps (R9); fill Solution with file list; feature A gist; done.
 ### Solution
-| File | Lines | What / Why |
+| File at the historical task revision | Original lines | What / Why |
 |---|---|---|
-| `plugins/cc/skills/anti-hallucination/references/non-hook-enforcement.md` | 9-45 | Lead path-based standard form; interim honesty callout (`.ts` only today); optional `script run` as working install form |
-| `plugins/cc/skills/anti-hallucination/references/non-hook-enforcement.md` | 42-52 | Exit 0/1 table; forbid wiring into hooks.json |
-| `plugins/cc/skills/anti-hallucination/references/non-hook-enforcement.md` | 64-140 | Usage patterns path-first with optional script run alternate |
-| `plugins/cc/skills/anti-hallucination/SKILL.md` | 222 | Direct-validation dual contract bullet |
-| `plugins/cc/skills/anti-hallucination/references/guard-implementation.md` | 61 | Non-hook pointer dual wording |
+| `git show 9ca2d134d5bb0f7c0b8c59b00f72f5efc7d8c543:plugins/cc/skills/anti-hallucination/references/non-hook-enforcement.md` | 9-45 | Lead path-based standard form; interim honesty callout (`.ts` only today); optional `script run` as working install form |
+| `git show 9ca2d134d5bb0f7c0b8c59b00f72f5efc7d8c543:plugins/cc/skills/anti-hallucination/references/non-hook-enforcement.md` | 42-52 | Exit 0/1 table; forbid wiring into hooks.json |
+| `git show 9ca2d134d5bb0f7c0b8c59b00f72f5efc7d8c543:plugins/cc/skills/anti-hallucination/references/non-hook-enforcement.md` | 64-140 | Usage patterns path-first with optional script run alternate |
+| `git show 9ca2d134d5bb0f7c0b8c59b00f72f5efc7d8c543:plugins/cc/skills/anti-hallucination/SKILL.md` | 222 | Direct-validation dual contract bullet |
+| `git show 9ca2d134d5bb0f7c0b8c59b00f72f5efc7d8c543:plugins/cc/skills/anti-hallucination/references/guard-implementation.md` | 61 | Non-hook pointer dual wording |
 | `plugins/cc/README.md` | 148 | validate_response.ts row dual contract + interim working optional |
 | `docs/features/A_portable-plugin-scripts-via-install-time-staging.md` | Decisions | 0093 gist line under Decisions so far |
 

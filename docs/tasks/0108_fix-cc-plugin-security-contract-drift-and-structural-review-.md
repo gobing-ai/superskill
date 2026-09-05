@@ -12,7 +12,7 @@ priority: P2
 tags: [bug]
 dependencies: []
 created_at: 2026-07-26T18:12:58.484Z
-updated_at: 2026-08-01T00:24:29.902Z
+updated_at: "2026-09-05T04:00:57.558Z"
 ---
 
 ## 0108. Fix cc plugin security, contract drift, and structural review findings
@@ -162,7 +162,7 @@ findings without adding a dependency or changing a package boundary.
 4. `plugins/cc/scripts/anti-hallucination/ah_guard.ts:352` couples weak vocabulary sentence-locally,
    including punctuation without following whitespace; the residual-proof negatives are at
    `plugins/cc/scripts/anti-hallucination/tests/ah_guard.test.ts:206`.
-5. `plugins/cc/skills/anti-hallucination/references/guard-implementation.md:14` now describes the
+5. `plugins/cc/skills/anti-hallucination/references/guard-implementation.md:19` now describes the
    actual exit-zero JSON Stop contract. `plugins/cc/tests/structure.test.ts:227` prevents exit-code
    drift.
 6. `plugins/cc/tests/structure.test.ts:29` now parses CommonMark fence marker/length state and shares
@@ -193,7 +193,7 @@ Forced verification completed 2026-07-26T20:47:08Z.
 | R2 | MET | Canonical JSON and segment/path normalization at `plugins/cc/skills/cc-hooks/examples/validate-write.sh:26`; escaping, benign-dot, traversal, `/sys`, malformed-input, and symlink cases at `plugins/cc/tests/hook-examples.test.ts:88`. |
 | R3 | MET | Bounded-reader adapter at `plugins/cc/scripts/anti-hallucination/validate_response.ts:34`; direct open-stdin process regression at `plugins/cc/scripts/anti-hallucination/tests/validate_response.test.ts:65`. |
 | R4 | MET | Punctuation/newline sentence-local coupling at `plugins/cc/scripts/anti-hallucination/ah_guard.ts:352`; residual-proof negatives and intended positives at `plugins/cc/scripts/anti-hallucination/tests/ah_guard.test.ts:206`. |
-| R5 | MET | Exit-zero `decision:"block"` documentation at `plugins/cc/skills/anti-hallucination/references/guard-implementation.md:14`; invariant at `plugins/cc/tests/structure.test.ts:227`. |
+| R5 | MET | Exit-zero `decision:"block"` documentation at `plugins/cc/skills/anti-hallucination/references/guard-implementation.md:19`; invariant at `plugins/cc/tests/structure.test.ts:227`. |
 | R6 | MET | Marker/length-aware fences and live-link resolution at `plugins/cc/tests/structure.test.ts:29`; repaired nested asset at `plugins/cc/skills/cc-agents/references/agent-anatomy.md:295`. |
 | R7 | MET | Live Commander option and ordered-positionals parity at `plugins/cc/tests/structure.test.ts:187`; all lifecycle wrappers expose exact `<name>` / `<nameOrPath>` hints. |
 | R8 | MET | Current `spur task` guidance in `plugins/cc/skills/cc-skills/SKILL.md:54`; corpus-wide obsolete-instruction regression at `plugins/cc/tests/structure.test.ts:237`. |
@@ -248,7 +248,7 @@ Forced all-focus review companion — 2026-07-26.
 | Priority | Dimension | Evidence | Finding | Resolution |
 |---|---|---|---|---|
 | P1 | Security / Correctness | `plugins/cc/skills/cc-hooks/examples/validate-write.sh:55` | The system-directory allow policy omitted Linux `/sys`, so `/sys/...` produced no decision and silently allowed the write. | Restored `/sys` and `/sys/*` denial; executable regression at `plugins/cc/tests/hook-examples.test.ts:98`. |
-| P2 | Correctness / Usability | `plugins/cc/skills/anti-hallucination/references/guard-implementation.md:14` | The reference still documented exit 2 as the Stop denial signal, contradicting the shipped exit-zero `decision:"block"` contract. | Replaced the table with the canonical exit-zero contract and added a structural regression at `plugins/cc/tests/structure.test.ts:227`. |
+| P2 | Correctness / Usability | `plugins/cc/skills/anti-hallucination/references/guard-implementation.md:19` | The reference still documented exit 2 as the Stop denial signal, contradicting the shipped exit-zero `decision:"block"` contract. | Replaced the table with the canonical exit-zero contract and added a structural regression at `plugins/cc/tests/structure.test.ts:227`. |
 | P2 | Correctness | `plugins/cc/scripts/anti-hallucination/ah_guard.ts:352` | Sentence locality required whitespace after punctuation, so two punctuation-delimited sentences without a space were recombined into a false external claim. | Split at punctuation boundaries with or without following whitespace; residual-proof regression at `plugins/cc/scripts/anti-hallucination/tests/ah_guard.test.ts:206`. |
 | P2 | Architecture / Correctness | `plugins/cc/tests/structure.test.ts:150` | Fence validation only counted matching-looking lines; mismatched markers and nested same-length fences could pass. The stronger probe exposed malformed nested examples in `agent-anatomy.md`. | Added marker/length-aware scanning shared by fence and link checks, repaired the asset with four-backtick outer fences, and added a false-green regression. |
 | P2 | Architecture / Usability | `plugins/cc/tests/structure.test.ts:187` | Wrapper parity checked only whether some required positional existed, so wrong names and counts passed despite the exact-parity contract. | Compare ordered required positionals from hints and tables against live Commander Usage; synchronized all 17 wrappers to `<name>` / `<nameOrPath>`. |

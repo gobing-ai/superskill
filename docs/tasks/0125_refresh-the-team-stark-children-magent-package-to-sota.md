@@ -4,7 +4,7 @@ name: "Refresh the team-stark-children magent package to SOTA"
 status: done
 template: feature-impl
 created_at: 2026-09-02T19:09:26.230Z
-updated_at: "2026-09-02T21:31:21.063Z"
+updated_at: "2026-09-05T03:33:51.030Z"
 feature_id: C
 priority: P1
 tags: ["magent", "docs", "drift", "conciseness", "tools"]
@@ -211,16 +211,20 @@ Feature: SOTA refresh of the team-stark-children magent package
 
 | File | Change |
 | --- | --- |
-| `magents/team-stark-children/AGENTS.md` | 17,480 → 9,286 chars. Routing rows 30–36 now cover the corrected self commands and all missing live nouns. `### Tool priority` (`magents/team-stark-children/AGENTS.md:140-146`) replaces the old decision tree: natives above shell-shaped (`bash`, `Bash`, `shell`, `Shell`, `run_terminal_command`, Python) because unbounded output floods context, costs tokens, and shadows purpose-built tools; native → `rg`/`sg` → `grep`/`sed`/`awk`/`perl` because `rg`/`sg` are gitignore-aware; native web → `curl`/`wget` → MCP/plugin. Safety (`magents/team-stark-children/AGENTS.md:60-72`) retains tool permissions inline, and the verification gate remains at lines 166–172. All 16 `##` headings remain verbatim and ordered. |
-| `magents/team-stark-children/overrides/codexcli/AGENTS.md` | New `## Tool priority` (`magents/team-stark-children/overrides/codexcli/AGENTS.md:31-35`) — ladder mirrored; overrides replace, never append. |
-| `magents/team-stark-children/overrides/pi/AGENTS.md` | Ladder (`magents/team-stark-children/overrides/pi/AGENTS.md:37-41`) + Pi tools table corrected to native `Read`/`Edit`/`Write`. |
-| `plugins/cc/rules/01-discipline.md` | Holds displaced discipline/scope depth plus the former Read/Edit/Write/Shell/agent decision boundaries (`plugins/cc/rules/01-discipline.md:3-31`). |
-| `plugins/cc/rules/02-harness-first.md` | Holds exact nested lifecycle routes, live nouns, numbered-doc authority rules, and aligned native-tool fallback (`plugins/cc/rules/02-harness-first.md:5-47`). |
-| `plugins/cc/rules/03-safety.md` | Holds displaced dirty-worktree, host-config, prompt-injection, and risk-tier boundaries (`plugins/cc/rules/03-safety.md:3-16`). |
-| `plugins/cc/rules/04-verification.md` | Holds displaced user-visible/UI and CLI-failure completion checks (`plugins/cc/rules/04-verification.md:3-13`). |
+| `magents/team-stark-children/AGENTS.md` | 17,480 → 9,286 chars. Routing rows 30–36 now cover the corrected self commands and all missing live nouns. `### Tool priority` (`git show fc87823f32d540ef4fcd7785433e27b362b9f7c9:magents/team-stark-children/AGENTS.md` (original lines 140-146)) replaces the old decision tree: natives above shell-shaped (`bash`, `Bash`, `shell`, `Shell`, `run_terminal_command`, Python) because unbounded output floods context, costs tokens, and shadows purpose-built tools; native → `rg`/`sg` → `grep`/`sed`/`awk`/`perl` because `rg`/`sg` are gitignore-aware; native web → `curl`/`wget` → MCP/plugin. Safety (`git show fc87823f32d540ef4fcd7785433e27b362b9f7c9:magents/team-stark-children/AGENTS.md` (original lines 60-72)) retains tool permissions inline, and the verification gate remains at lines 166–172. All 16 `##` headings remain verbatim and ordered. |
+| `magents/team-stark-children/overrides/codexcli/AGENTS.md` | New `## Tool priority` (`git show fc87823f32d540ef4fcd7785433e27b362b9f7c9:magents/team-stark-children/overrides/codexcli/AGENTS.md` (original lines 31-35)) — ladder mirrored; overrides replace, never append. |
+| `magents/team-stark-children/overrides/pi/AGENTS.md` | Ladder (`git show fc87823f32d540ef4fcd7785433e27b362b9f7c9:magents/team-stark-children/overrides/pi/AGENTS.md` (original lines 37-41)) + Pi tools table corrected to native `Read`/`Edit`/`Write`. |
+| `plugins/cc/rules/01-discipline.md` | Holds displaced discipline/scope depth plus the former Read/Edit/Write/Shell/agent decision boundaries (`git show fc87823f32d540ef4fcd7785433e27b362b9f7c9:plugins/cc/rules/01-discipline.md` (original lines 3-31)). |
+| `plugins/cc/rules/02-harness-first.md` | Holds exact nested lifecycle routes, live nouns, numbered-doc authority rules, and aligned native-tool fallback (`git show fc87823f32d540ef4fcd7785433e27b362b9f7c9:plugins/cc/rules/02-harness-first.md` (original lines 5-47)). |
+| `plugins/cc/rules/03-safety.md` | Holds displaced dirty-worktree, host-config, prompt-injection, and risk-tier boundaries (`git show fc87823f32d540ef4fcd7785433e27b362b9f7c9:plugins/cc/rules/03-safety.md` (original lines 3-16)). |
+| `plugins/cc/rules/04-verification.md` | Holds displaced user-visible/UI and CLI-failure completion checks (`git show fc87823f32d540ef4fcd7785433e27b362b9f7c9:plugins/cc/rules/04-verification.md` (original lines 3-13)). |
 | `magents/team-stark-children/{README.md,CLAUDE.md}` | Untouched — layout table and four-module claims remain true (no fifth rule module added; R16 satisfied). |
 
 **Rationale.** Compression funded the doctrine: the cut came from the six heaviest sections (63% of the file) as tightening plus relocation along the four existing rule themes — no fifth module, so CLAUDE.md's inline rule list stayed true and needed no edit. Verification exposed that Commander returns parent help with exit 0 for an invalid nested verb, so the final extractor validates each noun against root `Commands`, each verb against parent `Commands`, and the exact child `Usage` prefix. It resolved 67 references across 35 unique command paths with zero failures. Scoring gates: evaluate aggregate 0.9116017857142859 (≥0.90), conciseness 0.83925 (>0.70), safety unchanged at baseline 0.5714285714285714, noOpDensity/duplicationRatio 0.0000; validate exit 0; install --dry-run exit 0.
+
+**Evidence note (2026-09-04):** This section records task 0125 at Git revision `fc87823f32d540ef4fcd7785433e27b362b9f7c9`. Its measurements and verdict remain historical; source citations now use that revision because the subsequent package cleanup changed the live layout.
+
+Follow-up only: `magents/team-stark-children/README.md:88` records the September 4 cleanup; it does not replace the historical evidence above.
 ### Testing
 **Pipeline verify results**
 
@@ -228,27 +232,27 @@ Feature: SOTA refresh of the team-stark-children magent package
 
 | Requirement | Status | Evidence |
 |-------------|--------|----------|
-| R1 | MET | `magents/team-stark-children/AGENTS.md:31` and `plugins/cc/rules/02-harness-first.md:34-36`; command-tree sweep of 67 extracted references: 0 dead, 0 unresolved, and no stale top-level invocation literals |
-| R2 | MET | `magents/team-stark-children/AGENTS.md:31-35` — live routes include message, projects, self, builder, and superskill script |
+| R1 | MET | `git show fc87823f32d540ef4fcd7785433e27b362b9f7c9:magents/team-stark-children/AGENTS.md` (original lines 31) and `git show fc87823f32d540ef4fcd7785433e27b362b9f7c9:plugins/cc/rules/02-harness-first.md` (original lines 34-36); command-tree sweep of 67 extracted references: 0 dead, 0 unresolved, and no stale top-level invocation literals |
+| R2 | MET | `git show fc87823f32d540ef4fcd7785433e27b362b9f7c9:magents/team-stark-children/AGENTS.md` (original lines 31-35) — live routes include message, projects, self, builder, and superskill script |
 | R3 | MET | command: Bun extracted inline command spans and slash shorthands, checked nouns/verbs against each parent `Commands` list, then required the exact child `Usage` prefix; 67/67 references resolved across 35 unique paths |
 | R4 | MET | command: current `AGENTS.md` length is 9,286 characters, below 9,500 |
 | R5 | MET | command: 16 level-two headings; exact ordered comparison with `fce808b^` returned true |
-| R6 | MET | command + semantic diff review: displaced discipline/tool boundaries are at `plugins/cc/rules/01-discipline.md:3-31`, harness/doc-map depth at `plugins/cc/rules/02-harness-first.md:5-47`, file/prompt safety at `plugins/cc/rules/03-safety.md:3-16`, and completion checks at `plugins/cc/rules/04-verification.md:3-13` |
-| R7 | MET | `magents/team-stark-children/AGENTS.md:60-72` retains all CRITICAL rows including tool permissions; lines 166-172 retain the verification gate; exact assembly checks passed for omp/opencode/hermes/grok |
+| R6 | MET | command + semantic diff review: displaced discipline/tool boundaries are at `git show fc87823f32d540ef4fcd7785433e27b362b9f7c9:plugins/cc/rules/01-discipline.md` (original lines 3-31), harness/doc-map depth at `git show fc87823f32d540ef4fcd7785433e27b362b9f7c9:plugins/cc/rules/02-harness-first.md` (original lines 5-47), file/prompt safety at `git show fc87823f32d540ef4fcd7785433e27b362b9f7c9:plugins/cc/rules/03-safety.md` (original lines 3-16), and completion checks at `git show fc87823f32d540ef4fcd7785433e27b362b9f7c9:plugins/cc/rules/04-verification.md` (original lines 3-13) |
+| R7 | MET | `git show fc87823f32d540ef4fcd7785433e27b362b9f7c9:magents/team-stark-children/AGENTS.md` (original lines 60-72) retains all CRITICAL rows including tool permissions; lines 166-172 retain the verification gate; exact assembly checks passed for omp/opencode/hermes/grok |
 | R8 | MET | command: `noOpDensity=0` and `duplicationRatio=0` from the production heuristic functions |
-| R9 | MET | `magents/team-stark-children/AGENTS.md:140-146` defines one three-rung tool-priority ladder |
-| R10 | MET | `magents/team-stark-children/AGENTS.md:144` names the full shell-shaped family and states both context/token cost and purpose-built-tool shadowing |
-| R11 | MET | `magents/team-stark-children/AGENTS.md:145` orders native → rg/sg → grep/sed/awk/perl and states the gitignore-aware reason |
-| R12 | MET | `magents/team-stark-children/AGENTS.md:146` orders native web search/fetch → curl/wget → MCP/plugin surfaces |
-| R13 | MET | `magents/team-stark-children/overrides/codexcli/AGENTS.md:31-35` and `magents/team-stark-children/overrides/pi/AGENTS.md:37-41` carry the complete mirrored ladder; Codex override is 1,709 bytes |
+| R9 | MET | `git show fc87823f32d540ef4fcd7785433e27b362b9f7c9:magents/team-stark-children/AGENTS.md` (original lines 140-146) defines one three-rung tool-priority ladder |
+| R10 | MET | `git show fc87823f32d540ef4fcd7785433e27b362b9f7c9:magents/team-stark-children/AGENTS.md` (original lines 144) names the full shell-shaped family and states both context/token cost and purpose-built-tool shadowing |
+| R11 | MET | `git show fc87823f32d540ef4fcd7785433e27b362b9f7c9:magents/team-stark-children/AGENTS.md` (original lines 145) orders native → rg/sg → grep/sed/awk/perl and states the gitignore-aware reason |
+| R12 | MET | `git show fc87823f32d540ef4fcd7785433e27b362b9f7c9:magents/team-stark-children/AGENTS.md` (original lines 146) orders native web search/fetch → curl/wget → MCP/plugin surfaces |
+| R13 | MET | `git show fc87823f32d540ef4fcd7785433e27b362b9f7c9:magents/team-stark-children/overrides/codexcli/AGENTS.md` (original lines 31-35) and `git show fc87823f32d540ef4fcd7785433e27b362b9f7c9:magents/team-stark-children/overrides/pi/AGENTS.md` (original lines 37-41) carry the complete mirrored ladder; Codex override is 1,709 bytes |
 | R14 | MET | command: `superskill magent evaluate magents/team-stark-children/AGENTS.md --json` → aggregate 0.9116017857142859, conciseness 0.83925, completeness/platform/tone 1.0, safety 0.5714285714285714, PASS grade A |
 | R15 | MET | commands: `superskill magent validate magents/team-stark-children` → Valid; `bun run spur-check` → 32 pre-check rules, corpus check, 2,129 tests, and 3 post-check rules passed |
-| R16 | MET | command: diff confirms `magents/team-stark-children/README.md:6-16` and `magents/team-stark-children/CLAUDE.md:11` unchanged; the layout and four-rule-module claims remain true |
+| R16 | MET | command: diff confirms `git show fc87823f32d540ef4fcd7785433e27b362b9f7c9:magents/team-stark-children/README.md` (original lines 6-16) and `git show fc87823f32d540ef4fcd7785433e27b362b9f7c9:magents/team-stark-children/CLAUDE.md` (original lines 11) unchanged; the layout and four-rule-module claims remain true |
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
 |---------------------|--------|---------------|----------|
 | R1 — Every documented harness invocation resolves against the live CLI | MET | command | command-tree extraction checked root/parent `Commands` and exact child `Usage`: 67/67 references across 35 unique paths, 0 failures |
-| R2 — The tool-priority doctrine states the ladder and its reason | MET | command | composite assertion over `magents/team-stark-children/AGENTS.md:140-146` found every required shell/search/web token in the mandated order and both reasons |
+| R2 — The tool-priority doctrine states the ladder and its reason | MET | command | composite assertion over `git show fc87823f32d540ef4fcd7785433e27b362b9f7c9:magents/team-stark-children/AGENTS.md` (original lines 140-146) found every required shell/search/web token in the mandated order and both reasons |
 | R3 — The doctrine reaches every install target | MET | command | `assembleMagentContent` returned all nine targets with the ladder; only codex/pi selected their override AGENTS layer; Codex override measured 1,709 bytes |
 | R4 — AGENTS.md is compressed without losing its layout | MET | command | 17,480 → 9,286 characters; 16 headings; ordered pre/post heading comparison true |
 | R5 — Quality clears the gate on the project's own rubric | MET | command | evaluate → aggregate 0.9116017857142859, conciseness 0.83925, all other dimensions at baseline or higher, PASS grade A |
@@ -256,6 +260,8 @@ Feature: SOTA refresh of the team-stark-children magent package
 | R7 — Targets without a rules directory retain safety and discipline | MET | command | exact assemblies for omp/opencode/hermes/grok contain all inline CRITICAL rows including least-privilege tool permissions plus the verification gate |
 | R8 — The refreshed package installs and validates cleanly | MET | command | install dry-run exit 0; magent validate → Valid; `bun run spur-check` exit 0 with 2,129 tests and all pre/post rules passed |
 - Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
+
+**Evidence note (2026-09-04):** This section records task 0125 at Git revision `fc87823f32d540ef4fcd7785433e27b362b9f7c9`. Its measurements and verdict remain historical; source citations now use that revision because the subsequent package cleanup changed the live layout.
 ### Review
 <!-- spur:record-review -->
 
