@@ -4,12 +4,17 @@ Integration guide for the anti-hallucination guard script with Claude Code hooks
 
 ## Overview
 
-The `ah_guard.ts` script enforces the anti-hallucination protocol by analyzing responses before allowing a Stop event. It checks for:
+The `ah_guard.ts` script applies a heuristic check to responses before allowing a Stop event. It looks
+for:
 
-- **Source citations**: Verification that claims are backed by cited sources
-- **Confidence levels**: Explicit HIGH/MEDIUM/LOW confidence scoring
-- **Tool usage evidence**: Proof that verification tools were used
+- **Source citations**: A recognizable citation or engineering-evidence marker; it does not verify the source
+- **Confidence levels**: An explicit HIGH/MEDIUM/LOW confidence label
+- **Tool usage evidence**: A configured evidence marker; it does not prove that a tool was used
 - **Red flags**: Uncertainty phrases that indicate unverified claims
+
+A passing result means that response patterns matched. It does not prove that every claim is
+supported, that a citation is relevant or current, or that the answer is true. The host remains
+responsible for permissions, source access, and any consequential review.
 
 ## Exit Codes
 
@@ -56,11 +61,15 @@ This is what the plugin ships in `plugins/cc/hooks/hooks.json`:
 The command is a **portable PATH command**, not a plugin-root script path
 (`bun ${CLAUDE_PLUGIN_ROOT}/scripts/...`): it resolves on every target with `superskill` on PATH,
 and the dispatcher (`apps/cli/src/commands/hook-run.ts`) routes `cc/anti-hallucination` to the guard
-engine. Targets without `superskill` on PATH fail open (the hook is treated as allow). `minCliVersion`
+engine. If the dispatcher is missing, this check cannot run; the host's command-error policy applies. `minCliVersion`
 gates install so an older CLI cannot register a hook whose runtime contract (stdin payload
 resolution + canonical exit-0 decision output) it does not implement.
 
-For platforms without hooks (OpenCode, omp, pi, Grok — no prevent-stop hook), validate a captured answer with the staged `node "$(superskill script path cc anti-hallucination/validate_response.mjs)"` twin (the standard form — resolves the install-staged portable entrypoint; see `non-hook-enforcement.md`). `superskill script run cc validate-response` is also available as the optional registry form.
+Where the active host lacks applicable blocking-hook support, validate a captured answer with the
+staged `node "$(superskill script path cc anti-hallucination/validate_response.mjs)"` twin (the
+standard form; see `non-hook-enforcement.md`). `superskill script run cc validate-response` is also
+available as the optional registry form. Discover host capabilities instead of assuming every
+version or extension has the same hook semantics.
 
 ## Input Channels
 
@@ -76,26 +85,27 @@ Unreadable input (invalid JSON, missing transcript) always resolves to **allow**
 
 ## Verification Rules
 
-### Short Messages (< 50 chars)
-Short messages like "Done" or "Let me think about that" are allowed without verification.
+### Short Internal Messages (< 50 chars)
+Short internal notes such as "Done" bypass verification only when the external-claim heuristic is
+false. A short external claim still runs the protocol; length alone does not allow it.
 
 ### Internal Discussion
 Messages that don't require external verification (no APIs, libraries, facts) are allowed.
 
-### External Verification Required
-When a message contains:
+### External Verification Signal
+The current heuristic treats the following as signals that a message may require external verification:
 - API mentions
 - Library references
 - **Version references** — only when a version cue is present: a `v`-prefix (`v2.0`), a version word (`version 2.0`, `release 1.4`, `semver 1.2.3`), or a 3-part semver (`1.2.3`). Bare 2-part decimals like `94.87` are NOT version claims — they are metrics, percentages, ratios, durations. *(0079)*
 - Documentation links
 - Factual claims
 
-The guard requires BOTH:
-1. Source citations for all claims — recognized forms: `[Source: …]`, `Source: …`, `Sources:` list, URLs, **and (0079) engineering evidence**: `file:line` anchors (`ah_guard.ts:288`), exit-code lines (`exit 0`), pasted test-result lines (`1626 pass / 0 fail`). A bare fenced code block alone is not credited.
-2. Confidence level (HIGH/MEDIUM/LOW)
+When a signal is present, the guard requires BOTH:
+1. A recognizable citation or engineering-evidence marker — `[Source: …]`, `Source: …`, a `Sources:` list, a URL, **and (0079) engineering evidence** such as `file:line` anchors (`ah_guard.ts:288`), exit-code lines (`exit 0`), or pasted test-result lines (`1626 pass / 0 fail`). A bare fenced code block alone is not credited. This presence check does not establish support for every claim.
+2. A confidence level (HIGH/MEDIUM/LOW)
 
 AND EITHER:
-- Tool usage evidence (showing verification was performed)
+- A recognizable tool-usage marker (a textual signal, not proof of execution)
 - No red flag phrases
 
 **Why metrics no longer trip the guard (0079):** a metrics-dense verification verdict (`Coverage: func 94.87%, line 100.00%`, `1626 pass / 0 fail`, `exit 0`) used to be blocked because the broad `/\bv?\d+\.\d+\b/` regex read every decimal as a version. The cue-gated regex now requires a version cue, so evidence-dense turns pass instead of being false-positively blocked.

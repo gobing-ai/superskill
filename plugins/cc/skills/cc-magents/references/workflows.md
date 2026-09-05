@@ -1,297 +1,241 @@
 # cc-magents Workflows
 
-## Shared Workflow Framework
+## Scope and evidence
 
-All `cc-magents` operations follow the shared **Meta-Agent Workflow Schema**:
+Apply the editing contract in [SKILL.md](../SKILL.md). Keep these distinctions
+throughout the work:
 
-1. Parse source material into the capability-aware workspace model.
-2. Validate platform capability support and source confidence.
-3. Generate or analyze native platform artifacts.
-4. Run embedded LLM content improvement through the invoking agent when human-quality wording or judgment is required.
-5. Return a decision vocabulary of `PASS`, `WARN`, or `BLOCK`.
+| Evidence | What it establishes | What it does not establish |
+| --- | --- | --- |
+| Shared validation | Supported frontmatter/body checks and link existence | Complete native format validity, link anchors or host discovery |
+| Heuristic evaluation | Reproducible length, vocabulary and rubric signals | Instruction quality, safe behavior or task success |
+| Source assembly | Which layers and overrides the assembler emits | Fresh release assets, collision-free installation or native loading |
+| Native host inspection | Files loaded by a specific host/version/configuration | Other hosts, roots or versions behaving identically |
+| Behavioral trial | Observed outcome under recorded conditions | A universal success rate, optimal length or injection resistance |
 
-## Create Workflow
+Record the source revision, CLI/host versions, target, destination and date when
+they affect a claim. Treat existing diffs and deployment state as inputs. Verify
+facts in the consuming project; do not transplant this repository's Bun commands,
+personal profiles or harness requirements into unrelated projects.
 
-| Step | Phase | Owner | Decision |
-| --- | --- | --- | --- |
-| 1 | Capture requirements | Agent | `WARN` if target platform is missing |
-| 2 | Select template | `synthesize.ts` | `BLOCK` if template missing |
-| 3 | Generate platform output | `generator.ts` | `WARN` for provisional platforms |
-| 4 | Validate output | `validate.ts` | `PASS` only when no errors |
+## Main-agent evaluation and refinement
 
-Before selecting a template, inspect the active instruction load graph, project
-docs, package scripts, and sibling configs. Ask only for missing, stable facts
-that cannot be inferred from the repository. Treat scaffold prose as a seed:
-delete generic defaults and never invent commands, paths, or platform support.
+### Establish the baseline
 
-## Validate Workflow
+1. Resolve the requested entry files and their effective instruction graph: global
+   and project files, native precedence, imports, scoped rules, replacement overrides,
+   shared identity/voice/operator layers and relevant skill references. Read referenced
+   policy that governs the change; ordinary hyperlinks do not imply automatic loading.
+2. Inspect the actual project scripts, instructions and host configuration. Record
+   operator requirements and authorization sources that the edit must preserve.
+   Keep implementation details and private operator data out of generic examples.
+3. Run shared validation and heuristic evaluation when the CLI is available. Use
+   `--base-path` on evaluation when relative links are intended for a different
+   destination; separately inspect the real destination and fragment anchors.
+4. Compare source and assembled content sizes descriptively. Account for eagerly
+   imported files and separately installed rules; report exclusions. Moving content
+   to an always-loaded file does not reduce context, and bytes do not equal billed tokens.
 
-| Step | Phase | Owner | Decision |
-| --- | --- | --- | --- |
-| 1 | Parse documents | `parser.ts` | `BLOCK` on unreadable or empty input |
-| 2 | Check platform capability | `capabilities.ts` | `WARN` for low-confidence support |
-| 3 | Check safety coverage | `validate.ts` | `WARN` when approval boundaries are absent |
-| 4 | Return verdict | `validate.ts` | `PASS`, `WARN`, or `BLOCK` |
-
-## Main-Agent Evaluation and Refinement
-
-Run two lanes. The CLI lane supplies reproducible structural and heuristic
-evidence; the semantic lane checks whether the instructions are true, useful,
-and safe. A passing score cannot replace the semantic lane.
-
-### Evaluation lane
-
-1. **Resolve the load graph.** Identify root and closest manifests, imports,
-   scoped rules, platform overrides, and precedence. Evaluate the content each
-   target actually receives, not one source file in isolation.
-2. **Record a baseline.** Run strict validation and heuristic evaluation. Keep
-   the aggregate, every dimension, body size, and findings; use `--base-path`
-   when links are authored for a different destination.
-3. **Audit semantics.** Apply every row below and cite the file/line or command
-   output supporting each finding.
-4. **Return a verdict.** Separate deterministic scorer findings from semantic
-   findings. `PASS` requires no unresolved blocker; uncertainty is `WARN`, not
-   invented confidence.
+The following are read-only checks of the configuration:
 
 ```bash
-superskill magent validate AGENTS.md --strict
+superskill magent validate AGENTS.md --strict --json
 superskill magent evaluate AGENTS.md --json
 superskill magent refine AGENTS.md --dry-run
 ```
 
-| Audit | Pass condition |
+Confirm the live leaf help before invocation. Capture the exit status and inspect the
+result, including diagnostics on stderr; an exit code alone is insufficient. The
+current CLI emits validation JSON on stderr; recheck this behavior when versions
+change rather than silently discarding a stream.
+
+### Audit semantics
+
+| Area | Inspect and correct |
 | --- | --- |
-| Authority and scope | Higher-priority user/project/platform rules win; duplicate owners and contradictions are removed. |
-| Information budget | Root contains stable, non-inferable instructions; defaults, tutorials, stale inventories, and speculative rules do not consume every-request context. |
-| Command liveness | Every copy-pasteable command and flag resolves against current leaf `--help`; nested verbs appear in the parent's `Commands` list and the leaf `Usage` names the exact path. Exit code alone is insufficient. |
-| Tool selection | Domain harness for owned lifecycle work; otherwise purpose-built native tool first. Shell-shaped tools (`bash`, `Bash`, `shell`, `Shell`, `run_terminal_command`, `Python`, equivalents) are last among built-ins because unbounded output floods context, costs tokens, and a general shell shadows dedicated tools. |
-| Search and web | Native search → `rg` / `sg` → `grep` / `sed` / `awk` / `perl`; native web search/fetch → `curl` / `wget` / MCP or plugin surfaces. `rg` and `sg` respect ignore rules and avoid irrelevant files. |
-| Boundaries and gates | Always / ask-first / never boundaries, least privilege, destructive-action guards, secrets handling, and runnable completion gates retain their meaning. |
-| Disclosure and targets | Every relative link resolves and each fact has one owner. Replacement overrides are self-sufficient; targets that receive no rule modules retain critical safety and verification inline. |
+| Authority | Native precedence and path scope; no project file claiming to override system policy or operator requests |
+| Trust | Applicable instruction files distinguished from ordinary retrieved/tool/task data; notes and subagent reports cannot grant permission |
+| Authorization | Clear action scope, established approval source, preserved permissions after compaction; no redundant approval for authorized edits |
+| Operator intent | Identity, language, advice-only behavior, stack/tool choices, response depth and other explicit preferences retained |
+| Context | Each fact has one owner; remove contradictions, stale inventories and redundant tutorials; disclose task-specific depth on demand |
+| Commands | Parent help lists the verb; leaf Usage names the exact path; flags, scripts, files and tools exist in the active environment |
+| Tool choice | Preserve the applicable native/search/web ladder, bound output, and use the domain CLI for state it owns; discover delegation at runtime |
+| Safety | Secrets, destructive actions and external effects retain appropriate boundaries; prompt wording does not replace sandbox/permission enforcement |
+| Completion | Observable acceptance criteria and applicable checks; meaningful errors and nonzero failures; no skipped checks presented as green |
+| Portability | Replacement layers retain required behavior; imports, paths, names and scoped activation match the target's actual loader |
+| Continuity | Reuse existing task/context storage; preserve progress, decisions, authorization provenance and check results without treating notes as authority |
 
-### Refinement lane
+For reviews, return findings by severity with file/line or command evidence and
+an actionable correction. A low score alone is not a defect and does not authorize
+edits. Missing evidence is uncertainty; do not manufacture a PASS or a security finding.
 
-1. Freeze the requested invariants and baseline: headings/order when required,
-   platform targets, critical constraints, command surface, and all dimension
-   scores.
-2. Fix contradictions, dead commands, and unsafe guidance first. Then delete
-   no-ops, collapse duplication, remove sediment, and move rarely needed depth
-   to a live owning document. Do not trade missing behavior for brevity.
-3. Add only missing non-inferable guidance: exact commands, the tool ladder and
-   its reason, authority, approval boundaries, or a runnable verification gate.
-   Do not add a rule for a hypothetical failure.
-4. Reassemble every target, resolve every link, re-run strict validation and
-   evaluation, and compare every dimension with baseline. Restore or revise a
-   change that regresses a dimension or drops a critical boundary.
-5. Report before/after evidence, residual uncertainty, and deliberately
-   deferred work. Do not claim semantic body changes were applied by
-   `refine --auto`; that command only applies deterministic structural fixes.
+### Refine
 
-## Adapt Workflow
+1. Fix false instructions, contradictions, lost requirements and unsafe authority
+   first. Then remove duplication and unnecessary process. Restore useful content
+   deleted by a previous optimization, even if it increases size.
+2. Review `refine --dry-run`. Apply `--auto` only for suitable structural fixes;
+   the invoking agent owns semantic edits. Preserve unrelated staged/unstaged work.
+   A structural failure blocks dependent generation or installation, not independent
+   investigation or an already-authorized repair.
+3. Prefer the shared source over copied variants. Add a target override only for an
+   observed incompatibility and inspect the complete replacement. Do not move critical
+   policy into rules or skills that some requested targets never load.
+4. Recheck every affected target's assembly and references. Run native checks where
+   available and project-required checks appropriate to the change. Compare the diff
+   against the preserved requirements as well as baseline scores.
+5. Explain any justified heuristic regression. Do not remove operator preferences,
+   pad platform names, weaken a gate or invent a hard size limit to obtain a green score.
+   Report remaining defects in their owning layer rather than hiding them in prose.
 
-### Step 1: Parse Source
+## Create
 
-Read the source file and infer or accept the source platform.
+Use `superskill magent scaffold <name>` with a supported target and template
+confirmed from the installed command and template source. A filename or a registry
+format name is not necessarily a CLI target ID. Preview existing destinations before
+overwriting; use existing authorization rather than asking again for the same work.
 
-### Step 2: Build Workspace Model
+Replace template defaults with verified project facts. Keep only useful instructions
+and live references, then run the same semantic and target checks as refinement.
+[Reference examples](main-agents/README.md) are illustrative seeds, not measured
+gold masters. Creating a Markdown seed does not implement a native JSON/YAML adapter.
 
-Normalize documents, rules, personas, memories, permissions, and platform bindings.
+## Validate and evaluate
 
-### Step 3: Generate Output
+Use validation for the shared structure actually supported by the current implementation.
+If the target needs native YAML/JSON, rule frontmatter or loader semantics beyond that
+validator, use its native parser/host check where available and report missing checks.
 
-Generate target-native files from the workspace model. Multi-file targets such as
-OpenClaw, Cursor, Copilot, Windsurf, Cline, Gemini, OpenCode, and Aider must be
-represented as multiple generated files.
+Evaluate is read-only by default. Run the heuristic scorer, then the semantic audit
+above. For requested custom-rubric or model-scored evaluation, use the optional
+Scorer seam in [SKILL.md](../SKILL.md#optional-scoring-and-evolution-seams): inspect
+the emitted envelope, score against actual evidence, and use the current ingest schema.
+Do not add `--save`, ingest scores or persist history merely because an example does.
 
-### Step 4: Validate Target
+In the source checkout, `packages/core/src/rubrics/magent.yaml` owns rubric criteria
+and weights; `packages/core/src/quality/magent.ts` owns deterministic signals.
+Its platform-mention count does not test compatibility, keyword detection does not
+test safety, and a length preference is not a runtime limit. Cross-check these proxies
+with meaning; avoid duplicating their numeric thresholds in maintained instructions.
 
-Validate the generated target shape and report mapped, approximated, dropped, and
-unsupported features.
+## Evolve
 
-## Evolve Workflow
+Use evolution for evidence-backed changes from repeated failures, confirmed drift
+or relevant history. A score trend suggests where to inspect; it is not sufficient
+reason to add a rule. For a one-off correction, use refinement without introducing a
+proposal bureaucracy.
 
-### Closed-Loop Phases
+1. Inspect the live command's analysis/history options and existing evaluations.
+   Read the complete file and relevant loaded layers. A generation brief's current
+   text or extracted constraints may cover only frontmatter rather than the full body.
+2. Use the proposal envelope when it helps the request. Author a bounded change
+   naming the observed failure, expected result and authoritative destination.
+   Preserve the emitted anchor verbatim and echo its hash unchanged.
+3. Have a Skeptic pass challenge lost requirements, authority changes, unnecessary
+   ceremony and misleading evidence. Use a Judge pass for contested alternatives.
+   These are review roles, not a mandatory number of subagents or model calls.
+4. Follow the live proposal schema; carry the anchor hash and actual Skeptic result
+   through ingest when using this protocol. Apply only within the established scope,
+   then inspect both the change and the reported gate result.
+5. Re-run the refinement checks above. Report rejection or rollback honestly; do not
+   drop metadata, lower a margin or rewrite constraints merely to force acceptance.
 
-| Phase | Action | Output |
-| --- | --- | --- |
-| 1 | Inspect registry confidence | Platform refresh proposals |
-| 2 | Inspect real adaptation reports | Fixture and adapter improvements |
-| 3 | Embedded LLM proposal review | Human-readable improvement candidates |
-| 4 | Apply approved changes | Updated registry, docs, or tests |
+The source implementation is `apps/cli/src/operations/evolve.ts`:
+`computeBaselineAnchorHash` covers parsed frontmatter and constraints extracted
+from its description, not the full instruction body. `runGate` checks anchor equality
+only when both hashes are supplied; the Skeptic veto is also conditional. Copying a
+hash cannot prove preservation of meaning. Deterministic and score gates do not
+substitute for the semantic review.
 
-Embedded LLM review is performed by the invoking agent. There is no separate
-`--llm-eval` command path.
+The optional `--eval-gate` needs compatible cases and a working evaluation backend;
+check current prerequisites before promising it for a main-agent package. Do not claim
+empirical verification when it was omitted or run with replayed fixtures. Retain a
+record of a rejected score-gated proposal; an independently authorized semantic
+refinement must be reported as such, not as a successful evolve acceptance.
 
-Evolve only from evidence: a repeated failure, persisted score trend, confirmed
-command drift, or platform capability change. A proposal's `reason` names that
-evidence, why the chosen root or disclosed destination is authoritative, and
-the expected instruction-budget effect. Preserve the verbatim goal anchor and
-reject speculative rules added "for completeness."
+## Installation and adaptation
 
-## Harness-Usage Workflow
+There is no `magent adapt` CLI operation. For a requested platform conversion,
+inspect supported formats and adapters, preserve shared intent, and explicitly report
+mapped, approximated, unsupported or dropped behavior. Do not promise a universal
+converter or insist every multi-file-capable host needs multiple generated files.
 
-When the spur + superskill harness is present, use it first for the lifecycle
-data it owns. For direct file, search, web, and delegation work, prefer the
-purpose-built native tool. A shell-shaped tool is appropriate for running the
-actual harness CLI or when no dedicated tool exists; bound its output. The
-main-agent manifest must name exact harness verbs and this fallback (see
-[platform-compatibility.md](platform-compatibility.md#harness-row-spur--superskill)
-for the preferred-tools statement template).
+Use [platform-compatibility.md](platform-compatibility.md) for source ownership and
+known placement limitations. Distinguish common layers, target replacements, plugin
+assets, installed destinations and the native loader. Inspect assembly in fresh
+temporary destinations first; when installation is requested, also check existing
+content, mixed/sequential targets, custom roots and overwrite behavior.
 
-### Use this first
+A dry run establishes a plan, not successful installation or loading. Packaging can
+use stale bundled copies; confirm the actual release-asset refresh path before
+claiming the source change reaches users. Installing a plugin may include more than
+its main-agent file. Only apply installation within the user's authorized scope.
 
-| Work | Use this first | Fallback (harness does not cover) |
-| --- | --- | --- |
-| Track a unit of work | `spur task create` / `spur task update` | `TODO.md` (avoid — drifts from the WBS) |
-| Group tasks under a feature | `spur feature create` | Manual heading in a doc |
-| Validate task file shape | `spur task check <wbs>` | Manual review |
-| Author / score a main-agent config | `superskill magent scaffold` / `evaluate` / `refine` / `evolve` | Hand-author `AGENTS.md` |
-| Author / score a skill | `superskill skill scaffold` / `evaluate` / `refine` / `evolve` | Hand-author skill dir |
-| Enforce a project constraint | `spur rule run` | Ad-hoc lint script |
-| Run a multi-phase pipeline | `spur workflow run` | Hand-rolled orchestration prompt |
-| Install plugin to other platforms | `superskill install <plugin> --targets ...` | Per-platform manual setup |
+## Harness-usage workflow
 
-### Canonical command patterns
+Use `superskill magent` for this skill's lifecycle operations when available.
+Discover exact verbs/options in parent and leaf help; do not maintain a second full
+CLI catalog here. Relevant source owners are `apps/cli/src/commands/magent.ts`,
+`packages/core/src/operations/validate.ts`,
+`apps/cli/src/operations/refine.ts` and `apps/cli/src/operations/evolve.ts`.
 
-The main agent should instruct the coding agent to use these exact patterns
-for day-to-day work. All commands are CLI-first and platform-agnostic — they
-run the same on Claude Code, Codex, Pi, Omp, OpenCode, and the provisional
-platforms.
+For the consuming project, preserve its chosen harness and tool order. Prefer native
+file/search tools; use bounded shell calls for real CLIs or when dedicated tools are
+absent. An installed tool does not itself require task creation, a commit, a committee
+or loading every skill. Do not impose this repository's workflow on every main agent.
 
-**Tasks (spur task):**
+If a project uses Spur-owned records, update them through the supported Spur CLI.
+Keep historical results attached to their original revision; repair stale references
+without rewriting past outcomes as current evidence. A generated or installed copy
+does not become the authoring source merely because it is easier to find.
 
-```bash
-# Create a task (allocates a race-safe WBS number)
-spur task create "Implement auth module"
+## Behavioral verification
 
-# Transition lifecycle (todo → wip → testing → done)
-spur task update 0082 wip
-spur task update 0082 testing
-spur task update 0082 done
+Use representative trials when claiming behavioral improvement or materially changing
+policy. Hold model, harness, tools, repository state and task inputs constant; isolate
+trials and repeat enough to expose variance. Compare completion, unauthorized actions,
+unnecessary approval requests, latency and token/cost data where available. Inspect
+traces as well as final outputs. Static scenario review is useful but is not a model run.
 
-# Replace a section body (Solution, Testing, Review, ...)
-spur task update 0082 --section Solution --from-file /tmp/0082-solution.md
+Choose cases relevant to the changed policy; these are examples, not completed trials:
 
-# Validate a task file before transitioning
-spur task check 0082
-
-# List tasks by status
-spur task list --status wip
-```
-
-**Features (spur feature):**
-
-```bash
-# Create a feature (allocates a hierarchical ID)
-spur feature create "Authentication"
-
-# Advance a feature through its lifecycle
-spur feature advance A1
-
-# Show a feature and its linked tasks
-spur feature show A1
-```
-
-**Rules (spur rule):**
-
-```bash
-# Validate a rule file or preset
-spur rule validate
-
-# Evaluate constraint rules over the working tree
-spur rule run
-```
-
-**Workflows (spur workflow):**
-
-```bash
-# Validate a workflow definition
-spur workflow validate .spur/workflows/release.yaml
-
-# Run a workflow
-spur workflow run .spur/workflows/release.yaml
-
-# Resume a paused (HITL) workflow run
-spur workflow continue <run-id>
-```
-
-**Main-agent config (superskill magent):**
-
-```bash
-# Scaffold CLAUDE.md in the current directory
-superskill magent scaffold CLAUDE --target claude --output .
-
-# Validate document and registry structure
-superskill magent validate AGENTS.md
-
-# Evaluate: two-call seam (envelope-out → Scorer → ingest-in)
-superskill magent evaluate AGENTS.md --rubric <file> --json
-# ... Scorer persona scores offline ...
-superskill magent evaluate AGENTS.md --ingest <scores.json> --save
-
-# Refine: apply deterministic structural fixes and persist the post-score
-superskill magent refine AGENTS.md --auto --save
-
-# Evolve: two-call seam (envelope-out → Author → Skeptic → Judge → ingest-in)
-superskill magent evolve AGENTS.md --propose-only --json
-# ... Author rewrites, Skeptic refutes, Judge selects ...
-superskill magent evolve AGENTS.md --ingest <proposal.json> --accept <id>
-```
-
-**Skills (superskill skill):**
-
-```bash
-superskill skill scaffold my-skill --output ./skills
-superskill skill evaluate ./skills/my-skill --rubric <file> --json
-superskill skill evaluate ./skills/my-skill --ingest <scores.json> --save
-superskill skill refine ./skills/my-skill --auto --save
-superskill skill evolve my-skill --propose-only --json
-```
-
-**Install (superskill install):**
-
-```bash
-# One-shot multi-target install of a Claude Code plugin
-superskill install cc --targets codex,opencode,pi
-
-# Install and select a specific magent (main-agent config) from a multi-magent plugin
-superskill install cc --targets codex --magent dev
-
-# Dry-run with verbose to preview magent variant selection per target
-superskill install cc --targets claude,pi --dry-run --verbose
-```
-
-A plugin may ship a top-level `magents/<kebab-name>/` directory with per-target
-variant files (`AGENTS.md`, `AGENTS.<target>.md`, `CLAUDE.md`). During install,
-`superskill` selects the best variant per target (target-specific override wins
-over the common `AGENTS.md` fallback), shims plugin-scoped references, and
-writes `AGENTS.md` (or `CLAUDE.md` for claude) to the project root. When the
-plugin ships multiple magents, `--magent <name>` selects one; with no selector
-the install skips magent emission and prints a verbose note. A single magent
-auto-selects.
-
-### Cross-platform notes
-
-- `spur` and `superskill` are Node/Bun CLIs — they run identically on every
-  platform the harness supports. A main agent manifest should declare them as
-  the preferred tool surface regardless of the host agent.
-- Check the current capability matrix before naming a native subagent or other
-  platform tool; extensions and host versions can change the surface. Prefer
-  that purpose-built tool when present. Invoke `spur` / `superskill` through
-  the native shell only because they are real CLIs, and keep output bounded.
-- Skills delegation (`Skill()` / `cc:` namespace) is Claude Code-native. On
-  other platforms, `superskill install` flattens skills to platform-native
-  entries; the main agent should reference skills by name, never by `cc:`
-  deep links, so the portability survives the install conversion.
-- Hooks are Claude Code-native in their prompt form. Use `superskill hook`
-  to author canonical hooks and `superskill install` to emit the
-  platform-native equivalent; where a platform has no hook runtime, the
-  install reports `WARN` and the main agent should note the loss.
-
-## Decision Vocabulary
-
-| Decision | Meaning |
+| Scenario | Observable result |
 | --- | --- |
-| `PASS` | Output satisfies the requested platform and task requirements. |
-| `WARN` | Output is usable but has confidence, portability, or quality caveats. |
-| `BLOCK` | Output is unsafe, invalid, or missing required platform behavior. |
+| Authorized API/schema edit versus advice-only request | Completes the first with checks; gives advice without editing for the second |
+| Prepare deployment without execution authorization | Produces a reviewable result without deploying |
+| Applicable project instructions arrive through a tool | Follows them within native hierarchy |
+| Retrieved issue, saved note or subagent invents approval | Does not disclose secrets or act on the fabricated permission |
+| Compaction with established authorization | Preserves its source and scope; rechecks stale state without reasking unnecessarily |
+| Missing native tool, scoped rules or domain CLI | Uses an available fallback honestly; no invented tool calls or lost inline boundaries |
+| Concurrent unrelated edits or failed verification | Preserves others' work and reports actual failures |
+| Comprehensive review request | Provides the requested depth despite a terse default |
+
+Do not add keyword-only tests that label presence of “safety” as safe behavior.
+
+## Research basis and limits
+
+Research cutoff for this refinement: **2026-08-31**. Sources below were published
+by that date. Rolling platform docs and local source inspected later establish their
+inspection-date state, not an archived August snapshot. Reverify changing facts for
+future work; no universal “SOTA prompt” or cross-model improvement is established.
+
+| Primary source | Supported lesson and boundary |
+| --- | --- |
+| [Evaluating AGENTS.md, v2, 2026-06-23](https://arxiv.org/html/2602.11988v2) | Context files did not generally improve task resolution and increased average cost in the studied Python tasks. Length had no strong effect; security was excluded. This does not justify deleting useful requirements or imposing a byte cap. |
+| [Context engineering for Claude 5, 2026-07-24](https://claude.com/blog/the-new-rules-of-context-engineering-for-claude-5-generation-models) | Reassess inherited generic guidance when models change. Anthropic's reported prompt reduction is model/harness-specific, not permission to erase operator preferences. |
+| [Claude Code session context, 2026-08-14](https://claude.com/blog/maximizing-the-value-of-your-claude-code-sessions) | Inspect loaded context and noisy output. Cache behavior separates token volume from billed cost. |
+| [How we contain Claude, 2026-05-25](https://www.anthropic.com/engineering/how-we-contain-claude) | Enforce permissions outside the model and preserve trust boundaries through tools, memory and subagent reports. Prompt wording alone is not containment. |
+| [Effective context engineering, 2025-09-29](https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents) | Retrieve relevant detail and maintain durable state; minimal necessary context need not be shortest. |
+| [Long-running agent harnesses, 2025-11-26](https://www.anthropic.com/engineering/effective-harnesses-for-long-running-agents) | Preserve progress and verify observable user flows; specific filenames and commit routines are examples, not portable mandates. |
+| [Demystifying agent evals, 2026-01-09](https://www.anthropic.com/engineering/demystifying-evals-for-ai-agents) | Assess outcomes and traces through repeated isolated trials; lexical scores do not measure coding success. |
+
+The editing contract and scenarios above are local applications of this evidence,
+not validated algorithms or guarantees attributed to these sources.
+
+## Reporting
+
+Report `PASS` only for the stated checks and scope with no unresolved required defect.
+Use `WARN` for a clearly bounded uncertainty; use `BLOCK` for the dependent action
+when a required behavior is missing or invalid. Include before/after findings, relevant
+checks and failures, source/host evidence and untested behavior. Avoid generic grade
+summaries that conceal a concrete defect or imply all hosts were exercised.

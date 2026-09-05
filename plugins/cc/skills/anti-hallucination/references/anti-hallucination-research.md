@@ -1,257 +1,43 @@
-# Anti-Hallucination Research Foundation
+# Research and evidence limits
 
-**Complete documentation of 16 validated research sources** backing the anti-hallucination protocol.
+Primary sources reviewed for guidance available through **2026-08-31**. These sources describe
+specific experiments, software or vendor practices; none certifies this skill. No benchmark was
+reproduced here. Dates identify the cited revision or article, not necessarily first publication.
 
-## Source Validation Report
+## Verification and uncertainty research
 
-All 16 sources validated via cross-reference using WebSearch and documentation verification.
+| Primary source | Version / date | What it establishes and what it does not |
+| --- | --- | --- |
+| [Chain-of-Verification](https://arxiv.org/abs/2309.11495v2) | v2, 2023-09-25 | Draft an answer, generate verification questions, answer those questions independently, then revise. External retrieval is not intrinsic to the paper's method. The source-checking prompts in this skill are local adaptations. |
+| [HaluEval 2.0](https://arxiv.org/html/2401.03205v1) | v1, 2024-01-06 | Evaluates 8,770 questions. GPT-4 judges extracted statements jointly, since isolated judgments can miss their relationships; human validation samples 1,000 questions. It does not evaluate this skill's generic verification prompts. |
+| [Semantic entropy](https://www.nature.com/articles/s41586-024-07421-0) | 2024-06-19 | Groups sampled answers by meaning and estimates entropy to detect confabulations. It does not catch every systematic error. Asking for two answers is not the paper's estimator, and agreement is not proof. |
+| [UQLM](https://arxiv.org/abs/2507.06196v2) / [official repository](https://github.com/cvs-health/uqlm) | v2, 2026-01-26 | Provides response-level uncertainty scorers, including black-box, white-box, judge and ensemble approaches. It does not calibrate a prompt's verbal HIGH/MEDIUM/LOW labels. |
+| [Counterfactual probing, Yijun Feng](https://arxiv.org/html/2508.01862v1) | v1, 2025-08-03 | Uses factual, temporal, quantitative and logical probe types with confidence comparison and scoring. Simply considering an alternative is a local review technique, not an implementation of the algorithm. |
+| [FactCheckmate](https://arxiv.org/abs/2410.02899v2) / [Findings of EMNLP](https://aclanthology.org/2025.findings-emnlp.663/) | v2, 2025-06-24; Findings 2025 | Trains a classifier over pre-decoding hidden states and intervenes in hidden states. This requires model access beyond ordinary coding-agent prompts; it does not validate a source-search/revision workflow. |
 
-| Status | Count | Sources |
-|--------|-------|---------|
-| **Verify-Success** | 16 | All sources below |
-| **Verify-Failed** | 0 | - |
-| **Cannot-Verify** | 0 | - |
+Do not transfer a paper's percentage improvement to this skill or another model. UQLM was
+previously linked here to `2403.04696`, which is a different paper, and an incorrect repository;
+those citations and the token-level-only description were corrected. Verbal confidence remains a
+communication aid unless calibration has actually been measured.
 
-## Core Papers (5 sources)
+## Coding-agent context and harness evidence
 
-### 1. Chain-of-Verification (CoVe)
-- **Paper**: [arXiv:2309.11495](https://arxiv.org/abs/2309.11495)
-- **Authors**: Dhuliawala et al. (Meta AI)
-- **Citations**: 727+
-- **Published**: Sept 2023
-- **Key Contribution**: Self-verification prompting pattern
+| Primary source | Version / date | Applicable lesson and limit |
+| --- | --- | --- |
+| [Evaluating AGENTS.md / CTXbench](https://arxiv.org/html/2602.11988v2) | v2, 2026-06-23 | Context files did not generally improve task resolution and increased average inference cost in the evaluated Python tasks. File length had no significant relationship with success. The study does not justify a universal byte ceiling or establish security performance. |
+| [New rules of context engineering](https://claude.com/blog/the-new-rules-of-context-engineering-for-claude-5-generation-models) | 2026-07-24 | Reassess overlapping generic rules and unnecessary scaffolding as models change. Anthropic's prompt-reduction result concerns Claude 5 and its internal evaluation; it does not justify deleting operator-specific requirements. |
+| [Maximizing Claude Code sessions](https://claude.com/blog/maximizing-the-value-of-your-claude-code-sessions) | 2026-08-14 | Inspect actually loaded context and bound noisy output. Caching separates token volume from billed cost; measure the actual host and workload. |
+| [How we contain Claude](https://www.anthropic.com/engineering/how-we-contain-claude) | 2026-05-25 | Tools, persistent memory and subagent outputs can carry malicious instructions. Preserve provenance and enforce permissions in the host; prompt instructions alone do not establish resistance. |
+| [Demystifying evals](https://www.anthropic.com/engineering/demystifying-evals-for-ai-agents) | 2026-01-09 | Evaluate outcomes and traces over repeated isolated trials. A lexical validator or instruction-quality score does not prove that citations were checked or that an answer is correct. |
+| [Multi-agent scaling](https://arxiv.org/abs/2607.27942v1) | v1, 2026-07-30 | A two-model terminal-task study found performance peaked at intermediate complexity, with consistency challenges. It neither sets a universal agent count nor validates a particular reviewer/adjudicator prompt. |
 
-**Method**:
-1. Draft initial response
-2. Plan verification questions: "What facts need verification?"
-3. Execute verification: For each fact, independently verify
-4. Generate final answer: Revise based on verification results
+## Applying the evidence
 
-**Prompt Template**:
-```
-Please answer the following question. Then:
-1. List the key factual claims in your answer
-2. For each claim, verify it independently with sources
-3. Revise your answer if any claims are unverified
+The [main protocol](../SKILL.md) owns the operational instructions. The
+[prompt patterns](prompt-patterns.md) are optional local adaptations, not replicas of the papers.
+Prefer a direct source check for a routine claim. Add retrieval, independent review or a measured
+uncertainty estimator only when the task and available capabilities justify it.
 
-Question: {query}
-```
-
-### 2. HaluEval 2.0
-- **Paper**: [arXiv:2401.03205](https://arxiv.org/pdf/2401.03205)
-- **Authors**: RUCAIBox
-- **Citations**: 226+
-- **Published**: Jan 2024
-- **Key Contribution**: 8,770 questions, GPT-4-based detection
-
-**Detection Method**:
-- Fact extraction from generated text
-- Independent verification of each claim
-- Benchmark with human annotations
-
-### 3. Counterfactual Probing
-- **Paper**: [arXiv:2508.01862](https://arxiv.org/abs/2508.01862)
-- **Authors**: Feng et al.
-- **Published**: Aug 2025
-- **Key Contribution**: 4-component detection framework
-
-**Method**:
-- Generate plausible counterfactual statements
-- Evaluate model sensitivity to perturbations
-- Genuine knowledge shows robustness; hallucinated content shows inconsistent confidence
-- 24.5% reduction in hallucination scores
-
-### 4. FactCheckMate
-- **Paper**: [arXiv:2410.02899](https://arxiv.org/abs/2410.02899)
-- **Authors**: Alnuhait et al.
-- **Published**: Oct 2024 (EMNLP 2025)
-- **Key Contribution**: Preemptive detection using hidden states
-
-**Results**:
-- 70%+ preemptive detection accuracy
-- 34.4% more factual outputs with intervention
-- ~3.16 seconds overhead
-
-### 5. UQLM (Uncertainty Quantification)
-- **Paper**: [arXiv:2403.04696](https://arxiv.org/abs/2403.04696)
-- **GitHub**: [github.com/dylbouch/UQLM](https://github.com/dylbouch/UQLM)
-- **Citations**: 115+
-- **Published**: Mar 2024
-- **Key Contribution**: Token-level uncertainty scoring
-
-**Framework**:
-- Black-box UQ
-- White-box UQ
-- LLM-as-a-Judge
-- Ensemble scorers (0-1 confidence scores)
-
-## Surveys & Taxonomies (3 sources)
-
-### 6. Comprehensive Survey 2025
-- **Paper**: [arXiv:2510.06265](https://arxiv.org/abs/2510.06265)
-- **Authors**: Alansari & Luqman
-- **Published**: Oct 2025
-- **Key Contribution**: Complete taxonomy of detection/mitigation
-
-**Coverage**:
-- Causes across entire LLM lifecycle
-- Detection approaches taxonomy
-- Mitigation strategies taxonomy
-- Evaluation benchmarks and metrics
-
-### 7. Comprehensive Survey 2024
-- **Paper**: [arXiv:2401.01313](https://arxiv.org/abs/2401.01313)
-- **Authors**: Tonmoy et al.
-- **Citations**: 650+
-- **Published**: Jan 2024
-- **Key Contribution**: 32+ techniques categorized
-
-**Categories**:
-- RAG (Retrieval-Augmented Generation)
-- Knowledge Retrieval
-- CoNLI
-- CoVe
-
-### 8. Theoretical Foundations
-- **Paper**: [arXiv:2507.22915](https://arxiv.org/abs/2507.22915)
-- **Authors**: Gumaan
-- **Published**: Jul 2025
-- **Key Contribution**: Formal definitions with PAC-Bayes bounds
-
-**Distinctions**:
-- Intrinsic vs. extrinsic hallucination
-- Hallucination risk bounds
-- Token-level uncertainty estimation
-- Confidence calibration
-
-## Benchmarks & Evaluation (2 sources)
-
-### 9. ANAH-v2
-- **Paper**: [arXiv:2407.04693](https://arxiv.org/abs/2407.04693)
-- **Authors**: Gu et al. (Chinese labs)
-- **Citations**: 21+
-- **Published**: Jul 2024
-- **Key Contribution**: Self-training with EM algorithm
-
-**Result**: 7B parameter annotator surpasses GPT-4 on HaluEval and HalluQA
-
-### 10. MedHalu
-- **Paper**: [arXiv:2409.19492](https://arxiv.org/papers/2409.19492)
-- **Authors**: Agarwal et al. (UT Austin)
-- **Published**: Sep 2024
-- **Key Contribution**: Medical hallucination patterns
-
-**Findings**:
-- Expert-in-the-loop improves detection by 6.3 percentage points
-- LLMs worse than experts at medical hallucination detection
-
-## Industry Implementation Guides (4 sources)
-
-### 11. Lakera.ai Guide
-- **URL**: [Lakera.ai 2025 Guide](https://www.lakera.ai/blog/guide-to-hallucinations-in-large-language-models)
-- **Published**: Oct 2025
-- **Key Topics**: Self-verification, uncertainty quantification, multi-stage validation
-
-### 12. RootSignals Analysis
-- **URL**: [RootSignals](https://rootsignals.ai/post/why-do-llms-still-hallucinate-in-2025/)
-- **Published**: Jun 2025
-- **Key Finding**: Newer models hallucinating MORE, not less
-
-### 13. Voiceflow Strategies
-- **URL**: [Voiceflow Blog](https://www.voiceflow.com/blog/prevent-llm-hallucinations)
-- **Key Strategies**: 5 proven approaches including RAG, CoT, RLHF
-
-### 14. AWS Bedrock Agents
-- **URL**: [AWS ML Blog](https://aws.amazon.com/blogs/machine-learning/reducing-hallucinations-in-large-language-models-with-custom-intervention-using-amazon-bedrock-agents/)
-- **Published**: Nov 2024
-- **Key Contribution**: Custom intervention workflow for production systems
-
-## Production Models (2 sources)
-
-### 15. AimonLabs HDM-2
-- **URL**: [HuggingFace Model](https://huggingface.co/AimonLabs/hallucination-detection-model)
-- **Downloads**: 43+
-- **Based on**: arXiv:2504.07069
-- **Use**: Production-ready enterprise detection
-
-### 16. Varun-Chowdary Detector
-- **URL**: [HuggingFace Model](https://huggingface.co/Varun-Chowdary/hallucination_detect)
-- **Architecture**: DeBERTa-v3-base fine-tuned
-- **Task**: Text classification for hallucination detection
-
-## Complete Technique List (De-duplicated)
-
-### Detection Techniques (5)
-
-| # | Technique | Primary Source | Citations |
-|---|-----------|----------------|-----------|
-| 1 | Chain-of-Verification (CoVe) | Dhuliawala et al 2023 | 727+ |
-| 2 | Self-Consistency Check | ANAH-v2, Nature 2024 | 1,017+ |
-| 3 | Uncertainty Expression | UQLM | 115+ |
-| 4 | Fact Extraction + Verification | HaluEval 2.0 | 226+ |
-| 5 | Entropy-Based Detection | Nature 2024 | 1,017+ |
-
-### Mitigation Techniques (6)
-
-| # | Technique | Primary Source | Citations |
-|---|-----------|----------------|-----------|
-| 6 | RAG (Retrieval-Augmented Generation) | AWS, Voiceflow, Tonmoy 2024 | 650+ |
-| 7 | Chain-of-Thought with Verification | CoVe | 727+ |
-| 8 | Few-Shot with Verification Examples | HaluEval 2.0 | 226+ |
-| 9 | Uncertainty Acknowledgment | UQLM, Gumaan 2025 | 115+ |
-| 10 | Contextual Grounding Check | AWS Bedrock | - |
-| 11 | Temperature Reduction | Lakera.ai | - |
-
-### Workflow Protocols (5)
-
-| # | Technique | Primary Source | Citations |
-|---|-----------|----------------|-----------|
-| 12 | Verify-Before-Generate Protocol | CoVe, Alansari 2025 | 727+ |
-| 13 | Multi-Agent Verification | AWS Bedrock Agents | - |
-| 14 | Iterative Refinement | ANAH-v2 | 21+ |
-| 15 | Reference Source Attribution | Voiceflow, Lakera | - |
-| 16 | Human-in-the-Loop | AWS Bedrock | - |
-
-## Implementation Notes
-
-### For Prompt Engineers
-
-**Key insight from research**: Prompt-based techniques (CoVe, self-consistency, uncertainty prompting) achieve 70-90% of model-retraining approaches with zero training cost.
-
-**Recommended pattern**:
-```
-Query → CoVe Verification → Confidence Score → Source Attribution
-```
-
-### For System Designers
-
-**Production pipeline** (from AWS Bedrock, FactCheckMate):
-```
-1. User Query
-2. Context Retrieval (RAG)
-3. Draft Generation
-4. Claim Extraction
-5. Independent Verification (search/docs)
-6. Confidence Scoring
-7. Revision (if low confidence)
-8. Human Review (if flagged)
-9. Final Output
-```
-
-### For Researchers
-
-**Open problems** (from surveys):
-- Better measurement of hallucination
-- Uncertainty quantification standards
-- Cross-domain generalization
-- Real-time detection with low latency
-
-## Citation Summary
-
-| Metric | Value |
-|--------|-------|
-| Total Sources | 16 |
-| Total Citations | 2,500+ |
-| Publication Range | 2023-2025 |
-| Peer-Reviewed | 10/16 |
-| Industry/Production | 6/16 |
+Evaluate changes on the target model, harness and workload. Record factual support, task success,
+abstention quality, unauthorized actions, unnecessary approval requests, latency and cost as relevant.
+A guard pass establishes only its documented pattern checks; inspect the underlying evidence.

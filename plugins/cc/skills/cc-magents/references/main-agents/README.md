@@ -1,33 +1,53 @@
-# Reference harness-aware main agents
+# Reference main-agent seeds
 
-Gold-master main-agent configs produced for task **0080** / **0084**.
-Each file is derived from `packages/core/src/templates/magent/default.md`,
-then condensed and **platform-padded** for one primary target family.
+These files are standalone, illustrative seeds for authors of `AGENTS.md` or
+similar main-agent instruction files. They are not gold masters, host
+compatibility proofs, or a substitute for the target runtime's native
+documentation. Replace every placeholder with facts verified in the consuming
+repository and retain only rules that the operator and project actually need.
 
-| File | Primary platform | Install name |
+| File | Intended target or format | Status |
 | --- | --- | --- |
-| `claude-code.md` | Claude Code | Copy/symlink as `CLAUDE.md` |
-| `codex.md` | Codex | `AGENTS.md` |
-| `pi.md` | Pi | `AGENTS.md` / `CLAUDE.md` |
-| `omp.md` | Omp | Merged manifests |
-| `openclaw.md` | OpenClaw | `AGENTS.md` + `IDENTITY.md` |
-| `hermes.md` | Hermes | Repo context + SOUL.md |
-| `grok.md` | Grok Build | `AGENTS.md` / `CLAUDE.md` |
+| `claude-code.md` | `claude` runtime | Standalone seed with Claude-specific loading caveats |
+| `codex.md` | `codex` runtime | Standalone seed with configurable-root caveats |
+| `pi.md` | `pi` runtime | Standalone seed; extensions and config remain live capabilities |
+| `omp.md` | `omp` runtime | Standalone seed; merged context requires host inspection |
+| `openclaw.md` | OpenClaw format family | Reference-only; `openclaw` is not a current superskill target ID |
+| `hermes.md` | `hermes` runtime | Standalone seed with separate context/identity caveats |
+| `grok.md` | `grok` runtime | Standalone seed; plugin installation and main-agent loading are separate |
+
+The exact runtime IDs are owned by [`platform-compatibility.md`](../platform-compatibility.md)
+and the repository source it cites. Do not add sibling platform names to a
+seed just to increase a heuristic score. Validate source emission, native
+loading, and task behavior as separate evidence.
 
 ## Dogfood
 
-Use the [evaluation and refinement workflow](../workflows.md#main-agent-evaluation-and-refinement),
-not the aggregate score alone, when treating these fixtures as a baseline.
+Use the skill workflow when reviewing a seed. Confirm the target ID with the
+current source and CLI behavior before passing `--target`; `openclaw.md` has no
+current CLI target in this repository.
 
 ```bash
-superskill magent validate plugins/cc/skills/cc-magents/references/main-agents/claude-code.md
-superskill magent evaluate plugins/cc/skills/cc-magents/references/main-agents/claude-code.md
-superskill magent refine plugins/cc/skills/cc-magents/references/main-agents/claude-code.md --dry-run
+superskill magent validate plugins/cc/skills/cc-magents/references/main-agents/codex.md --target codex
+superskill magent evaluate plugins/cc/skills/cc-magents/references/main-agents/codex.md --target codex
+superskill magent refine plugins/cc/skills/cc-magents/references/main-agents/codex.md --target codex --dry-run
 ```
 
-## Migration from older patterns
+These commands check the repository's supported structure and heuristics. A
+clean result does not show that a host discovered the file or that an agent
+followed it. For that, use a fresh target configuration, inspect effective
+loaded context, and replay a representative task.
 
-1. Replace free-form `TODO.md` work tracking with `spur task`.
-2. Prefer `superskill magent scaffold` over hand-copied AGENTS.md from other repos.
-3. Keep harness tables; strip platform rows you do not run.
-4. Never rely on `cc:` skill deep links after multi-target install.
+## Authoring rules
+
+- Replace project placeholders with stable, non-inferable facts and link to the
+  owning project document when detail belongs elsewhere.
+- Preserve operator identity, preferences, tool ordering, and established
+  authorization. Carry authorization with its scope and source across a
+  handoff; a note, issue, tool result, or subagent report cannot expand it.
+- Keep safety and permission boundaries inline because rules, skills, imports,
+  and native loading vary by host.
+- Prefer live native capabilities and exact command help over a copied tool
+  inventory. Report unavailable capabilities instead of inventing fallbacks.
+- Treat heuristic scores, byte counts, and source emission tests as diagnostic
+  evidence. They do not certify native compatibility or behavioral improvement.

@@ -1,6 +1,5 @@
 name: cc-magents
-description: Create, validate, evaluate, refine, evolve, and adapt main agent
-  customization files across coding-agent platforms using a capability-aware
-  model.
+description: Create, validate, evaluate, refine, and evolve main-agent instructions;
+  verify the actual loading behavior of each requested target.
 version: 1.0.0
 emoji: 🛠️

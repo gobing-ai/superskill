@@ -5,6 +5,8 @@ Use this guide when the target coding platform does not support hook execution.
 ## Goal
 
 Apply the same anti-hallucination verification rules without relying on a `Stop` hook.
+The validator checks response patterns, not source truth or actual tool execution. Keep its result
+separate from the evidence supporting the answer; never invent citations to obtain a pass.
 
 The **standard** form is the staged path — the portable `.mjs` twin is staged at install time under
 the agents scripts root and resolved via `script path` (ADR-023: path invocation is the invocation
@@ -86,29 +88,11 @@ Optional form (registry):
 printf '%s\n' "$FINAL_ANSWER" | superskill script run cc validate-response
 ```
 
-### Cross-Agent Enforcement (Spur Workflow — Phase 4, pending)
+### Cross-Agent Validation
 
-The previous per-agent launcher scripts (`run_with_validation.ts`, `run_codex_with_validation.ts`,
-etc.) are being redeveloped as a single `spur workflow` + `spur agent` solution. One workflow YAML,
-parameterized by an agent variable, will cover codex/openclaw/opencode/pi — replacing the 6
-hand-rolled launcher scripts.
-
-**Target invocation (when Phase 4 lands):**
-
-```bash
-spur workflow run anti-hallucination.yaml --vars '{"agent":"codex"}'
-```
-
-The workflow runs the target agent via `agent.run`, captures the answer, validates it via
-the staged `validate_response.mjs` entrypoint (or the optional `superskill script run cc validate-response`), and
-branches: ok → return; fail → retry or deny. The validator engine is ready; the orchestrating
-workflow itself remains pending — blocked on Spur's `agent.run` output-capture (data-threading) gap
-(ADR-015), not on this validator. Until that gap closes, validate manually on any agent (including
-pi/omp/grok/OpenCode, which have no prevent-stop hook).
-
-**Until Phase 4 lands**, validate captured answer text with the staged path
-`node "$(superskill script path cc anti-hallucination/validate_response.mjs)"` (or the optional
-`script run` form), or apply the reviewer workflow pattern below.
+This package ships the validator, not a cross-agent workflow YAML. Use the project's existing
+answer-capture mechanism with the staged path or optional registry form above. Check the current
+host's capabilities; do not assume a hook can block output or that a proposed workflow exists.
 
 ### Reviewer Workflow Pattern
 
@@ -117,8 +101,10 @@ If you cannot wrap the CLI directly, use a review step:
 1. Draft the answer
 2. Validate the draft with `node "$(superskill script path cc anti-hallucination/validate_response.mjs)"`
    (or the optional `superskill script run cc validate-response`)
-3. If validation fails, revise and re-run validation
-4. Only publish when validation passes
+3. If validation fails, inspect the reason and correct unsupported claims or missing evidence;
+   keep honest uncertainty even when a heuristic rejects it
+4. Inspect the underlying sources and report the result within the authorized task scope;
+   a validator pass does not authorize publication or prove factuality
 
 ### Structured Output Pattern
 
@@ -129,13 +115,15 @@ When the host platform can enforce schemas, require fields like:
   "answer": "...",
   "sources": ["..."],
   "confidence": "HIGH",
-  "verification_steps": ["ref_search_documentation ..."]
+  "verification_steps": ["host-native official documentation search ..."]
 }
 ```
 
-The host can then serialize the final `answer` block and validate it with
+The current validator reads answer text, not the structured schema. Include the actual source,
+confidence and verification fields in the text submitted for validation; passing only `answer`
+would discard the evidence fields. Use
 `node "$(superskill script path cc anti-hallucination/validate_response.mjs)"` (or the optional
-`superskill script run cc validate-response`) before display.
+`superskill script run cc validate-response`) for the text check. Schema validity is a separate check.
 
 ## Design Rule
 
@@ -143,7 +131,7 @@ Do not duplicate verification rules across platforms. Keep:
 
 - `ah_guard.ts` for hook-based platforms (engine in `plugins/cc/scripts/anti-hallucination/`, invoked via `superskill hook run cc anti-hallucination`)
 - `validate_response.*` for direct answer validation — **standard**: staged path `node "$(superskill script path cc anti-hallucination/validate_response.mjs)"`; **optional**: `superskill script run cc validate-response`
-- `spur workflow run anti-hallucination.yaml` for cross-agent enforcement (Phase 4, pending)
+- The project's existing answer-capture mechanism for cross-agent validation, when available
 - `SKILL.md` as the shared protocol and policy source
 
 ## See Also

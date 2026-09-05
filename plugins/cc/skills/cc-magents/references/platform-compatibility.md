@@ -1,192 +1,148 @@
-# Platform Compatibility
+# Platform compatibility
 
-This file is the source of the platform capability matrix, applied during
-`superskill install` conversion.
+This reference keeps two contracts separate:
 
-Support levels are capability-based:
+1. **Runtime targets** are the exact identifiers accepted by the current
+   `superskill` CLI (`--target` and `--targets`).
+2. **Registry and source formats** describe filenames, metadata, or a host
+   family. A format label is not automatically a CLI target.
 
-- **High confidence**: official documentation verified on 2026-04-30, or
-  behavior exercised by the superskill/spur test suites.
-- **Medium confidence**: official or semi-official docs exist but are
-  fragmented, or behavior is inferred from adjacent, well-documented surfaces.
-- **Low confidence**: community-only reports, no stable official documentation,
-  or behavior extrapolated from a sibling platform. Must remain low until
-  official docs or reproducible product tests exist.
+The source audit was performed against the repository on 2026-09-04. Source
+emission is deterministic evidence. It does not prove that a vendor runtime
+will discover the emitted file, load every imported layer, or enforce the
+instructions during a task. Host loading and behavior require a separate smoke
+test with the target version, configuration, and effective context visible.
 
-Adapters must emit loss reports when source behavior cannot be represented
-natively by the target platform.
+The source links in this file are **source-checkout-only citations**. An
+installed skill may not contain this repository's `packages/`, `apps/`, or
+`docs/` paths; use the installed CLI and host documentation there.
 
----
+## Runtime target IDs
 
-## Main-Agent Capability Matrix
+The canonical install target list is defined by [`targets.ts`](../../../../../packages/core/src/targets.ts).
+The current source contains these nine IDs. The help text describes the
+operation surface but does not enumerate every accepted target; verify an ID
+against the current source and target validation before using it:
 
-Which main-agent (workspace manifest) capabilities each platform supports.
+| Runtime ID | Main-agent output in superskill | Installer's default global staging directory* | What is verified locally |
+| --- | --- | --- | --- |
+| `claude` | `CLAUDE.md` | `~/.claude/` | Source emission; native `@file` expansion is documented, but effective host context is not tested here |
+| `codex` | `AGENTS.md` | `~/.codex/` | Source emission; configured-root behavior is not represented by the installer |
+| `pi` | `AGENTS.md` | `~/.pi/agent/` | Source emission; current host configuration and enabled extensions remain runtime concerns |
+| `omp` | `AGENTS.md` | No pinned global magent directory; global emission falls back to the install root | Source/native plugin paths are separate; effective main-agent discovery is not certified here |
+| `opencode` | `AGENTS.md` | `~/.config/opencode/` | Source emission through the rulesync target; configured-root behavior is not represented |
+| `antigravity-cli` | `AGENTS.md` | `~/.gemini/antigravity-cli/` | Source emission through its rulesync target; native main-agent loading requires a host check |
+| `antigravity-ide` | `AGENTS.md` | `~/.gemini/config/` | Source emission through its rulesync target; native main-agent loading requires a host check |
+| `hermes` | `AGENTS.md` | `~/.hermes/` | Source emission; Hermes context and identity loading are separate host concerns |
+| `grok` | `AGENTS.md` | No pinned global magent directory; global emission falls back to the install root | Native plugin installation is source-audited; main-agent discovery requires a host check |
 
-| Capability | Claude Code | Codex | Pi | Omp | OpenCode | Antigravity | OpenClaw | Hermes | Grok |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| Workspace manifest file | `CLAUDE.md` | `AGENTS.md` | `AGENTS.md` / `CLAUDE.md` | Merges all of the above | `AGENTS.md` / `CLAUDE.md` / `CONTEXT.md` | Central projects DB | `AGENTS.md` / `IDENTITY.md` | Repo context files | `AGENTS.md` / `CLAUDE.md` |
-| Global override | `~/.claude/CLAUDE.md` | `~/.codex/config.toml` | `~/.pi/agent/AGENTS.md` | Inherits Pi | `.opencode/config.json` `instructions` | `~/.gemini/antigravity-cli/settings.json` | Skills dir | `~/.hermes/config.yaml` / `SOUL.md` | Internal |
-| Discovery order | Global → root → subdir | Repo root → CWD | CWD → walk up to root | Multi-format scan | Upward lookup to root | DB lookup | Parent routing / ACP | Session preload | Project root auto |
-| Import/modularity | `@import` / progress disclosure | No (concat, 32 KiB cap) | No | No (merged in-memory) | `instructions` array | No | ACP delegation | `-s` skill preload | No |
-| Confidence | HIGH | HIGH | MEDIUM | MEDIUM | MEDIUM | LOW | LOW | LOW | LOW |
+\* These are installer destinations from [`select-magent.ts`](../../../../../packages/core/src/pipeline/select-magent.ts), not a promise that the target runtime reads that directory. Project mode writes to the selected project root. Check the exact leaf `--help` output before using a target alias.
 
-### Plugin-Provided Magents (`magents/` install convention)
+`openclaw`, `claude-code`, `agents-md`, `antigravity`, `codexcli`, `cursor`,
+`aider`, and similar names may appear in registry entries, examples, or
+rulesync adapters. They are source or host-family labels unless the current
+CLI target list accepts them. In particular, `openclaw` is a reference format
+in this skill, not one of the nine current superskill install IDs.
 
-Main-agent packages may live in:
+## Source formats and emission
 
-1. **`plugins/<plugin>/magents/<name>/`** — plugin-shipped (immutable-ish distribution).
-2. **Repo-root `magents/<name>/`** — **preferred for continuously refined packages**
-   (mutable authoring SSOT). Staged as bare `<name>` at install time.
+The magent source pipeline accepts either a single manifest or a modular package:
 
-`superskill install` stages both into `.rulesync/magents/`, then emits per target:
-
-| Shape | Behavior |
+| Source shape | Source behavior |
 | --- | --- |
-| Claude `@` package (`CLAUDE.md` imports `@IDENTITY.md` …) | Copy modular files + CLAUDE.md (Claude expands `@` at launch) |
-| Multi-file without Claude import style | Concat `IDENTITY → SOUL → AGENTS → USER` (overrides win) |
-| Single-file | `AGENTS.<target>.md` → `AGENTS.md` |
+| `AGENTS.md`, `CLAUDE.md`, or a target variant such as `AGENTS.codex.md` | Select the most specific candidate for the requested runtime ID |
+| `IDENTITY.md`, `SOUL.md`, `AGENTS.md`, `USER.md` | Assemble existing layers in that order; a target override replaces a layer and must be inspected as a complete result |
+| Claude import package (`CLAUDE.md` with `@IDENTITY.md`-style imports) | Copy the entry and referenced layer files for `claude`; other targets receive an assembled output |
+| `plugins/<plugin>/rules/*.md` | Emit as a separate rules surface only when the target has a known rules directory; rules are not magent layers |
 
-**Plugin rules:** `plugins/<plugin>/rules/*.md` (not under magent packages) install
-into auto-load dirs when the target supports them:
+The implementation details are in [`select-magent.ts`](../../../../../packages/core/src/pipeline/select-magent.ts) and the install path in [`install.ts`](../../../../../apps/cli/src/commands/install.ts). `adaptMagentForTarget` rewrites plugin-scoped references and removes bare Claude `@file` import lines for Codex. That is a source conversion rule, not evidence of equivalent native behavior.
 
-| Target | Rules dir |
+The source registry and the runtime target are therefore different axes:
+
+| Label | Use it for | Do not infer |
+| --- | --- | --- |
+| `claude-code` | Claude host or documentation family | That `--target claude-code` is accepted; use `claude` when the CLI accepts it |
+| `agents-md` | A portable Markdown manifest shape | A particular host's precedence, scope, or tool set |
+| `openclaw` | OpenClaw reference material or a host-native adapter | That superskill currently installs it as a target |
+| `antigravity` | A family label in source material | Whether to choose CLI or IDE; use the exact `antigravity-cli` or `antigravity-ide` ID |
+| `codexcli` | A rulesync generator name used by some target mappings | That it is a magent target ID |
+
+Do not add platform names to a manifest merely to improve the heuristic
+`platform-coverage` score. Declare a target only when the file is intended for
+it and the relevant semantics have been checked.
+
+## Imports, scope, and loading
+
+- Claude `@file` imports are a native package boundary. Claude expands the
+  referenced files when the entry is loaded; this is eager loading of the
+  declared package, not general-purpose lazy or progressive disclosure.
+- For other targets, superskill assembles layers while installing. There is no
+  portable runtime import syntax. A successful concatenation does not establish
+  that the host loaded the resulting file.
+- Scoped rules directories are separate from the main-agent file. The current
+  emitter knows `.claude/rules/` and the Antigravity `.agents/rules/` paths;
+  other current targets may receive no rule files. A rule being emitted is not
+  proof that the host applied it.
+- Skills, extensions, subagents, memory, and tool schemas are host-managed
+  surfaces. Do not equate an on-disk skill or an installer receipt with a
+  loaded capability. Discover live tools and enabled extensions at the point of
+  use; do not assert that every target has or lacks delegation.
+- Host precedence, imported files, scoped rules, environment-selected roots,
+  and replacement overrides must be resolved into an effective context before
+  semantic review. Keep the source path and target ID in the review record.
+
+## Known installation boundaries
+
+These are source-audited limitations of the current installer, not universal
+vendor behavior:
+
+| Boundary | Consequence |
 | --- | --- |
-| claude | `.claude/rules/` (global: `~/.claude/rules/`) |
-| antigravity-cli / antigravity-ide | `.agents/rules/` |
-| codex, pi, opencode, hermes, omp, grok | *none* — skip (verbose note) |
+| Claude and non-Claude project installs both use a root `AGENTS.md` path | Sequential or combined installs can overwrite or duplicate persona layers; use separate destinations and inspect the dry run |
+| The global Claude rules path is currently joined twice | The emitted path can be `~/.claude/.claude/rules/`; a source test passing does not prove native global rule loading |
+| OMP and Grok have no pinned global magent destination in the emitter | A global install can fall back to a shared `~/AGENTS.md`; separate personas need a host-verified destination |
+| Codex, Pi, and OpenCode custom roots are not modeled | `CODEX_HOME`, a custom Pi agent directory, or a custom OpenCode config root may cause the emitted file to be missed |
+| Antigravity and Hermes adapters have distinct native conventions | A rulesync or copied filename can be syntactically valid while remaining undiscovered by the host |
+| Bundled package assets are refreshed by `build:bundle` / `prepack`, not every ordinary build | Source files, bundled assets, and installed output are separate verification boundaries |
 
-Cursor (`.cursor/rules`) / Windsurf / Cline support rules folders but are not
-superskill install targets yet. Session memory is **not** a magent file — use
-spur `sp:indexed-context` / `.spur/context/`.
-
-**Example:**
+Preview an installation when checking its plan:
 
 ```bash
-superskill install cc --magent team-stark-children --targets claude,codex,pi --verbose
+superskill install cc --magent team-stark-children \
+  --targets claude,codex,pi --dry-run --verbose
 ```
 
-### Native Tool Surface
+`--dry-run` does not write or emit inspectable target files. To inspect source
+emission, use an already-authorized install in a fresh, isolated destination,
+then compare the written files with their source provenance. Neither path
+validates native host discovery.
 
-The native tool namespaces each platform exposes. A main agent that wants to
-declare "use this tool first" must name a tool the target runtime actually
-provides — declaring Claude Code's `Agent` on Grok (which uses
-`spawn_subagent`) is a lossy mapping.
+## Tool declarations
 
-| Tool purpose | Claude Code | Codex | Pi | Omp | OpenCode | Antigravity | OpenClaw | Hermes | Grok |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| File read | `Read` | `shell` | `Read` | `read` | `read` | `read_file` | (Codex `read`) | `terminal` | `read_file` |
-| File edit | `Edit` | `shell` | `Edit` | `edit` / `ast_edit` | `edit` / `apply_patch` | `write_file` | (Codex `edit`) | `execute_code` | `search_replace` |
-| Shell | `Bash` | `shell` | `Bash` | `bash` | `bash` | `command` | (Codex `exec`) | `terminal` | `run_terminal_command` |
-| Search | `Grep` / `Glob` | `shell` | `Bash` | `grep` / `ast_grep` | `grep` / `glob` | `read_file` | `search_tools` | `web_search` | `read_file` |
-| Subagent | `Agent` | — | extension | `task` | — | `mcp` | ACP | `background` | `spawn_subagent` |
-| Plan/state | — | `update_plan` | — | `checkpoint` | `todowrite` | — | `sessions` | — | `update_plan` |
-| Web | `WebFetch` | `web_search` | `Bash` | `web_search` / `browser` | `webfetch` / `websearch` | `read_url` / `execute_url` | `browser` | `web_search` / `web_extract` | — |
-| Confidence | HIGH | HIGH | MEDIUM | HIGH | MEDIUM | LOW | LOW | LOW | LOW |
+This reference intentionally has no static native-tool inventory. Tool names,
+delegation, permissions, extensions, and web access vary by target release,
+configuration, and session. A main-agent file may preserve an operator's
+preferred ordering, but it should name a tool only when the active runtime
+provides it and should state a fallback when the task can continue without it.
 
----
+Use the host's purpose-built file, search, edit, web, and delegation tools when
+available. Use a shell or terminal for a real CLI, with bounded output, and
+verify commands and flags with their current `--help`. An unavailable tool is a
+capability limitation to report, not a reason to invent a namespace or to claim
+that all subagents are absent.
 
-## Harness Row: spur + superskill
+## Verification boundary
 
-The **harness** is the spur + superskill toolchain layered over a coding
-agent's native surface. Use it first for lifecycle data it owns. For direct
-file, search, web, and delegation work, prefer a purpose-built native tool;
-invoke a shell for a real CLI or only when no dedicated tool exists.
+Label repository emission as **source verified**, a target process and its
+effective context as **host verified**, and representative task outcomes as
+**behavior verified**. Keep unrun or inferred checks explicitly unverified;
+the main workflow owns the review checklist and evidence report.
 
-| Harness surface | What it does | Native equivalent it replaces | Confidence |
-| --- | --- | --- | --- |
-| `spur task` | Create / update / list / check WBS-numbered task files in `docs/tasks/` | Ad-hoc `TODO.md` or in-prompt checklists | HIGH |
-| `spur feature` | Hierarchical feature IDs with lifecycle (backlog → done) | Manual feature spreadsheets | HIGH |
-| `spur rule` | Validate constraint rules over the working tree | Ad-hoc lint scripts | HIGH |
-| `spur workflow` | Validate and run multi-phase DAG workflows | Hand-rolled orchestration prompts | HIGH |
-| `superskill magent` | Scaffold / validate / evaluate / refine / evolve main-agent configs | Hand-authoring `AGENTS.md` / `CLAUDE.md` | HIGH |
-| `superskill skill` | Scaffold / validate / evaluate / refine / evolve skills | Hand-authoring skill dirs | HIGH |
-| `superskill agent` | Manage subagent definitions | Hand-authoring agent `.md` | HIGH |
-| `superskill command` | Manage slash commands | Hand-authoring command `.md` | HIGH |
-| `superskill hook` | Author + emit cross-platform hooks | Platform-native hook config | HIGH |
-| `superskill install` | One-shot multi-target plugin install | Per-platform manual setup | HIGH |
+## Source map
 
-### How main agents should declare preferred tool usage
-
-When the harness is present (i.e., `spur` and `superskill` resolve on `PATH`),
-a main-agent manifest should include an explicit **preferred-tools** statement.
-The statement must:
-
-1. Name the harness binaries (`spur`, `superskill`) and the verbs the project
-   uses day-to-day (`spur task`, `spur feature`, `superskill magent`,
-   `superskill skill`).
-2. Pin the native ladder: purpose-built native tools first; shell-shaped tools
-   (`bash`, `Bash`, `shell`, `Shell`, `run_terminal_command`, `Python`, and
-   equivalents) last among built-ins because unbounded output floods context,
-   costs tokens, and a general shell shadows dedicated tools.
-3. Declare the task surface as the single source of truth: "task state lives
-   in `docs/tasks/` via `spur task`; do not track work in free-form
-   checklists."
-4. Pin search and web fallback orders: native search → `rg` / `sg` → raw text
-   tools; native web search/fetch → `curl` / `wget` / MCP or plugin surfaces.
-
-Example snippet for a Claude Code `CLAUDE.md`:
-
-```markdown
-## Preferred tools (harness present)
-
-- **Tasks & features:** `spur task` and `spur feature` own work tracking.
-  Use this first; do not maintain parallel TODO lists.
-- **Main-agent config:** `superskill magent` (scaffold / evaluate / refine /
-  evolve) owns `CLAUDE.md` and cross-platform siblings.
-- **Skills:** `superskill skill` owns skill lifecycle.
-- **Native work:** use purpose-built file, search, web, and delegation tools
-  before shell-shaped tools. Shell is for real CLIs or missing native coverage;
-  bound output because unbounded shell output floods context, costs tokens, and shadows dedicated tools.
-- **Search:** native search → `rg` / `sg` → `grep` / `sed` / `awk` / `perl`.
-  `rg` and `sg` respect ignore rules and skip irrelevant files.
-- **Web:** native search/fetch → `curl` / `wget` / MCP or plugin surfaces.
-```
-
----
-
-## Lossy Mappings and Recommended Workarounds
-
-When a harness-aware main agent is ported across platforms, some declarations
-do not survive the translation. Adapters under `superskill install` report
-each loss; the table below lists the recurring ones and the recommended
-workaround.
-
-| Source declaration | Lossy on target | What is lost | Recommended workaround |
-| --- | --- | --- | --- |
-| Claude Code `Agent` subagent dispatch | Codex, Pi, OpenCode, Grok (`spawn_subagent` only on Grok) | Native subagent spawning | Emit a `NOTE:` instructing the agent to inline the work or shell out to `superskill agent` / `spur` worktrees; lossy on all but Grok |
-| Claude Code `WebFetch` | Pi, Grok | First-party web tool | Map to `Bash` + `curl` (Pi) or `run_terminal_command` (Grok); flag as sandboxed |
-| Claude Code hooks (`PreToolUse` etc.) | All non-Claude | Prompt-based hook runtime | Author canonical hooks via `superskill hook`; `superskill install` emits the platform-native equivalent or reports `WARN` where none exists (Codex, OpenCode) |
-| `spur task` WBS numbering | All native surfaces | None — `spur` is CLI, runs anywhere `node`/`bun` exists | No workaround needed; declare `spur task` as preferred in every target manifest |
-| `superskill magent evaluate` two-call seam | Platforms without `--json` consumers | Offline scorer loop | The seam is CLI-only and platform-agnostic; the target manifest just needs to name `superskill magent` as the evaluator. No loss. |
-| Skills delegation (`Skill()` / `cc:` namespace) | Codex, Pi, OpenCode, Antigravity, OpenClaw, Hermes, Grok | Model-invoked skill routing | `superskill install` flattens skills to platform-native entries; main agent should reference skills by name, not by `cc:` deep links |
-| `ast_grep` / `ast_edit` (Omp) | All non-Omp | AST-aware edit | Fall back to text `Edit` / `search_replace`; flag higher regression risk |
-| Omp `eval` persistent kernel | All non-Omp | Stateful Python/JS kernel | Replace with one-shot `Bash` script invocations; lossy for long sessions |
-| Omp `checkpoint` | All non-Omp | Mid-task state snapshot | Replace with `spur task update` + commit; coarser-grained but durable |
-| OpenClaw `search_tools` / `PI Tool Search` | All non-OpenClaw | Dynamic tool discovery | Preload all needed tools at session start; higher context cost |
-| Antigravity lifecycle hooks (`PreToolUse` etc.) | Non-Antigravity | Tool-event hooks | Use `superskill hook` canonical authoring; lossy on platforms with no hook runtime |
-
-### Confidence notes
-
-- **HIGH** for spur/superskill rows: the CLI surface is exercised by the
-  superskill and spur test suites and verified against `--help` output on
-  2026-07-15.
-- **HIGH** for Claude Code, Codex native-tool rows: verified against
-  `docs/about_main_agent.md` (2026-04-30) and current CLI behavior.
-- **MEDIUM** for Pi, Omp, OpenCode: official docs exist but the tool surface
-  is extensible (Pi extensions, Omp's 32-tool set, OpenCode permissions); a
-  manifest should not assume an extension is present without checking.
-- **LOW** for Antigravity, OpenClaw, Hermes, Grok: no stable official docs
-  for the main-agent surface as of 2026-04-30. Manifests targeting these
-  platforms must be validated via `superskill magent validate` and re-scored
-  after any platform update.
-
----
-
-## Source Material
-
-- `docs/about_main_agent.md` — nine-platform specification matrix (manifests,
-  system prompts, native tools, sandbox boundaries), verified 2026-04-30.
-- `spur --help`, `spur task --help`, `spur feature --help`, `spur rule --help`,
-  `spur workflow --help` — CLI surface verified 2026-07-15.
-- `superskill --help`, `superskill magent --help` — CLI surface verified
-  2026-07-15.
+- [`packages/core/src/targets.ts`](../../../../../packages/core/src/targets.ts) — canonical runtime IDs and rulesync mappings.
+- [`packages/core/src/pipeline/select-magent.ts`](../../../../../packages/core/src/pipeline/select-magent.ts) — candidate selection, layer assembly, imports, output names, and installer destinations.
+- [`apps/cli/src/commands/magent.ts`](../../../../../apps/cli/src/commands/magent.ts) — live magent command group and option wiring.
+- [`apps/cli/src/commands/install.ts`](../../../../../apps/cli/src/commands/install.ts) — target emission, native dispatch, receipts, and dry-run behavior.
+- [`magents/team-stark-children/README.md`](../../../../../magents/team-stark-children/README.md) — package-specific deployment findings and their verification limits.
+- [`docs/about_main_agent.md`](../../../../../docs/about_main_agent.md) — repository design notes; treat vendor and rolling documentation as evidence to reverify, not as a universal host contract.
