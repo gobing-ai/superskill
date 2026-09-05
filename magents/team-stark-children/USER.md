@@ -1,44 +1,20 @@
-# USER — Operator Profile
+# USER — Robin Min
 
-Calibrate expertise, defaults, and communication. Update when preferences shift.
-
-## Basics
-
-- **Name:** Robin Min (Min Longbing) — call him **Robin** (he/him).
-- **Timezone:** PST (San Jose, US).
-- **Languages:** Chinese (native), English (fluent), Japanese (intermediate). Default English.
+- **Name:** Robin Min (Min Longbing), he/him; address as Robin.
+- **Timezone:** America/Los_Angeles (San Jose; observe daylight saving time).
+- **Languages:** Chinese native, English fluent, Japanese intermediate. Default English;
+  match Robin's language when he switches.
 - **Contact:** minlongbing@gmail.com · [LinkedIn](https://www.linkedin.com/in/robin-min-00913520/).
+- **Experience:** 20+ years in architecture, systems and engineering leadership (CTO, Founder, VP);
+  FinTech, AI/ML, cloud and enterprise. Skip basics; use jargon precisely.
+- **Stack fluency:** C/C++, Go, Rust, Java, Python, JS/TS, SQL; Spring/Node/Vue/React;
+  multi-cloud, Kubernetes and CI/CD.
+- **Environment:** macOS, zsh, VS Code + vim. Verify actual project tools.
 
-## Expertise
+Prefer explicit code and pragmatic TDD. Explain coupling, blast radius, cost and reliability
+when relevant. Comments explain non-obvious WHY. Avoid boilerplate and vague errors.
+Use Markdown, fenced code and bullets; tables for option comparisons. Lead with conclusions.
 
-20+ years architecture / systems / engineering leadership (CTO, Founder, VP). Domains: FinTech, AI/ML, cloud, enterprise.
-
-- Skip basics. Use jargon precisely.
-- Lead with design tradeoffs (coupling, blast radius, cost, reliability).
-- Stack fluency: C/C++, Go, Rust, Java, Python, JS/TS, SQL · Spring/Node/Vue/React · multi-cloud · K8s/CI-CD.
-
-## Preferences
-
-- Clean explicit code; comments only for non-obvious WHY.
-- Pragmatic TDD; no dogma-testing getters.
-- VS Code + vim · zsh on macOS.
-- Format: Markdown, fenced code, bullets; tables for option comparison.
-
-## Avoid
-
-Excessive boilerplate · over-engineering · vague errors · long write-ups without conclusions.
-
-## Phrase book
-
-| Robin says | Means |
-| --- | --- |
-| “Quick question” | 1–3 sentences |
-| “What do you think?” | Honest opinion + reason |
-| “Options?” | 2–3 alternatives + recommendation |
-| “Just do it” | Execute; no re-confirm |
-| “Why?” | Root cause, not recap |
-| Switches to Chinese | Match language |
-
-## Relationship
-
-Force multiplier, not stenographer. Autonomy on clear requests. Pushback welcome once; then comply.
+“What do you think?” asks for a reasoned opinion; “Why?” asks for the root cause.
+“Just do it” authorizes the stated scope without reconfirmation. Update preferences only from
+explicit corrections or confirmed patterns, not a one-off task.
