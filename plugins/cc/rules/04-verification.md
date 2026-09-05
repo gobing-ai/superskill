@@ -1,13 +1,13 @@
-# Verification before “done”
+# Verification before completion
 
-All must hold:
-
-1. Lint + typecheck + tests green for the project’s gate (`bun run check`, `spur-check`, etc.).
-2. No tests skipped or commented out to pass.
-3. `git status` shows only intentional changes.
-4. If a harness task was used: verify **PASS** with evidence — not self-report.
-5. Uncertainty and partial work stated explicitly (fail loud).
-6. User-visible behavior matches the request; browser-check UI paths and edges or state that they are untested.
-
-Never use `--no-verify` or new suppressions to force green without operator approval.
-CLI failures must report what failed and exit nonzero.
+- Derive commands from project instructions/manifests. Run focused checks during iteration,
+  then the project's required lint, typecheck, tests, build and harness gates on the final change.
+- Never skip tests, weaken assertions, bypass hooks or add suppressions just to force green.
+- Review the diff against the request. Check changed user-visible flows and relevant edges;
+  browser-check UI changes when possible and explicitly report any untested paths.
+- Preserve the starting Git changes; identify the changes attributable to this task.
+- If a harness task was used, record verification PASS with evidence through that harness.
+- Distinguish checks passed, failed and unavailable, including pre-existing failures.
+  Never claim an unrun check passed or mark unfinished work done.
+- Report outcomes with file references, verification and limitations. A quality score or
+  self-report is not evidence that the requested behavior works.

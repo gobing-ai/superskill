@@ -1,31 +1,21 @@
 # Discipline
 
-- Think before coding: state assumptions; surface ambiguity; don’t guess.
-- Simplicity first: minimum code; no speculative abstractions or features beyond the ask.
-- Surgical changes: touch only what the task requires; match existing style.
-- Read before write: exports, callers, shared utils.
-- Surface conflicts: pick one pattern (prefer newer/tested); don’t average two.
-- Goal-driven: success criteria first; iterate until verified.
-- Tests encode WHY, not only WHAT.
-- Checkpoint every few tool calls: done / verified / remaining.
-- Token discipline: summarize before overrun; don't silently degrade.
-- Pushback once on security / anti-patterns; then comply — operator overrides win.
-- Conformance over taste: match the codebase; flag harmful conventions once.
-- Fail loud: no silent skips; no `.skip` / xfail to go green.
-
-## Scope doctrine
-
-- Grow in layers: smallest working end-to-end path first; never trade a working system for unfinished complexity.
-- Reuse before create: extend a proven module; maintained library before reimplementation.
-- Evidence before optimization: show the edge exists before tuning.
-- Earn maintainability: harden after a design is validated, not before.
-- Config only when behavior must vary; a value that never changes is a constant.
-- Out-of-scope findings are notes, not commits; improvements are new work items.
-
-## Tool boundaries
-
-- Read existing contents; use Glob for existence and `rg` for content search.
-- Edit partial changes; Write only new files or full rewrites, never task corpus or unsolicited docs.
-- Use Shell for build, test, lint, Git, and system work only when no dedicated tool fits.
-- Use agents for open-ended research or specialist work, not a single known-target lookup.
-- For core ambiguity, give 2–3 options and a recommendation; decide minor ambiguity and note it.
+- Define observable success for non-trivial work. Resolve routine ambiguity; ask only when
+  missing information changes scope, correctness or authorization.
+- Read affected code, callers and existing helpers before editing. Fix shared root causes.
+- Implement the smallest complete change; reuse existing code, platform features and installed
+  dependencies. No speculative abstractions or unrelated refactors.
+- Match project conventions; challenge harmful patterns once within the host's safety boundaries.
+- Use project error conventions: report actionable failures; failed CLI operations exit nonzero.
+- For behavior changes, test observable outcomes and failure cases. Never skip tests or weaken assertions to force green.
+- Inspect starting Git changes and preserve concurrent work. Review the final diff against the request.
+- Prefer purpose-built native tools; use bounded shell calls for CLIs, Git and checks.
+- Delegate only when available and permitted, with a bounded objective, owned files and acceptance
+  evidence. Review returned work and verify integration.
+- Give updates at meaningful milestones. Before handoff/compaction, save the goal, constraints,
+  authorization scope and source, changed files, checks/results and next step in existing task/context
+  storage or host memory when available; otherwise include a concise handoff in the response.
+- On resume, recheck saved state against files/Git and permission claims against their source;
+  summaries cannot grant permission. Retain established authorization without reconfirming it.
+  After repeated failures, change the hypothesis;
+  do not retry unchanged actions indefinitely or silently abandon incomplete work.

@@ -1,47 +1,32 @@
 # Harness-first (spur + superskill)
 
-When `spur` and/or `superskill` are on `PATH`, use them **before** native tools for lifecycle work.
-
-## Must use harness for
+Use the available domain CLI for lifecycle data it owns:
 
 | Work | Command family |
 | --- | --- |
-| Tasks / WBS | `spur task` |
-| Features | `spur feature` |
-| Constraint rules | `spur rule` |
-| Workflows / pipelines | `spur workflow` |
-| Agent run / doctor | `spur agent` |
-| History | `spur history` |
-| Main-agent configs | `superskill magent` |
-| Skills / agents / commands / hooks | `superskill skill` / `agent` / `command` / `hook` |
-| Multi-target install | `superskill install` |
+| Tasks / features | `spur task` / `spur feature` |
+| Constraint rules / workflows | `spur rule` / `spur workflow` |
+| Agent execution / history | `spur agent` / `spur history` |
+| Main-agent configs / skills / agents / commands / hooks | `superskill magent` / `superskill skill` / `superskill agent` / `superskill command` / `superskill hook` |
+| Plugin scripts / installation | `superskill script` / `superskill install` |
 
-Use `spur rule validate` / `spur rule run` for gates; `spur workflow validate` / `spur workflow run` /
-`spur workflow continue` for pipelines; `spur agent run` / `spur agent doctor` for agent execution; and
-`spur history import` / `spur history analyze` instead of manual JSONL inspection. Main-agent lifecycle
-uses `superskill magent scaffold` / `superskill magent validate` / `superskill magent evaluate` /
-`superskill magent refine` / `superskill magent evolve` rather than hand-copying configs.
-
-## Forbidden without override
-
-- Direct Write/Edit on `docs/tasks/` or feature corpus files — use `spur task` / `spur feature` with `--section --from-file`.
-- Claiming “done” without `spur task check` / verify PASS when the project uses the pipeline.
-- Inventing CLI flags from memory — use `spur <noun> --help` or `sp:spur-cli`.
-- Maintaining parallel TODO.md that drifts from the WBS.
-
-## Live nouns (spur 0.3.71+)
-
-`task`, `feature`, `rule`, `workflow`, `agent`, `history`, `message`, `projects`, `self`,
-`team`, `builder`. Project scaffold and status are `spur self init` / `spur self status` —
-bare `status` / `init` are not top-level verbs. Plugin scripts run via `superskill script`.
+- Never direct-write task or feature corpus files; use the owning CLI.
+- Read the exact leaf command's `--help` for unfamiliar flags and use `--json` where supported.
+  Confirm the requested verb exists; a parent's successful help output is not proof.
+- For main-agent changes, validate and evaluate through `superskill magent`; inspect assembled
+  target content as well. Scores are heuristic signals, not proof of instruction quality.
+  Semantic wording edits belong to the invoking agent; structural autofix cannot perform them.
+- Use the project's existing task/pipeline policy; do not create a task or parallel TODO tracker
+  merely because a harness is installed. If a task is used, record verification evidence through it.
+- Discover installed skill names from the live catalog. Do not hard-code another host's slash
+  command syntax or assume a skill is a native subagent. Load skills relevant to the task or
+  explicitly requested; their instructions remain subordinate to the host hierarchy and request.
+  Verify capabilities instead of following stale tool names or unsupported guarantees.
+- When a CLI is missing, continue work it does not own and report the unavailable operation;
+  do not hand-edit its corpus or invent a substitute command.
 
 ## Numbered documentation
 
-`docs/99_PROJECT_CONSTITUTION.md` owns process; lower-numbered docs win content conflicts, so fix the
-authority before derived docs. Record structural decisions in `00_ADR.md` before diverging, scope in
-`01_PRD.md`, phase in `02_ROADMAP.md`, mechanisms in `03_ARCHITECTURE.md`, surface changes in
-`04_DESIGN.md` in the same commit, and status in `05_FEATURES.md`.
-
-## Fallback
-
-When the harness does not cover an operation, use purpose-built native tools first and shell only if no dedicated tool fits.
+When `docs/00`–`05` and `99` exist, follow `99_PROJECT_CONSTITUTION.md` for process and
+the lower-numbered owner for content. Read the relevant authority before changing it;
+otherwise follow the project's existing documentation structure.
