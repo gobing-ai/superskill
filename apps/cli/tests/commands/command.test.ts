@@ -117,6 +117,20 @@ describe('commandEvaluate', () => {
         const result = await commandEvaluate({ nameOrPath: 'my-command', save: true });
         expect(result).toBeUndefined();
     });
+
+    // F9 (task 0127 R9): the evaluate seam must forward basePath instead of dropping it.
+    it('forwards basePath to the evaluate operation', async () => {
+        const spy = spyOn(evaluateOp, 'evaluate').mockResolvedValue({
+            content: 'my-command',
+            type: 'command',
+            target: 'claude',
+            aggregate: 0.95,
+            dimensions: {},
+        });
+        const { commandEvaluate } = await import('../../src/commands/command');
+        await commandEvaluate({ nameOrPath: 'my-command', basePath: '/custom/plugins' });
+        expect(spy.mock.calls[0]?.[2]?.basePath).toBe('/custom/plugins');
+    });
 });
 
 describe('commandRefine', () => {
@@ -257,6 +271,32 @@ describe('registerCommand', () => {
                 from: 'user',
             });
             expect(exit).toHaveBeenCalled();
+        } finally {
+            exit.mockRestore();
+            process.exitCode = 0;
+        }
+    });
+
+    // F9 (task 0127 R9): --base-path parses on the evaluate registration and reaches the
+    // operation seam (the value must not be silently dropped between CLI and seam).
+    it('parses --base-path on evaluate dispatch and forwards it to the operation', async () => {
+        const spy = spyOn(evaluateOp, 'evaluate').mockResolvedValue({
+            content: 'test',
+            type: 'command',
+            target: 'claude',
+            aggregate: 0.95,
+            dimensions: {},
+        });
+        const exit = spyOn(process, 'exit').mockImplementation(() => undefined as never);
+        try {
+            const { registerCommand } = await import('../../src/commands/command');
+            const program = new Command();
+            registerCommand(program);
+
+            await program.parseAsync(['command', 'evaluate', 'test', '--base-path', '/tmp/plugins'], {
+                from: 'user',
+            });
+            expect(spy.mock.calls[0]?.[2]?.basePath).toBe('/tmp/plugins');
         } finally {
             exit.mockRestore();
             process.exitCode = 0;

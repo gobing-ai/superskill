@@ -398,7 +398,7 @@ describe('generateOmpHookModules', () => {
         }
     });
 
-    it('deduplicates colliding hook names with a random suffix', () => {
+    it('deduplicates colliding hook names with a deterministic numeric suffix (F7, task 0127)', () => {
         const sourceDir = makeTempDir();
         const installPath = makeTempDir();
         try {
@@ -413,12 +413,65 @@ describe('generateOmpHookModules', () => {
             });
             const result = generateOmpHookModules(sourceDir, installPath, 'sp');
             expect(result.count).toBe(2);
-            // One file is guard.js, the other gets a random suffix
+            // Deterministic naming: the first keeps the base name, the second gets '-2'
             const names = result.files.map((f) => f.split('/').pop());
-            const baseName = names.find((n) => n === 'guard.js');
-            const suffixedName = names.find((n) => n !== 'guard.js' && n?.startsWith('guard-'));
-            expect(baseName).toBeDefined();
-            expect(suffixedName).toBeDefined();
+            expect(names).toContain('guard.js');
+            expect(names).toContain('guard-2.js');
+        } finally {
+            rmSync(sourceDir, { recursive: true, force: true });
+            rmSync(installPath, { recursive: true, force: true });
+        }
+    });
+
+    it('skips a natural -2 sibling when picking a collision suffix (F7, task 0127)', () => {
+        const sourceDir = makeTempDir();
+        const installPath = makeTempDir();
+        try {
+            // Hook names 'guard', 'guard-2' (natural), 'guard' again: the third must take
+            // 'guard-3' instead of trampling the natural 'guard-2' file.
+            writeHooksJson(sourceDir, {
+                hooks: {
+                    preToolUse: [
+                        { matcher: 'Write', hooks: [{ type: 'command', command: 'superskill hook run demo guard' }] },
+                        { matcher: 'Read', hooks: [{ type: 'command', command: 'superskill hook run demo guard-2' }] },
+                        { matcher: 'Edit', hooks: [{ type: 'command', command: 'superskill hook run demo guard' }] },
+                    ],
+                },
+            });
+            const result = generateOmpHookModules(sourceDir, installPath, 'sp');
+            expect(result.count).toBe(3);
+            const names = result.files.map((f) => f.split('/').pop()).sort();
+            expect(names).toEqual(['guard-2.js', 'guard-3.js', 'guard.js']);
+        } finally {
+            rmSync(sourceDir, { recursive: true, force: true });
+            rmSync(installPath, { recursive: true, force: true });
+        }
+    });
+
+    it('produces byte-identical output across a reinstall (F7 determinism, task 0127)', () => {
+        const sourceDir = makeTempDir();
+        const installPath = makeTempDir();
+        try {
+            writeHooksJson(sourceDir, {
+                hooks: {
+                    preToolUse: [
+                        { matcher: 'Write', hooks: [{ type: 'command', command: 'superskill hook run demo guard' }] },
+                        { matcher: 'Edit', hooks: [{ type: 'command', command: 'superskill hook run demo guard' }] },
+                    ],
+                },
+            });
+            // A reinstall reuses the same install root, so the returned path arrays are
+            // comparable and the deterministic allocator must re-select the same names
+            // even though guard.js / guard-2.js already exist on disk.
+            const first = generateOmpHookModules(sourceDir, installPath, 'sp');
+            const second = generateOmpHookModules(sourceDir, installPath, 'sp');
+
+            expect(second.files).toEqual(first.files);
+            for (let i = 0; i < first.files.length; i++) {
+                const a = requireString(first.files[i], `first.files[${i}]`);
+                const b = requireString(second.files[i], `second.files[${i}]`);
+                expect(readFileSync(b, 'utf-8')).toBe(readFileSync(a, 'utf-8'));
+            }
         } finally {
             rmSync(sourceDir, { recursive: true, force: true });
             rmSync(installPath, { recursive: true, force: true });

@@ -8,6 +8,7 @@ import {
     type Change,
     type ContentType,
     getProposalsDir,
+    hashContent,
     loadEvalCases,
     loadRubric,
     parseFrontmatter,
@@ -19,6 +20,7 @@ import {
     type Target,
 } from '@gobing-ai/superskill-core';
 import { echo, echoError } from '@gobing-ai/ts-utils';
+import { z } from 'zod';
 import type { DbAdapter, Evaluation, Proposal } from '../store';
 import { EvaluationDao } from '../store/evaluations';
 import { ProposalDao } from '../store/proposals';
@@ -686,6 +688,47 @@ function emitGenerationEnvelope(
  * On accept (opts.acceptId), apply via stepApply + stepVerify.
  * The JSON shape: `{ proposal_id?: string, changes: ProposedChange[] }`.
  */
+/**
+ * F6 (task 0127 R6): runtime schemas for agent-authored proposal documents. JSON.parse output is
+ * treated as unknown; the full envelope and every change must validate BEFORE any DAO lookup or
+ * insert, proposal file write, or directory creation. The optional explicit `proposal_id` is
+ * segment-checked here and the final (explicit or generated) ID is re-checked below before paths
+ * are constructed. TypeScript interfaces (ProposedChange, SkepticVerdict) remain the domain contracts.
+ */
+const proposedChangeSchema = z.object({
+    dimension: z.string().min(1),
+    location: z.string().min(1),
+    // Insertions legitimately have no current text — presence as a string is required, emptiness is not.
+    current: z.string(),
+    proposed: z.string().min(1),
+    reason: z.string().min(1),
+    failure_mode: z.enum(FAILURE_MODES).optional(),
+});
+
+const skepticVerdictSchema = z.object({
+    ok: z.boolean(),
+    // Optional, mirroring the SkepticVerdict domain contract — only types are enforced.
+    violations: z.array(z.string()).optional(),
+    note: z.string().optional(),
+});
+
+const proposalDocumentSchema = z.object({
+    proposal_id: z
+        .string()
+        .refine((value) => {
+            try {
+                assertSafePathSegment(value, 'proposal_id');
+                return true;
+            } catch {
+                return false;
+            }
+        })
+        .optional(),
+    anchor_hash: z.string().min(1).optional(),
+    skeptic: skepticVerdictSchema.optional(),
+    changes: z.array(proposedChangeSchema).min(1),
+});
+
 async function ingestProposal(
     db: DbAdapter,
     type: ContentType,
@@ -702,41 +745,26 @@ async function ingestProposal(
         throw Object.assign(new Error(`Cannot read proposal file: ${ingestPath}`), { code: 2 });
     }
 
-    let parsed: { proposal_id?: string; changes: ProposedChange[]; anchor_hash?: string; skeptic?: SkepticVerdict };
+    let rawParsed: unknown;
     try {
-        parsed = JSON.parse(raw) as {
-            proposal_id?: string;
-            changes: ProposedChange[];
-            anchor_hash?: string;
-            skeptic?: SkepticVerdict;
-        };
+        rawParsed = JSON.parse(raw);
     } catch {
         throw Object.assign(new Error(`Invalid JSON in proposal file: ${ingestPath}`), { code: 1 });
     }
 
-    if (!Array.isArray(parsed.changes) || parsed.changes.length === 0) {
-        throw Object.assign(new Error('Proposal file must contain a non-empty changes array'), { code: 1 });
+    // F6 (task 0127 R6): parse unknown, validate the envelope and each change, then mutate.
+    const check = proposalDocumentSchema.safeParse(rawParsed);
+    if (!check.success) {
+        const issue = check.error.issues[0];
+        const path = issue && issue.path.length > 0 ? issue.path.join('.') : 'root';
+        throw Object.assign(
+            new Error(`Invalid proposal document at ${path}: ${issue ? issue.message : 'invalid shape'}`),
+            {
+                code: 1,
+            },
+        );
     }
-
-    // Validate each change has the required fields with non-empty proposed text.
-    for (const change of parsed.changes) {
-        if (!change.dimension || !change.location || !change.proposed || !change.reason) {
-            throw Object.assign(
-                new Error(`Invalid ProposedChange: missing required field (dimension, location, proposed, reason)`),
-                { code: 1 },
-            );
-        }
-        // Failure-mode tag (task 0070 R5): optional, but must name a known mode when present
-        // so proposal history stays a clean failure-mode ledger.
-        if (change.failure_mode !== undefined && !FAILURE_MODES.includes(change.failure_mode)) {
-            throw Object.assign(
-                new Error(
-                    `Invalid failure_mode "${change.failure_mode}". Expected one of: ${FAILURE_MODES.join(', ')}`,
-                ),
-                { code: 1 },
-            );
-        }
-    }
+    const parsed = check.data;
 
     const proposalDao = new ProposalDao(db);
     const existingProposals = await proposalDao.getProposals(type, name);
@@ -1132,25 +1160,25 @@ async function stepVerify(
 ): Promise<{ postScore: number; delta: number; rejected?: boolean; reason?: string; backupPath?: string }> {
     let postScore = baselineScore;
     let postReport: QualityReport | undefined;
-    let verifyId: number | undefined;
+    // F1 (task 0127 R1): score the candidate WITHOUT persisting. The evaluations table is
+    // append-only with no rejected-attempt state, so a row written before the gates would make
+    // a rejected candidate the newest stepAnalyze baseline even though the file was restored.
+    // Order is evaluate → gate → persist → link; rejected attempts leave no evaluation history.
+    let captured: QualityReport | undefined;
     try {
-        // R10/R7: persist the post-evolution evaluation with operation 'evolve' (reuses the same store adapter).
-        // The gate sits ON TOP of this row — it never bypasses the closed-loop verify write (invariant #6).
         const report = await (opts?.evaluateFn ?? evaluate)(type, filePath, {
             target: opts?.target,
             adapter: db,
-            save: true,
-            requireSave: true,
+            save: false,
             operation: 'evolve',
         });
         if (!report) throw new Error('evaluate returned null in heuristic mode');
-        if (report.evaluationId === undefined) throw new Error('evaluation was not persisted');
         postScore = report.aggregate;
         postReport = report;
-        verifyId = report.evaluationId;
+        captured = report;
     } catch (err) {
         const detail = err instanceof Error ? ` ${err.message}` : '';
-        throw Object.assign(new Error(`Cannot re-evaluate and persist changes.${detail}`), { code: 1 });
+        throw Object.assign(new Error(`Cannot re-evaluate changes.${detail}`), { code: 1 });
     }
 
     const delta = postScore - baselineScore;
@@ -1218,8 +1246,29 @@ async function stepVerify(
         }
     }
 
-    if (verifyId === undefined) {
-        throw Object.assign(new Error('Cannot link verify evaluation: persisted evaluation ID is unavailable.'), {
+    // All enabled gates passed (or none configured) — persist the captured form report once.
+    // Any insert/link failure throws into applyProposalTransaction, which rolls the file back and
+    // resets the proposal to draft; the append-only DAO gains no delete API for this.
+    if (!captured) {
+        throw Object.assign(new Error('Cannot persist verification: candidate evaluation was not captured.'), {
+            code: 1,
+        });
+    }
+    let verifyId: number;
+    try {
+        verifyId = await new EvaluationDao(db).insertEvaluation({
+            content_type: type,
+            content_name: name,
+            target_agent: opts?.target ?? 'claude',
+            operation: 'evolve',
+            aggregate: captured.aggregate,
+            dimensions: captured.dimensions as Record<string, { score: number; note: string }>,
+            file_hash: hashContent(filePath),
+            scorer: 'heuristic',
+        });
+    } catch (err) {
+        const detail = err instanceof Error ? ` ${err.message}` : String(err);
+        throw Object.assign(new Error(`Cannot persist verification evaluation.${detail ? ` ${detail}` : ''}`), {
             code: 1,
         });
     }

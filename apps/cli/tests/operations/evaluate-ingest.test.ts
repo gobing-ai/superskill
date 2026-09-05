@@ -221,8 +221,9 @@ describe('scorer seam — ingest-in', () => {
         const adapter = await createDbAdapter({ driver: 'bun-sqlite', url: ':memory:' });
         await adapter.exec(evaluations.createTableSql);
 
+        // F6 (task 0127 R6): shape validation carries the offending field path.
         await expect(evaluate('agent', file, { ingest: scoresFile, save: true, adapter })).rejects.toThrow(
-            /out of range/,
+            /Invalid scores document at dimensions\.completeness\.score/,
         );
 
         const dao = new EvaluationDao(adapter);
@@ -271,6 +272,57 @@ describe('scorer seam — ingest-in', () => {
         await expect(evaluate('agent', file, { ingest: scoresFile, save: true, adapter })).rejects.toThrow(
             /Unexpected dimension/,
         );
+
+        const dao = new EvaluationDao(adapter);
+        const rows = await dao.getEvaluations('agent', 'code-reviewer');
+        expect(rows).toHaveLength(0);
+    });
+
+    // F6 (task 0127 R6/AC8): agent-authored scores JSON is untrusted input — malformed
+    // shapes fail with a field path before any evaluation row exists.
+    it.each([
+        ['null document', 'null', /Invalid scores document at root/],
+        ['non-object document', '[0.9, 0.8]', /Invalid scores document at root/],
+        ['missing dimensions object', JSON.stringify({ rubric_version: 2 }), /Invalid scores document at dimensions/],
+        [
+            'non-integer rubric_version',
+            JSON.stringify({ rubric_version: 1.5, dimensions: VALID_AGENT_SCORES.dimensions }),
+            /Invalid scores document at rubric_version/,
+        ],
+        [
+            'missing note in a dimension entry',
+            JSON.stringify({
+                rubric_version: 2,
+                dimensions: { ...VALID_AGENT_SCORES.dimensions, completeness: { score: 0.85 } },
+            }),
+            /Invalid scores document at dimensions\.completeness\.note/,
+        ],
+        [
+            'empty note in a dimension entry',
+            JSON.stringify({
+                rubric_version: 2,
+                dimensions: { ...VALID_AGENT_SCORES.dimensions, completeness: { score: 0.85, note: '' } },
+            }),
+            /Invalid scores document at dimensions\.completeness\.note/,
+        ],
+        [
+            'non-numeric score',
+            JSON.stringify({
+                rubric_version: 2,
+                dimensions: { ...VALID_AGENT_SCORES.dimensions, completeness: { score: 'high', note: 'x' } },
+            }),
+            /Invalid scores document at dimensions\.completeness\.score/,
+        ],
+    ])('rejects %s without inserting a row', async (_label, body, expected) => {
+        const file = join(tmpDir, 'code-reviewer.md');
+        writeFileSync(file, GOOD_AGENT);
+        const scoresFile = join(tmpDir, 'bad-scores.json');
+        writeFileSync(scoresFile, body as string);
+
+        const adapter = await createDbAdapter({ driver: 'bun-sqlite', url: ':memory:' });
+        await adapter.exec(evaluations.createTableSql);
+
+        await expect(evaluate('agent', file, { ingest: scoresFile, save: true, adapter })).rejects.toThrow(expected);
 
         const dao = new EvaluationDao(adapter);
         const rows = await dao.getEvaluations('agent', 'code-reviewer');

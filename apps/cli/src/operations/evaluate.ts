@@ -13,6 +13,7 @@ import {
     type Target,
 } from '@gobing-ai/superskill-core';
 import { echo, echoError } from '@gobing-ai/ts-utils';
+import { z } from 'zod';
 import type { DbAdapter } from '../store';
 import { openStore } from '../store/db';
 import { EvaluationDao } from '../store/evaluations';
@@ -256,6 +257,24 @@ function emitEnvelope(
  * Ingest-in: validate agent-produced scores against the rubric, compute weighted aggregate, persist.
  * On validation failure: throw with code=1 and field name — no row inserted.
  */
+
+/**
+ * F6 (task 0127 R6): static shape/value schema for agent-authored scores, applied before the
+ * dynamic exact-rubric-dimension comparison below. Nothing is persisted before both layers pass.
+ * Every rubric dimension must appear exactly once with a finite score in [0,1] and a non-empty
+ * string note; unexpected dimension names are rejected by the dynamic comparison.
+ */
+const scoresDocumentSchema = z.object({
+    rubric_version: z.number().int(),
+    dimensions: z.record(
+        z.string(),
+        z.object({
+            score: z.number().finite().min(0).max(1),
+            note: z.string().min(1),
+        }),
+    ),
+});
+
 async function ingestScores(
     type: ContentType,
     resolvedPath: string,
@@ -277,12 +296,27 @@ async function ingestScores(
         throw Object.assign(new Error(`Cannot read scores file: ${ingestPath}`), { code: 2 });
     }
 
-    let scores: ScoresJson;
+    let rawParsed: unknown;
     try {
-        scores = JSON.parse(raw) as ScoresJson;
+        rawParsed = JSON.parse(raw);
     } catch {
         throw Object.assign(new Error(`Invalid JSON in scores file: ${opts.ingest}`), { code: 1, field: 'json' });
     }
+
+    // F6 (task 0127 R6): parse unknown, validate shape/values, only then mutate.
+    const shapeResult = scoresDocumentSchema.safeParse(rawParsed);
+    if (!shapeResult.success) {
+        const issue = shapeResult.error.issues[0];
+        const path = issue && issue.path.length > 0 ? issue.path.join('.') : 'root';
+        throw Object.assign(
+            new Error(`Invalid scores document at ${path}: ${issue ? issue.message : 'invalid shape'}`),
+            {
+                code: 1,
+                field: path,
+            },
+        );
+    }
+    const scores: ScoresJson = shapeResult.data;
 
     // Validate rubric_version matches
     if (scores.rubric_version !== rubric.version) {

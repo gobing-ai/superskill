@@ -248,6 +248,45 @@ describe('executeInstall', () => {
         stdout.mockRestore();
     });
 
+    // F2 (task 0127 R2): canonical staging is invocation-local (ephemeral temp parent) — the
+    // cwd `.rulesync` directory is no longer an install artifact, on success or failure.
+    it('leaves no .rulesync staging in the working directory after a dry-run install', async () => {
+        const workspace = createTempWorkspace();
+        createPlugin(workspace);
+        const stdout = spyOn(process.stdout, 'write').mockImplementation(() => true);
+
+        await executeInstall('demo', ['claude'], { global: false, dryRun: true, verbose: false });
+
+        expect(existsSync(join(workspace, '.rulesync'))).toBe(false);
+        stdout.mockRestore();
+    });
+
+    it('removes staging when rulesync fails mid-install', async () => {
+        const workspace = createTempWorkspace();
+        createPlugin(workspace);
+        const stdout = spyOn(process.stdout, 'write').mockImplementation(() => true);
+
+        let stagedInputRoot = '';
+        await expect(
+            executeInstall(
+                'demo',
+                ['codex'],
+                { global: false, dryRun: false, verbose: false },
+                {
+                    runRulesync: async (_targets, _features, inputRoot) => {
+                        stagedInputRoot = inputRoot;
+                        throw new Error('rulesync exploded');
+                    },
+                },
+            ),
+        ).rejects.toThrow('rulesync exploded');
+
+        // Staging lived outside the workspace and is gone after the failure.
+        expect(stagedInputRoot.startsWith(workspace)).toBe(false);
+        expect(existsSync(join(workspace, '.rulesync'))).toBe(false);
+        stdout.mockRestore();
+    });
+
     it('resolves a marketplace plugin and runs rulesync for supported targets', async () => {
         const workspace = createTempWorkspace();
         createPlugin(workspace, 'market');

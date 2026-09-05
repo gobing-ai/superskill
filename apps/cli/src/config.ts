@@ -34,6 +34,7 @@ export function parseJsonc(raw: string): unknown {
     let escaped = false;
     let lineComment = false;
     let blockComment = false;
+    let blockCommentStart = -1;
 
     for (let i = 0; i < raw.length; i++) {
         const char = raw[i] ?? '';
@@ -73,11 +74,21 @@ export function parseJsonc(raw: string): unknown {
             i++;
         } else if (char === '/' && next === '*') {
             blockComment = true;
+            blockCommentStart = i;
             withoutComments += '  ';
             i++;
         } else {
             withoutComments += char;
         }
+    }
+
+    // F8 (task 0127 R8): EOF inside a block comment is a truncated document, not a valid prefix.
+    // Fail before trailing-comma normalization and JSON.parse can bless the partial bytes.
+    if (blockComment) {
+        const before = raw.slice(0, blockCommentStart);
+        const line = (before.match(/\n/g) ?? []).length + 1;
+        const column = blockCommentStart - before.lastIndexOf('\n');
+        throw new SyntaxError(`Unterminated block comment starting at line ${line}, column ${column}`);
     }
 
     let normalized = '';

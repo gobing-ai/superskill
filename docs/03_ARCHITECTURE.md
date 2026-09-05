@@ -218,7 +218,7 @@ targets whose installers cannot honor a partial feature set fail before mutation
 silently installing the full plugin.
 
 > [!IMPORTANT]
-> **Invariant:** `.rulesync/` is the canonical intermediate representation. No feature module writes directly from plugin source to target output.
+> **Invariant:** `.rulesync/` is the canonical intermediate representation. No feature module writes directly from plugin source to target output. Each install invocation owns a unique temporary parent (OS tempdir) containing its own `.rulesync/` — never the working directory's `.rulesync/` — so concurrent installs cannot read, transform, or emit from each other's staging. The tree is removed in a `finally` block after success and after a thrown dependency/dispatch error; the canonical intermediate is internal and never left refreshed on disk. Dry-run suppresses target writes while still mapping through isolated staging.
 
 ### Phase 2: Authoring + quality
 
@@ -599,9 +599,11 @@ sequenceDiagram
         Evolve->>Edit: applyChange(content, proposal changes)
         Edit-->>Evolve: Updated content
         Evolve->>FS: Write updated file (transaction candidate)
-        Evolve->>Evaluate: evaluate(type, path, {save: true, requireSave: true})
-        Evaluate-->>Evolve: Post-evolution report + exact evaluationId
-        Evolve->>DB: updateProposalStatus(id, 'accepted', {verify_id: evaluationId})
+        Evolve->>Evaluate: evaluate(type, path, {save: false})
+        Evaluate-->>Evolve: Post-evolution report (in memory)
+        Evolve->>Evolve: run enabled gates on the in-memory report
+        Evolve->>DB: insertEvaluation(verification row) after all gates pass
+        Evolve->>DB: updateProposalStatus(id, 'accepted', {verify_id: insertedId})
         Evolve-->>CLI: EvolveResult
     else Reject proposal flag (--reject <id>)
         Evolve->>DB: updateProposalStatus(id, 'rejected')
@@ -630,9 +632,11 @@ sequenceDiagram
             Evolve->>Edit: applyChange(content, accepted changes)
             Edit-->>Evolve: Updated content
             Evolve->>FS: Write updated file (transaction candidate)
-            Evolve->>Evaluate: evaluate(type, path, {save: true, requireSave: true})
-            Evaluate-->>Evolve: Post-evolution report + exact evaluationId
-            Evolve->>DB: updateProposalStatus(id, 'accepted', {verify_id: evaluationId})
+            Evolve->>Evaluate: evaluate(type, path, {save: false})
+            Evaluate-->>Evolve: Post-evolution report (in memory)
+            Evolve->>Evolve: run enabled gates on the in-memory report
+            Evolve->>DB: insertEvaluation(verification row) after all gates pass
+            Evolve->>DB: updateProposalStatus(id, 'accepted', {verify_id: insertedId})
             Evolve-->>CLI: EvolveResult
         end
     end
@@ -677,6 +681,9 @@ without concatenation ambiguity.
 6. **Transactional closed evolve loop.** A proposal becomes `accepted` only after its candidate
    passes every gate, the verification evaluation is persisted, and that exact inserted evaluation
    ID is linked as `verify_id`; failure restores the file and leaves the proposal `draft`.
+   The candidate evaluation is computed before the gates but persisted only after they pass, so
+   the append-only evaluation history never contains rows for rejected or rolled-back attempts
+   and future baselines describe only surviving content.
 7. **Marketplace-relative resolution.** A relative plugin `source` resolves against the marketplace root (the dir containing `.claude-plugin/`), never against `.claude-plugin/` or CWD. A `source` escaping the marketplace root (`../`) or using an object form is rejected, not silently resolved.
 8. **Owned hook reconciliation.** Pi and Hermes remove stale entries owned by the plugin across all
    events before adding the desired set. User hooks and hooks owned by other plugins are preserved;
@@ -687,3 +694,7 @@ without concatenation ambiguity.
 10. **Config precedence is explicit.** CLI marketplace and target flags override JSONC defaults;
     configured plugin paths precede ambient discovery. Feature filters are applied during mapping,
     and native installers reject unsupported partial filters before mutation.
+11. **Invocation-local install staging.** Every `executeInstall` maps into a unique temporary
+    parent (OS tempdir) holding its own `.rulesync/`, removed in `finally` after success and after
+    thrown dependency/dispatch errors. Concurrent installs in the same working directory never
+    share, delete, or read each other's staging, and no persistent cwd `.rulesync/` is produced.

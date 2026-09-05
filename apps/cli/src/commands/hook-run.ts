@@ -331,18 +331,9 @@ const spContextPostTool: HookRunner = {
             // fail-open: a broken ledger must never wedge the agent
         }
 
-        // Keep running totals on the payload-scoped session file so Stop is O(1).
-        try {
-            const raw = JSON.parse(readFileSync(session.path, 'utf-8')) as Record<string, unknown>;
-            if (typeof raw.session === 'string' && raw.session === session.id) {
-                if (type === 'read') raw.reads = (typeof raw.reads === 'number' ? raw.reads : 0) + 1;
-                else raw.writes = (typeof raw.writes === 'number' ? raw.writes : 0) + 1;
-                raw.tokens = (typeof raw.tokens === 'number' ? raw.tokens : 0) + tokens;
-                writeFileSync(session.path, JSON.stringify(raw));
-            }
-        } catch {
-            // fail-open: missing counters fall back at Stop
-        }
+        // F4 (task 0127 R4): the ledger append above is the only bookkeeping here. The former
+        // read-modify-write of running counters on the session JSON lost increments under
+        // concurrent PostToolUse processes; Stop now aggregates the ledger instead.
         return OK;
     },
 };
@@ -367,10 +358,9 @@ const spContextSessionStart: HookRunner = {
         const ts = now.toISOString();
 
         try {
-            writeFileSync(
-                sessionFile,
-                JSON.stringify({ session: sessionId, started: ts, reads: 0, writes: 0, tokens: 0 }),
-            );
+            // F4 (task 0127 R4): identity/start marker only — running counters were removed.
+            // Totals are computed by Stop from the append-only ledger.
+            writeFileSync(sessionFile, JSON.stringify({ session: sessionId, started: ts }));
         } catch {
             return OK;
         }
@@ -387,7 +377,7 @@ const spContextSessionStart: HookRunner = {
     },
 };
 
-/** Stop: read O(1) totals from the payload-scoped session file, append `session_end`, then clean up. */
+/** Stop: aggregate totals from the append-only ledger, append `session_end`, then clean up. */
 const spContextSessionStop: HookRunner = {
     async run(env, stdinText) {
         const dir = spurContextDir(env);
@@ -396,41 +386,38 @@ const spContextSessionStop: HookRunner = {
         const sessionFile = session.path;
 
         let sessionId = '';
-        let reads = 0;
-        let writes = 0;
-        let tokens = 0;
         try {
             const data = JSON.parse(readFileSync(sessionFile, 'utf-8')) as Record<string, unknown>;
             if (typeof data.session !== 'string' || data.session.length === 0) return OK;
             sessionId = data.session;
-            // Prefer running counters maintained by PostToolUse (O(1)). Fall back to a
-            // one-shot ledger scan only when counters are absent (legacy session files).
-            if (typeof data.reads === 'number' || typeof data.writes === 'number' || typeof data.tokens === 'number') {
-                reads = typeof data.reads === 'number' ? data.reads : 0;
-                writes = typeof data.writes === 'number' ? data.writes : 0;
-                tokens = typeof data.tokens === 'number' ? data.tokens : 0;
-            } else {
-                const ledgerPath = join(dir, 'token-ledger.jsonl');
-                if (existsSync(ledgerPath)) {
-                    for (const line of readFileSync(ledgerPath, 'utf-8').split('\n')) {
-                        if (!line.trim()) continue;
-                        try {
-                            const evt = JSON.parse(line) as Record<string, unknown>;
-                            if (evt.session !== sessionId) continue;
-                            if (evt.type === 'read') reads++;
-                            else if (evt.type === 'write') writes++;
-                            if (typeof evt.tokens === 'number') tokens += evt.tokens;
-                        } catch {
-                            // skip unparseable lines
-                        }
-                    }
-                }
-            }
         } catch {
             return OK;
         }
 
+        // F4 (task 0127 R4): the append-only ledger is the sole source for totals. One bounded
+        // scan per session replaces the removed running counters (which concurrent PostToolUse
+        // writers corrupted). Only parseable read/write events whose session exactly matches
+        // count; malformed lines, unrelated sessions, and non-event rows are skipped.
+        let reads = 0;
+        let writes = 0;
+        let tokens = 0;
         const ledgerPath = join(dir, 'token-ledger.jsonl');
+        if (existsSync(ledgerPath)) {
+            for (const line of readFileSync(ledgerPath, 'utf-8').split('\n')) {
+                if (!line.trim()) continue;
+                try {
+                    const evt = JSON.parse(line) as Record<string, unknown>;
+                    if (evt.session !== sessionId) continue;
+                    if (evt.type === 'read') reads++;
+                    else if (evt.type === 'write') writes++;
+                    else continue;
+                    if (typeof evt.tokens === 'number') tokens += evt.tokens;
+                } catch {
+                    // skip unparseable lines
+                }
+            }
+        }
+
         const event = {
             ts: new Date().toISOString(),
             session: sessionId,

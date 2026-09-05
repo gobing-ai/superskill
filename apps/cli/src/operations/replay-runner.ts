@@ -78,6 +78,18 @@ export class TsAiRunnerBackend implements ReplayBackend {
             input: userPrompt,
             systemPrompt,
         });
+        // F5 (task 0127 R5): ts-ai-runner is fail-open by design (rejectOnError: false) — it
+        // returns non-zero/null/signal statuses with partial stdout. A failed agent process
+        // must never feed partial output into empirical scoring, so fail closed here.
+        if (result.exitCode !== 0) {
+            const where =
+                result.exitCode === null
+                    ? `terminated by signal ${result.signal ?? 'unknown'}`
+                    : `exit code ${String(result.exitCode)}`;
+            const trimmed = (result.stderr ?? '').trim();
+            const excerpt = trimmed.length > 500 ? `${trimmed.slice(0, 500)}…` : trimmed;
+            throw new Error(`Replay backend: agent '${this.agent}' failed (${where}). stderr: ${excerpt || '(empty)'}`);
+        }
         return result.stdout;
     }
 }

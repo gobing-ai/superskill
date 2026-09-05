@@ -227,9 +227,13 @@ export function generateOmpHookModules(
         const dir = hook.level === 'pre' ? preDir : postDir;
         mkdirSync(dir, { recursive: true });
 
+        // F7 (task 0127 R7): the filename is a pure function of canonical order + level + base
+        // name — first `<name>.js`, then deterministic numeric suffixes `<name>-2.js`,
+        // `<name>-3.js`, skipping any already-selected candidate. Random suffixes made
+        // byte-identical reinstalls produce different manifests.
         let name = hook.name;
-        while (usedNames.has(`${dir}/${name}`)) {
-            name = `${name}-${Math.random().toString(36).slice(2, 6)}`;
+        for (let ordinal = 2; usedNames.has(`${dir}/${name}`); ordinal++) {
+            name = `${hook.name}-${ordinal}`;
         }
         usedNames.add(`${dir}/${name}`);
 

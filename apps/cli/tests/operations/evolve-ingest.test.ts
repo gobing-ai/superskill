@@ -1,10 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, spyOn } from 'bun:test';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { chdir, cwd } from 'node:process';
 import { createDbAdapter, type DbAdapter } from '@gobing-ai/ts-db';
-import { evaluate } from '../../src/operations/evaluate';
 import type { ProposedChange } from '../../src/operations/evolve';
 import { evolve } from '../../src/operations/evolve';
 import { EvaluationDao } from '../../src/store/evaluations';
@@ -288,33 +287,88 @@ describe('generation seam — ingest-in (F023)', () => {
         writeFileSync(proposalPath, JSON.stringify({ ...AUTHORED_PROPOSAL, proposal_id: '../escaped' }));
 
         await expect(evolve('skill', 'widget', { adapter, ingest: proposalPath })).rejects.toThrow(
-            /Invalid proposal_id/,
+            /Invalid proposal document at proposal_id/,
         );
         expect(await new ProposalDao(adapter).getProposals('skill', 'widget')).toHaveLength(0);
     });
 
-    it('rolls back and keeps the proposal draft when a new verification row is unavailable', async () => {
+    // F6 (task 0127 R6/AC9): agent-authored proposal JSON is untrusted input — every
+    // malformed shape below must fail with a field path before any proposal row, file,
+    // or directory exists.
+    it.each([
+        ['null document', 'null', /Invalid proposal document at root/],
+        [
+            'non-object change',
+            JSON.stringify({ ...AUTHORED_PROPOSAL, changes: [42] }),
+            /Invalid proposal document at changes\.0/,
+        ],
+        [
+            'missing current (insertion still requires the key)',
+            JSON.stringify({
+                ...AUTHORED_PROPOSAL,
+                changes: [{ dimension: 'clarity', location: 'x', proposed: 'new', reason: 'why' }],
+            }),
+            /Invalid proposal document at changes\.0\.current/,
+        ],
+        [
+            'non-string proposal_id',
+            JSON.stringify({ ...AUTHORED_PROPOSAL, proposal_id: 5 }),
+            /Invalid proposal document at proposal_id/,
+        ],
+        [
+            'empty anchor_hash',
+            JSON.stringify({ ...AUTHORED_PROPOSAL, anchor_hash: '' }),
+            /Invalid proposal document at anchor_hash/,
+        ],
+        [
+            'skeptic with non-boolean ok',
+            JSON.stringify({ ...AUTHORED_PROPOSAL, skeptic: { ok: 'yes' } }),
+            /Invalid proposal document at skeptic\.ok/,
+        ],
+        [
+            'skeptic with non-array violations',
+            JSON.stringify({ ...AUTHORED_PROPOSAL, skeptic: { ok: true, violations: 'nope' } }),
+            /Invalid proposal document at skeptic\.violations/,
+        ],
+    ])('rejects %s before any persistence', async (_label, body, expected) => {
+        await seedHistory(adapter);
+        const proposalPath = join(dir, 'proposal.json');
+        writeFileSync(proposalPath, body as string);
+
+        await expect(evolve('skill', 'widget', { adapter, ingest: proposalPath })).rejects.toThrow(expected);
+        expect(await new ProposalDao(adapter).getProposals('skill', 'widget')).toHaveLength(0);
+        expect(existsSync(join(dir, '.superskill', 'proposals'))).toBe(false);
+    });
+
+    it('rolls back and keeps the proposal draft when the verification row insert fails', async () => {
         await seedHistory(adapter);
         const original = readFileSync(join(dir, 'widget.md'), 'utf-8');
         const proposalPath = join(dir, 'proposal.json');
         writeFileSync(proposalPath, JSON.stringify(AUTHORED_PROPOSAL));
-        let calls = 0;
 
-        await expect(
-            evolve('skill', 'widget', {
-                adapter,
-                ingest: proposalPath,
-                acceptId: AUTHORED_PROPOSAL.proposal_id,
-                skipDeltaGate: true,
-                evaluateFn: async (type, path, options) => {
-                    calls++;
-                    if (calls === 2) {
-                        return evaluate(type, path, { target: options?.target });
-                    }
-                    return evaluate(type, path, options);
-                },
-            }),
-        ).rejects.toThrow(/evaluation was not persisted/);
+        // F1 (task 0127 R1): the form row is now persisted AFTER the gates pass, so the forced
+        // failure seam moves from the injected evaluateFn (save/requireSave) to the EvaluationDao
+        // insert itself. Only the heuristic verify insert is sabotaged; any empirical insert is
+        // left working so the rollback path is the thing under test.
+        const insertSpy = spyOn(EvaluationDao.prototype, 'insertEvaluation').mockImplementation(
+            async (record: { scorer?: string }) => {
+                if (record.scorer === 'heuristic') throw new Error('store unavailable');
+                return 4242;
+            },
+        );
+
+        try {
+            await expect(
+                evolve('skill', 'widget', {
+                    adapter,
+                    ingest: proposalPath,
+                    acceptId: AUTHORED_PROPOSAL.proposal_id,
+                    skipDeltaGate: true,
+                }),
+            ).rejects.toThrow(/Cannot persist verification evaluation/);
+        } finally {
+            insertSpy.mockRestore();
+        }
 
         expect(readFileSync(join(dir, 'widget.md'), 'utf-8')).toBe(original);
         const stored = await new ProposalDao(adapter).getProposals('skill', 'widget');
@@ -333,7 +387,7 @@ describe('generation seam — ingest-in (F023)', () => {
         writeFileSync(proposalPath, JSON.stringify(badProposal));
 
         await expect(evolve('skill', 'widget', { adapter, ingest: proposalPath })).rejects.toThrow(
-            /missing required field/,
+            /Invalid proposal document at changes\.0\./,
         );
     });
 
@@ -443,12 +497,12 @@ describe('generation seam — ingest-in (F023)', () => {
         const proposalPath = join(dir, 'badtag-proposal.json');
         writeFileSync(proposalPath, JSON.stringify(badTag));
 
+        // F6 (task 0127 R6): zod reports the bad enum value and names the full valid set.
         await expect(evolve('skill', 'widget', { adapter, ingest: proposalPath })).rejects.toThrow(
-            /Invalid failure_mode "bloat"/,
+            /Invalid proposal document at changes\.0\.failure_mode/,
         );
-        // AC (0116): the rejection names the full valid set so an author can pick a real tag.
         await expect(evolve('skill', 'widget', { adapter, ingest: proposalPath })).rejects.toThrow(
-            /sprawl, sediment, duplication, no-op, premature-completion, negation, contradiction/,
+            /'sprawl' \| 'sediment' \| 'duplication' \| 'no-op' \| 'premature-completion' \| 'negation' \| 'contradiction'/,
         );
     });
 
@@ -460,7 +514,7 @@ describe('generation seam — ingest-in (F023)', () => {
         writeFileSync(proposalPath, JSON.stringify(emptyProposal));
 
         await expect(evolve('skill', 'widget', { adapter, ingest: proposalPath })).rejects.toThrow(
-            /non-empty changes array/,
+            /Invalid proposal document at changes: Array must contain at least 1 element/,
         );
     });
 

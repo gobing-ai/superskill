@@ -22,6 +22,20 @@ function createTempFile(content: string): string {
     return file;
 }
 
+/** Complete passing-shaped scores document for the skill rubric (all 5 dimensions). */
+function goodSkillScores(): { rubric_version: number; dimensions: Record<string, { score: number; note: string }> } {
+    return {
+        rubric_version: 2,
+        dimensions: {
+            completeness: { score: 0.5, note: 'ok' },
+            clarity: { score: 0.5, note: 'ok' },
+            'trigger-accuracy': { score: 0.5, note: 'ok' },
+            'anti-hallucination': { score: 0.5, note: 'ok' },
+            conciseness: { score: 0.5, note: 'ok' },
+        },
+    };
+}
+
 /** Full skill content for a well-formed evaluation. */
 const GOOD_SKILL = `---
 name: code-reviewer
@@ -395,7 +409,62 @@ dimensions:
                 },
             }),
         );
-        await expect(evaluate('skill', file, { ingest: scoresFile })).rejects.toThrow('Score out of range');
+        // F6 (task 0127 R6): the zod shape schema rejects out-of-range scores with a field path.
+        await expect(evaluate('skill', file, { ingest: scoresFile })).rejects.toThrow(
+            'Invalid scores document at dimensions.completeness.score',
+        );
+    });
+
+    // F6 (task 0127 R6): malformed shape matrices — static schema failures carry field paths.
+    it('rejects a non-integer rubric_version', async () => {
+        const file = createTempFile(GOOD_SKILL);
+        const scoresFile = join(tmpDir, 'bad-rubric.json');
+        writeFileSync(
+            scoresFile,
+            JSON.stringify({
+                rubric_version: '2',
+                dimensions: goodSkillScores().dimensions,
+            }),
+        );
+        await expect(evaluate('skill', file, { ingest: scoresFile })).rejects.toThrow(
+            'Invalid scores document at rubric_version',
+        );
+    });
+
+    it('rejects a non-numeric score value', async () => {
+        const file = createTempFile(GOOD_SKILL);
+        const scoresFile = join(tmpDir, 'string-score.json');
+        writeFileSync(
+            scoresFile,
+            JSON.stringify({
+                rubric_version: 2,
+                dimensions: {
+                    ...goodSkillScores().dimensions,
+                    clarity: { score: 'high', note: 'not a number' },
+                },
+            }),
+        );
+        await expect(evaluate('skill', file, { ingest: scoresFile })).rejects.toThrow(
+            'Invalid scores document at dimensions.clarity.score',
+        );
+    });
+
+    it('rejects an empty dimension note', async () => {
+        const file = createTempFile(GOOD_SKILL);
+        const scoresFile = join(tmpDir, 'empty-note.json');
+        writeFileSync(
+            scoresFile,
+            JSON.stringify({
+                rubric_version: 2,
+                dimensions: {
+                    ...goodSkillScores().dimensions,
+                    clarity: { score: 0.5, note: '' },
+                },
+            }),
+        );
+        await expect(evaluate('skill', file, { ingest: scoresFile })).rejects.toThrow(
+            'Invalid scores document at dimensions.clarity.note',
+        );
     });
 });
 describe('formatEvaluationReport', () => {

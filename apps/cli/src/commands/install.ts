@@ -3,6 +3,7 @@ import {
     existsSync,
     lstatSync,
     mkdirSync,
+    mkdtempSync,
     readdirSync,
     readFileSync,
     realpathSync,
@@ -10,7 +11,7 @@ import {
     statSync,
     writeFileSync,
 } from 'node:fs';
-import { homedir } from 'node:os';
+import { homedir, tmpdir } from 'node:os';
 import { basename, isAbsolute, join, relative, resolve } from 'node:path';
 import {
     adaptMagentForTarget,
@@ -383,483 +384,504 @@ export async function executeInstall(
 
     if (options.verbose) echo(`Plugin root: ${pluginRoot}`);
 
-    // Step 2: Map plugin → .rulesync/ canonical
-    const outputDir = '.rulesync';
-    if (options.verbose) echo('Mapping plugin to .rulesync/ canonical layout...');
-    const mapResult = mapPluginToRulesync(pluginRoot, plugin, outputDir, { features: options.features });
-    const mappedSkillNames = readMappedSkillNames(outputDir, plugin);
-    if (options.verbose) {
-        echo(
-            `  Skills: ${mapResult.skills}, Commands: ${mapResult.commands}, Subagents: ${mapResult.subagents}, Magents: ${mapResult.magents}, Hooks: ${mapResult.hooks}, MCP: ${mapResult.mcp}, Scripts: ${mapResult.scripts}`,
-        );
-    }
-    // Compat gate: if the canonical hooks.json declares minCliVersion and the installed CLI is
-    // older, skip ALL hook emission (pi shim, hermes copy, omp modules, rulesync hooks pass) but
-    // still install skills/commands/subagents. Hooks reference `superskill hook run <id>`; an old
-    // CLI that doesn't know <id> would warn + fail open at runtime, so emitting them adds noise
-    // without enforcement. Skills/commands carry their own logic and need no CLI version.
-    let hooksBlockedByCliVersion = false;
-    if (mapResult.hooks) {
-        const canonicalHooks = readCanonicalHooks(join(outputDir));
-        const floor = canonicalHooks?.minCliVersion;
-        if (floor) {
-            if (compareSemver(cliVersion, floor) < 0) {
-                hooksBlockedByCliVersion = true;
-                echo(
-                    `Warning: plugin requires superskill ≥ ${floor}; installed CLI is ${cliVersion}. ` +
-                        `Hooks will be skipped (skills/commands/subagents install normally). ` +
-                        `Upgrade: npm i -g @gobing-ai/superskill@latest`,
-                );
-            }
-        }
-    }
-
-    // Step 3: Build target-specific rulesync inputs through the conversion pipeline.
-    const targetInputRoots = new Map<Target, string>();
-    for (const target of targets) {
-        const targetInputRoot = prepareTargetRulesyncInput(outputDir, target, plugin);
-        targetInputRoots.set(target, targetInputRoot);
-    }
-
-    // Step 4: Run rulesync for supported targets. omp and grok install natively
-    // (marketplace add + plugin install — see dispatch loop); hermes reuses
-    // opencode's rulesync output (see ADR-010).
-    // Only request features the mapper actually produced — requesting 'mcp' when
-    const rulesyncFeatures: Array<'skills' | 'mcp'> = [];
-    if (mapResult.skills + mapResult.commands + mapResult.subagents > 0) rulesyncFeatures.push('skills');
-    if (mapResult.mcp) rulesyncFeatures.push('mcp');
-    const rulesyncTargets = targets.filter((t) => t !== 'claude' && t !== 'hermes' && t !== 'omp' && t !== 'grok');
-    if (targets.includes('hermes') && !targets.includes('opencode')) {
-        if (!targetInputRoots.has('opencode')) {
-            targetInputRoots.set('opencode', prepareTargetRulesyncInput(outputDir, 'opencode', plugin));
-        }
-        rulesyncTargets.push('opencode');
-    }
-    const resultCounts: InstallResultCounts = { skillsCount: 0, commandsCount: 0, subagentsCount: 0, hooksCount: 0 };
-
-    // R4/R5 (task 0114): plugin-scoped --prune on flattened skills dests — runs BEFORE
-    // rulesync writes so it is true clean-before-write. Removes orphaned `<plugin>-*`
-    // dest skill dirs and replaces remaining ones so intra-dir leftovers disappear.
-    // Native dests (claude/omp/grok) own their own trees (pruned by host plugin CLIs).
-    // Shared skills roots stay multi-plugin: only dirs matching `^<plugin>-` are touched.
-    if (options.prune) {
-        const outputRootPre = options.outputRoot ?? (options.global ? resolveHomeDir() : process.cwd());
-        prunePluginDestSkills(outputDir, plugin, targets, outputRootPre, options);
-    }
-
-    // R6 dual-path hygiene: Grok loads both native plugins (/plugin:cmd) and
-    // ~/.agents skills (/plugin-cmd). Warn when both land in the same install.
-    const dualPathRulesyncTargets = targets.filter(
-        (t) => t === 'codex' || t === 'pi' || t === 'opencode' || t === 'antigravity-cli' || t === 'antigravity-ide',
-    );
-    if (options.verbose && targets.includes('grok') && dualPathRulesyncTargets.length > 0) {
-        echo(
-            'Warning: installing both grok (native plugin slash /plugin:cmd) and rulesync targets ' +
-                'that adapt commands into ~/.agents/skills (slash /plugin-cmd). Grok scans both; prefer ' +
-                'colon form for plugin commands.',
-        );
-    }
-
-    if (rulesyncTargets.length > 0) {
-        // R2: pre-create per-target skills parent dirs before rulesync writes.
-        // rulesync mkdirs the leaf non-recursively; in project mode from a clean
-        // cwd the parent may not exist → ENOENT. TARGET_SKILLS_RELDIR holds the
-        // PROJECT-mode reldirs, so this only applies when rulesync uses the
-        // project-mode layout: real project installs (!global), or any install
-        // with an explicit outputRoot override (which forces rulesync global:false,
-        // see runRulesync). A real global install writes to $HOME with different
-        // global reldirs where parents already exist — skip it there to avoid
-        // creating empty junk dirs. Non-dry-run only (dry-run writes nothing).
-        const usesProjectLayout = !options.global || options.outputRoot !== undefined;
-        if (!options.dryRun && usesProjectLayout) {
-            const rulesyncRoot = options.outputRoot ?? process.cwd();
-            for (const target of rulesyncTargets) {
-                const reldir = TARGET_SKILLS_RELDIR[target];
-                if (reldir) mkdirSync(join(rulesyncRoot, reldir), { recursive: true });
-            }
-        }
-        if (options.verbose) echo(`Running rulesync for ${rulesyncTargets.join(', ')}...`);
-        if (rulesyncFeatures.length > 0) {
-            for (const target of rulesyncTargets) {
-                const result = await runRulesyncImpl(
-                    [target],
-                    rulesyncFeatures,
-                    targetInputRoots.get(target) ?? outputDir,
-                    {
-                        global: options.global,
-                        dryRun: options.dryRun,
-                        verbose: options.verbose,
-                        outputRoot: options.outputRoot,
-                    },
-                );
-                resultCounts.skillsCount += result.skillsCount;
-                resultCounts.commandsCount += result.commandsCount;
-                resultCounts.subagentsCount += result.subagentsCount;
-                resultCounts.hooksCount += result.hooksCount;
-                addReceiptFiles(
-                    target,
-                    expandInstallPaths(outputRoot, [
-                        ...result.skillsPaths,
-                        ...result.commandsPaths,
-                        ...result.subagentsPaths,
-                        ...result.hooksPaths,
-                        ...result.mcpPaths,
-                        ...result.rulesPaths,
-                    ]),
-                );
-                // Per-target summary surfaces the targets that were previously silent on success.
-                // Count actual installed skills outside dry-run; rulesync's diff count can be zero on reinstall.
-                if (options.verbose) {
-                    const reldir = options.global
-                        ? (TARGET_GLOBAL_SKILLS_RELDIR[target] ?? TARGET_SKILLS_RELDIR[target])
-                        : TARGET_SKILLS_RELDIR[target];
-                    if (reldir) {
-                        const skillsDir = options.global ? join(resolveHomeDir(), reldir) : join(process.cwd(), reldir);
-                        const total = options.dryRun ? result.skillsCount : countSkillsInDir(skillsDir);
-                        echo(`  ${target}: ${total} skill(s) at ${skillsDir}`);
-                    }
-                }
-            }
-        }
-        // Hooks-only pass: route through TARGET_TO_RULESYNC_HOOKS so Antigravity gets native hook
-        // output. Only runs when the plugin actually produced a canonical hooks.json (mapResult.hooks).
-        if (mapResult.hooks && !hooksBlockedByCliVersion) {
-            for (const target of rulesyncTargets) {
-                if (!TARGET_TO_RULESYNC_HOOKS[target]) continue; // pi handled via surrogate shim below
-                // Per-target gate: drop hooks this target can't enforce (e.g. the cc/anti-hallucination
-                // Stop hook on opencode) and append `--profile <p>` for non-default profiles
-                // (antigravity-cli/ide → deny). Hooks with no target policy pass through unchanged.
-                writeHooksForTarget(rulesyncSourceRoot(targetInputRoots.get(target), outputDir), target);
-                const hookResult = await runRulesyncImpl(
-                    [target],
-                    ['hooks'],
-                    targetInputRoots.get(target) ?? outputDir,
-                    {
-                        global: options.global,
-                        dryRun: options.dryRun,
-                        verbose: options.verbose,
-                        outputRoot: options.outputRoot,
-                        targetMap: TARGET_TO_RULESYNC_HOOKS,
-                    },
-                );
-                resultCounts.hooksCount += hookResult.hooksCount;
-                addReceiptFiles(target, expandInstallPaths(outputRoot, hookResult.hooksPaths));
-            }
-        }
+    // Step 2: Map plugin → invocation-local .rulesync/ canonical (F2, task 0127 R2).
+    // `.rulesync/` is an internal canonical intermediate representation, not a working-directory
+    // artifact or output contract. Every invocation owns a unique mkdtemp parent holding its own
+    // `.rulesync/`, so concurrent installs in the same cwd can never delete, read, transform, or
+    // emit from each other's staging. It is removed in `finally` after success AND after a thrown
+    // dependency/dispatch error; target outputs and receipts are unchanged.
+    const stageParent = mkdtempSync(join(tmpdir(), 'superskill-install-'));
+    try {
+        const outputDir = join(stageParent, '.rulesync');
+        if (options.verbose) echo('Mapping plugin to .rulesync/ canonical layout...');
+        const mapResult = mapPluginToRulesync(pluginRoot, plugin, outputDir, { features: options.features });
+        const mappedSkillNames = readMappedSkillNames(outputDir, plugin);
         if (options.verbose) {
             echo(
-                `  Skills written: ${resultCounts.skillsCount}, Commands: ${resultCounts.commandsCount}, Subagents: ${resultCounts.subagentsCount}, Hooks: ${resultCounts.hooksCount}`,
+                `  Skills: ${mapResult.skills}, Commands: ${mapResult.commands}, Subagents: ${mapResult.subagents}, Magents: ${mapResult.magents}, Hooks: ${mapResult.hooks}, MCP: ${mapResult.mcp}, Scripts: ${mapResult.scripts}`,
             );
         }
-    }
-    // Step 4: Dispatch non-rulesync targets + emit hooks for uncovered targets
-    const marketplaceName = resolution.marketplaceName ?? 'superskill';
-    const marketplaceRoot = resolution.marketplaceRoot ?? process.cwd();
-    const registration = resolveMarketplaceRegistration(
-        marketplaceRoot,
-        marketplaceName,
-        options.marketplaceSource ?? 'directory',
-    );
-    const hookEmitResults: EmitHooksResult[] = [];
-    for (const target of targets) {
-        if (target === 'claude') {
-            if (options.verbose) echo('Claude Code: registering marketplace and installing plugin...');
-            if (!options.dryRun) {
-                // Clear the plugin cache keyed on the resolved marketplace name (Refinement #5).
-                // marketplace add is idempotent, so this is defensive — but bound it to the
-                // correct name so we never rm -rf the wrong directory.
-                const cacheDir = join(resolveHomeDir(), '.claude', 'plugins', 'cache', marketplaceName);
-                if (existsSync(cacheDir)) rmSync(cacheDir, { recursive: true, force: true });
-                await runClaudeInstallImpl(registration, marketplaceName, plugin, options.global);
-                for (const root of new Set([resolveHomeDir(), outputRoot])) {
-                    const claudeCache = join(root, '.claude', 'plugins', 'cache', marketplaceName, plugin);
-                    if (existsSync(claudeCache)) addReceiptFiles(target, listRegularFilesUnder(claudeCache));
+        // Compat gate: if the canonical hooks.json declares minCliVersion and the installed CLI is
+        // older, skip ALL hook emission (pi shim, hermes copy, omp modules, rulesync hooks pass) but
+        // still install skills/commands/subagents. Hooks reference `superskill hook run <id>`; an old
+        // CLI that doesn't know <id> would warn + fail open at runtime, so emitting them adds noise
+        // without enforcement. Skills/commands carry their own logic and need no CLI version.
+        let hooksBlockedByCliVersion = false;
+        if (mapResult.hooks) {
+            const canonicalHooks = readCanonicalHooks(join(outputDir));
+            const floor = canonicalHooks?.minCliVersion;
+            if (floor) {
+                if (compareSemver(cliVersion, floor) < 0) {
+                    hooksBlockedByCliVersion = true;
+                    echo(
+                        `Warning: plugin requires superskill ≥ ${floor}; installed CLI is ${cliVersion}. ` +
+                            `Hooks will be skipped (skills/commands/subagents install normally). ` +
+                            `Upgrade: npm i -g @gobing-ai/superskill@latest`,
+                    );
                 }
-                const claudeScoped = join(outputRoot, '.claude', 'plugins');
-                if (existsSync(claudeScoped)) addReceiptFiles(target, pluginPrefixedEntries(claudeScoped, plugin));
             }
         }
 
-        if (target === 'hermes') {
-            const srcTarget = 'opencode';
-            const dest = join(outputRoot, '.hermes', 'skills');
-            if (options.verbose) echo(`Copying to Hermes (via opencode rulesync): ${dest}...`);
-            if (!options.dryRun) {
-                const copied = copyDirectory(
-                    join(rulesyncSourceRoot(targetInputRoots.get(srcTarget), outputDir), 'skills'),
-                    dest,
-                );
-                addReceiptFiles(
-                    target,
-                    copied.filter((file) => isPluginOwnedPath(file, plugin)),
-                );
-            }
-            // Rung (c): copy-step — hermes hooks via canonical hooks.json copy (design §1.2, §2.1).
-            // Skipped when the CLI is below the plugin's minCliVersion (hooks would fail-open at runtime).
-            if (!hooksBlockedByCliVersion) {
-                const hookResult = emitHermesHooks(
-                    rulesyncSourceRoot(targetInputRoots.get(srcTarget), outputDir),
-                    outputRoot,
-                    { dryRun: options.dryRun, global: options.global },
-                    plugin,
-                );
-                hookEmitResults.push(hookResult);
-                if (hookResult.path) addReceiptFiles(target, expandInstallPaths(outputRoot, [hookResult.path]));
-                if (options.verbose) echo(`  ${hookResult.message}`);
-            } else if (options.verbose) {
-                echo('  Hermes hooks: skipped (CLI below plugin minCliVersion)');
-            }
+        // Step 3: Build target-specific rulesync inputs through the conversion pipeline.
+        const targetInputRoots = new Map<Target, string>();
+        for (const target of targets) {
+            const targetInputRoot = prepareTargetRulesyncInput(outputDir, target, plugin);
+            targetInputRoots.set(target, targetInputRoot);
         }
 
-        if (target === 'omp') {
-            // OMP native install: omp supports Claude Code marketplace plugins directly
-            // via its claude-plugins provider. We register the local marketplace, install
-            // the plugin, then post-process the cached install path: copy the manifest,
-            // generate JS hook modules (hooks/pre/ + hooks/post/), and translate slash
-            // commands to OMP dialect. See task 0073.
-            if (options.verbose) echo('OMP: registering marketplace and installing plugin...');
-            if (!options.dryRun) {
-                await runOmpInstallImpl(registration, marketplaceName, plugin, options.global);
-                const installPath = resolveOmpInstallPath(marketplaceName, plugin, options.global);
-                if (installPath) {
-                    const hookResult = postInstallOmp(pluginRoot, installPath, outputDir, plugin, {
-                        ...options,
-                        skipHooks: hooksBlockedByCliVersion,
-                    });
-                    addReceiptFiles(target, listRegularFilesUnder(installPath));
-                    addReceiptFiles(target, hookResult.files);
+        // Step 4: Run rulesync for supported targets. omp and grok install natively
+        // (marketplace add + plugin install — see dispatch loop); hermes reuses
+        // opencode's rulesync output (see ADR-010).
+        // Only request features the mapper actually produced — requesting 'mcp' when
+        const rulesyncFeatures: Array<'skills' | 'mcp'> = [];
+        if (mapResult.skills + mapResult.commands + mapResult.subagents > 0) rulesyncFeatures.push('skills');
+        if (mapResult.mcp) rulesyncFeatures.push('mcp');
+        const rulesyncTargets = targets.filter((t) => t !== 'claude' && t !== 'hermes' && t !== 'omp' && t !== 'grok');
+        if (targets.includes('hermes') && !targets.includes('opencode')) {
+            if (!targetInputRoots.has('opencode')) {
+                targetInputRoots.set('opencode', prepareTargetRulesyncInput(outputDir, 'opencode', plugin));
+            }
+            rulesyncTargets.push('opencode');
+        }
+        const resultCounts: InstallResultCounts = {
+            skillsCount: 0,
+            commandsCount: 0,
+            subagentsCount: 0,
+            hooksCount: 0,
+        };
+
+        // R4/R5 (task 0114): plugin-scoped --prune on flattened skills dests — runs BEFORE
+        // rulesync writes so it is true clean-before-write. Removes orphaned `<plugin>-*`
+        // dest skill dirs and replaces remaining ones so intra-dir leftovers disappear.
+        // Native dests (claude/omp/grok) own their own trees (pruned by host plugin CLIs).
+        // Shared skills roots stay multi-plugin: only dirs matching `^<plugin>-` are touched.
+        if (options.prune) {
+            const outputRootPre = options.outputRoot ?? (options.global ? resolveHomeDir() : process.cwd());
+            prunePluginDestSkills(outputDir, plugin, targets, outputRootPre, options);
+        }
+
+        // R6 dual-path hygiene: Grok loads both native plugins (/plugin:cmd) and
+        // ~/.agents skills (/plugin-cmd). Warn when both land in the same install.
+        const dualPathRulesyncTargets = targets.filter(
+            (t) =>
+                t === 'codex' || t === 'pi' || t === 'opencode' || t === 'antigravity-cli' || t === 'antigravity-ide',
+        );
+        if (options.verbose && targets.includes('grok') && dualPathRulesyncTargets.length > 0) {
+            echo(
+                'Warning: installing both grok (native plugin slash /plugin:cmd) and rulesync targets ' +
+                    'that adapt commands into ~/.agents/skills (slash /plugin-cmd). Grok scans both; prefer ' +
+                    'colon form for plugin commands.',
+            );
+        }
+
+        if (rulesyncTargets.length > 0) {
+            // R2: pre-create per-target skills parent dirs before rulesync writes.
+            // rulesync mkdirs the leaf non-recursively; in project mode from a clean
+            // cwd the parent may not exist → ENOENT. TARGET_SKILLS_RELDIR holds the
+            // PROJECT-mode reldirs, so this only applies when rulesync uses the
+            // project-mode layout: real project installs (!global), or any install
+            // with an explicit outputRoot override (which forces rulesync global:false,
+            // see runRulesync). A real global install writes to $HOME with different
+            // global reldirs where parents already exist — skip it there to avoid
+            // creating empty junk dirs. Non-dry-run only (dry-run writes nothing).
+            const usesProjectLayout = !options.global || options.outputRoot !== undefined;
+            if (!options.dryRun && usesProjectLayout) {
+                const rulesyncRoot = options.outputRoot ?? process.cwd();
+                for (const target of rulesyncTargets) {
+                    const reldir = TARGET_SKILLS_RELDIR[target];
+                    if (reldir) mkdirSync(join(rulesyncRoot, reldir), { recursive: true });
+                }
+            }
+            if (options.verbose) echo(`Running rulesync for ${rulesyncTargets.join(', ')}...`);
+            if (rulesyncFeatures.length > 0) {
+                for (const target of rulesyncTargets) {
+                    const result = await runRulesyncImpl(
+                        [target],
+                        rulesyncFeatures,
+                        targetInputRoots.get(target) ?? outputDir,
+                        {
+                            global: options.global,
+                            dryRun: options.dryRun,
+                            verbose: options.verbose,
+                            outputRoot: options.outputRoot,
+                        },
+                    );
+                    resultCounts.skillsCount += result.skillsCount;
+                    resultCounts.commandsCount += result.commandsCount;
+                    resultCounts.subagentsCount += result.subagentsCount;
+                    resultCounts.hooksCount += result.hooksCount;
+                    addReceiptFiles(
+                        target,
+                        expandInstallPaths(outputRoot, [
+                            ...result.skillsPaths,
+                            ...result.commandsPaths,
+                            ...result.subagentsPaths,
+                            ...result.hooksPaths,
+                            ...result.mcpPaths,
+                            ...result.rulesPaths,
+                        ]),
+                    );
+                    // Per-target summary surfaces the targets that were previously silent on success.
+                    // Count actual installed skills outside dry-run; rulesync's diff count can be zero on reinstall.
+                    if (options.verbose) {
+                        const reldir = options.global
+                            ? (TARGET_GLOBAL_SKILLS_RELDIR[target] ?? TARGET_SKILLS_RELDIR[target])
+                            : TARGET_SKILLS_RELDIR[target];
+                        if (reldir) {
+                            const skillsDir = options.global
+                                ? join(resolveHomeDir(), reldir)
+                                : join(process.cwd(), reldir);
+                            const total = options.dryRun ? result.skillsCount : countSkillsInDir(skillsDir);
+                            echo(`  ${target}: ${total} skill(s) at ${skillsDir}`);
+                        }
+                    }
+                }
+            }
+            // Hooks-only pass: route through TARGET_TO_RULESYNC_HOOKS so Antigravity gets native hook
+            // output. Only runs when the plugin actually produced a canonical hooks.json (mapResult.hooks).
+            if (mapResult.hooks && !hooksBlockedByCliVersion) {
+                for (const target of rulesyncTargets) {
+                    if (!TARGET_TO_RULESYNC_HOOKS[target]) continue; // pi handled via surrogate shim below
+                    // Per-target gate: drop hooks this target can't enforce (e.g. the cc/anti-hallucination
+                    // Stop hook on opencode) and append `--profile <p>` for non-default profiles
+                    // (antigravity-cli/ide → deny). Hooks with no target policy pass through unchanged.
+                    writeHooksForTarget(rulesyncSourceRoot(targetInputRoots.get(target), outputDir), target);
+                    const hookResult = await runRulesyncImpl(
+                        [target],
+                        ['hooks'],
+                        targetInputRoots.get(target) ?? outputDir,
+                        {
+                            global: options.global,
+                            dryRun: options.dryRun,
+                            verbose: options.verbose,
+                            outputRoot: options.outputRoot,
+                            targetMap: TARGET_TO_RULESYNC_HOOKS,
+                        },
+                    );
+                    resultCounts.hooksCount += hookResult.hooksCount;
+                    addReceiptFiles(target, expandInstallPaths(outputRoot, hookResult.hooksPaths));
+                }
+            }
+            if (options.verbose) {
+                echo(
+                    `  Skills written: ${resultCounts.skillsCount}, Commands: ${resultCounts.commandsCount}, Subagents: ${resultCounts.subagentsCount}, Hooks: ${resultCounts.hooksCount}`,
+                );
+            }
+        }
+        // Step 4: Dispatch non-rulesync targets + emit hooks for uncovered targets
+        const marketplaceName = resolution.marketplaceName ?? 'superskill';
+        const marketplaceRoot = resolution.marketplaceRoot ?? process.cwd();
+        const registration = resolveMarketplaceRegistration(
+            marketplaceRoot,
+            marketplaceName,
+            options.marketplaceSource ?? 'directory',
+        );
+        const hookEmitResults: EmitHooksResult[] = [];
+        for (const target of targets) {
+            if (target === 'claude') {
+                if (options.verbose) echo('Claude Code: registering marketplace and installing plugin...');
+                if (!options.dryRun) {
+                    // Clear the plugin cache keyed on the resolved marketplace name (Refinement #5).
+                    // marketplace add is idempotent, so this is defensive — but bound it to the
+                    // correct name so we never rm -rf the wrong directory.
+                    const cacheDir = join(resolveHomeDir(), '.claude', 'plugins', 'cache', marketplaceName);
+                    if (existsSync(cacheDir)) rmSync(cacheDir, { recursive: true, force: true });
+                    await runClaudeInstallImpl(registration, marketplaceName, plugin, options.global);
+                    for (const root of new Set([resolveHomeDir(), outputRoot])) {
+                        const claudeCache = join(root, '.claude', 'plugins', 'cache', marketplaceName, plugin);
+                        if (existsSync(claudeCache)) addReceiptFiles(target, listRegularFilesUnder(claudeCache));
+                    }
+                    const claudeScoped = join(outputRoot, '.claude', 'plugins');
+                    if (existsSync(claudeScoped)) addReceiptFiles(target, pluginPrefixedEntries(claudeScoped, plugin));
+                }
+            }
+
+            if (target === 'hermes') {
+                const srcTarget = 'opencode';
+                const dest = join(outputRoot, '.hermes', 'skills');
+                if (options.verbose) echo(`Copying to Hermes (via opencode rulesync): ${dest}...`);
+                if (!options.dryRun) {
+                    const copied = copyDirectory(
+                        join(rulesyncSourceRoot(targetInputRoots.get(srcTarget), outputDir), 'skills'),
+                        dest,
+                    );
+                    addReceiptFiles(
+                        target,
+                        copied.filter((file) => isPluginOwnedPath(file, plugin)),
+                    );
+                }
+                // Rung (c): copy-step — hermes hooks via canonical hooks.json copy (design §1.2, §2.1).
+                // Skipped when the CLI is below the plugin's minCliVersion (hooks would fail-open at runtime).
+                if (!hooksBlockedByCliVersion) {
+                    const hookResult = emitHermesHooks(
+                        rulesyncSourceRoot(targetInputRoots.get(srcTarget), outputDir),
+                        outputRoot,
+                        { dryRun: options.dryRun, global: options.global },
+                        plugin,
+                    );
+                    hookEmitResults.push(hookResult);
+                    if (hookResult.path) addReceiptFiles(target, expandInstallPaths(outputRoot, [hookResult.path]));
                     if (options.verbose) echo(`  ${hookResult.message}`);
                 } else if (options.verbose) {
-                    echo('  OMP install path not found in registry — skipping post-processing');
-                }
-            }
-        }
-
-        if (target === 'grok') {
-            // Grok native install (task 0078): Claude-format plugin package via
-            // `grok plugin marketplace add` + `grok plugin install <path> --trust`.
-            // No command→skill adapt, no slash-dialect rewrite, no OMP hook JS —
-            // Grok consumes hooks/hooks.json and /plugin:command natively.
-            if (options.verbose) echo('Grok: registering marketplace and installing plugin...');
-            if (!options.dryRun) {
-                await runGrokInstallImpl(registration, marketplaceName, plugin, pluginRoot);
-                const grokInstallPath = await resolveGrokInstallPath(plugin, executor);
-                if (grokInstallPath) addReceiptFiles(target, listRegularFilesUnder(grokInstallPath));
-                if (options.verbose) {
-                    if (grokInstallPath) {
-                        echo(`  Grok install path: ${grokInstallPath}`);
-                    } else {
-                        echo('  Grok install path not found via plugin list — install may still have succeeded');
-                    }
-                }
-            }
-        }
-
-        // Pi reaches generate() but rulesync emits no hooks for it (hooks column blank, §1 table).
-        // Rung (b): pi extensions from plugin.json or @vahor/pi-hooks format (design §1.2)
-        if (target === 'pi') {
-            // Try reading platform extensions from plugin.json first
-            // Format: { "extensions": { "pi": ["./hooks/pi/guard-extension.ts"], ... } }
-            const pluginManifestPath = join(pluginRoot, 'plugin.json');
-            let piExtensions: string[] | undefined;
-            if (existsSync(pluginManifestPath)) {
-                try {
-                    const manifest = JSON.parse(readFileSync(pluginManifestPath, 'utf-8')) as Record<string, unknown>;
-                    const platformExtensions = manifest.extensions as Record<string, unknown> | undefined;
-                    if (platformExtensions?.pi && Array.isArray(platformExtensions.pi)) {
-                        piExtensions = platformExtensions.pi as string[];
-                    }
-                } catch {
-                    // Unparseable plugin.json — ignore, fall through to emitPiStyleHooks
+                    echo('  Hermes hooks: skipped (CLI below plugin minCliVersion)');
                 }
             }
 
-            if (piExtensions && piExtensions.length > 0) {
-                // Install Pi extensions natively — no @vahor/pi-hooks dependency
-                const piPluginsDir = join(outputRoot, '.pi', 'agent', 'plugins', plugin);
+            if (target === 'omp') {
+                // OMP native install: omp supports Claude Code marketplace plugins directly
+                // via its claude-plugins provider. We register the local marketplace, install
+                // the plugin, then post-process the cached install path: copy the manifest,
+                // generate JS hook modules (hooks/pre/ + hooks/post/), and translate slash
+                // commands to OMP dialect. See task 0073.
+                if (options.verbose) echo('OMP: registering marketplace and installing plugin...');
                 if (!options.dryRun) {
-                    mkdirSync(piPluginsDir, { recursive: true });
-                    // Bundle each extension into a single self-contained file.
-                    // Pi loads extensions as single files; a raw copy drops sibling
-                    // modules referenced via relative imports (e.g. ../agent-hint)
-                    // and the import dangles at runtime. Bundling inlines relative
-                    // imports while keeping the Pi host SDK and node builtins external.
-                    // Output keeps the declared basename (naming: '[name].ts') so the
-                    // generated package.json ref stays valid and Bun loads it as ESM
-                    // (.ts is always ESM under Bun, regardless of package.json "type").
-                    for (const ext of piExtensions) {
-                        const source = join(pluginRoot, ext);
-                        if (!existsSync(source)) continue;
-                        const result = await Bun.build({
-                            entrypoints: [source],
-                            target: 'bun',
-                            format: 'esm',
-                            outdir: piPluginsDir,
-                            naming: '[name].ts',
-                            external: ['@earendil-works/pi-coding-agent'],
+                    await runOmpInstallImpl(registration, marketplaceName, plugin, options.global);
+                    const installPath = resolveOmpInstallPath(marketplaceName, plugin, options.global);
+                    if (installPath) {
+                        const hookResult = postInstallOmp(pluginRoot, installPath, outputDir, plugin, {
+                            ...options,
+                            skipHooks: hooksBlockedByCliVersion,
                         });
-                        if (!result.success) {
-                            const logs = result.logs.map(String).join('\n');
-                            throw new Error(`Failed to bundle Pi extension ${ext}${logs ? `:\n${logs}` : ''}`);
+                        addReceiptFiles(target, listRegularFilesUnder(installPath));
+                        addReceiptFiles(target, hookResult.files);
+                        if (options.verbose) echo(`  ${hookResult.message}`);
+                    } else if (options.verbose) {
+                        echo('  OMP install path not found in registry — skipping post-processing');
+                    }
+                }
+            }
+
+            if (target === 'grok') {
+                // Grok native install (task 0078): Claude-format plugin package via
+                // `grok plugin marketplace add` + `grok plugin install <path> --trust`.
+                // No command→skill adapt, no slash-dialect rewrite, no OMP hook JS —
+                // Grok consumes hooks/hooks.json and /plugin:command natively.
+                if (options.verbose) echo('Grok: registering marketplace and installing plugin...');
+                if (!options.dryRun) {
+                    await runGrokInstallImpl(registration, marketplaceName, plugin, pluginRoot);
+                    const grokInstallPath = await resolveGrokInstallPath(plugin, executor);
+                    if (grokInstallPath) addReceiptFiles(target, listRegularFilesUnder(grokInstallPath));
+                    if (options.verbose) {
+                        if (grokInstallPath) {
+                            echo(`  Grok install path: ${grokInstallPath}`);
+                        } else {
+                            echo('  Grok install path not found via plugin list — install may still have succeeded');
                         }
                     }
-                    // Create package.json for Pi to load the extension
-                    const pkgJson = {
-                        name: plugin,
-                        version: '0.1.0',
-                        private: true,
-                        pi: { extensions: piExtensions.map((e) => `./${basename(e)}`) },
-                    };
-                    writeFileSync(join(piPluginsDir, 'package.json'), `${JSON.stringify(pkgJson, null, 2)}\n`);
-                    addReceiptFiles(target, listRegularFilesUnder(piPluginsDir));
-                    // Register in Pi's settings.json packages
-                    const piSettingsPath = join(outputRoot, '.pi', 'agent', 'settings.json');
+                }
+            }
+
+            // Pi reaches generate() but rulesync emits no hooks for it (hooks column blank, §1 table).
+            // Rung (b): pi extensions from plugin.json or @vahor/pi-hooks format (design §1.2)
+            if (target === 'pi') {
+                // Try reading platform extensions from plugin.json first
+                // Format: { "extensions": { "pi": ["./hooks/pi/guard-extension.ts"], ... } }
+                const pluginManifestPath = join(pluginRoot, 'plugin.json');
+                let piExtensions: string[] | undefined;
+                if (existsSync(pluginManifestPath)) {
                     try {
-                        const existing = existsSync(piSettingsPath)
-                            ? (JSON.parse(readFileSync(piSettingsPath, 'utf-8')) as Record<string, unknown>)
-                            : {};
-                        const packages = (existing.packages as string[]) ?? [];
-                        const piAgentDir = join(outputRoot, '.pi', 'agent');
-                        const packageRef = relative(piAgentDir, piPluginsDir);
-                        if (!packages.includes(packageRef)) {
-                            packages.push(packageRef);
-                            existing.packages = packages;
-                            writeFileSync(piSettingsPath, `${JSON.stringify(existing, null, 2)}\n`);
+                        const manifest = JSON.parse(readFileSync(pluginManifestPath, 'utf-8')) as Record<
+                            string,
+                            unknown
+                        >;
+                        const platformExtensions = manifest.extensions as Record<string, unknown> | undefined;
+                        if (platformExtensions?.pi && Array.isArray(platformExtensions.pi)) {
+                            piExtensions = platformExtensions.pi as string[];
                         }
                     } catch {
-                        // settings.json read/write failure — non-fatal
+                        // Unparseable plugin.json — ignore, fall through to emitPiStyleHooks
                     }
-                    if (options.verbose) echo(`  Pi extensions: installed to ${piPluginsDir}`);
                 }
-            } else if (!hooksBlockedByCliVersion) {
-                // Fallback: emit hooks for @vahor/pi-hooks format
-                const hookResult = emitPiStyleHooks(
-                    rulesyncSourceRoot(targetInputRoots.get('pi'), outputDir),
-                    outputRoot,
-                    '.pi',
-                    'pi',
-                    { dryRun: options.dryRun, global: options.global },
-                    plugin,
-                );
-                hookEmitResults.push(hookResult);
-                if (hookResult.path) addReceiptFiles(target, expandInstallPaths(outputRoot, [hookResult.path]));
-                if (options.verbose) echo(`  ${hookResult.message}`);
-            } else if (options.verbose) {
-                echo('  Pi hooks: skipped (CLI below plugin minCliVersion)');
+
+                if (piExtensions && piExtensions.length > 0) {
+                    // Install Pi extensions natively — no @vahor/pi-hooks dependency
+                    const piPluginsDir = join(outputRoot, '.pi', 'agent', 'plugins', plugin);
+                    if (!options.dryRun) {
+                        mkdirSync(piPluginsDir, { recursive: true });
+                        // Bundle each extension into a single self-contained file.
+                        // Pi loads extensions as single files; a raw copy drops sibling
+                        // modules referenced via relative imports (e.g. ../agent-hint)
+                        // and the import dangles at runtime. Bundling inlines relative
+                        // imports while keeping the Pi host SDK and node builtins external.
+                        // Output keeps the declared basename (naming: '[name].ts') so the
+                        // generated package.json ref stays valid and Bun loads it as ESM
+                        // (.ts is always ESM under Bun, regardless of package.json "type").
+                        for (const ext of piExtensions) {
+                            const source = join(pluginRoot, ext);
+                            if (!existsSync(source)) continue;
+                            const result = await Bun.build({
+                                entrypoints: [source],
+                                target: 'bun',
+                                format: 'esm',
+                                outdir: piPluginsDir,
+                                naming: '[name].ts',
+                                external: ['@earendil-works/pi-coding-agent'],
+                            });
+                            if (!result.success) {
+                                const logs = result.logs.map(String).join('\n');
+                                throw new Error(`Failed to bundle Pi extension ${ext}${logs ? `:\n${logs}` : ''}`);
+                            }
+                        }
+                        // Create package.json for Pi to load the extension
+                        const pkgJson = {
+                            name: plugin,
+                            version: '0.1.0',
+                            private: true,
+                            pi: { extensions: piExtensions.map((e) => `./${basename(e)}`) },
+                        };
+                        writeFileSync(join(piPluginsDir, 'package.json'), `${JSON.stringify(pkgJson, null, 2)}\n`);
+                        addReceiptFiles(target, listRegularFilesUnder(piPluginsDir));
+                        // Register in Pi's settings.json packages
+                        const piSettingsPath = join(outputRoot, '.pi', 'agent', 'settings.json');
+                        try {
+                            const existing = existsSync(piSettingsPath)
+                                ? (JSON.parse(readFileSync(piSettingsPath, 'utf-8')) as Record<string, unknown>)
+                                : {};
+                            const packages = (existing.packages as string[]) ?? [];
+                            const piAgentDir = join(outputRoot, '.pi', 'agent');
+                            const packageRef = relative(piAgentDir, piPluginsDir);
+                            if (!packages.includes(packageRef)) {
+                                packages.push(packageRef);
+                                existing.packages = packages;
+                                writeFileSync(piSettingsPath, `${JSON.stringify(existing, null, 2)}\n`);
+                            }
+                        } catch {
+                            // settings.json read/write failure — non-fatal
+                        }
+                        if (options.verbose) echo(`  Pi extensions: installed to ${piPluginsDir}`);
+                    }
+                } else if (!hooksBlockedByCliVersion) {
+                    // Fallback: emit hooks for @vahor/pi-hooks format
+                    const hookResult = emitPiStyleHooks(
+                        rulesyncSourceRoot(targetInputRoots.get('pi'), outputDir),
+                        outputRoot,
+                        '.pi',
+                        'pi',
+                        { dryRun: options.dryRun, global: options.global },
+                        plugin,
+                    );
+                    hookEmitResults.push(hookResult);
+                    if (hookResult.path) addReceiptFiles(target, expandInstallPaths(outputRoot, [hookResult.path]));
+                    if (options.verbose) echo(`  ${hookResult.message}`);
+                } else if (options.verbose) {
+                    echo('  Pi hooks: skipped (CLI below plugin minCliVersion)');
+                }
+
+                // Pi native agent dispatch: adapt each subagent to Pi format → ~/.pi/agent/agents/
+                const agentsDir = join(pluginRoot, 'agents');
+                if (configuredFeatures.has('subagents') && existsSync(agentsDir) && !options.dryRun) {
+                    const piAgentsDir = join(outputRoot, '.pi', 'agent', 'agents');
+                    mkdirSync(piAgentsDir, { recursive: true });
+                    for (const entry of readdirSync(agentsDir)) {
+                        if (!entry.endsWith('.md')) continue;
+                        const agentName = entry.replace(/\.md$/, '');
+                        const expectedName = `${plugin}-${agentName}`;
+                        const source = readFileSync(join(agentsDir, entry), 'utf-8');
+                        const skillExists = (bare: string) => existsSync(join(pluginRoot, 'skills', bare));
+                        const adapted = adaptSubagentToPi(source, expectedName, plugin, skillExists);
+                        writeFileSync(join(piAgentsDir, `${expectedName}.md`), adapted);
+                        addReceiptFiles(target, [join(piAgentsDir, `${expectedName}.md`)]);
+                    }
+                    if (options.verbose) echo(`  Pi agents: dispatched to ${piAgentsDir}`);
+                }
             }
 
-            // Pi native agent dispatch: adapt each subagent to Pi format → ~/.pi/agent/agents/
-            const agentsDir = join(pluginRoot, 'agents');
-            if (configuredFeatures.has('subagents') && existsSync(agentsDir) && !options.dryRun) {
-                const piAgentsDir = join(outputRoot, '.pi', 'agent', 'agents');
-                mkdirSync(piAgentsDir, { recursive: true });
-                for (const entry of readdirSync(agentsDir)) {
-                    if (!entry.endsWith('.md')) continue;
-                    const agentName = entry.replace(/\.md$/, '');
-                    const expectedName = `${plugin}-${agentName}`;
-                    const source = readFileSync(join(agentsDir, entry), 'utf-8');
-                    const skillExists = (bare: string) => existsSync(join(pluginRoot, 'skills', bare));
-                    const adapted = adaptSubagentToPi(source, expectedName, plugin, skillExists);
-                    writeFileSync(join(piAgentsDir, `${expectedName}.md`), adapted);
-                    addReceiptFiles(target, [join(piAgentsDir, `${expectedName}.md`)]);
-                }
-                if (options.verbose) echo(`  Pi agents: dispatched to ${piAgentsDir}`);
-            }
-        }
-
-        // Codex native agent dispatch: adapt each subagent to Codex TOML -> ~/.codex/agents/
-        // Mirrors the Pi dual-emit (task 0111). Discovery of the ~/.codex/agents dir
-        // convention is verified on codex-cli 0.147.0 (task 0112 - scratch-home probe).
-        if (target === 'codex') {
-            const agentsDir = join(pluginRoot, 'agents');
-            if (configuredFeatures.has('subagents') && existsSync(agentsDir) && !options.dryRun) {
-                const codexAgentsDir = join(outputRoot, '.codex', 'agents');
-                mkdirSync(codexAgentsDir, { recursive: true });
-                for (const entry of readdirSync(agentsDir)) {
-                    if (!entry.endsWith('.md')) continue;
-                    const agentName = entry.replace(/\.md$/, '');
-                    const expectedName = `${plugin}-${agentName}`;
-                    const source = readFileSync(join(agentsDir, entry), 'utf-8');
-                    const adapted = adaptSubagentToCodex(source, expectedName, plugin);
-                    writeFileSync(join(codexAgentsDir, `${expectedName}.toml`), adapted);
-                    addReceiptFiles(target, [join(codexAgentsDir, `${expectedName}.toml`)]);
-                }
-                if (options.verbose) echo(`  Codex agents: dispatched to ${codexAgentsDir}`);
-            }
-        }
-    }
-
-    // Step 5: Magents (main-agent configs).
-    // Mutable authoring SSOT: marketplace-root `magents/` (sibling to plugins/),
-    // not process.cwd() alone — cwd may be a test harness or unrelated project.
-    // Plugin-shipped magents were already staged by mapPluginToRulesync.
-    if (resolution.marketplaceRoot) {
-        const projectMagents = join(resolution.marketplaceRoot, 'magents');
-        const n = stageMagentsFromDir(projectMagents, plugin, outputDir, { nameMode: 'bare' });
-        if (n > 0 && options.verbose) {
-            echo(`  Project magents staged: ${n} from ${projectMagents}`);
-        }
-    }
-    // Magents optional: plugins without magents/ (and no --magent) no-op cleanly.
-    const magentFiles = emitMagents(plugin, targets, outputDir, outputRoot, options);
-    for (const [target, files] of magentFiles) {
-        addReceiptFiles(target, files);
-    }
-    // Plugin-level rules optional: plugins without rules/ no-op cleanly.
-    const ruleFilesWritten = emitPluginRules(pluginRoot, targets, outputRoot, options);
-    for (const [target, files] of ruleFilesWritten) {
-        addReceiptFiles(target, files);
-    }
-    // Plugin-level scripts → shared agents scripts root for rulesync + hermes only.
-    // Native class (claude/omp/grok) already receives scripts/ via host plugin install (R3-B / R6);
-    // do not invent ~/.agents/scripts as a required second tree for native-only installs (AC5).
-    const needsSharedScriptsRoot = targets.some((t) => t !== 'claude' && t !== 'omp' && t !== 'grok');
-    if (needsSharedScriptsRoot) {
-        const scriptCount = stagePluginScripts(outputDir, plugin, outputRoot, options, mapResult.scripts);
-        if (scriptCount > 0 && !options.dryRun) {
-            const scriptDest = join(outputRoot, '.agents', 'scripts', plugin);
-            const scriptFiles = listRegularFilesUnder(scriptDest);
-            for (const target of targets) {
-                if (target !== 'claude' && target !== 'omp' && target !== 'grok') {
-                    addReceiptFiles(target, scriptFiles);
+            // Codex native agent dispatch: adapt each subagent to Codex TOML -> ~/.codex/agents/
+            // Mirrors the Pi dual-emit (task 0111). Discovery of the ~/.codex/agents dir
+            // convention is verified on codex-cli 0.147.0 (task 0112 - scratch-home probe).
+            if (target === 'codex') {
+                const agentsDir = join(pluginRoot, 'agents');
+                if (configuredFeatures.has('subagents') && existsSync(agentsDir) && !options.dryRun) {
+                    const codexAgentsDir = join(outputRoot, '.codex', 'agents');
+                    mkdirSync(codexAgentsDir, { recursive: true });
+                    for (const entry of readdirSync(agentsDir)) {
+                        if (!entry.endsWith('.md')) continue;
+                        const agentName = entry.replace(/\.md$/, '');
+                        const expectedName = `${plugin}-${agentName}`;
+                        const source = readFileSync(join(agentsDir, entry), 'utf-8');
+                        const adapted = adaptSubagentToCodex(source, expectedName, plugin);
+                        writeFileSync(join(codexAgentsDir, `${expectedName}.toml`), adapted);
+                        addReceiptFiles(target, [join(codexAgentsDir, `${expectedName}.toml`)]);
+                    }
+                    if (options.verbose) echo(`  Codex agents: dispatched to ${codexAgentsDir}`);
                 }
             }
         }
-    } else if (options.verbose && mapResult.scripts > 0) {
-        echo('  Plugin scripts: native targets include scripts/ via host plugin install (no shared-root stage)');
-    }
 
-    // No silent drop (design §6 exit #2): surface hook emission results for uncovered targets
-    // in non-verbose mode. Verbose mode already echoes each result at the dispatch site
-    // (the `if (options.verbose) echo(...)` blocks above for hermes/omp/pi), so we skip the
-    // unconditional re-echo here when --verbose is on — otherwise pi/omp/hermes each appear
-    // twice in the output.
-    if (!options.verbose) {
-        for (const result of hookEmitResults) {
-            echo(result.message);
+        // Step 5: Magents (main-agent configs).
+        // Mutable authoring SSOT: marketplace-root `magents/` (sibling to plugins/),
+        // not process.cwd() alone — cwd may be a test harness or unrelated project.
+        // Plugin-shipped magents were already staged by mapPluginToRulesync.
+        if (resolution.marketplaceRoot) {
+            const projectMagents = join(resolution.marketplaceRoot, 'magents');
+            const n = stageMagentsFromDir(projectMagents, plugin, outputDir, { nameMode: 'bare' });
+            if (n > 0 && options.verbose) {
+                echo(`  Project magents staged: ${n} from ${projectMagents}`);
+            }
         }
-    }
+        // Magents optional: plugins without magents/ (and no --magent) no-op cleanly.
+        const magentFiles = emitMagents(plugin, targets, outputDir, outputRoot, options);
+        for (const [target, files] of magentFiles) {
+            addReceiptFiles(target, files);
+        }
+        // Plugin-level rules optional: plugins without rules/ no-op cleanly.
+        const ruleFilesWritten = emitPluginRules(pluginRoot, targets, outputRoot, options);
+        for (const [target, files] of ruleFilesWritten) {
+            addReceiptFiles(target, files);
+        }
+        // Plugin-level scripts → shared agents scripts root for rulesync + hermes only.
+        // Native class (claude/omp/grok) already receives scripts/ via host plugin install (R3-B / R6);
+        // do not invent ~/.agents/scripts as a required second tree for native-only installs (AC5).
+        const needsSharedScriptsRoot = targets.some((t) => t !== 'claude' && t !== 'omp' && t !== 'grok');
+        if (needsSharedScriptsRoot) {
+            const scriptCount = stagePluginScripts(outputDir, plugin, outputRoot, options, mapResult.scripts);
+            if (scriptCount > 0 && !options.dryRun) {
+                const scriptDest = join(outputRoot, '.agents', 'scripts', plugin);
+                const scriptFiles = listRegularFilesUnder(scriptDest);
+                for (const target of targets) {
+                    if (target !== 'claude' && target !== 'omp' && target !== 'grok') {
+                        addReceiptFiles(target, scriptFiles);
+                    }
+                }
+            }
+        } else if (options.verbose && mapResult.scripts > 0) {
+            echo('  Plugin scripts: native targets include scripts/ via host plugin install (no shared-root stage)');
+        }
 
-    if (options.dryRun) {
-        // `.rulesync/` staging is always refreshed — mapPluginToRulesync cleans and rewrites it
-        // before any dispatch. Dry-run suppresses writes to the install targets, not to staging.
-        echo('[DRY-RUN] No files were written to install targets (.rulesync/ staging was refreshed).');
-    } else {
-        writeInstallProvenance({
-            plugin,
-            targets,
-            outputRoot,
-            pluginRoot,
-            resolution,
-            resolvedRef,
-            receipts,
-            addReceiptFiles,
-            mappedSkillNames,
-            useGlobalSkillsLayout: options.global && options.outputRoot === undefined,
-            writer: dependencies.writeInstallManifest ?? writeInstallManifest,
-            nowIso: dependencies.nowIso ?? new Date().toISOString(),
-        });
-        echo(`Installed '${plugin}' to ${targets.length} target(s).`);
+        // No silent drop (design §6 exit #2): surface hook emission results for uncovered targets
+        // in non-verbose mode. Verbose mode already echoes each result at the dispatch site
+        // (the `if (options.verbose) echo(...)` blocks above for hermes/omp/pi), so we skip the
+        // unconditional re-echo here when --verbose is on — otherwise pi/omp/hermes each appear
+        // twice in the output.
+        if (!options.verbose) {
+            for (const result of hookEmitResults) {
+                echo(result.message);
+            }
+        }
+
+        if (options.dryRun) {
+            // F2 (task 0127 R2): dry-run suppresses target writes. The isolated staging tree is an
+            // internal intermediate that is always cleaned up — it is never left refreshed on disk.
+            echo('[DRY-RUN] No files were written to install targets.');
+        } else {
+            writeInstallProvenance({
+                plugin,
+                targets,
+                outputRoot,
+                pluginRoot,
+                resolution,
+                resolvedRef,
+                receipts,
+                addReceiptFiles,
+                mappedSkillNames,
+                useGlobalSkillsLayout: options.global && options.outputRoot === undefined,
+                writer: dependencies.writeInstallManifest ?? writeInstallManifest,
+                nowIso: dependencies.nowIso ?? new Date().toISOString(),
+            });
+            echo(`Installed '${plugin}' to ${targets.length} target(s).`);
+        }
+    } finally {
+        rmSync(stageParent, { recursive: true, force: true });
     }
 }
 

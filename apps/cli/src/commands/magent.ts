@@ -132,16 +132,8 @@ export async function magentEvolve(opts: {
     return undefined;
 }
 
-/** Run magent scaffold as a CLI action. */
-export async function handleMagentScaffold(opts: {
-    name: string;
-    description?: string;
-    target?: string;
-    output?: string;
-    force?: boolean;
-    template?: string;
-    skills?: string[] | string;
-}): Promise<void> {
+/** Run magent scaffold as a CLI action. Input contract is derived from the operation (F9, task 0127 R9) — `tools` only, no `skills` alias. */
+export async function handleMagentScaffold(opts: Parameters<typeof magentScaffold>[0]): Promise<void> {
     await runOperation(() => magentScaffold(opts));
 }
 
@@ -155,15 +147,8 @@ export async function handleMagentValidate(opts: {
     await runOperation(() => magentValidate(opts));
 }
 
-/** Run magent evaluate as a CLI action. */
-export async function handleMagentEvaluate(opts: {
-    nameOrPath: string;
-    target?: string;
-    json?: boolean;
-    save?: boolean;
-    rubric?: string;
-    ingest?: string;
-}): Promise<void> {
+/** Run magent evaluate as a CLI action. Input contract is derived from the operation (F9, task 0127 R9) so `basePath` cannot be dropped again. */
+export async function handleMagentEvaluate(opts: Parameters<typeof magentEvaluate>[0]): Promise<void> {
     await runOperation(() => magentEvaluate(opts));
 }
 

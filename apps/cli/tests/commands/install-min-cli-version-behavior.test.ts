@@ -161,17 +161,25 @@ describe('executeInstall — minCliVersion compat gate', () => {
         seedPiSkill(workspace, 'mappreserves');
         const stdout = spyOn(process.stdout, 'write').mockImplementation(() => true);
 
+        // F2 (task 0127 R2): canonical staging is invocation-local and cleaned after the
+        // install, so the test observes it through the injected rulesync call's prepared
+        // input root instead of the persistent cwd `.rulesync` directory.
+        let canonicalHooks: { minCliVersion?: string; hooks?: unknown } | undefined;
         await executeInstall(
             'mappreserves',
             ['pi'],
             { global: false, dryRun: false, verbose: false },
-            { runRulesync: async () => makeResult({ skillsCount: 1 }) },
+            {
+                runRulesync: async (_targets, _features, inputRoot) => {
+                    canonicalHooks = JSON.parse(readFileSync(join(inputRoot, '.rulesync', 'hooks.json'), 'utf-8'));
+                    return makeResult({ skillsCount: 1 });
+                },
+            },
         );
 
-        // The canonical .rulesync/hooks.json must carry minCliVersion (mapper task 0074 R3)
-        const canonical = JSON.parse(readFileSync(join(workspace, '.rulesync', 'hooks.json'), 'utf-8'));
-        expect(canonical.minCliVersion).toBe('99.0.0');
-        expect(canonical.hooks).toBeDefined();
+        // The canonical hooks.json must carry minCliVersion (mapper task 0074 R3)
+        expect(canonicalHooks?.minCliVersion).toBe('99.0.0');
+        expect(canonicalHooks?.hooks).toBeDefined();
 
         stdout.mockRestore();
     });

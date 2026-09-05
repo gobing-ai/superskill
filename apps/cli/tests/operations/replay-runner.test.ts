@@ -150,12 +150,18 @@ describe('replaySplit', () => {
 
 // ── TsAiRunnerBackend (DI seam) ────────────────────────────────────────────
 
-/** Minimal stub matching the `AiRunner.runPromptCommand` signature. */
+/** Minimal stub matching the `PromptRunner` signature (F5 extends it with `signal`). */
 interface RunnerStub {
     runPromptCommand(
         agent: string,
         opts: { input: string; systemPrompt: string },
-    ): Promise<{ exitCode: number | null; stdout: string; stderr: string; durationMs: number }>;
+    ): Promise<{
+        exitCode: number | null;
+        stdout: string;
+        stderr: string;
+        signal?: string;
+        durationMs: number;
+    }>;
 }
 
 describe('TsAiRunnerBackend', () => {
@@ -172,6 +178,53 @@ describe('TsAiRunnerBackend', () => {
 
         const result = await backend.run('skill text', 'test prompt');
         expect(result).toBe('[system: skill text] output for: test prompt');
+    });
+
+    // F5 (task 0127 R5): ts-ai-runner is fail-open by design, so the adapter must fail
+    // closed for every non-success exit shape — a failed agent process must never feed
+    // partial stdout into empirical scoring.
+    it('fails closed with the agent name and stderr excerpt on a non-zero exit', async () => {
+        const stubRunner: RunnerStub = {
+            runPromptCommand: async () => ({
+                exitCode: 2,
+                stdout: 'partial output',
+                stderr: 'boom',
+                durationMs: 5,
+            }),
+        };
+        const backend = new TsAiRunnerBackend('claude', stubRunner as unknown as AiRunner);
+        await expect(backend.run('skill text', 'test prompt')).rejects.toThrow(
+            "Replay backend: agent 'claude' failed (exit code 2). stderr: boom",
+        );
+    });
+
+    it('fails closed reporting the terminating signal on a null exit code', async () => {
+        const stubRunner: RunnerStub = {
+            runPromptCommand: async () => ({
+                exitCode: null,
+                stdout: '',
+                stderr: 'killed',
+                signal: 'SIGTERM',
+                durationMs: 5,
+            }),
+        };
+        const backend = new TsAiRunnerBackend('codex', stubRunner as unknown as AiRunner);
+        await expect(backend.run('skill text', 'test prompt')).rejects.toThrow(
+            "Replay backend: agent 'codex' failed (terminated by signal SIGTERM)",
+        );
+    });
+
+    it('truncates long stderr excerpts to 500 characters', async () => {
+        const stubRunner: RunnerStub = {
+            runPromptCommand: async () => ({
+                exitCode: 1,
+                stdout: '',
+                stderr: 'x'.repeat(600),
+                durationMs: 5,
+            }),
+        };
+        const backend = new TsAiRunnerBackend('claude', stubRunner as unknown as AiRunner);
+        await expect(backend.run('skill text', 'test prompt')).rejects.toThrow(/stderr: x{500}…$/);
     });
 });
 

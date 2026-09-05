@@ -32,7 +32,7 @@ interface PromptRunner {
             seed?: number;
             temperature?: number;
         },
-    ): Promise<{ stdout: string; stderr?: string; exitCode?: number | null }>;
+    ): Promise<{ stdout: string; stderr?: string; exitCode?: number | null; signal?: string }>;
 }
 
 /** Abstraction over the LLM judge for rubric cases. */
@@ -117,6 +117,20 @@ export class TsAiRunnerJudgeBackend implements JudgeBackend {
             ...(options?.seed !== undefined ? { seed: options.seed } : {}),
             ...(options?.temperature !== undefined ? { temperature: options.temperature } : {}),
         });
+        // F5 (task 0127 R5): ts-ai-runner is fail-open by design (rejectOnError: false). A failed
+        // judge process must never decide a gate, so reject non-zero/null/missing statuses BEFORE
+        // parseJudgeResponse can consume partial stdout.
+        if (result.exitCode !== 0) {
+            const where =
+                result.exitCode === null
+                    ? `terminated by signal ${result.signal ?? 'unknown'}`
+                    : `exit code ${String(result.exitCode)}`;
+            const trimmed = (result.stderr ?? '').trim();
+            const excerpt = trimmed.length > 500 ? `${trimmed.slice(0, 500)}…` : trimmed;
+            throw new Error(
+                `Pairwise judge backend: agent '${this.agent}' failed (${where}). stderr: ${excerpt || '(empty)'}`,
+            );
+        }
         return parseJudgeResponse(result.stdout, candidateFirst);
     }
 }

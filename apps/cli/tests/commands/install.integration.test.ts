@@ -235,9 +235,14 @@ describe('executeInstall', () => {
         // Use demo: prefix so the scoped rewriter catches it (plugin = 'demo')
         writeFileSync(join(pluginDir, 'commands', 'run.md'), 'Use demo:dev-run\n/demo:dev-run 0004\n');
 
+        // F2 (task 0127 R2): the staging root is invocation-local and cleaned after
+        // executeInstall, so the transformed tree is observed from inside the injected
+        // rulesync call rather than from the filesystem afterwards.
         let capturedInputRoot = '';
+        let skillContent = '';
         const mockRunRulesync = async (_targets: Target[], _features: string[], inputRoot: string) => {
             capturedInputRoot = inputRoot;
+            skillContent = readFileSync(join(inputRoot, '.rulesync', 'skills', 'demo-run', 'SKILL.md'), 'utf-8');
             return {
                 rulesCount: 0,
                 rulesPaths: [],
@@ -267,12 +272,9 @@ describe('executeInstall', () => {
             { runRulesync: mockRunRulesync },
         );
 
-        expect(capturedInputRoot).toBe(join('.rulesync', '.targets', 'codex'));
+        // Same relative `.rulesync/.targets/<target>` shape under the ephemeral parent.
+        expect(capturedInputRoot.endsWith(join('.rulesync', '.targets', 'codex'))).toBe(true);
         // Command is now adapted as a skill directory, not a flat .md in commands/
-        const skillContent = readFileSync(
-            join(capturedInputRoot, '.rulesync', 'skills', 'demo-run', 'SKILL.md'),
-            'utf-8',
-        );
         // R6 (task 0126): generated YAML names are emitted only as quoted scalars.
         expect(skillContent).toContain('name: "demo-run"');
         expect(skillContent).toContain('disable-model-invocation: true');

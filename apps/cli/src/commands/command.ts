@@ -66,6 +66,7 @@ export async function commandEvaluate(opts: {
     save?: boolean;
     rubric?: string;
     ingest?: string;
+    basePath?: string;
 }): Promise<number | undefined> {
     const target = resolveTarget(opts);
     const report = await evaluate('command', opts.nameOrPath, {
@@ -73,6 +74,7 @@ export async function commandEvaluate(opts: {
         save: opts.save,
         ...(opts.rubric ? { rubric: opts.rubric } : {}),
         ...(opts.ingest ? { ingest: opts.ingest } : {}),
+        ...(opts.basePath ? { basePath: opts.basePath } : {}),
     });
     if (report) {
         const output = formatEvaluationReport(report, opts.json);
@@ -130,15 +132,8 @@ export async function commandEvolve(opts: {
     return undefined;
 }
 
-/** Run command scaffold as a CLI action. */
-export async function handleCommandScaffold(opts: {
-    name: string;
-    description?: string;
-    target?: string;
-    output?: string;
-    force?: boolean;
-    template?: string;
-}): Promise<void> {
+/** Run command scaffold as a CLI action. Input contract is derived from the operation (F9, task 0127 R9). */
+export async function handleCommandScaffold(opts: Parameters<typeof commandScaffold>[0]): Promise<void> {
     await runOperation(() => commandScaffold(opts));
 }
 
@@ -152,15 +147,8 @@ export async function handleCommandValidate(opts: {
     await runOperation(() => commandValidate(opts));
 }
 
-/** Run command evaluate as a CLI action. */
-export async function handleCommandEvaluate(opts: {
-    nameOrPath: string;
-    target?: string;
-    json?: boolean;
-    save?: boolean;
-    rubric?: string;
-    ingest?: string;
-}): Promise<void> {
+/** Run command evaluate as a CLI action. Input contract is derived from the operation (F9, task 0127 R9). */
+export async function handleCommandEvaluate(opts: Parameters<typeof commandEvaluate>[0]): Promise<void> {
     await runOperation(() => commandEvaluate(opts));
 }
 
@@ -227,6 +215,10 @@ export function registerCommand(program: Command): void {
                         .command('evaluate <nameOrPath>')
                         .description(
                             'Evaluate command quality (use --rubric --json for envelope, --ingest --save to persist scores)',
+                        )
+                        .option(
+                            '--base-path <dir>',
+                            "directory relative markdown links resolve against (default: the file's own directory)",
                         ),
                 ),
             ),
@@ -234,7 +226,14 @@ export function registerCommand(program: Command): void {
     ).action(
         async (
             nameOrPath: string,
-            opts: { target?: string; json?: boolean; save?: boolean; rubric?: string; ingest?: string },
+            opts: {
+                target?: string;
+                json?: boolean;
+                save?: boolean;
+                rubric?: string;
+                ingest?: string;
+                basePath?: string;
+            },
         ) => {
             await handleCommandEvaluate({ nameOrPath, ...opts });
         },

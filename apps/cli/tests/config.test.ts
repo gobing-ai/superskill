@@ -143,4 +143,18 @@ describe('parseJsonc', () => {
             items: [1],
         });
     });
+
+    // F8 (task 0127 R8): EOF inside a block comment is a truncated document — fail loud
+    // with the comment's start position instead of letting JSON.parse bless the prefix.
+    it('throws SyntaxError naming the start position for an unterminated block comment on line 1', () => {
+        const raw = '{"key": "value" /* truncated';
+        expect(() => parseJsonc(raw)).toThrow(SyntaxError);
+        expect(() => parseJsonc(raw)).toThrow('Unterminated block comment starting at line 1, column 17');
+    });
+
+    it('throws SyntaxError naming the start position for a multi-line unterminated block comment', () => {
+        const raw = '{\n  "a": 1,\n  /* never closed\n}';
+        expect(() => parseJsonc(raw)).toThrow(SyntaxError);
+        expect(() => parseJsonc(raw)).toThrow('Unterminated block comment starting at line 3, column 3');
+    });
 });

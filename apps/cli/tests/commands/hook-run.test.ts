@@ -543,9 +543,11 @@ describe('hook run — sp/context-* (indexed-context token ledger, all fail-open
         const ctxDir = join(tmpRoot, '.spur', 'context');
         const session = JSON.parse(readFileSync(onlySessionPath(), 'utf-8'));
         expect(session.session).toMatch(/^session-\d{4}-\d{2}-\d{2}-\d{4}-[a-f0-9]{8}$/);
-        expect(session.reads).toBe(0);
-        expect(session.writes).toBe(0);
-        expect(session.tokens).toBe(0);
+        expect(session.started).toBeString();
+        // F4 (task 0127 R4): identity/start marker only — no running counters on session files.
+        expect(session.reads).toBeUndefined();
+        expect(session.writes).toBeUndefined();
+        expect(session.tokens).toBeUndefined();
         const ledger = readFileSync(join(ctxDir, 'token-ledger.jsonl'), 'utf-8').trim().split('\n');
         expect(ledger.length).toBe(1);
         const first = JSON.parse(ledger[0] ?? '');
@@ -570,11 +572,13 @@ describe('hook run — sp/context-* (indexed-context token ledger, all fail-open
         expect(readEvt).toBeDefined();
         expect(readEvt.file).toBe('/tmp/x.md');
         expect(readEvt.tokens).toBeGreaterThan(0);
-        // Running totals on the isolated session file keep Stop O(1).
+        // F4 (task 0127 R4): PostToolUse only appends to the ledger — it must NOT rewrite the
+        // session JSON (an unlocked read-modify-write lost increments under concurrency). The
+        // session file stays an identity marker; Stop aggregates the ledger.
         const session = JSON.parse(readFileSync(onlySessionPath(), 'utf-8'));
-        expect(session.reads).toBe(1);
-        expect(session.writes).toBe(0);
-        expect(session.tokens).toBe(readEvt.tokens);
+        expect(session.reads).toBeUndefined();
+        expect(session.writes).toBeUndefined();
+        expect(session.tokens).toBeUndefined();
     });
 
     it('context-post-tool: fails open (exit 0, no ledger write) without a session', async () => {
@@ -696,8 +700,9 @@ describe('hook run — sp/context-* (indexed-context token ledger, all fail-open
         expect(sessionPaths()).toHaveLength(1);
         const remaining = JSON.parse(readFileSync(onlySessionPath(), 'utf-8'));
         expect(remaining.session).toBe('session-b');
-        expect(remaining.reads).toBe(0);
-        expect(remaining.writes).toBe(2);
+        // F4 (task 0127 R4): no running counters — each session's totals come from the ledger.
+        expect(remaining.reads).toBeUndefined();
+        expect(remaining.writes).toBeUndefined();
 
         capture('sp', 'context-session-stop', env, sessionB);
         expect(sessionPaths()).toHaveLength(0);
@@ -717,20 +722,20 @@ describe('hook run — sp/context-* (indexed-context token ledger, all fail-open
         });
     });
 
-    it('context-session-stop: falls back to a one-shot ledger scan for a legacy session file without counters', async () => {
-        // WHY: PostToolUse maintains O(1) running counters on the session file, but session files
-        // written before that field existed (or by a host that never ran PostToolUse) have no
-        // reads/writes/tokens. Stop must then derive totals by scanning the ledger for this
-        // session's read/write events — the legacy compatibility path.
+    it('context-session-stop: stale/partial session counters never override the ledger', async () => {
+        // WHY (F4, task 0127 R4): concurrent PostToolUse processes could lose increments or
+        // leave unreadable counters. Stop must ignore any present counters and always aggregate
+        // the append-only ledger: only parseable read/write events whose session exactly
+        // matches count; malformed lines and foreign sessions are skipped.
         const env = { CLAUDE_PROJECT_DIR: tmpRoot };
-        const sessionId = 'legacy-session';
+        const sessionId = 'ledger-wins';
         const sessionPayload = JSON.stringify({ session_id: sessionId });
         capture('sp', 'context-session-start', env, sessionPayload);
         const ctxDir = join(tmpRoot, '.spur', 'context');
         const sessionFile = onlySessionPath();
-        // Rewrite the session file WITHOUT the running counters — simulating a legacy file.
         const started = JSON.parse(readFileSync(sessionFile, 'utf-8'));
-        writeFileSync(sessionFile, JSON.stringify({ session: started.session, started: started.started }));
+        // Seed stale counters for the SAME session — the state a lost PostToolUse race leaves.
+        writeFileSync(sessionFile, JSON.stringify({ ...started, reads: 99, writes: 1, tokens: 999 }));
 
         // Append three ledger events for this session (2 reads, 1 write) plus a decoy from another.
         const ledger = join(ctxDir, 'token-ledger.jsonl');

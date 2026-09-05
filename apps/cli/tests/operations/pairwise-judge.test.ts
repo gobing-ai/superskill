@@ -145,6 +145,32 @@ describe('TsAiRunnerJudgeBackend', () => {
         expect(calls[0]?.temperature).toBe(0);
         expect(calls[0]?.input).toContain('Output A:');
     });
+
+    // F5 (task 0127 R5): judge process failures must fail closed — partial stdout from a
+    // failed judge process must never be parsed as a verdict.
+    it('fails closed with the agent name and stderr excerpt on a non-zero judge exit', async () => {
+        const runner = {
+            runPromptCommand: async () => ({
+                stdout: '{"winner":"A","margin":0.9}',
+                stderr: 'judge boom',
+                exitCode: 3,
+            }),
+        };
+        const backend = new TsAiRunnerJudgeBackend('claude', runner as never);
+        await expect(backend.judge(clarityRubric, 'Explain', 'cand', 'base', {})).rejects.toThrow(
+            "Pairwise judge backend: agent 'claude' failed (exit code 3). stderr: judge boom",
+        );
+    });
+
+    it('fails closed reporting the terminating signal on a null judge exit code', async () => {
+        const runner = {
+            runPromptCommand: async () => ({ stdout: '', stderr: '', exitCode: null, signal: 'SIGKILL' }),
+        };
+        const backend = new TsAiRunnerJudgeBackend('claude', runner as never);
+        await expect(backend.judge(clarityRubric, 'Explain', 'cand', 'base')).rejects.toThrow(
+            'terminated by signal SIGKILL',
+        );
+    });
 });
 
 describe('createJudgeBackend', () => {

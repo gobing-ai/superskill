@@ -43,16 +43,6 @@ export interface ScriptPathOptions {
     forceProject?: boolean;
 }
 
-/**
- * Resolve a staged plugin entrypoint to an absolute filesystem path.
- *
- * Search order:
- * 1. Project agents root: `<project>/.agents/scripts/<plugin>/<rel>`
- * 2. Global agents root: `~/.agents/scripts/<plugin>/<rel>`
- *
- * Returns the first existing file, or null when not found.
- * Rejects `rel` containing `..` segments or absolute paths.
- */
 /** True when `rel` is absolute, empty, or contains a `..` path segment (segment-wise, not substring). */
 function isUnsafeRel(rel: string): boolean {
     if (!rel || rel.startsWith('/') || rel.startsWith('\\') || /^[a-zA-Z]:[\\/]/.test(rel)) {
@@ -60,6 +50,24 @@ function isUnsafeRel(rel: string): boolean {
     }
     // Segment check avoids false positives on filenames like `file..ts` while blocking `../x` and `a/../b`.
     return rel.split(/[/\\]/).some((seg) => seg === '..' || seg === '');
+}
+
+/**
+ * Shared locator boundary for both script-locator commands (F3, task 0127 R3).
+ *
+ * `script path` and `script convert` must validate `<plugin>` as one safe path segment and
+ * `<rel>` as a plain relative path BEFORE any filesystem probing, dry-run output, bundling,
+ * or write, so the two commands cannot drift on what counts as a safe source locator.
+ * Ordinary names containing two dots (`file..ts`) stay allowed; `../`, nested `a/../../`,
+ * POSIX/Windows absolute forms, empty segments, and repeated separators are rejected.
+ *
+ * @throws `UsageError` (exit 1) on any violation.
+ */
+export function assertScriptLocator(plugin: string, rel: string): void {
+    assertSafePathSegment(plugin, 'plugin name');
+    if (isUnsafeRel(rel)) {
+        throw new UsageError(`Invalid relative path: "${rel}". Must be a plain relative path without ".." segments.`);
+    }
 }
 
 /**
@@ -78,13 +86,7 @@ function isUnsafeRel(rel: string): boolean {
  * @returns The first regular-file candidate with its source, or null.
  */
 export function resolveScriptPath(opts: ScriptPathOptions): ResolvedScriptPath | null {
-    assertSafePathSegment(opts.plugin, 'plugin name');
-
-    if (isUnsafeRel(opts.rel)) {
-        throw new UsageError(
-            `Invalid relative path: "${opts.rel}". Must be a plain relative path without ".." segments.`,
-        );
-    }
+    assertScriptLocator(opts.plugin, opts.rel);
 
     const home = opts.home ?? homedir();
     const projectRoot = opts.projectRoot ?? process.cwd();

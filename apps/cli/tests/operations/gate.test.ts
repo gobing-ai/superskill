@@ -248,6 +248,11 @@ You are a careful, helpful agent. Do tasks well, verify your work, and ask when 
         expect(r.rejectionReason).toContain("drops the DON'T constraint");
         expect(readFileSync(join(dir, 'widget.md'), 'utf-8')).toBe(before);
 
+        // F1 (task 0127 R1): the verify evaluation row is written only after all gates pass,
+        // so a rejected candidate must leave no 'evolve' evaluation in history.
+        const evals = await new EvaluationDao(adapter).getEvaluations('skill', 'widget');
+        expect(evals.some((e) => e.operation === 'evolve')).toBe(false);
+
         const stored = (await new ProposalDao(adapter).getProposals('skill', 'widget'))[0];
         expect(stored?.status).toBe('draft');
     });

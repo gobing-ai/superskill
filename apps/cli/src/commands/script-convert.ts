@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
 import { echo, echoError } from '@gobing-ai/ts-utils';
 import type { Command } from 'commander';
+import { assertScriptLocator } from './script-path';
 
 const NODE_SHEBANG = '#!/usr/bin/env node';
 
@@ -147,6 +148,15 @@ export function registerScriptConvert(program: Command, ci?: { exit(code: number
         .option('--dry-run', 'report what would be written; write nothing')
         .option('--json', 'machine-readable output')
         .action(async (plugin: string, rel: string, options: { out?: string; dryRun?: boolean; json?: boolean }) => {
+            // F3 (task 0127 R3): shared locator boundary with `script path` — validate before
+            // any filesystem probe, dry-run output, bundling, or write. Invalid input exits 1
+            // with an actionable message and produces no output file.
+            try {
+                assertScriptLocator(plugin, rel);
+            } catch (err) {
+                echoError((err as Error).message);
+                exitFn(1);
+            }
             const projectRoot = process.env.CLAUDE_PROJECT_DIR ?? process.cwd();
             const src = join(projectRoot, 'plugins', plugin, 'scripts', rel);
             if (!existsSync(src)) {

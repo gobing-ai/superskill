@@ -3776,6 +3776,14 @@
             "severity": "warning",
             "reason": "Done feature whose covering tasks (0073, 0086, 0111) predate PASS verdict artifacts; preserve the historical record. New work must still ship MET verdicts for linked scenarios.",
             "since": "2026-09-01"
+        },
+        {
+            "kind": "task",
+            "id": "0127",
+            "code": "L4.missing-feature-id",
+            "severity": "warning",
+            "reason": "Standalone cross-cutting remediation (task Q&A): findings span authoring/evolve, install, scripts, hooks, config, handlers — one feature link would be false ownership, matching 0107 precedent; accepted warning, new findings still gate.",
+            "since": "2026-09-04"
         }
     ]
 }

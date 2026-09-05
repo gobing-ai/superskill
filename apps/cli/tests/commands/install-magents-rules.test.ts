@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, spyOn } from 'bun:test';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { MAGENT_LAYER_FILES, stageMagentsFromDir, TARGETS } from '@gobing-ai/superskill-core';
 import { emitMagents, emitPluginRules, type InstallOptions } from '../../src/commands/install';
 
 const originalCwd = process.cwd();
@@ -35,6 +36,33 @@ afterEach(() => {
 });
 
 describe('emitMagents', () => {
+    it('emits identical team-stark source layers for each target into separate fresh destinations', () => {
+        const root = makeTempRoot();
+        const sourceRoot = join(import.meta.dir, '../../../..', 'magents');
+        const sourceDir = join(sourceRoot, 'team-stark-children');
+        const outputDir = join(root, 'staging');
+        const expected = `${MAGENT_LAYER_FILES.map((name) =>
+            readFileSync(join(sourceDir, name), 'utf-8').trimEnd(),
+        ).join('\n\n')}\n`;
+        stageMagentsFromDir(sourceRoot, 'cc', outputDir, { nameMode: 'bare' });
+
+        for (const target of TARGETS) {
+            const destination = join(root, target);
+            emitMagents('cc', [target], outputDir, destination, opts({ magent: 'team-stark-children' }));
+            if (target === 'claude') {
+                const entry = readFileSync(join(destination, 'CLAUDE.md'), 'utf-8');
+                const imports = [...entry.matchAll(/^@(\S+)$/gm)].map((match) => match[1] ?? '');
+                expect(imports).toEqual([...MAGENT_LAYER_FILES]);
+                const expanded = `${imports
+                    .map((name) => readFileSync(join(destination, name), 'utf-8').trimEnd())
+                    .join('\n\n')}\n`;
+                expect(expanded).toBe(expected);
+            } else {
+                expect(readFileSync(join(destination, 'AGENTS.md'), 'utf-8')).toBe(expected);
+            }
+        }
+    });
+
     it('no-ops when no magents/ staging directory exists', () => {
         const root = makeTempRoot();
         const outputDir = join(root, 'out');
