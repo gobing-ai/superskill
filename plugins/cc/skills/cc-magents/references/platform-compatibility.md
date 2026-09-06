@@ -52,10 +52,14 @@ The magent source pipeline accepts either a single manifest or a modular package
 | --- | --- |
 | `AGENTS.md`, `CLAUDE.md`, or a target variant such as `AGENTS.codex.md` | Select the most specific candidate for the requested runtime ID |
 | `IDENTITY.md`, `SOUL.md`, `AGENTS.md`, `USER.md` | Assemble existing layers in that order; a target override replaces a layer and must be inspected as a complete result |
-| Claude import package (`CLAUDE.md` with `@IDENTITY.md`-style imports) | Copy the entry and referenced layer files for `claude`; other targets receive an assembled output |
+| Claude import package (`CLAUDE.md` with `@IDENTITY.md`-style imports) | Copy the base entry and recognized package layers for `claude`; other targets receive an assembled output |
 | `plugins/<plugin>/rules/*.md` | Emit as a separate rules surface only when the target has a known rules directory; rules are not magent layers |
 
 The implementation details are in [`select-magent.ts`](../../../../../packages/core/src/pipeline/select-magent.ts) and the install path in [`install.ts`](../../../../../apps/cli/src/commands/install.ts). `adaptMagentForTarget` rewrites plugin-scoped references and removes bare Claude `@file` import lines for Codex. That is a source conversion rule, not evidence of equivalent native behavior.
+
+Claude import emission copies only `CLAUDE_PACKAGE_FILES`; it does not recursively
+copy arbitrary import targets or resolve per-layer overrides. Inspect that copy
+path separately from the shared assembler when reviewing a modular package.
 
 The source registry and the runtime target are therefore different axes:
 
