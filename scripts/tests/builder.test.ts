@@ -19,6 +19,7 @@ import {
     handleMainError,
     main,
     postbuild,
+    resolvePublishDeps,
     runBuilderCommand,
     validateVersion,
 } from '../builder';
@@ -613,11 +614,29 @@ describe('findUnpublishableSpecifiers — publish-manifest guard (task 0074)', (
     // WHY: npm publishes package.json verbatim; a `catalog:`/`workspace:` specifier resolves only
     // inside this monorepo, so a published manifest carrying one is uninstallable for consumers
     // (shipped live in 0.2.14–0.2.16: `error: @gobing-ai/ts-utils@catalog: failed to resolve`).
-    it('flags catalog: specifiers in dependencies', () => {
+    it('flags catalog: specifiers in dependencies (legacy: no catalog arg)', () => {
         const offenders = findUnpublishableSpecifiers(
             JSON.stringify({ dependencies: { '@gobing-ai/ts-utils': 'catalog:', commander: '^14.0.0' } }),
         );
         expect(offenders).toEqual(['dependencies.@gobing-ai/ts-utils: "catalog:"']);
+    });
+
+    it('accepts catalog: deps that resolve through the root workspaces.catalog', () => {
+        const offenders = findUnpublishableSpecifiers(
+            JSON.stringify({ dependencies: { '@gobing-ai/ts-utils': 'catalog:', commander: '^14.0.0' } }),
+            { '@gobing-ai/ts-utils': '^0.4.61' },
+        );
+        expect(offenders).toEqual([]);
+    });
+
+    it('flags catalog: deps whose name is missing from the root workspaces.catalog', () => {
+        const offenders = findUnpublishableSpecifiers(
+            JSON.stringify({ dependencies: { 'pkg-not-in-catalog': 'catalog:' } }),
+            { '@gobing-ai/ts-utils': '^0.4.61' },
+        );
+        expect(offenders).toEqual([
+            'dependencies.pkg-not-in-catalog: "catalog:" (no entry in root workspaces.catalog)',
+        ]);
     });
 
     it('flags workspace: specifiers in peerDependencies and optionalDependencies', () => {
@@ -691,6 +710,170 @@ describe('runBuilderCommand — check-publish-manifest', () => {
             ).rejects.toThrow('exit 1');
         } finally {
             rmSync(tmp, { force: true });
+        }
+    });
+});
+
+describe('resolvePublishDeps — catalog: → root catalog expansion (spur-new parity)', () => {
+    // WHY: the source manifest carries `catalog:` references for centralized versioning; this
+    // helper is what `resolve-publish-deps` calls before `npm publish` reads the manifest, so the
+    // published package ships concrete semver ranges while the source stays single-source-of-truth.
+    it('expands catalog: deps to concrete semver ranges', () => {
+        const manifest = JSON.stringify({
+            dependencies: { '@gobing-ai/ts-utils': 'catalog:', commander: '^14.0.0' },
+        });
+        const { resolved, changed, missing } = resolvePublishDeps(manifest, {
+            '@gobing-ai/ts-utils': '^0.4.61',
+        });
+        expect(changed).toBe(1);
+        expect(missing).toEqual([]);
+        const parsed = JSON.parse(resolved) as { dependencies: Record<string, string> };
+        expect(parsed.dependencies['@gobing-ai/ts-utils']).toBe('^0.4.61');
+        expect(parsed.dependencies.commander).toBe('^14.0.0');
+    });
+
+    it('reports missing catalog entries without mutating the manifest', () => {
+        const manifest = JSON.stringify({ dependencies: { 'pkg-not-in-catalog': 'catalog:' } });
+        const { changed, missing } = resolvePublishDeps(manifest, { '@gobing-ai/ts-utils': '^0.4.61' });
+        expect(changed).toBe(0);
+        expect(missing).toEqual(['dependencies.pkg-not-in-catalog']);
+    });
+
+    it('expands across dependencies, peerDependencies, and optionalDependencies', () => {
+        const manifest = JSON.stringify({
+            dependencies: { a: 'catalog:' },
+            peerDependencies: { b: 'catalog:' },
+            optionalDependencies: { c: 'catalog:' },
+            devDependencies: { d: 'catalog:' },
+        });
+        const { changed, missing } = resolvePublishDeps(manifest, {
+            a: '^1.0.0',
+            b: '^2.0.0',
+            c: '^3.0.0',
+            d: '^4.0.0',
+        });
+        // devDependencies are exempt: consumers never install them, and the monorepo's own Bun
+        // install already resolves `catalog:` natively for the local workspace.
+        expect(changed).toBe(3);
+        expect(missing).toEqual([]);
+        const parsed = JSON.parse(manifest) as {
+            dependencies: Record<string, string>;
+            devDependencies: Record<string, string>;
+        };
+        // Source manifest is unmodified — devDependencies still carry the literal `catalog:`
+        // reference, which is fine for the local monorepo resolver.
+        expect(parsed.devDependencies.d).toBe('catalog:');
+    });
+
+    it('leaves workspace: and concrete versions untouched', () => {
+        const manifest = JSON.stringify({
+            dependencies: {
+                '@gobing-ai/superskill-core': 'workspace:*',
+                '@gobing-ai/ts-utils': 'catalog:',
+                commander: '^14.0.0',
+            },
+        });
+        const { changed } = resolvePublishDeps(manifest, { '@gobing-ai/ts-utils': '^0.4.61' });
+        expect(changed).toBe(1);
+    });
+
+    it('returns changed=0 with empty deps fields', () => {
+        const manifest = JSON.stringify({ name: 'x', version: '0.0.0' });
+        const { changed, missing } = resolvePublishDeps(manifest, { '@gobing-ai/ts-utils': '^0.4.61' });
+        expect(changed).toBe(0);
+        expect(missing).toEqual([]);
+    });
+});
+
+describe('runBuilderCommand — resolve-publish-deps', () => {
+    it('expands catalog: deps and writes a backup alongside the manifest', async () => {
+        const tmp = resolve(ROOT, 'scripts/tests/.tmp-resolve-manifest.json');
+        const backup = `${tmp}.bak`;
+        const original = JSON.stringify({
+            name: 'x',
+            version: '0.0.0',
+            dependencies: { '@gobing-ai/ts-utils': 'catalog:' },
+        });
+        writeFileSync(tmp, original);
+        const info = spyOn(console, 'log').mockImplementation(() => {});
+        try {
+            // @gobing-ai/ts-utils IS in the real root catalog — resolution should succeed.
+            await runBuilderCommand(['resolve-publish-deps', 'scripts/tests/.tmp-resolve-manifest.json']);
+            const after = readFileSync(tmp, 'utf-8');
+            expect(after).not.toBe(original);
+            expect(JSON.parse(after).dependencies['@gobing-ai/ts-utils']).toMatch(/^\^/);
+            expect(readFileSync(backup, 'utf-8')).toBe(original);
+            expect(info.mock.calls.flat().join('\n')).toContain('resolved');
+        } finally {
+            rmSync(tmp, { force: true });
+            rmSync(backup, { force: true });
+        }
+    });
+
+    it('fails loudly when a catalog: dep has no root catalog entry', async () => {
+        const tmp = resolve(ROOT, 'scripts/tests/.tmp-resolve-missing.json');
+        writeFileSync(tmp, JSON.stringify({ dependencies: { 'pkg-not-in-catalog': 'catalog:' } }));
+        spyOn(console, 'error').mockImplementation(() => {});
+        spyOn(process, 'exit').mockImplementation((code?: string | number | null) => {
+            throw new Error(`exit ${code}`);
+        });
+        try {
+            await expect(
+                runBuilderCommand(['resolve-publish-deps', 'scripts/tests/.tmp-resolve-missing.json']),
+            ).rejects.toThrow('exit 1');
+        } finally {
+            rmSync(tmp, { force: true });
+            rmSync(`${tmp}.bak`, { force: true });
+        }
+    });
+
+    it('reports "no catalog: specifiers to resolve" when the manifest has none', async () => {
+        const tmp = resolve(ROOT, 'scripts/tests/.tmp-resolve-empty.json');
+        writeFileSync(tmp, JSON.stringify({ dependencies: { commander: '^14.0.0' } }));
+        const info = spyOn(console, 'log').mockImplementation(() => {});
+        try {
+            await runBuilderCommand(['resolve-publish-deps', 'scripts/tests/.tmp-resolve-empty.json']);
+            expect(info.mock.calls.flat().join('\n')).toContain('no catalog: specifiers to resolve');
+            // No backup should be created when there is nothing to resolve.
+            expect(existsSync(`${tmp}.bak`)).toBe(false);
+        } finally {
+            rmSync(tmp, { force: true });
+            rmSync(`${tmp}.bak`, { force: true });
+        }
+    });
+});
+
+describe('runBuilderCommand — restore-publish-deps', () => {
+    it('restores the manifest from backup and removes the backup file', async () => {
+        const tmp = resolve(ROOT, 'scripts/tests/.tmp-restore-manifest.json');
+        const backup = `${tmp}.bak`;
+        const original = JSON.stringify({ dependencies: { '@gobing-ai/ts-utils': 'catalog:' } });
+        const resolved = JSON.stringify({ dependencies: { '@gobing-ai/ts-utils': '^0.4.61' } });
+        writeFileSync(backup, original);
+        writeFileSync(tmp, resolved);
+        const info = spyOn(console, 'log').mockImplementation(() => {});
+        try {
+            await runBuilderCommand(['restore-publish-deps', 'scripts/tests/.tmp-restore-manifest.json']);
+            expect(readFileSync(tmp, 'utf-8')).toBe(original);
+            expect(existsSync(backup)).toBe(false);
+            expect(info.mock.calls.flat().join('\n')).toContain('restored from backup');
+        } finally {
+            rmSync(tmp, { force: true });
+            rmSync(backup, { force: true });
+        }
+    });
+
+    it('warns and does nothing when no backup file exists', async () => {
+        const tmp = resolve(ROOT, 'scripts/tests/.tmp-restore-noop.json');
+        writeFileSync(tmp, JSON.stringify({ dependencies: { x: '^1.0.0' } }));
+        const warn = spyOn(console, 'warn').mockImplementation(() => {});
+        try {
+            await runBuilderCommand(['restore-publish-deps', 'scripts/tests/.tmp-restore-noop.json']);
+            expect(warn.mock.calls.flat().join('\n')).toContain('not found');
+            expect(readFileSync(tmp, 'utf-8')).toBe(JSON.stringify({ dependencies: { x: '^1.0.0' } }));
+        } finally {
+            rmSync(tmp, { force: true });
+            rmSync(`${tmp}.bak`, { force: true });
         }
     });
 });

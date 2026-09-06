@@ -9,10 +9,10 @@
             "packages/*"
         ],
         "catalog": {
-            "@gobing-ai/ts-ai-runner": "^0.4.51",
-            "@gobing-ai/ts-db": "^0.4.51",
-            "@gobing-ai/ts-runtime": "^0.4.51",
-            "@gobing-ai/ts-utils": "^0.4.51"
+            "@gobing-ai/ts-ai-runner": "^0.4.56",
+            "@gobing-ai/ts-db": "^0.4.56",
+            "@gobing-ai/ts-runtime": "^0.4.56",
+            "@gobing-ai/ts-utils": "^0.4.61"
         }
     },
     "scripts": {
@@ -25,10 +25,10 @@
         "dev": "bun run --filter './apps/*' --filter './packages/*' dev",
         "test": "NODE_ENV=test bun test --coverage --coverage-dir=.coverage --reporter=dots",
         "test:full": "bun test --coverage --coverage-reporter=lcov --coverage-dir=.coverage --update-snapshots",
-        "test-pre-check": "spur rule run --preset recommended-pre-check --fail-on warning --verbose",
-        "test-post-check": "spur rule run --preset recommended-post-check --fail-on warning --verbose",
-        "test-pre-check:full": "spur rule run --preset recommended-pre-check --fail-on warning --verbose",
-        "test-post-check:full": "spur rule run --preset recommended-post-check --fail-on warning --verbose",
+        "test-pre-check": "spur rule run --preset recommended-pre-check --fail-on warning --no-logo",
+        "test-post-check": "spur rule run --preset recommended-post-check --fail-on warning --no-logo",
+        "test-pre-check:full": "spur rule run --preset recommended-pre-check --fail-on warning --no-logo --verbose",
+        "test-post-check:full": "spur rule run --preset recommended-post-check --fail-on warning --no-logo --verbose",
         "corpus-check": "bun \"$HOME/.bun/bin/spur\" task check --corpus",
         "spur-check": "bun run lint && bun run test-pre-check && bun run corpus-check && bun run test && bun run test-post-check",
         "spur-check:full": "bun run lint && bun run test-pre-check:full && bun run corpus-check && bun run test:full && bun run test-post-check:full",

@@ -11,9 +11,11 @@
  *   bun scripts/builder.ts postbuild <outfile>           prepend bun shebang to a bundle
  *   bun scripts/builder.ts check-skill-citations [glob]  resolve skill citations + drift
  *   bun scripts/builder.ts check-publish-manifest [pkg]  fail on catalog:/workspace: deps
+ *   bun scripts/builder.ts resolve-publish-deps [pkg]    expand catalog: → root catalog version
+ *   bun scripts/builder.ts restore-publish-deps [pkg]    restore manifest from resolve backup
  */
 
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { $, Glob } from 'bun';
 
@@ -318,23 +320,80 @@ export async function postbuild(outfile: string) {
 /**
  * Find workspace-only dependency specifiers (`catalog:`, `workspace:`) in a manifest's runtime
  * dependency fields. npm publishes package.json verbatim — it knows nothing about Bun workspace
- * catalogs — so any such specifier makes the published package uninstallable for consumers
+ * catalogs — so a literal `catalog:` in the published package makes it uninstallable for consumers
  * (`error: @gobing-ai/ts-utils@catalog: failed to resolve`; shipped live in 0.2.14–0.2.16, task
- * 0074). devDependencies are exempt: they never install for consumers of a published package.
+ * 0074).
+ *
+ * `workspace:` deps are ALWAYS offenders — workspace packages are not resolvable from npm.
+ *
+ * `catalog:` deps are offenders ONLY when:
+ *   - no `catalog` arg is supplied (legacy callers), or
+ *   - the dep name is missing from the supplied root `workspaces.catalog`.
+ *
+ * When the dep name IS in the root catalog, it is NOT flagged: `resolve-publish-deps` expands it
+ * to a concrete semver range at publish time, so the manifest that npm reads is publishable while
+ * the source manifest stays as a single-source-of-truth `catalog:` reference.
+ *
+ * devDependencies are exempt: they never install for consumers of a published package.
  */
-export function findUnpublishableSpecifiers(manifestText: string): string[] {
+export function findUnpublishableSpecifiers(manifestText: string, catalog?: Record<string, string>): string[] {
     const manifest = JSON.parse(manifestText) as Record<string, unknown>;
     const offenders: string[] = [];
     for (const field of ['dependencies', 'peerDependencies', 'optionalDependencies']) {
         const deps = manifest[field];
         if (!deps || typeof deps !== 'object') continue;
         for (const [name, spec] of Object.entries(deps as Record<string, unknown>)) {
-            if (typeof spec === 'string' && (spec.startsWith('catalog:') || spec.startsWith('workspace:'))) {
+            if (typeof spec !== 'string') continue;
+            if (spec.startsWith('workspace:')) {
                 offenders.push(`${field}.${name}: "${spec}"`);
+            } else if (spec === 'catalog:') {
+                if (catalog === undefined) {
+                    offenders.push(`${field}.${name}: "${spec}"`);
+                } else if (!catalog[name]) {
+                    offenders.push(`${field}.${name}: "${spec}" (no entry in root workspaces.catalog)`);
+                }
             }
         }
     }
     return offenders;
+}
+
+/**
+ * Resolve `catalog:` deps in a published workspace's manifest to concrete semver ranges from the
+ * root `workspaces.catalog`. Backs up the original manifest to `<path>.bak` so a paired
+ * `restore-publish-deps` call (typically wired into `postpublish`) can put it back. Mirrors the
+ * resolver in `spur-new/scripts/commands/publish.ts`; together with `restore-publish-deps` it lets
+ * the published package stay the single source of truth (root catalog) without breaking npm.
+ *
+ * `workspace:` deps are NOT touched here — they're either bundled into the artifact at build time
+ * (so they must be STRIPPED, not version-resolved) or replaced via the app's bundling step.
+ */
+export function resolvePublishDeps(
+    manifestText: string,
+    catalog: Record<string, string>,
+): {
+    resolved: string;
+    changed: number;
+    missing: string[];
+} {
+    const manifest = JSON.parse(manifestText) as Record<string, unknown>;
+    const missing: string[] = [];
+    let changed = 0;
+    for (const field of ['dependencies', 'peerDependencies', 'optionalDependencies'] as const) {
+        const deps = manifest[field] as Record<string, string> | undefined;
+        if (!deps) continue;
+        for (const [name, spec] of Object.entries(deps)) {
+            if (spec === 'catalog:') {
+                if (!catalog[name]) {
+                    missing.push(`${field}.${name}`);
+                } else {
+                    deps[name] = catalog[name];
+                    changed++;
+                }
+            }
+        }
+    }
+    return { resolved: `${JSON.stringify(manifest, null, 4)}\n`, changed, missing };
 }
 
 /**
@@ -390,11 +449,14 @@ export async function runBuilderCommand(argv: string[], shell: ShellRunner = $) 
         case 'check-publish-manifest': {
             const manifestPath = version ?? 'apps/cli/package.json';
             const manifestText = readFileSync(resolve(ROOT, manifestPath), 'utf-8');
-            const offenders = findUnpublishableSpecifiers(manifestText);
+            const rootText = readFileSync(resolve(ROOT, 'package.json'), 'utf-8');
+            const rootCatalog = (JSON.parse(rootText) as { workspaces?: { catalog?: Record<string, string> } })
+                .workspaces?.catalog;
+            const offenders = findUnpublishableSpecifiers(manifestText, rootCatalog);
             if (offenders.length > 0) {
                 fail(
                     `${manifestPath} contains workspace-only specifiers npm cannot publish:\n  ${offenders.join('\n  ')}\n` +
-                        'Pin concrete versions in the published workspace (catalog:/workspace: resolve only inside this monorepo).',
+                        'Pin concrete versions in the published workspace, add a `workspaces.catalog` entry, or strip `workspace:` deps before publishing.',
                 );
             }
             const pkgVersion = (JSON.parse(manifestText) as { version?: string }).version ?? '';
@@ -412,10 +474,45 @@ export async function runBuilderCommand(argv: string[], shell: ShellRunner = $) 
             logger.info(`${manifestPath}: publishable — no workspace-only specifiers, marketplace versions in sync.`);
             break;
         }
+        case 'resolve-publish-deps': {
+            const manifestPath = version ?? 'apps/cli/package.json';
+            const absPath = resolve(ROOT, manifestPath);
+            const backupPath = `${absPath}.bak`;
+            const rootText = readFileSync(resolve(ROOT, 'package.json'), 'utf-8');
+            const catalog =
+                (JSON.parse(rootText) as { workspaces?: { catalog?: Record<string, string> } }).workspaces?.catalog ??
+                {};
+            const original = readFileSync(absPath, 'utf-8');
+            const { resolved, changed, missing } = resolvePublishDeps(original, catalog);
+            if (missing.length > 0) {
+                fail(`${manifestPath}: catalog: deps missing root entries: ${missing.join(', ')}`);
+            }
+            if (changed === 0) {
+                logger.info(`${manifestPath}: no catalog: specifiers to resolve.`);
+                break;
+            }
+            writeFileSync(backupPath, original);
+            writeFileSync(absPath, resolved);
+            logger.info(`${manifestPath}: resolved ${changed} catalog: specifier(s); backup at ${backupPath}.`);
+            break;
+        }
+        case 'restore-publish-deps': {
+            const manifestPath = version ?? 'apps/cli/package.json';
+            const absPath = resolve(ROOT, manifestPath);
+            const backupPath = `${absPath}.bak`;
+            if (!existsSync(backupPath)) {
+                logger.warn(`${backupPath} not found; nothing to restore.`);
+                break;
+            }
+            writeFileSync(absPath, readFileSync(backupPath, 'utf-8'));
+            unlinkSync(backupPath);
+            logger.info(`${manifestPath}: restored from backup; backup removed.`);
+            break;
+        }
         default:
             fail(
                 `Unknown command: ${command}\n` +
-                    'Usage: bun scripts/builder.ts <bump-ver|drop-tags|postbuild|check-skill-citations|check-publish-manifest> [args]',
+                    'Usage: bun scripts/builder.ts <bump-ver|drop-tags|postbuild|check-skill-citations|check-publish-manifest|resolve-publish-deps|restore-publish-deps> [args]',
             );
     }
 }

@@ -4,6 +4,36 @@ All notable changes to `@gobing-ai/superskill` are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Conventional Commits](https://www.conventionalcommits.org/).
 
+## [0.3.21] - 2026-09-05
+
+### Fixed
+
+- **fail closed on missing status in replay and judge backends.** (7eff93a)
+- **close apps CLI review findings F1-F9.** (25d0a30)
+- **close R1–R10 force-reverify residuals.** (5cba868)
+- **harden path safety, lock integrity, and content transforms (R1-R10).** (516eb26)
+
+### Changed
+
+- **consolidate cc-skills meta-skill to v3.2.0 thin wrappers.** (d74ea18)
+- **honest skill rewrite and slim expert-magent wrapper.** (b255614)
+
+### Documentation
+
+- **clarify Claude import emission copies CLAUDE_PACKAGE_FILES only.** (d237f74)
+- **tighten data-vs-authority boundary across expert and platforms.** (8e7b2a0)
+- **refresh 0082 and 0127 evidence line refs.** (3281e54)
+- **markdownlint reformat for task corpus files.** (3a03876)
+- **enhance the main agents.** (cec7622)
+- **enhance the main agents.** (de9b2b9)
+- **refresh 0126 Solution/Verification to current evidence.** (fc87823)
+
+### Other
+
+- **allow thin-wrapper commands to forward $ARGUMENTS.** (20e4125)
+- **assert staging dir is cleaned after target mapping.** (022d8bc)
+- **feature G Package Core → done (task 0126 recorded PASS).** (1c45af3)
+
 ## [0.3.20] - 2026-09-02
 
 ### Added
