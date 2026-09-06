@@ -624,7 +624,7 @@ describe('findUnpublishableSpecifiers — publish-manifest guard (task 0074)', (
     it('accepts catalog: deps that resolve through the root workspaces.catalog', () => {
         const offenders = findUnpublishableSpecifiers(
             JSON.stringify({ dependencies: { '@gobing-ai/ts-utils': 'catalog:', commander: '^14.0.0' } }),
-            { '@gobing-ai/ts-utils': '^0.4.61' },
+            { '@gobing-ai/ts-utils': '^0.4.56' },
         );
         expect(offenders).toEqual([]);
     });
@@ -632,7 +632,7 @@ describe('findUnpublishableSpecifiers — publish-manifest guard (task 0074)', (
     it('flags catalog: deps whose name is missing from the root workspaces.catalog', () => {
         const offenders = findUnpublishableSpecifiers(
             JSON.stringify({ dependencies: { 'pkg-not-in-catalog': 'catalog:' } }),
-            { '@gobing-ai/ts-utils': '^0.4.61' },
+            { '@gobing-ai/ts-utils': '^0.4.56' },
         );
         expect(offenders).toEqual([
             'dependencies.pkg-not-in-catalog: "catalog:" (no entry in root workspaces.catalog)',
@@ -723,18 +723,18 @@ describe('resolvePublishDeps — catalog: → root catalog expansion (spur-new p
             dependencies: { '@gobing-ai/ts-utils': 'catalog:', commander: '^14.0.0' },
         });
         const { resolved, changed, missing } = resolvePublishDeps(manifest, {
-            '@gobing-ai/ts-utils': '^0.4.61',
+            '@gobing-ai/ts-utils': '^0.4.56',
         });
         expect(changed).toBe(1);
         expect(missing).toEqual([]);
         const parsed = JSON.parse(resolved) as { dependencies: Record<string, string> };
-        expect(parsed.dependencies['@gobing-ai/ts-utils']).toBe('^0.4.61');
+        expect(parsed.dependencies['@gobing-ai/ts-utils']).toBe('^0.4.56');
         expect(parsed.dependencies.commander).toBe('^14.0.0');
     });
 
     it('reports missing catalog entries without mutating the manifest', () => {
         const manifest = JSON.stringify({ dependencies: { 'pkg-not-in-catalog': 'catalog:' } });
-        const { changed, missing } = resolvePublishDeps(manifest, { '@gobing-ai/ts-utils': '^0.4.61' });
+        const { changed, missing } = resolvePublishDeps(manifest, { '@gobing-ai/ts-utils': '^0.4.56' });
         expect(changed).toBe(0);
         expect(missing).toEqual(['dependencies.pkg-not-in-catalog']);
     });
@@ -773,13 +773,13 @@ describe('resolvePublishDeps — catalog: → root catalog expansion (spur-new p
                 commander: '^14.0.0',
             },
         });
-        const { changed } = resolvePublishDeps(manifest, { '@gobing-ai/ts-utils': '^0.4.61' });
+        const { changed } = resolvePublishDeps(manifest, { '@gobing-ai/ts-utils': '^0.4.56' });
         expect(changed).toBe(1);
     });
 
     it('returns changed=0 with empty deps fields', () => {
         const manifest = JSON.stringify({ name: 'x', version: '0.0.0' });
-        const { changed, missing } = resolvePublishDeps(manifest, { '@gobing-ai/ts-utils': '^0.4.61' });
+        const { changed, missing } = resolvePublishDeps(manifest, { '@gobing-ai/ts-utils': '^0.4.56' });
         expect(changed).toBe(0);
         expect(missing).toEqual([]);
     });
@@ -848,7 +848,7 @@ describe('runBuilderCommand — restore-publish-deps', () => {
         const tmp = resolve(ROOT, 'scripts/tests/.tmp-restore-manifest.json');
         const backup = `${tmp}.bak`;
         const original = JSON.stringify({ dependencies: { '@gobing-ai/ts-utils': 'catalog:' } });
-        const resolved = JSON.stringify({ dependencies: { '@gobing-ai/ts-utils': '^0.4.61' } });
+        const resolved = JSON.stringify({ dependencies: { '@gobing-ai/ts-utils': '^0.4.56' } });
         writeFileSync(backup, original);
         writeFileSync(tmp, resolved);
         const info = spyOn(console, 'log').mockImplementation(() => {});
