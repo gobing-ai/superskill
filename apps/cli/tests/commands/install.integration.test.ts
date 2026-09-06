@@ -56,17 +56,26 @@ describe('executeInstall', () => {
         return { pluginDir, marketplacePath: join(claudePluginDir, 'marketplace.json') };
     }
 
-    it('resolves plugin via marketplace and maps to .rulesync/', async () => {
+    it('resolves plugin via marketplace and cleans staging after target mapping', async () => {
         const { marketplacePath } = setupPluginDir();
 
         let capturedOptions: RulesyncOptions | undefined;
+        const inputRoots: string[] = [];
         const mockRunRulesync = async (
             _targets: Target[],
             _features: string[],
-            _inputRoot: string,
+            inputRoot: string,
             options: RulesyncOptions,
         ) => {
             capturedOptions = options;
+            inputRoots.push(inputRoot);
+            const staged = join(inputRoot, '.rulesync');
+            // Staging exists only while the installer invokes its target adapter.
+            expect(existsSync(join(staged, 'skills', 'demo-a', 'SKILL.md'))).toBe(true);
+            expect(existsSync(join(staged, 'skills', 'demo-run', 'SKILL.md'))).toBe(true);
+            expect(existsSync(join(staged, 'skills', 'demo-coder', 'SKILL.md'))).toBe(true);
+            expect(existsSync(join(staged, 'commands'))).toBe(false);
+            expect(existsSync(join(staged, 'subagents'))).toBe(false);
             return {
                 rulesCount: 0,
                 rulesPaths: [],
@@ -96,13 +105,8 @@ describe('executeInstall', () => {
             { runRulesync: mockRunRulesync },
         );
 
-        // Verify .rulesync/skills/ was mapped (commands and agents now adapted as skills)
-        expect(existsSync(join('.rulesync', 'skills', 'demo-a', 'SKILL.md'))).toBe(true);
-        expect(existsSync(join('.rulesync', 'skills', 'demo-run', 'SKILL.md'))).toBe(true);
-        expect(existsSync(join('.rulesync', 'skills', 'demo-coder', 'SKILL.md'))).toBe(true);
-        // No separate commands/ or subagents/ dirs anymore
-        expect(existsSync(join('.rulesync', 'commands'))).toBe(false);
-        expect(existsSync(join('.rulesync', 'subagents'))).toBe(false);
+        expect(inputRoots).toHaveLength(2);
+        for (const inputRoot of inputRoots) expect(existsSync(inputRoot)).toBe(false);
 
         // Verify rulesync called with correct options (ADR-010)
         expect(capturedOptions).toBeDefined();
