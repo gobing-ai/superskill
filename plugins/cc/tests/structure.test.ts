@@ -219,14 +219,23 @@ describe('cc plugin structure', () => {
                 .sort();
             const registeredPositionals = requiredPositionalsFromHelp(help);
 
-            expect(`${file}:${documented.join(',')}`).toBe(`${file}:${registered.join(',')}`);
-            expect(`${file}:table:${tableOptions.join(',')}`).toBe(`${file}:table:${registered.join(',')}`);
             expect(`${file}:hint-positionals:${requiredPositionalsFromHint(hint).join(',')}`).toBe(
                 `${file}:hint-positionals:${registeredPositionals.join(',')}`,
             );
-            expect(`${file}:table-positionals:${tablePositionals.join(',')}`).toBe(
-                `${file}:table-positionals:${registeredPositionals.join(',')}`,
-            );
+            if (hint.endsWith('[options]')) {
+                // Thin wrappers forward the live option surface instead of maintaining a second catalog.
+                expect(content).toContain(`Skill(skill="cc:cc-${family}s", args="${verb} $ARGUMENTS")`);
+                expect(content).toContain(`superskill ${family} ${verb} $ARGUMENTS`);
+                for (const option of content.match(/--[a-z][a-z-]*/g) ?? []) {
+                    expect([...registered, '--help']).toContain(option);
+                }
+            } else {
+                expect(`${file}:${documented.join(',')}`).toBe(`${file}:${registered.join(',')}`);
+                expect(`${file}:table:${tableOptions.join(',')}`).toBe(`${file}:table:${registered.join(',')}`);
+                expect(`${file}:table-positionals:${tablePositionals.join(',')}`).toBe(
+                    `${file}:table-positionals:${registeredPositionals.join(',')}`,
+                );
+            }
         }
     }, 30000);
 
