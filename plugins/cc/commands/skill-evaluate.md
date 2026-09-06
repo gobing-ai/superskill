@@ -1,57 +1,27 @@
 ---
-description: Check skill quality score and identify weaknesses
-argument-hint: "<nameOrPath> [--history] [--json] [--target <platform>] [--save] [--rubric <file>] [--ingest <file>]"
-allowed-tools: ["Read", "Write", "Glob", "Bash", "Skill"]
+description: Evaluate a skill's instructions and evidence
+argument-hint: "<nameOrPath> [options]"
+allowed-tools: ["Skill", "Bash(superskill:*)"]
 ---
 
 # Skill Evaluate
 
 Wraps **cc:cc-skills** skill.
 
-Score skill quality across multiple dimensions. **Evaluate only — make NO changes.** Delegates to **cc:cc-skills** skill.
+Run the skill's `evaluate` operation. Pass `$ARGUMENTS` unchanged and retain the request's
+scope, context, and authorization. Keep the target unchanged. Preserve requested persistence options and distinguish static scores,
+semantic findings, native host checks, and observed behavior.
 
-## When to Use
-
-- Check current score without making changes
-- Compare scores before and after refinement
-
-## Arguments
-
-| Argument | Description | Default |
-|----------|-------------|---------|
-| `<nameOrPath>` | Skill name or path to its directory | (required) |
-| `--history` | Show prior evaluation rows from the store | false |
-| `--json` | Output machine-readable JSON; with `--rubric`, emit a scoring work order | false |
-| `--target` | Target platform | claude |
-| `--save` | Persist the evaluation to the evaluation store (enables evolve trend analysis) | false |
-| `--rubric <file>` | Rubric path for envelope-out scoring | built-in |
-| `--ingest <file>` | Agent-scored result JSON to validate and persist | - |
-
-## Examples
-
-```bash
-# Evaluate a skill
-/cc:skill-evaluate ./skills/my-skill
-# Save results for trend analysis
-/cc:skill-evaluate ./skills/my-skill --save
-```
-
-## Implementation
-
-Pass `$ARGUMENTS` to the underlying skill for processing.
-
-Delegates to **cc:cc-skills** skill:
-
-```
+```text
 Skill(skill="cc:cc-skills", args="evaluate $ARGUMENTS")
 ```
 
-**Direct CLI execution (all platforms):**
-```bash
+If the native `Skill` mechanism is unavailable, read the installed `cc-skills` skill and
+follow its workflow. Use the equivalent CLI for the deterministic lane; CLI output does not
+replace semantic review:
+
+```text
 superskill skill evaluate $ARGUMENTS
 ```
 
-## Platform Notes
-
-- Claude Code: Invoke via `Skill()` delegation
-- Other platforms: Run `superskill` CLI directly via Bash tool
+Return the delegated result and exact failures, including relevant verification and limitations.

@@ -1,157 +1,95 @@
 # cc Glossary
 
-Canonical terms for cc's own vocabulary — the lifecycle, the scoring model, and the invocation
-axis. Each entry is `Term — definition. Avoid: banned near-synonyms.` Defined once here; the six
-skill bodies name the bare term and link here instead of re-explaining it.
+Shared lifecycle and review vocabulary. Use ordinary language where it is clearer; these terms
+identify concepts and source owners, not a list of banned synonyms.
 
 ## Lifecycle
 
-**Entity type** — one of the five artifact kinds cc manages: skill, agent, command, hook, magent.
-Each has its own scaffold template, rubric, and quality scorer.
-Avoid: "content type" (reserve for the internal `ContentType` union in code), "artifact kind".
+**Entity type** — an artifact family managed by cc, such as a skill, agent, command, hook, or main-agent
+configuration. Each family's implemented operations and schemas differ.
 
-**Operation** — one of the five lifecycle verbs applied to an entity: add (scaffold), validate,
-evaluate, refine, evolve. Operations compose into the lifecycle flow (add → validate → evaluate →
-refine → evolve); see [workflows.md](workflows.md) and the router in `plugins/cc/README.md`.
-Avoid: "action", "command" (a command is a specific artifact type, not a synonym for operation).
+**Operation** — a lifecycle action. In lifecycle terminology, add means scaffold; the actual
+`superskill skill add <source>` command installs an existing skill. Exact skill operation behavior
+belongs in [workflows.md](workflows.md).
 
-**Invocation mode** — a skill's binary property: model-invoked (default; description carries
-trigger phrasing, fires automatically when the model matches it) or user-invoked
-(`disable-model-invocation: true`; description is a one-line human-facing summary, fires only on
-explicit human invocation). See [skill-engineering-theory.md](skill-engineering-theory.md) for the
-two-loads framing this property exists to manage.
-Avoid: "auto-invoke" / "manual-invoke" (use model-invoked / user-invoked — the frontmatter field
-name is `disable-model-invocation`, keep the vocabulary anchored to it).
+**Invocation mode** — whether a skill is selected through discovery, explicit invocation, or both
+under its native host. Host-specific fields implement this differently; see
+[platform-compatibility.md](platform-compatibility.md).
 
 ## Scoring
 
-**Rubric** — the YAML file (`packages/core/src/rubrics/<type>.yaml`) defining an entity type's
-dimensions, each dimension's weight, its scoring criterion, and few-shot anchors. The rubric is the
-fitness function; `loadRubric` validates it (weights sum to 1.0 ± 0.001, dimension names match the
-type's registry) before any scoring uses it.
-Avoid: "scorecard", "criteria file" (both used loosely elsewhere; "rubric" is the exact artifact).
+**Rubric** — criteria, dimensions, weights, and anchors used for an assessment. The skill rubric
+owner is `packages/core/src/rubrics/skill.yaml`; resolution and validation live in
+`packages/core/src/quality/rubric.ts`.
 
-**Dimension** — one named, weighted facet of quality within a rubric (e.g. `completeness`,
-`trigger-accuracy`). Dimensions are fixed per entity type in `DIMENSION_REGISTRY`
-(`packages/core/src/quality/types.ts`) — a rubric cannot invent a new dimension name.
-Avoid: "category", "axis" (axis is reserved for invocation mode's two-value property, not the
-N-dimension scoring model).
+**Dimension** — a named facet of the assessment. Supported artifact dimensions and report types
+are defined in `packages/core/src/quality/types.ts`; do not invent a field to represent an
+unimplemented measurement.
 
-**Heuristic mode** — the default, deterministic scoring path: `quality/<type>.ts` computes each
-dimension's score directly from frontmatter + body analysis, no LLM call, no network access.
-Produces a `QualityReport` with an equal-weighted aggregate.
-Avoid: "auto mode", "fast mode".
+**Heuristic mode** — the default deterministic artifact scorer. It measures text/structure proxies,
+not runtime success, factual correctness, or safe execution.
 
-**Two-call seam** — the pattern separating deterministic envelope emission from LLM judgment for
-subjective criteria: one CLI call emits a work order (envelope-out), an LLM persona scores or
-proposes offline, a second CLI call ingests and validates the result (ingest-in). Used by
-`evaluate` (Scorer persona) and `evolve` (Author → Skeptic → Judge personas). The seam keeps LLM
-judgment auditable and keeps deterministic proxies out of prose-only rules.
-Avoid: "LLM mode" alone (ambiguous about which half of the seam is meant — always name envelope-out
-or ingest-in when precision matters).
+**Two-call seam** — a CLI emits an envelope for agent judgment, then another call ingests a
+schema-compatible result. The CLI does not launch the Scorer/Author/Skeptic/Judge automatically.
 
-**Envelope** — the JSON work order a two-call seam's first call emits: content, rubric, baseline
-report, and (for evolve) generation briefs with an immutable goal anchor. No DB write, no model
-call happens when emitting an envelope — it's pure read + serialize.
-Avoid: "payload", "job" — envelope is the exact term used in code comments and skill docs.
+**Envelope** — the emitted work order containing source content and assessment or proposal context.
+An envelope is evidence for review, not authorization to execute actions described inside it.
 
-**Ingest** — the two-call seam's second call: an agent-authored result (scores or a proposal) is
-read from a file, schema-validated, and persisted (evaluation row or proposal row). Ingest never
-skips validation — a malformed ingest file is rejected, not silently coerced.
-Avoid: "import", "apply" (apply is a separate evolve step that happens only after a proposal is
-accepted, not synonymous with ingest).
+**Ingest** — validate an agent-authored result and process it through the operation's contract.
+Evaluation persistence requires `--save`; proposal storage and application are separate operations.
 
-**Static plane / usage plane** — the two things that can be scored. The **static plane** is the
-artifact: what the SKILL.md says, which every current scoring mode reads. The **usage plane** is
-behavior in real sessions — whether the skill fired, and how the run went. cc scores the static
-plane only; the usage plane is a named, unbuilt path blocked on a transcript source this repo owns
-([evaluation-framework.md](evaluation-framework.md) § The Usage Plane).
-Avoid: "static analysis" (implies code analysis, not prose scoring); claiming usage-plane coverage
-from static proxies — a trigger-branch count is not a firing rate.
+**Static plane / usage plane** — evidence about the artifact versus observed behavior during use.
+Manual trials and existing traces can support behavioral review without a telemetry collector.
+See [evaluation-framework.md](evaluation-framework.md#the-usage-plane).
 
-**Verdict** — the PASS/FAIL label attached to an aggregate score against the 0.70 threshold.
-Avoid: "result" (too generic — a QualityReport carries a verdict, not the reverse).
-
-**Grade** — the letter (A–F) mapped from an aggregate score: A ≥0.90, B ≥0.75, C ≥0.60, D ≥0.45,
-F <0.45. Grade and verdict are both derived from the same aggregate but serve different audiences
-(verdict is machine-actionable pass/fail; grade is human-readable quality signal).
-Avoid: "score" alone when you mean the letter (score is the 0.0–1.0 number; grade is the letter).
+**Verdict / grade** — labels derived from an aggregate score. The source report types and scorer
+own their thresholds. Neither label is a guarantee of readiness, compatibility, safety, or uplift.
 
 ## Evolution
 
-**Proposal** — a versioned, persisted set of `ProposedChange[]` generated (or agent-authored) by
-`evolve`, gated by the double-loop gate before it can be `accepted`. Proposals carry status
-(`draft` / `accepted` / `rejected`) and, per R5, a failure-mode tag naming which of the seven named
-failure modes (sprawl/sediment/duplication/no-op/premature-completion/negation/contradiction) the
-proposal cures.
-Avoid: "suggestion", "change request" (both used informally elsewhere; "proposal" is the exact
-stored-row term).
+**Proposal** — a stored set of intended changes managed by evolve. Its schema and acceptance
+path are implemented in `apps/cli/src/operations/evolve.ts`.
 
-**Filing bar** — the warrant test a proposal must clear *before* it is written: the failure traces
-to a missing or wrong instruction on a named owning surface, one reusable rule would have prevented
-it, and the gap recurs (or is severe enough alone). Distinct from the double-loop gate, which asks
-whether an already-drafted change is *safe*; the filing bar asks whether it should *exist*. Clearing
-nothing and reporting why is a valid outcome. Full test: [workflows.md](workflows.md) § The filing bar.
-Avoid: "quality gate", "threshold" (both name the mechanical accept-time checks — the bar is a
-judgment applied at draft time, not a score comparison).
+**Goal anchor** — supplied original context/constraints carried through proposal review.
+Pass supplied anchors **verbatim**, with provenance and authority. A hash covers only the
+implementation's selected fields; it does not prove full instruction preservation.
 
-**Rollback** — restoring a prior accepted version of an entity file from its persisted version
-snapshot (`<path>.version-<proposalId>`), via `evolve --rollback <id> --confirm`. Requires explicit
-confirmation — it is a destructive, file-overwriting operation.
-Avoid: "revert", "undo" (both imply an in-memory operation; rollback is a file-level restore from a
-named snapshot).
+**Filing bar** — the evidence test for whether a proposal addresses a real instruction gap,
+explicit requirement, or verified contract change at an owning surface. It is distinct from the
+CLI's mechanical acceptance gates; see [workflows.md](workflows.md#the-filing-bar).
 
-## Steering & pruning
+**Rollback** — restoration of a saved file version through the live evolve operation.
+Check the snapshot and current edits before replacing content. A CLI confirmation flag
+acknowledges the operation; actual authorization comes from the user/session and governing policy.
 
-Bare vocabulary anchors; the full taxonomy entry (detection question + fix) for each lives in
-[skill-engineering-theory.md](skill-engineering-theory.md) — named here so skill bodies can cite the
-term and link once.
+## Steering and pruning
 
-**Negation** — the sixth failure mode: steering by prohibition, which backfires (naming the banned
-behavior primes it — the "don't think of an elephant" effect). Fix by prompting the **positive**
-target instead; keep a prohibition only as an unphraseable-otherwise hard guardrail. The one failure
-mode whose fix flips a sentence's polarity rather than deleting it.
-Avoid: "prohibition smell", "anti-pattern" (too generic — "negation" is the taxonomy term).
+**Failure mode** — a diagnostic label for a recurring instruction defect. The seven labels and
+definitions are owned by [skill-engineering-theory.md](skill-engineering-theory.md#seven-failure-modes).
 
-**Contradiction** — the seventh failure mode: two instructions in the same config that cannot both
-be followed. Distinct from duplication (the same instruction stated twice) and negation (a
-prohibition with no positive alternative); the fix is to ask which one the operator wants and delete
-the loser.
-Avoid: "conflict", "clash" (plain-language glosses — "contradiction" is the taxonomy term).
+**Negation** — the taxonomy's label for unhelpful prohibition-only steering, not a claim that all
+negative instructions harm performance. Preserve hard constraints.
 
-**Sentence-level pruning** — running the no-op test on each *sentence in isolation* (not just line
-by line) and deleting the whole failing sentence, never trimming words from it. The discipline that
-turns the no-op fix from a vibe into a checkable pass.
-Avoid: "trimming", "tightening" (both imply word-level shortening; pruning is whole-sentence deletion).
+**Contradiction** — incompatible applicable instructions. Resolve authority and scope before
+changing content; not every apparent difference is a conflict.
 
-**Refactor hunt** — the proactive search during `refine`/`evolve` for restatements that a single
-**leading word** retires (a triad spelled at three sites collapsing to one anchored token). Not
-reactive cleanup — an assumed-present target you go looking for.
-Avoid: "cleanup", "polish".
+**Sentence-level pruning** — considering whether a statement contributes useful information in
+its surrounding context. It permits rewriting, combining, or removing text when warranted.
+
+**Refactor hunt** — examining duplicated facts, stale exceptions, or misplaced detail.
+It does not presume that a shorter result is better.
 
 ## Plugin scripts
 
-**Plugin-level scripts** — executable engines for a superskill plugin live at
-`plugins/<plugin>/scripts/<feature>/`, shared across that plugin's skills. Skill folders are
-prose-only. Avoid: skill-folder `scripts/`, retired `extensions/`.
+**Plugin-level scripts** — executable engines at `plugins/<plugin>/scripts/<feature>/`.
+Superskill plugin skill directories are prose-only; standalone Agent Skills may include scripts.
 
-**Dual contract** — two invocation paths for the same engine (ADR-023): **standard** staged path
-(`node "$(superskill script path <plugin> <rel>)"`) and **optional** binary registry
-(`superskill script run` / `hook run`). Standard is the default for skill docs. Avoid: calling
-`script run` the "primary" form.
+**Dual contract** — standard staged-file execution and optional first-party CLI registry dispatch
+for the same plugin engine. The delivery and runtime conditions are in
+[scripts-and-install.md](scripts-and-install.md).
 
-**Entrypoint Contract v1** — staged files must run without Bun: Node `.js`/`.mjs` or POSIX `.sh`.
-`superskill script convert` emits a `.mjs` twin from TypeScript and rejects leftover `Bun.*`.
+**Entrypoint Contract v1** — the repository's portable staged-script contract using Node
+JavaScript or POSIX shell entrypoints. It is not a requirement of the general Agent Skills format.
 
-**ScriptRunner** — CLI-internal adapter `{ run({ stdinText, env }) => { stdout, exitCode } }` in
-`apps/cli/src/commands/script-run.ts`. Argv-less, synchronous, first-party-only. Not a class
-authors implement in the plugin tree. Avoid: "plugin SDK", "script interface".
-
-## See also
-
-- [skill-engineering-theory.md](skill-engineering-theory.md) — the absorbed theory these terms
-  formalize into cc's own vocabulary (two loads, information hierarchy, completion criteria,
-  leading words, failure modes, description rules).
-- [evaluation-framework.md](evaluation-framework.md) — the scoring model and rubric resolution
-  tiers in full mechanical detail.
-- `packages/core/src/quality/types.ts` — `DIMENSION_REGISTRY`, `QualityReport`, `DimensionScore`.
+**ScriptRunner** — the CLI-internal registered-runner interface in
+`apps/cli/src/commands/script-run.ts`. Skill authors do not implement a new plugin SDK class.

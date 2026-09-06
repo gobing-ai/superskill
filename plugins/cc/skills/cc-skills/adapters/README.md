@@ -1,14 +1,8 @@
 # Platform Adapters
 
-Platform-specific adapters for deploying cc-skills to different AI coding platforms.
+This directory contains guidance, not executable adapters. Shared format support does not
+guarantee native discovery, permission behavior, resource delivery, or successful execution.
 
-## Supported Platforms
-
-- **Claude Code** — Native; no adapter needed. Companion files generated per platform defaults.
-- **Codex** — `agents/openai.yaml`
-- **OpenClaw** — `metadata.openclaw` extension
-- **OpenCode** — Platform-specific config
-- **Antigravity / Gemini CLI** — Gemini-compatible format
-- **Pi** — pi-hooks integration
-
-See [platform-compatibility.md](../references/platform-compatibility.md) for per-platform details.
+Use [platform-compatibility.md](../references/platform-compatibility.md) for host checks and
+adapter ownership, and [scripts-and-install.md](../references/scripts-and-install.md) for
+superskill plugin delivery.

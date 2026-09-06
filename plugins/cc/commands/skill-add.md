@@ -1,79 +1,27 @@
 ---
-description: Create a new skill with scaffolding and templates
-argument-hint: "<name> [--description <text>] [--target <platform>] [--output <dir>] [--template <tier>] [--tools <list>] [--invocation-mode <mode>] [--force]"
-allowed-tools: ["Read", "Write", "Glob", "Bash", "Skill"]
+description: Create a skill from verified requirements
+argument-hint: "<name> [options]"
+allowed-tools: ["Skill", "Bash(superskill:*)"]
 ---
 
 # Skill Add
 
 Wraps **cc:cc-skills** skill.
 
-Scaffold a new skill directory with `SKILL.md` from a tiered template. Delegates to **cc:cc-skills** skill.
+Run the skill's `scaffold` operation. Pass `$ARGUMENTS` unchanged and retain the request's
+scope, context, and authorization. Scaffold a seed and follow the skill's authoring and verification workflow. Lifecycle add maps
+to scaffold; the CLI's skill add operation installs an existing skill.
 
-## When to Use
-
-- Create a new skill from scratch
-- Initialize a skill with proper directory structure and frontmatter
-- Pick a template tier (technique / pattern / reference) matching the skill's shape
-
-## Arguments
-
-| Argument | Description | Default |
-|----------|-------------|---------|
-| `<name>` | Name of the skill (hyphen-case) | (required) |
-| `--description` | Free-text description of the skill's purpose | auto-generated |
-| `--target` | Target platform | claude |
-| `--output` | Output directory | ./skills |
-| `--template` | Template tier: `technique`, `pattern`, or `reference` | default |
-| `--tools` | Comma-separated tool names to pre-populate frontmatter | (tier default) |
-| `--invocation-mode` | `user` (emits `disable-model-invocation: true` + one-line human-facing description) or `model` (trigger-rich description) | model |
-| `--force` | Overwrite existing file | false |
-
-## Discovery Discipline
-
-Before scaffolding, run the grill-style discovery interview — explore sibling skills, the target
-repo, and prior evaluations first; then one question at a time, each with a recommended answer.
-Single copy: **cc:cc-skills** workflows reference § "Grill-style discovery".
-
-## Template Tiers
-
-- **technique** — step-by-step workflows with concrete instructions and verification gates; for procedural skills
-- **pattern** — decision frameworks with trade-off analysis and core principles; for design-decision skills
-- **reference** — lookup tables and documentation; for factual/API-reference skills
-
-A freshly scaffolded skill PASSes the project's own evaluator (`superskill skill evaluate`) out of the box.
-
-## Examples
-
-```bash
-# Scaffold a default skill (most common)
-/cc:skill-add my-skill
-# Scaffold with a description of its purpose
-/cc:skill-add my-skill --description "Wraps the foo API"
-# Scaffold a technique-tier skill with explicit tools
-/cc:skill-add deploy-skill --template technique --tools Read,Write,Bash
-# Scaffold a reference-tier skill
-/cc:skill-add api-ref --template reference
-# Scaffold a user-invoked skill (human picks it directly; other skills cannot fire it)
-/cc:skill-add release-runner --invocation-mode user --description "Run the release checklist"
-```
-
-## Implementation
-
-Pass `$ARGUMENTS` to the underlying skill for processing.
-
-Delegates to **cc:cc-skills** skill:
-
-```
+```text
 Skill(skill="cc:cc-skills", args="scaffold $ARGUMENTS")
 ```
 
-**Direct CLI execution (all platforms):**
-```bash
+If the native `Skill` mechanism is unavailable, read the installed `cc-skills` skill and
+follow its workflow. Use the equivalent CLI for the deterministic lane; CLI output does not
+replace semantic review:
+
+```text
 superskill skill scaffold $ARGUMENTS
 ```
 
-## Platform Notes
-
-- Claude Code: Invoke via `Skill()` delegation
-- Other platforms: Run `superskill` CLI directly via Bash tool
+Return the delegated result and exact failures, including relevant verification and limitations.

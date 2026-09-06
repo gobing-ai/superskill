@@ -1,162 +1,83 @@
-# Platform Compatibility Guide
+# Platform Compatibility
 
-This document describes platform-specific features and compatibility requirements.
+Shared file format, superskill validation, installation, and native host behavior are separate
+contracts. Verify the layers used by the target skill before claiming compatibility.
 
-## Platform Support Matrix
+## Portable core
 
-| Platform | Base Format | Extensions | Companion Files | Discovery Paths |
-|----------|-------------|------------|-----------------|-----------------|
-| **Claude Code** | agentskills.io | `!`cmd``, `$ARGUMENTS`, `context: fork`, `hooks:` | None | `.claude/skills/` |
-| **Codex** | agentskills.io | `agents/openai.yaml` | agents/openai.yaml | `.codex/skills/`, `.agents/skills/` |
-| **Antigravity** | agentskills.io | Gemini CLI compatible | None | `.gemini/skills/`, `.agents/skills/` |
-| **OpenCode** | agentskills.io | Config-level `permission.skill` | None | `.opencode/skills/`, `.agents/skills/` |
-| **OpenClaw** | agentskills.io | `metadata.openclaw` JSON | None | `~/.agents/skills/`, `<workspace>/.agents/skills/`, `<workspace>/skills/`, `~/.openclaw/skills/` |
-| **Pi** | agentskills.io | Pi-native compatible | None | `.pi/agent/skills/`, `.agents/skills/` |
+The [Agent Skills specification](https://agentskills.io/specification) requires a directory with
+`SKILL.md`, YAML frontmatter, and a Markdown body. Its portable core uses a nonempty `name`
+matching the directory and a description of the task and when to use it. Optional resources include
+scripts, references, and assets. The specification defines naming/field limits and recommends
+progressive disclosure; its size guidance is not a universal runtime limit.
 
-## Format Compatibility
+Keep portable metadata as string key/value pairs. Native extensions may use other shapes;
+document their host and check the actual parser rather than assuming every reader handles them.
 
-### Universal Format (All Platforms)
+Superskill plugins add a repository layout rule: executable engines live outside the skill
+directory. This does not prohibit scripts in standalone Agent Skills.
+See [scripts-and-install.md](scripts-and-install.md).
+
+## Native behavior to verify
+
+| Host or surface | Relevant distinction | Evidence to use |
+|---|---|---|
+| Claude Code | Invocation visibility, tool pre-approval, argument substitution, forked context, and hooks are native extensions. Explicit-only invocation can break programmatic callers. | [Claude Code skills documentation](https://code.claude.com/docs/en/skills) and the installed version |
+| Codex | `agents/openai.yaml` is optional product metadata; it is not an agent executable or an invocation API. Native invocation policy is distinct from Claude frontmatter. | Installed skill-authoring reference and [OpenAI skill documentation](https://developers.openai.com/codex/skills/) |
+| OpenClaw | Eligibility and requirements are read using the native skill metadata/config contract. A file named `metadata.openclaw` is not by itself proof of native integration. | [OpenClaw skills documentation](https://docs.openclaw.ai/tools/skills) and installed source/config |
+| OpenCode, Gemini CLI, Antigravity, Pi, and other hosts | Discovery roots, project/global precedence, permission controls, tools, and invocation vary. Product families are not interchangeable. | The actual host's installed help/source and official documentation, plus superskill's live target capability output |
+| Superskill lifecycle, installer, and packager | Each has its own accepted identifiers and output behavior. A known install target need not support every lifecycle or native feature. | Leaf `--help`, target guidance, and the installed artifact |
+
+Format/host references above were checked on **2026-09-05** and are rolling documentation.
+They are not archived proof of every native feature as of August 31. Dated pre-cutoff research
+supporting the engineering method lives in [evaluation-framework.md](evaluation-framework.md#research-basis-and-limits).
+
+## Invocation and permissions
+
+Discover the host's available tools and supported skill invocation mechanism. If a native skill
+loader is unavailable, read the installed skill and follow its workflow with available tools;
+do not invent commands such as a universal `skills invoke` or assume a tool named `Bash`.
+
+For Claude Code, `disable-model-invocation: true` prevents model invocation; `user-invocable`
+controls menu visibility. These controls have different purposes. Native `allowed-tools`
+pre-approves listed tools under the host's permission system; it is not a restrictive sandbox
+allowlist. Keep actual restrictions in the host's enforced permissions.
+
+For Codex, use the native companion policy when needed; the installed authoring reference documents
+`policy.allow_implicit_invocation`. Changing a Claude field alone does not establish equivalent
+Codex behavior. A small optional UI companion is:
 
 ```yaml
----
-name: skill-name
-description: What it does + when to use it
----
-
-# Skill instructions
-```
-
-### Claude Code Extensions
-
-```yaml
----
-name: skill-name
-description: When to use it
-context: fork              # Optional: Fork context for tools
-hooks:                   # Optional: Pre/post execution
-  pre: validate.sh
-  post: cleanup.sh
----
-
-# Use !`cmd` for live data
-# Use $ARGUMENTS for command parameters
-```
-
-### Codex Extensions
-
-```yaml
----
-name: skill-name
-description: When to use it
-# No additional frontmatter fields allowed (strict validation)
----
-
-# Platform notes in body:
-# Run commands via Bash tool
-```
-
-Plus `agents/openai.yaml`:
-```yaml
-name: skill-name
 interface:
-  display_name: "Skill Name"
-  short_description: "Short description"
-  default_prompt: "Use skill-name to help me..."
+  display_name: "Project Report"
+  short_description: "Create reports using the project schema"
 ```
 
-### OpenClaw Extensions
+Do not generate unknown fields or a default prompt with an unverified installed skill name.
+Do not translate hooks or discard an unsupported permission field silently; check whether the
+lost behavior is essential before claiming a migration works.
 
-```yaml
----
-name: skill-name
-description: When to use it
-metadata:
-  openclaw:           # OpenClaw reads this
-    emoji: "..."
-    requires:
-      bins: ["node", "git"]
----
-```
+## Compatibility checks
 
-## Feature Compatibility
+1. Identify the actual host/version and requested scope; inspect its discovery roots and duplicate
+   names before choosing a destination. Check the installed name after any adapter rewriting.
+2. Validate the shared format and superskill-specific constraints. Do not infer native validation
+   of hooks, companions, permission settings, or runtime commands from `skill validate`.
+3. Inspect source-to-install transformations: frontmatter, names, references, executable delivery,
+   symlinks, companions, and any unsupported fields. Preserve source authority and caller intent.
+4. In the host, confirm discovery and invocation, resolve a required reference, and exercise the
+   relevant tool/permission behavior in an isolated fixture.
+5. Report compatibility for the tested configuration. Mark other hosts untested; a shared Markdown
+   source does not establish that all hosts loaded or executed it equivalently.
 
-### Command Execution
+Scaffold writes the entry file; refine does not automatically regenerate native companions.
+There is no universal `--platform all` or `--target all` workflow. Packaging can omit required
+resources; its precise limits are in [workflows.md](workflows.md#package).
 
-| Feature | Claude Code | Codex | OpenClaw | OpenCode | Antigravity |
-|--------|-------------|-------|----------|----------|-------------|
-| `!`cmd`` syntax | Native | Bash | Bash | Bash | Bash |
-| `$ARGUMENTS` | Native | Chat | Chat | Chat | Chat |
-| `context: fork` | Supported | Ignored | Ignored | Ignored | Ignored |
-| `hooks:` | Supported | Ignored | Ignored | Ignored | Ignored |
+## Adapter ownership
 
-### Resource Handling
-
-| Resource | Claude Code | Codex | OpenClaw | OpenCode | Antigravity |
-|----------|-------------|-------|----------|----------|-------------|
-| `references/` | Load on demand | Load on demand | Load on demand | Load on demand | Load on demand |
-| `assets/` | Use in output | Use in output | Use in output | Use in output | Use in output |
-| `agents/` | Ignored | Read openai.yaml | Ignored | Ignored | Ignored |
-
-> Superskill plugin skills carry no in-folder `scripts/` — executable engines live at `plugins/<plugin>/scripts/<feature>/` and are invoked via the dual contract. See [scripts-and-install.md](scripts-and-install.md).
-
-## Migration Patterns
-
-### rd2 to cc Migration
-
-| rd2 Feature | cc Handling |
-|-------------|-------------|
-| `!`cmd`` syntax | Keep for Claude, add Platform Notes section |
-| `$ARGUMENTS` | Keep for Claude, document as Claude-only |
-| `context: fork` | Keep (ignored by other platforms) |
-| `hooks:` | Keep or move to comments |
-| Missing `name:` | Add explicit `name:` from directory name |
-| Python scripts | Keep (platform-agnostic) |
-
-### Platform Notes Template
-
-Add to SKILL.md body:
-
-```markdown
-## Platform Notes
-
-### Claude Code
-Use `!`cmd` for live data. Use `$ARGUMENTS` for command parameters.
-
-### Codex / OpenClaw / OpenCode / Antigravity
-Run commands via Bash tool. Arguments provided in chat.
-```
-
-## Validation Rules
-
-### Claude Code
-- Allows unknown frontmatter fields
-- Validates `hooks:` format
-- Checks `context:` values
-
-### Codex
-- Strict frontmatter (no unknown fields)
-- Requires `agents/openai.yaml` for UI
-- Validates YAML format strictly
-
-### OpenClaw
-- Validates `metadata.openclaw` structure
-- Checks `requires.bins` array
-- Validates emoji format
-
-### OpenCode
-- Config-level permission hints
-- Validates skill invocation patterns
-- Checks permission configurations
-
-### Antigravity
-- Gemini CLI compatible
-- Standard format validation
-- No platform-specific extensions
-
-## Best Practices for Cross-Platform Skills
-
-1. **Start with universal format**: Use only `name` and `description` in frontmatter
-2. **Document platform features**: Add Platform Notes section for Claude-specific features
-3. **Generate companions**: Use scaffold to generate `agents/openai.yaml` for Codex
-4. **Test on multiple platforms**: Validate with `--platform all`
-5. **Keep scripts platform-agnostic**: Use TypeScript/Bash, not platform-specific syntax
+This skill's `adapters/` directory contains guidance, not executable adapters. Source-checkout
+owners are `packages/core/src/targets.ts`, `packages/core/src/mapper.ts`, the transformation
+modules under `packages/core/src/pipeline/`, and
+`packages/core/src/skills-ecosystem/agents.ts` for standalone skill install discovery.
+Follow the relevant implementation instead of maintaining a second path/feature matrix here.

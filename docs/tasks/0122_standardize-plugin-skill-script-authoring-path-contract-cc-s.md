@@ -4,7 +4,7 @@ name: "Standardize plugin-skill script authoring (path contract, cc-skills, vali
 status: done
 template: feature-impl
 created_at: 2026-08-25T07:07:21.700Z
-updated_at: "2026-08-25T23:29:07.024Z"
+updated_at: "2026-09-06T03:10:02.897Z"
 feature_id: H1
 ---
 
@@ -135,12 +135,19 @@ Standard-contract authoring is now the default: plugin-level engines, path invoc
 | `packages/core/src/operations/validate.ts:170` | `validate()` — after body-link checks, plugin skills run the layout gate and recompute `valid`. |
 | `packages/core/src/operations/validate.ts:605` | `isPluginSkillPath` — `plugins/<plugin>/skills/<name>/SKILL.md` only. |
 | `packages/core/src/operations/validate.ts:613` | `checkPluginSkillLayout` — error `_layout` on `scripts/` or `extensions/` dirs; standalone skills no-op. |
-| `plugins/cc/skills/cc-skills/SKILL.md:221` | Dual-contract section: path-first recipe, no PluginScript class. |
+| `git show d237f74:plugins/cc/skills/cc-skills/SKILL.md` (historical line 221) | Dual-contract section: path-first recipe, no PluginScript class. |
 | `apps/cli/src/commands/script-run.ts:47` | `ScriptRunner` unchanged — argv-less, synchronous, first-party-only (R4). |
 
 Help guide, `scripts-and-install.md`, skill-creation, workflows, best-practices, glossary, troubleshooting, quick-reference, `docs/04_DESIGN.md` 2.9.1, `validate.test.ts`, and `structure.test.ts` were updated in the same change. Test and underscore paths are omitted from this table (L4 snake_case subject rule).
 
+The September 2026 meta-skill refinement consolidated this guidance. The current entry at
+`plugins/cc/skills/cc-skills/SKILL.md:75` routes the plugin script contract to its owning reference;
+Git references above preserve the original implementation evidence.
+
 ### Testing
+
+Historical testing evidence is retained below. Git references pin the pre-refinement
+skill content at revision `d237f74`; these results are not a fresh execution against the rewritten guidance.
 
 **Pipeline verify results**
 
@@ -149,7 +156,7 @@ Help guide, `scripts-and-install.md`, skill-creation, workflows, best-practices,
 | Requirement | Status | Evidence |
 | ------------- | -------- | ---------- |
 | R1 — help guide is standard-first | MET | `rg Authoring recipe docs/help/how_to_organize_scripts_for_plugin_development.md` exit 0; no "prefer script run"; ScriptRunner is not a class SDK |
-| R2 — cc-skills walks create/evaluate/refine through the recipe | MET | `plugins/cc/skills/cc-skills/SKILL.md:221` Dual Install Contract; `plugins/cc/skills/cc-skills/references/workflows.md:23` shared create/validate/evaluate/refine checklist |
+| R2 — cc-skills walks create/evaluate/refine through the recipe | MET | `git show d237f74:plugins/cc/skills/cc-skills/SKILL.md` (historical line 221) Dual Install Contract; `git show d237f74:plugins/cc/skills/cc-skills/references/workflows.md` (historical line 23) shared create/validate/evaluate/refine checklist |
 | R3 — validate errors on plugin-skill scripts/ and extensions/ | MET | `packages/core/src/operations/validate.ts:230` calls `checkPluginSkillLayout`; CLI `skill validate` on a plugin skill with `scripts/` → `valid:false` `field:_layout` |
 | R3 residual-proof — standalone skill-local scripts/ is allowed | MET | `packages/core/tests/operations/validate.test.ts:676`; CLI standalone `skill validate` → `valid:true` findings [] exit 0 |
 | R4 — no ScriptRunner expansion | MET | `apps/cli/src/commands/script-run.ts:47` `export interface ScriptRunner { run(input: ScriptRunInput): ScriptRunResult }` — argv-less, sync; git diff is JSDoc-only |
@@ -166,6 +173,9 @@ Help guide, `scripts-and-install.md`, skill-creation, workflows, best-practices,
 
 ### Review
 
+Historical review evidence is retained below. Git references pin the pre-refinement
+skill content at revision `d237f74`; these results are not a fresh execution against the rewritten guidance.
+
 **Verdict: PASS**
 
 Three-dimensional review (functional + SECUA + architecture). Close-out pass that fixed the
@@ -174,10 +184,10 @@ five previously accepted residuals. No P1/P2.
 | # | Finding | Dim | Location | P | Disposition |
 | --- | --- | --- | --- | --- | --- |
 | 1 | isPluginSkillPath skipped layout on odd parent-segment file-path spellings. | C | `packages/core/src/operations/validate.ts:605` | P3 | Fixed — posix collapse of parent segments; still path-shape, not inode identity. |
-| 2 | Composable-library example showed a skill-folder helper import next to the path-first callout. | U | `plugins/cc/skills/cc-skills/references/skill-patterns.md:353` | P3 | Fixed — staged-path node invocation example. |
+| 2 | Composable-library example showed a skill-folder helper import next to the path-first callout. | U | `git show d237f74:plugins/cc/skills/cc-skills/references/skill-patterns.md` (historical line 353) | P3 | Fixed — staged-path node invocation example. |
 | 3 | Invocation standard used a .js example; convert emits .mjs. | U | `docs/04_DESIGN.md:124` | P4 | Fixed — example is .mjs; .js / .mjs / .sh still named as allowed. |
 | 4 | Plugin-scripts help used scripts/skill instead of scripts/feature. | U | `docs/help/bundled_plugin.md:51` | P4 | Fixed — scripts/feature naming. |
-| 5 | skill-creation Step 5 listed layout under evaluate. | U | `plugins/cc/skills/cc-skills/references/skill-creation.md:227` | P4 | Fixed — validate then evaluate; layout is a validate finding. |
+| 5 | skill-creation Step 5 listed layout under evaluate. | U | `git show d237f74:plugins/cc/skills/cc-skills/references/skill-creation.md` (historical line 227) | P4 | Fixed — validate then evaluate; layout is a validate finding. |
 
 R1–R4 MET. Class SDK was not added. ScriptRunner stays argv-less and synchronous.
 

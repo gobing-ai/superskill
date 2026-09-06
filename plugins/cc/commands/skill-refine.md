@@ -1,66 +1,27 @@
 ---
-description: Evaluate and fix skill issues in one step
-argument-hint: "<nameOrPath> [--auto] [--save] [--dry-run] [--target <platform>]"
-allowed-tools: ["Read", "Write", "Glob", "Bash", "Skill"]
+description: Refine a skill and its supporting files
+argument-hint: "<nameOrPath> [options]"
+allowed-tools: ["Skill", "Bash(superskill:*)"]
 ---
 
 # Skill Refine
 
 Wraps **cc:cc-skills** skill.
 
-Run evaluation, apply deterministic fixes, then perform LLM content improvement — all in one step. Delegates to **cc:cc-skills** skill.
+Run the skill's `refine` operation. Pass `$ARGUMENTS` unchanged and retain the request's
+scope, context, and authorization. Preserve the requested scope and caller contracts. A requested dry run applies no edits;
+CLI auto-fixes do not replace the skill's semantic refinement.
 
-## When to Use
-
-- Improve skill quality after scaffolding
-- Fix skill issues without running evaluate separately
-
-## Arguments
-
-| Argument | Description | Default |
-|----------|-------------|---------|
-| `<nameOrPath>` | Skill name or path to its SKILL.md file | (required) |
-| `--auto` | Skip interactive prompts (auto-apply fixes) | false |
-| `--save` | Save evaluation results to file | false |
-| `--dry-run` | Preview classified fixes and projected score delta without writing | false |
-| `--target` | Target platform | claude |
-
-## Examples
-
-```bash
-# Refine a skill
-/cc:skill-refine ./skills/my-skill/SKILL.md
-# Auto-refine without prompts
-/cc:skill-refine ./skills/my-skill/SKILL.md --auto --save
-# Preview fixes without writing
-/cc:skill-refine ./skills/my-skill/SKILL.md --dry-run
-```
-
-## Content Fix Types
-
-Beyond deterministic structural fixes, refine applies two named content fix types: **description
-prune** (three description rules: front-loaded identity, one trigger per branch, no body
-restatement) and the **pruning pass** (per-sentence no-op hunt — delete the whole failing sentence,
-never trim it; duplication collapse; sediment removal; disclosure moves; **negation flip** — rewrite
-prohibition-steered lines to name the positive target). Single copy: **cc:cc-skills** workflows
-reference § "Content fix types" and the six-mode taxonomy in its skill-engineering theory reference.
-
-## Implementation
-
-Pass `$ARGUMENTS` to the underlying skill for processing.
-
-Delegates to **cc:cc-skills** skill:
-
-```
+```text
 Skill(skill="cc:cc-skills", args="refine $ARGUMENTS")
 ```
 
-**Direct CLI execution (all platforms):**
-```bash
+If the native `Skill` mechanism is unavailable, read the installed `cc-skills` skill and
+follow its workflow. Use the equivalent CLI for the deterministic lane; CLI output does not
+replace semantic review:
+
+```text
 superskill skill refine $ARGUMENTS
 ```
 
-## Platform Notes
-
-- Claude Code: Invoke via `Skill()` delegation
-- Other platforms: Run `superskill` CLI directly via Bash tool
+Return the delegated result and exact failures, including relevant verification and limitations.

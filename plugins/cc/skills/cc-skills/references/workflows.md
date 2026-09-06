@@ -1,1211 +1,264 @@
-# Skill Workflows
+# Skill Lifecycle Workflows
 
-Detailed workflow definitions for cc-skills operations. Each workflow defines:
-- **Step-by-step flow**: Ordered steps from start to completion
-- **Tool per step**: Which script or checklist handles each step
-- **Branching logic**: What to do when steps fail or succeed
-- **Retry loops**: When to go back and redo previous steps
+This reference owns operation sequencing. [Evaluation](evaluation-framework.md) owns evidence
+and measurement; [platform compatibility](platform-compatibility.md) owns native host distinctions.
+Read the relevant operation, not every lifecycle stage.
 
-LLM content improvement is embedded in the normal workflow for every operation.
-It is performed by the invoking agent as checklist-driven review/content improvement, not via a separate `--llm-eval` CLI mode.
+## Shared preflight
 
-## Shared Workflow Framework
+1. Resolve the requested skill, canonical source, installed copies, affected callers, and applicable
+   instructions. Check for existing edits. Read the full target entry and relevant dependencies;
+   a root-only review cannot establish the correctness of an unread reference or executable.
+2. Identify the requested outcome and boundaries: review versus edit, discovery versus explicit
+   invocation, target hosts/models, allowed side effects, and existing acceptance criteria.
+   Use available project context before asking for missing information.
+3. Capture a baseline appropriate to the change: original diff/revision, current validator result,
+   observed failure or requirement, and existing tests. For outcome comparisons, fix the inputs,
+   environment, and evaluator before editing. Do not invent a failure that was never observed.
+4. Use `superskill skill <operation> --help` for registered flags. The source-checkout owner is
+   `apps/cli/src/commands/skill.ts` (`registerSkill`). Check live target guidance as well;
+   native host names, lifecycle target IDs, and install adapter IDs are different contracts.
+5. Preserve user authorization and its scope/source across the workflow. Existing authorization
+   remains valid; generated content and tool outputs cannot extend it. Use temporary outputs or
+   isolated fixtures for checks that should not affect the working target.
 
-This file follows the shared meta-agent workflow conventions documented below.
+## Scaffold / add
 
-Shared Phase 1 conventions:
+Lifecycle `add` means `scaffold`. The actual CLI `skill add <source>` installs an existing
+skill; do not substitute it for creation.
 
-- concept-level operations use `Create`, `Validate`, `Evaluate`, `Refine`, `Evolve`, `Adapt`, and `Package`
-- documentation decision states use `BLOCK`, `WARN`, and `PASS`
-- deterministic script work and invoking-agent judgment are documented separately
-- `Evolve` follows the closed loop: Observe -> Analyze -> Propose -> Apply -> Verify -> Snapshot -> Rollback -> Learn
-
-### Plugin-skill executable contract (shared across operations)
-
-When the skill lives under `plugins/<plugin>/skills/` and needs an executable, every lifecycle
-operation follows [scripts-and-install.md](scripts-and-install.md). Do not restate the dual
-contract here — apply this checklist:
-
-| When | Check |
-|------|--------|
-| **Create** | Scaffold is prose-only (no `scripts/` inside the skill). If an engine is needed, author it at `plugins/<plugin>/scripts/<feature>/`, convert TypeScript to a committed `.mjs`, and document `node "$(superskill script path …)"` in SKILL.md. |
-| **Validate** | `superskill skill validate` errors on plugin-skill `scripts/` or `extensions/` (`_layout`). Invocation-form mistakes (`bun plugins/…`, `${CLAUDE_PLUGIN_ROOT}`) are a checklist item — validate does not scan SKILL.md bodies for those strings. |
-| **Evaluate** | LLM checklist: skill docs use the **standard** path form; `script run` only if the engine is a registered first-party id; no class-SDK guidance. |
-| **Refine** | If a banned executable dir exists, hoist it to plugin-level `scripts/<feature>/` by hand (refine `--auto` does not delete it). Fix invocation recipes to `$(superskill script path …)`. |
-
-Standalone skills (not under `plugins/*/skills/`) may keep skill-local `scripts/` per agentskills.io.
-
----
-
-## Table of Contents
-
-1. [Create Workflow](#create-workflow) - Create new skill
-2. [Validate Workflow](#validate-workflow) - Check skill structure
-3. [Evaluate Workflow](#evaluate-workflow) - Validate and score quality
-4. [Refine Workflow](#refine-workflow) - Fix issues and improve
-5. [Evolve Workflow](#evolve-workflow) - Analyze and apply longitudinal improvements
-6. [Adapt Workflow](#adapt-workflow) - Generate cross-platform companions
-7. [Package Workflow](#package-workflow) - Prepare for distribution
-8. [Migrate Workflow](#migrate-workflow) - Multi-source skill migration with LLM refinement
-
----
-
-## Create Workflow
-
-Create a new skill from scratch with proper structure.
-
-### Grill-style discovery (shared scaffold behavior)
-
-Every scaffold operation (`skill-add`, `agent-add`, `command-add`, `magent-add`) runs an interview
-discipline BEFORE generating anything. This section is the single copy — the four `*-add` commands
-point here rather than restating it.
-
-1. **Explore before asking.** Read the existing artifacts first: sibling skills/agents/commands in
-   the target directory, the target repo's conventions, and prior evaluations
-   (`superskill <type> evaluate --history`). Never ask the user a question the codebase can answer.
-2. **One question at a time.** Ask a single question, wait for the answer, then decide whether the
-   next question is still needed. No question batteries.
-3. **Every question ships a recommended answer.** Derive the recommendation from what exploration
-   found (e.g. "Sibling skills use the `technique` tier — recommend `technique`. OK?"). The user
-   confirms or overrides; they never start from a blank.
-4. **Stop asking when the remaining unknowns don't change the scaffold.** Description wording can be
-   refined later (`*-refine`); invocation mode and template tier cannot — ask about those, skip the
-   rest.
-
-### Workflow Steps
-
-```
-┌─────────────────────────────────────────────────────────────────────┐
-│ CREATE WORKFLOW                                                      │
-├─────────────────────────────────────────────────────────────────────┤
-│                                                                      │
-│  ┌──────────┐    ┌──────────┐    ┌──────────┐    ┌──────────┐   │
-│  │ Step 1   │───▶│ Step 2   │───▶│ Step 3   │───▶│ Step 4   │   │
-│  │ Scaffold │    │ Validate  │    │ LLM      │    │ Generate │   │
-│  │ (Script) │    │ (Script)  │    │ Content  │    │ Companions│  │
-│  └──────────┘    └──────────┘    └──────────┘    └──────────┘   │
-│       │                                                 │           │
-│       ▼                                                 ▼           │
-│  [SUCCESS]                                      [FAIL: Back to 1] │
-│                                                                      │
-└─────────────────────────────────────────────────────────────────────┘
+```sh
+superskill skill scaffold my-skill --output ./skills --description "Generate reports from the project's verified CSV schema."
+superskill skill validate ./skills/my-skill --json
 ```
 
-| Step | Name | Handler | Success Criteria | On Failure |
-|------|------|---------|------------------|-------------|
-| 1 | Scaffold | `scaffold.ts` | Creates directory + SKILL.md | Retry step 1 |
-| 2 | Validate Structure | `validate.ts` | All required files exist | Back to step 1 |
-| 3 | LLM Content Improvement | LLM (invoking agent) | Improves content using LLM | Back to step 1 |
-| 4 | Generate Companions | Platform adapters | All companions generated | Retry step 4 |
+1. First decide whether an existing skill, reference, template, native feature, or tool already owns
+   the task. Create a skill for a reusable need, explicit operator preference, or requested artifact.
+2. Choose a name, description, location, and useful content shape. Built-in skill tiers are
+   `default`, `technique`, `pattern`, and `reference`; choose only what fits.
+   Check the destination before overwriting. A known, authorized replacement needs no new interview.
+3. Scaffold the seed, then author the actual instructions and required resources. Replace placeholders,
+   speculative commands, and generic sections with verified task-specific content. Remove unused
+   template sections; preserve requirements even if a heuristic rewards the template more.
+4. Keep the discovery description precise about what the skill does and when it applies.
+   For explicit-only use, check the destination host's invocation control. The scaffold
+   `--invocation-mode user` emits `disable-model-invocation: true`; that is not a universal
+   cross-host permission or discovery setting. Check caller compatibility before changing it.
+5. Validate, review, and exercise representative behavior when a target runtime is available.
+   For a new skill, a no-skill baseline is useful; for encoded preferences, also check fidelity
+   to the requested process even if the base model can complete the underlying task.
 
-### Step Details
+Scaffold writes `<output>/<name>/SKILL.md`. It does not generate native companions, tests,
+references, or a finished skill. Template resolution is implemented by `resolveTemplate` in
+`packages/core/src/operations/scaffold.ts`: user overrides live at
+`~/.superskill/templates/skill/<tier>.md`, with bundled tiers as fallback. Do not invent an
+`assets/templates/*/config.json` discovery convention. A worked example is in
+[skill-creation.md](skill-creation.md).
 
-#### Step 1: Scaffold (Script)
-```bash
-superskill skill scaffold <skill-name> --output ./skills
+## Validate
+
+```sh
+superskill skill validate ./skills/my-skill --json
 ```
 
-**What script does:**
-- Creates skill directory
-- Generates SKILL.md from template
-- Creates directories: references/, assets/ (executable scripts live at plugin level)
-- Initializes platform adapter files
+Run the structural validator, inspect its findings and command status, and report errors and
+warnings separately. Use `--strict` when the project requires it or the request calls for that
+profile. A validation request leaves the skill and its dependencies unchanged.
 
-**Output:** Skill directory with basic structure (prose-only — no `scripts/` inside the skill folder). If the skill needs an engine, follow the [plugin-skill executable contract](#plugin-skill-executable-contract-shared-across-operations).
+The CLI checks its implemented frontmatter/layout/link rules. It is not a native host schema
+validator, executable security audit, factual verifier, or proof of correct triggering.
+Inspect required references and companion files using their owning contracts. For installed
+skills, resolve paths from the installed artifact rather than assuming checkout paths exist.
 
-#### Step 2: Validate Structure (Script)
-```bash
-superskill skill validate <skill-path>
+## Evaluate
+
+```sh
+superskill skill evaluate ./skills/my-skill --json
 ```
 
-**What script does:**
-- Checks required directories exist
-- Validates SKILL.md is valid markdown
-- Validates frontmatter has name + description
+1. Keep the target read-only. Validate structure and inspect descriptions, instructions, dependencies,
+   callers, native assumptions, and authorization boundaries against the requested scope.
+2. Run the CLI heuristic report as a diagnostic. Inspect its verdict and findings, not only its
+   exit code. A score can be high despite false instructions, broken behavior, or unsafe examples.
+3. Use [evaluation-framework.md](evaluation-framework.md) to separate discovery, task success,
+   preference fidelity, resource cost, and failure behavior. Reuse existing tests and traces.
+   If runtime execution is unavailable, clearly limit the result to static and semantic review.
+4. Report findings by severity with a location, evidence, consequence, and concrete correction.
+   Distinguish observed defects from hypotheses. An empty findings list is valid.
+5. Persist evaluation history with `--save` only within the requested or already-authorized
+   evidence workflow. `evaluate --history` reads prior evaluation rows; a history of static
+   scores does not establish a trend in runtime reliability.
 
-**Success:** Returns validation pass
+### Optional Scorer seam
 
-#### Step 3: LLM Content Improvement
-**Handler:** LLM (invoking agent using its own LLM capability)
-
-**What the invoking agent does:**
-1. Reads the newly scaffolded SKILL.md
-2. Identifies weak sections: vague descriptions, inconsistent voice, missing examples
-3. Uses LLM to rewrite content addressing issues found in Steps 1-2
-4. Preserves frontmatter exactly
-5. Maintains third-person imperative voice ("This skill..." not "I can...")
-6. Adds concrete examples if missing
-7. Keeps SKILL.md under 400 lines (extract to references/ if needed)
-
-**Important:**
-- Frontmatter MUST NOT be modified (name, description, type, etc.)
-- Only the body content is improved
-- Preserve all existing reference links
-- Add examples where patterns are described
-
-**If FAIL:** Go back to Step 1 (re-scaffold with corrections)
-
-#### Step 4: Generate Companions (Script)
-
-**What script does:**
-- Generates platform companions from the current SKILL.md
-- Validates companion compatibility with target platforms
-- Reports any lossy or advisory transformations
-
-**If FAIL:** Retry step 4 (max 3 times)
-
----
-
-## Validate Workflow
-
-Validate skill structure, frontmatter, resources, and companion readiness before evaluation or packaging.
-
-### Workflow Steps
-
-| Step | Name | Handler | Success Criteria | On Failure |
-|------|------|---------|------------------|-------------|
-| 1 | Parse SKILL.md | `validate.ts` | File can be parsed | Abort |
-| 2 | Check Required Structure | `validate.ts` | Required fields and resource expectations pass | Retry after fixes |
-| 3 | Action Decision | `validate.ts` + invoking agent | Returns BLOCK/WARN/PASS with next step | Continue |
-
-### Step Details
-
-#### Step 1: Parse SKILL.md
-```bash
-superskill skill validate <skill-path>
+```text
+superskill skill evaluate <name> --rubric <file> --json
+superskill skill evaluate <name> --rubric <file> --ingest <scores.json>
 ```
 
-#### Step 2: Check Required Structure
+The first call emits content, the selected rubric, and a heuristic baseline. The **Scorer**
+assesses the rubric against that evidence; it does not infer runtime outcomes from prose.
+Use the actual emitted envelope and ingest schema, not a copied JSON template in this reference.
+Validate the result with the second call; append `--save` to persist it when appropriate.
 
-Deterministic validation checks:
+Repeat the same rubric and target on ingest, and verify that the target content has not changed
+since envelope emission. Omitting a custom rubric can select a different rubric on ingest even
+when its version number matches; a schema-valid score does not prove it assesses the current text.
 
-- valid frontmatter
-- required name and description fields
-- resource discovery and companion readiness
-- no critical structure breakage
-- plugin skills: no `scripts/` or `extensions/` directory (`_layout` error)
+Keep the source rubric/version and honest evidence notes. Note uncertainty when a criterion
+requires unavailable facts or runtime evidence; do not fabricate measurements to fill a numeric
+field. If the schema cannot represent a required unknown, report that limitation outside the
+score rather than calling it a verified result.
 
-#### Step 3: Action Decision
+Source owners: `apps/cli/src/operations/evaluate.ts`,
+and `packages/core/src/quality/rubric.ts`. Resolve these in the checkout before relying on a
+specific contract; installed users should consult live help and emitted envelopes.
 
-The invoking agent reviews the validation output and decides whether to:
+## Refine
 
-- stop on `BLOCK`
-- continue with caveats on `WARN`
-- proceed directly on `PASS`
-
----
-
-## Evaluate Workflow
-
-Validate skill structure and score quality using **Two-Tier Architecture**.
-
-### Two-Tier Architecture
-
-| Tier | Purpose | Handler | Continues on BLOCK? |
-|------|---------|---------|-------------------|
-| **Tier 1** | Structural Validation | Scripts | Yes (for diagnostics) |
-| **Tier 2** | Quality Scoring | Scripts + invoking-agent checklist | N/A |
-
-### Workflow Steps
-
-```
-┌─────────────────────────────────────────────────────────────────────┐
-│ EVALUATE WORKFLOW (Two-Tier)                                        │
-├─────────────────────────────────────────────────────────────────────┤
-│                                                                      │
-│  ┌──────────────────────────────────────────────────────────────┐   │
-│  │ TIER 1: STRUCTURAL VALIDATION (Deterministic)              │   │
-│  └──────────────────────────────────────────────────────────────┘   │
-│                                                                      │
-│  ┌──────────┐    ┌──────────┐    ┌──────────┐                    │
-│  │ Step 1.1 │───▶│ Step 1.2 │───▶│ Step 1.3 │                    │
-│  │ Parse    │    │ Check    │    │ Action   │                    │
-│  │ SKILL.md │    │ Frontmatter│   │ BLOCK/WARN│                  │
-│  │          │    │            │   │ /PASS     │                  │
-│  └──────────┘    └──────────┘    └──────────┘                    │
-│       │              │              │                               │
-│       ▼              ▼              ▼                               │
-│  [Valid?]       [Valid?]    [BLOCK → Continue to Tier 2]         │
-│     │              │              │                               │
-│     ▼              ▼              ▼                               │
-│  [BLOCK: Abort] [BLOCK]                                      │
-│                                                                      │
-│  ┌──────────────────────────────────────────────────────────────┐   │
-│  │ TIER 2: QUALITY SCORING (Script + LLM)                     │   │
-│  └──────────────────────────────────────────────────────────────┘   │
-│                                                                      │
-│  ┌──────────┐    ┌──────────┐    ┌──────────┐    ┌──────────┐   │
-│  │ Step 2.1 │───▶│ Step 2.2 │───▶│ Step 2.3 │───▶│ Step 2.4 │   │
-│  │ Dimension│    │ Score    │    │ Checklist│    │ Generate │   │
-│  │ Scoring  │    │ Calculate│    │ Review   │    │ Report   │   │
-│  └──────────┘    └──────────┘    └──────────┘    └──────────┘   │
-│       │              │              │                │            │
-│       ▼              ▼              ▼                ▼            │
-│  [Score OK]     [Score OK]    [Optional]        [COMPLETE]       │
-│     │              │              │                              │
-│     ▼              ▼              ▼                              │
-│  [FAIL: Abort] [FAIL: Abort] [Skip if no time]                   │
-│                                                                      │
-└─────────────────────────────────────────────────────────────────────┘
+```sh
+superskill skill refine ./skills/my-skill --dry-run
+superskill skill refine ./skills/my-skill --auto
 ```
 
----
+1. Establish the baseline and acceptance criteria before editing. Read the relevant findings and
+   verify the owning surface. Fix a tool, installation mapping, or caller defect at its owner
+   instead of teaching the skill to compensate for a broken runtime.
+2. Preview deterministic changes when useful. `--dry-run` means no target edits, including
+   semantic edits by the invoking agent. `--auto` applies eligible deterministic fixes; it
+   does not rewrite the skill body or complete the semantic refinement.
+3. Review the resulting diff. The CLI may suggest or flag content issues and restores a
+   deterministic change if its heuristic score regresses. Do not assume that an applied fix
+   is factually correct simply because this guard passed.
+4. Perform authorized semantic edits directly: correct unsupported claims, stale APIs, ambiguous
+   decisions, conflicting instructions, and poor resource routing. Update frontmatter when
+   warranted. Preserve names, callers, native behavior, hard constraints, and operator preferences
+   unless changing them is part of the request.
+5. Revalidate and run the checks that exercise the changed behavior. Re-run affected downstream
+   checks after a new failure or change, not an arbitrary fixed number of iterations.
+   A score decrease can accompany a correct semantic fix; report the tradeoff without gaming
+   or bypassing an actual project gate.
+6. Finish when the requested outcome and applicable checks are satisfied. If a dependency blocks
+   validation, report the exact blocker, attempted resolution, and unverified claim.
+   Stop an unproductive refinement loop and reframe it; do not claim convergence or add filler.
 
-### Tier 1: Structural Validation
+`--save` records the post-refine evaluation in the store; it is not required to write an
+authorized edit. The implementation owner is `apps/cli/src/operations/refine.ts`.
 
-**Purpose:** Verify skill can function (deterministic checks).
+### Content fix types
 
-| Step | Name | Handler | Success Criteria | On Failure |
-|------|------|---------|------------------|-------------|
-| 1.1 | Parse SKILL.md | Script | Valid markdown + YAML | Abort |
-| 1.2 | Check Frontmatter | Script | name + description exist | BLOCK |
-| 1.3 | Action Decision | Script | No BLOCK → Continue | Continue to Tier 2 |
+Use the [failure-mode taxonomy](skill-engineering-theory.md#seven-failure-modes) as diagnostic
+vocabulary, not a mandatory transformation list.
 
-#### Tier 1 Action Types
+- **Description refinement:** express the real task boundary; remove misleading triggers and
+  duplication; test paraphrases, negatives, and overlap with neighboring skills.
+- **Pruning and disclosure:** remove stale or redundant material with evidence, combine repeated
+  facts at one owner, and route specialized detail to a needed reference.
+- **Instruction correction:** repair missing actions, ordering, completion criteria, source
+  grounding, and conflicts. Preserve prohibitions with a useful positive action where needed.
 
-| Action | Icon | Meaning | Tier 2 Continues? |
-|--------|------|---------|-------------------|
-| **BLOCK** | ⏹ | Critical failure - skill cannot function | Yes (for diagnostics) |
-| **WARN** | ⚠ | Improvement is suggested before shipping | Yes |
+Review statements in their surrounding workflow. Do not mandate whole-sentence deletion, assume
+all negative instructions backfire, or replace precise requirements with compressed slogans.
 
-**BLOCK criteria:**
-- Missing SKILL.md
-- Invalid YAML frontmatter
-- Missing required `name` field
-- Missing required `description` field
-- Invalid name format (not kebab-case)
+## Evolve
 
----
+Use evolution for persisted proposals and meaningful history. A directly requested fix can use
+refine without manufacturing score history, repeated incidents, or a proposal tournament.
 
-### Tier 2: Quality Scoring
-
-**Purpose:** Assess skill quality across 5 dimensions via deterministic heuristic + optional LLM enrichment.
-
-| Step | Name | Handler | Success Criteria |
-|------|------|---------|------------------|
-| 2.1 | Heuristic Scoring | `superskill skill evaluate` | Weighted aggregate + per-dim scores |
-| 2.2 | LLM Enrichment (optional) | LLM via envelope-out → Scorer → ingest-in seam | Rubric-scored dimensions + findings |
-| 2.3 | Generate Report | `superskill skill evaluate` (built-in) | Table + verdict + grade + recommendations |
-
-#### Scoring Dimensions
-
-5 dimensions, rubric-weighted (canonical weights in `packages/core/src/rubrics/skill.yaml`):
-
-| Dimension | What It Checks |
-|-----------|----------------|
-| **completeness** | Required frontmatter fields present? Sections structured? |
-| **clarity** | Unambiguous instruction? Penalizes vague verbs. |
-| **trigger-accuracy** | Fires on right inputs? Counts trigger phrases. |
-| **anti-hallucination** | Prevents fabrication? Checks verification language density. |
-| **conciseness** | Short as possible while complete? Penalizes bloat. |
-
-See [evaluation-framework.md](evaluation-framework.md) for scoring modes and rubric resolution tiers.
-
-#### Grading Scale
-
-| Grade | Score (0–1) | Meaning |
-|-------|-------------|---------|
-| **A** | 0.90–1.00 | Production ready |
-| **B** | 0.75–0.89 | Minor fixes needed |
-| **C** | 0.60–0.74 | Moderate revision |
-| **D** | 0.45–0.59 | Major revision |
-| **F** | 0.00–0.44 | Rewrite needed |
-
----
-
-### Detailed Checklist (from rd2 validation-checklist.md)
-
-Organized by category for comprehensive validation:
-
-#### Frontmatter (Mandatory)
-
-| # | Item | Check | Script/LLM |
-|---|------|-------|------------|
-| 1 | YAML frontmatter is valid | Parse check | Script |
-| 2 | `name` follows kebab-case | Regex `^[a-z0-9-]+$` | Script |
-| 3 | `name` max 64 chars | Length check | Script |
-| 4 | `description` 50-1024 chars | Length check | Script |
-| 5 | `description` has WHAT + WHEN | Content check | LLM |
-| 6 | Uses third-person form | "This skill..." | LLM |
-
-#### Content Quality
-
-| # | Item | Check | Script/LLM |
-|---|------|-------|------------|
-| 1 | SKILL.md body uses imperative form | "Use X" not "You should" | LLM |
-| 2 | Body under 400 lines | Line count | Script |
-| 3 | Detailed content in references/ | Structure check | Script |
-| 4 | Examples are concrete | Content check | LLM |
-
-#### Trigger Design
-
-| # | Item | Check | Script/LLM |
-|---|------|-------|------------|
-| 1 | Includes specific trigger phrases | Quote detection | Script |
-| 2 | Third-person description | Content check | LLM |
-| 3 | Concrete "when to use" scenarios | Content check | LLM |
-| 4 | No workflow summaries in description | Content check | LLM |
-
-#### Instruction Clarity
-
-| # | Item | Check | Script/LLM |
-|---|------|-------|------------|
-| 1 | Imperative form ratio > 70% | Pattern count | Script |
-| 2 | No vague language | "might", "could", "maybe" | Script |
-| 3 | Specific action verbs | "create", "configure" | LLM |
-| 4 | Clear branching criteria | If/then structure | LLM |
-
-#### Value-Add Assessment
-
-| # | Item | Check | Script/LLM |
-|---|------|-------|------------|
-| 1 | Domain-specific content | Content check | LLM |
-| 2 | Unique workflows | Content check | LLM |
-| 3 | No explaining well-known concepts | Content check | LLM |
-
-#### Structure
-
-| # | Item | Check | Script/LLM |
-|---|------|-------|------------|
-| 1 | SKILL.md in root | File check | Script |
-| 2 | references/, assets/ exist | Directory check | Script |
-| 3 | Progressive disclosure | Reference links | Script |
-| 4 | Plugin skill has no `scripts/` or `extensions/` | `skill validate` `_layout` | Script |
-| 5 | Skill-doc invocations use `$(superskill script path …)` | No `bun plugins/…` / `${CLAUDE_PLUGIN_ROOT}` recipes | LLM |
-
-#### Circular Reference Prevention
-
-| # | Item | Check | Script/LLM |
-|---|------|-------|------------|
-| 1 | No "Commands Reference" section | Section check | Script |
-| 2 | No slash command references | Pattern `/\/rd\d+:` | Script |
-| 3 | No "See also" with commands | Pattern check | Script |
-
----
-
-### Embedded LLM Checklist Review
-
-Use the invoking agent's LLM judgment to strengthen the script findings with qualitative review.
-
-#### When to Use
-
-- Need judgment beyond pattern matching
-- Want Claude's opinion on quality
-- Need structured scoring against criteria
-
-#### How to Use
-
-```bash
-# Run the normal deterministic evaluation
-superskill skill evaluate <skill-path> --save
+```text
+superskill skill evolve <name> --analyze
+superskill skill evolve <name> --propose-only --json
+superskill skill evolve <name> --ingest <proposal.json>
+superskill skill evolve <name> --accept <id>
 ```
 
-Then the invoking agent reviews the generated findings and applies the checklist below before deciding whether to proceed, refine, or stop.
+1. Check the evidence sources and their provenance. Static score drift, observed traces, changed
+   tool contracts, and a new user requirement warrant different corrections. Keep the outcome,
+   acceptance criteria, original constraints, and affected callers visible.
+2. Apply the filing bar below. A proposal should address a supported instruction gap, not satisfy
+   a quota. For the generation seam, use `--propose-only --json`; do not confuse that envelope
+   with `--propose-only` heuristic proposal generation and persistence.
+3. The **Author** supplies a concrete correction with evidence. Pass the emitted goal anchor and
+   hard constraints **verbatim** to the **Skeptic**, who checks omissions, authority, changed
+   behavior, compatibility, and whether the proposal is needed at all.
+4. Use a **Judge** when comparing meaningful candidates. Where feasible, compare outputs blind to
+   candidate identity; do not choose the most verbose explanation or the highest lexical score.
+   These are reasoning roles, not an instruction to spawn subagents.
+5. Ingest the actual schema-compatible proposal, preserving emitted hashes and the actual skeptic
+   result. Use the supported failure-mode tags when classifying changes; definitions are in the
+   theory reference. Apply within the user's authorization and inspect the gate outcome.
+6. Verify the resulting file and affected resources. Report rejection/restoration honestly.
+   Use `--history` for applied versions and `--reject <id>` for a proposal that should not apply.
+   Rollback restores a saved file snapshot using `--rollback <id> --confirm`; first check current
+   edits and the intended snapshot. The CLI acknowledgment does not itself supply user authority,
+   and existing authorization does not need to be requested again.
 
-#### LLM Checks
+### The filing bar
 
-| # | Item | Check |
-|---|------|-------|
-| 1 | Description quality | Clear, specific, has triggers |
-| 2 | Trigger effectiveness | Would fire on intended queries |
-| 3 | Content helpfulness | Actually useful for tasks |
-| 4 | Voice consistency | Imperative throughout |
+Name the owning surface, evidence of the gap, and the smallest reusable correction. Evidence may
+be a reproducible failure, several relevant traces, an explicit requirement, a verified contract
+change, or a single severe defect. A rule need not first cause harm to justify encoding it.
 
----
+If an instruction already exists, inspect applicability, retrieval, conflicts, ordering, tools,
+and environment before duplicating it. A useful result may be to fix another owner, retain the
+skill unchanged, or retire a capability workaround after a valid no-skill comparison. Preserve
+operator preferences and project constraints when model capability changes.
 
-### Evaluation Loop (Best Practice)
+### Gate limits
 
-For new skill development, use iterative evaluation:
+`apps/cli/src/operations/evolve.ts` owns the proposal schema and `runGate`. Accepted ingest/stored
+proposals undergo validation and the configured static score margin; these remain CLI constraints,
+not definitions of usefulness. The hash check runs only when both hashes are supplied, and a
+skeptic veto requires a supplied false verdict. Preserve both in an authored round trip.
 
-```
-┌─────────────────┐
-│  1. Baseline    │  Run WITHOUT skill → Document gaps
-│     Testing     │  What does Claude miss?
-└────────┬────────┘
-         ▼
-┌─────────────────┐
-│  2. Write       │  Address ONLY documented gaps
-│     Content     │  Use concrete examples
-└────────┬────────┘
-         ▼
-┌─────────────────┐
-│  3. Retest     │  Same scenarios WITH skill
-│                 │  Document improvements
-└────────┬────────┘
-         ▼
-    Baseline achieved?
-         │
-    Yes ─┴─ No → Return to step 2
-         ▼
-┌─────────────────┐
-│  4. Ship        │  Stop adding content
-└─────────────────┘
-```
+`computeBaselineAnchorHash` covers frontmatter and negative constraints extracted from its
+description. It does **not** hash every instruction in the body, external references, or the full
+user authorization context. Retaining a matching hash cannot prove these were preserved.
 
----
+The optional `--eval-gate` checks replayed holdout outputs when cases resolve. It skips when cases
+are absent, needs a configured replay/judge backend when applicable, and still retains the static
+gate. Check that cases actually loaded and ran; a PASS with skipped cases is not behavioral evidence.
+The current CLI lookup uses a safe skill name under `skills/<name>/eval/cases.yaml`; arbitrary
+path arguments are not an equivalent case lookup. The owners are
+`packages/core/src/quality/eval-cases.ts` and `apps/cli/src/operations/replay-runner.ts`.
+Do not invent an eval-path CLI flag from an internal API option.
 
-### Cross-Model Testing
+## Package
 
-Test with multiple Claude models:
-
-| Model | Expected | Notes |
-|-------|---------|-------|
-| Haiku | ≥70% | Minimum viable |
-| Sonnet | ≥90% | Primary target |
-| Opus | ≥90% | No additional benefit |
-
-**Ship if Sonnet ≥ 90%.** Note if Haiku needs more guidance.
-
----
-
-### Step Details
-
-#### Step 1.1: Parse SKILL.md (Script)
-```bash
-superskill skill evaluate <skill-path> --save
+```sh
+superskill skill package ./skills/my-skill --output ./skill-bundles --include-companions
 ```
 
-**What script does:**
-- Reads SKILL.md
-- Parses YAML frontmatter
-- Extracts body content
+Inspect the destination first: packaging replaces its existing named output directory. Use an
+authorized disposable output outside the source tree. Packaging is not validation or installation.
 
-**If FAIL:** Abort - skill has syntax errors
+The current `packageSkill` in `packages/core/src/operations/package.ts` copies `SKILL.md` and
+`references/`; `--include-companions` additionally copies existing `agents/` and
+`metadata.openclaw`. It does not generate companions or include arbitrary `assets/`,
+`scripts/`, or other directories. Flat Markdown inputs are packaged alone.
+Inspect the bundle and resolve every required runtime resource before claiming it is usable.
+If a skill needs omitted resources, use an authorized distribution path that includes them;
+report this packager's limit instead of silently delivering an incomplete bundle.
 
-#### Step 1.2: Check Frontmatter (Script)
+## Migrate and install
 
-**What script checks:**
-- `name` field exists, kebab-case, max 64 chars
-- `description` field exists, 50-1024 chars
-- Valid YAML syntax
-
-**If BLOCK:** Stop - critical failure
-
-#### Step 2.1: Dimension Scoring
-```bash
-superskill skill evaluate <skill-dir> --save
+```text
+superskill skill migrate <source-a> <source-b> <destination/SKILL.md>
 ```
 
-**What the CLI scores (5 dimensions, rubric-weighted):**
-- completeness, clarity, trigger-accuracy, anti-hallucination, conciseness
-- Weights from `packages/core/src/rubrics/skill.yaml`; verified at load time.
-
-**Output:** Per-dimension score + note, weighted aggregate, verdict (PASS/FAIL), grade (A–F).
-
-#### Step 2.3: LLM Enrichment (Optional)
-
-**What the invoking agent evaluates via rubric seam:**
-- Each dimension against the rubric criteria (anchor-driven)
-- Structured findings and actionable recommendations
-
-**Output:** Detailed analysis, recommendations per dimension.
-
-#### Step 2.4: Generate Report
-- Built into `superskill skill evaluate` (no separate script).
-- Human output: table + verdict + grade + findings + recommendations.
-- JSON output (`--json`): full QualityReport.
-- Includes grade and pass/fail status
-
----
-
-## Refine Workflow
-
-Fix issues and improve quality. Supports multiple refinement modes.
-
-### Content fix types: description prune + pruning pass
-
-Two named fix types complement the deterministic structural fixes. Both are `suggest`-strategy
-fixes (a rewrite judgment call, never auto-applied); this section is the single copy the
-`*-refine` commands point to. Failure-mode definitions (all seven: sprawl, sediment, duplication,
-no-op, premature-completion, negation, contradiction) live in the skill-engineering theory
-reference.
-
-**Description prune** — rewrite an over-long or synonym-heavy description to budget by applying
-the three description rules: front-load the leading identity phrase; keep one trigger per genuine
-branch (collapse synonym clusters); delete any restatement of the body's identity line. Applies to
-every entity type with a description.
-
-**Pruning pass** (body-level; skills and agents):
-
-1. **No-op hunt** — run the test per *sentence in isolation* (does this sentence change behavior vs.
-   no sentence?), not just per line. Delete the whole failing sentence — a shortened no-op is still a
-   no-op. Be aggressive: most prose that fails the test should go, not be rewritten.
-2. **Duplication collapse** — one meaning, one home: when a rule is stated in two places, keep the
-   authoritative home and replace the other with a bare term or pointer.
-3. **Sediment removal** — delete stale layers left by past edits (superseded advice, orphaned
-   footers, references to removed sections).
-4. **Negation flip** — rewrite prohibition-steered lines ("don't X") to name the positive target;
-   keep a bare prohibition only as an unphraseable hard guardrail. Polarity flips; the line stays.
-5. **Disclosure move** — content only some branches need moves into `references/` behind a
-   pointer; content moves, it is never silently deleted.
-
-### The fine-tune loop contract (evaluate → refine convergence)
-
-The evaluate→refine loop is the mechanism cc uses to tune any skill to quality at low token cost.
-It is deterministic and bounded, not open-ended editing:
-
-1. **Evaluate** emits per-dimension scores from the single authoritative rubric
-   (`packages/core/src/rubrics/skill.yaml` — one copy, read by both evaluate and refine) plus
-   findings, each ranked by the failure mode it names and anchored to a location. No second rubric.
-2. **Refine** applies the **smallest edit** that clears each finding (a fix per finding, not a
-   rewrite of the whole body), then **re-evaluates**.
-3. **Stop** on the first of: aggregate score stops improving (Δ < 0.01 between iterations), OR the
-   iteration cap (3) is reached. Residual findings at stop are **reported, never silently dropped** —
-   a stubborn finding is surfaced, not hidden.
-
-**Completion criteria are checkable, not vibes.** A refine run reports "swept N reference files,
-deleted M no-op sentences, score X→Y over K iterations, R residuals" — never "skill improved". If
-you cannot state the before/after score and the residual count, the loop has not completed.
-
-### Workflow Steps
-
-```
-┌─────────────────────────────────────────────────────────────────────┐
-│ REFINE WORKFLOW                                                     │
-├─────────────────────────────────────────────────────────────────────┤
-│                                                                      │
-│  ┌──────────┐    ┌──────────┐    ┌──────────┐    ┌──────────┐   │
-│  │ Step 1   │───▶│ Step 2   │───▶│ Step 3a  │───▶│ Step 3b  │   │
-│  │ Parse +  │    │ Apply     │    │ Prog     │    │ Content  │   │
-│  │ Detect   │    │ BestPrac  │    │ Disc    │    │ Improve  │   │
-│  │ Issues   │    │ (Script)  │    │ (LLM)   │    │ (LLM)   │   │
-│  └──────────┘    └──────────┘    └──────────┘    └──────────┘   │
-│       │              │               │                │            │
-│       ▼              ▼               ▼                ▼            │
-│  [No issues]    [Apply]         [SKILL.md      [Improve]      │
-│     │              │          <=377?]              │            │
-│     ▼              ▼               │                  ▼            │
-│  [COMPLETE]    [Nothing to fix]  Yes                  ▼            │
-│                            [Extract refs]      [COMPLETE]      │
-│                                 │                             │
-│                            No ▼                               │
-│                         [Skip, go to 3b]                      │
-│                                                                      │
-│  ─────────────────────────────────────────────────────────────     │
-│  Branch: Migration Mode (--migrate)                                │
-│  ┌──────────┐    ┌──────────┐                                     │
-│  │ Step M1  │───▶│ Step M2  │                                     │
-│  │ Migrate  │    │ Validate  │                                     │
-│  │ (Script) │    │ (Script)  │                                     │
-│  └──────────┘    └──────────┘                                     │
-│                                                                      │
-│  ─────────────────────────────────────────────────────────────     │
-│  Post: Step 4 Validation                                            │
-│  ┌──────────┐                                                       │
-│  │ Step 4   │───────────────────────────────────▶ [COMPLETE]      │
-│  │ Validate │   If FAIL: warn but complete (may need manual)     │
-│  │ (Script) │                                                       │
-│  └──────────┘                                                       │
-│                                                                      │
-└─────────────────────────────────────────────────────────────────────┘
-```
-
-### Standard Refine Flow
-
-| Step | Name | Handler | Success Criteria | On Failure |
-|------|------|---------|------------------|-------------|
-| 1 | Detect Issues | `refine.ts` | Detects what needs fixing | Continue |
-| 2 | Apply BestPrac | `refine.ts --best-practices` | Fixes deterministic issues | Warn only |
-| 3a | Progressive Disclosure | LLM (invoking agent) | Extracts refs, SKILL.md <= 377 lines | Warn only |
-| 3b | Content Improvement | LLM (invoking agent) | Improves content using LLM | Back to 3a |
-| 4 | Validate Result | `validate.ts` | Validation passes | Retry step 3 |
-
-### Step Details
-
-#### Step 1: Detect Issues
-```bash
-# Pre-check what needs fixing
-superskill skill evaluate <skill-path> --save
-```
-
-**What happens:**
-- Run evaluation to identify issues
-- Determine which fixes needed
-- If the skill is a plugin skill with `scripts/` or `extensions/`, hoist the engine to
-  `plugins/<plugin>/scripts/<feature>/` before applying body fixes (refine `--auto` will not
-  delete those directories)
-
-#### Step 2: Apply Best Practices (Script)
-```bash
-superskill skill refine <skill-path> --auto --save
-```
-
-**What script fixes (deterministic):**
-- Remove TODO markers
-- Convert Windows paths to forward slashes
-- Remove Commands Reference sections
-- Remove slash command references
-- **Extract long content to references** (SKILL.md >= 400 lines): Moves `## Quick Reference`, `## Additional Resources`, `## Technology Selection`, `## Extended Examples`, `## Detailed Patterns`, `## Architecture Decision Records`, `## Monitoring Stack`, and `## Breakdown Checklist` sections to `references/` with proper frontmatter
-
-**Output:** Modified SKILL.md, report of changes
-
-#### Step 3: LLM Content Improvement (Invoking Agent)
-The invoking agent uses the LLM to improve skill content based on evaluation findings from Step 1.
-
-##### 3a. Progressive Disclosure Extraction (if SKILL.md >= 300 lines)
-
-Before rewriting content, address Progressive Disclosure first:
-
-**Step 3a-1: Evaluate Length**
-- Count total lines in SKILL.md (excluding frontmatter)
-- If **< 400 lines** → Skip extraction, proceed to 3b
-- If **>= 400 lines** → Proceed to 3a-2
-
-**Step 3a-2: Identify Extractable Sections**
-Review H2 sections and evaluate each for extraction:
-
-| Section Type | Extract if | Why |
-|--------------|-----------|-----|
-| Tables (10+ rows) | Always | Reference data, not core instruction |
-| Checklists | >= 10 items | Detailed guidance belongs in reference |
-| Code Examples | >= 5 blocks or >= 100 lines | Patterns belong in reference |
-| Diagrams/ASCII art | >= 3 | Visual references belong in reference |
-| Step-by-step sequences | >= 8 steps | Detailed procedure belongs in reference |
-| Comparison tables | >= 4 rows | Reference material |
-| Error handling lists | >= 5 items | Reference belongs in reference |
-| Quick Reference tables | Always | By definition reference |
-| Additional Resources | Always | External links belong in reference |
-
-**Step 3a-3: Evaluate Extraction Decision**
-
-For each candidate section, answer:
-1. **Can we extract?** - Does the section make sense standalone?
-2. **Should we extract?** - Is it detail vs. core instruction?
-3. **How to extract?** - Create summary + link to reference file
-
-**Decision rules:**
-- If section is **core instruction** (must-read for skill to work) → **Keep in SKILL.md**
-- If section is **reference detail** (lookup, examples, tables) → **Extract**
-- If ambiguous → Ask: "Would Claude need this to decide WHEN to use the skill?"
-
-**Step 3a-4: Execute Extraction**
-
-For each section to extract:
-1. **Create reference file** at `references/<slug>.md`:
-   ```markdown
-   ---
-   name: <slug>
-   description: "<one-line description ~80 chars>"
-   see_also:
-     - cc:<skill-name>
-   ---
-
-   # <Section Title>
-
-   <extracted content>
-   ```
-
-2. **Replace in SKILL.md** with summary block:
-   ```markdown
-   ## <Section Title>
-
-   <2-3 line summary of what this covers>
-
-   See [references/<slug>.md](references/<slug>.md) for detailed content.
-   ```
-
-3. **Update or create references/external-resources.md** if linking to external docs
-
-**Step 3a-5: Verify**
-- Recount SKILL.md lines (should be < 400 lines)
-- If still >= 400 lines, identify additional sections and repeat 3a-2 to 3a-4
-- Target: SKILL.md <= 377 lines (leaves ~23 line margin for future additions)
-
-##### 3b. Content Quality Improvement
-
-After Progressive Disclosure, improve remaining content:
-
-**What the agent does:**
-
-1. **Analyze findings**: Review evaluation findings and recommendations from Step 1
-2. **Identify weak sections**: Find content that failed scoring or needs improvement
-3. **Use LLM to rewrite**: Use the agent's LLM capability to rewrite weak sections:
-   - Preserve frontmatter exactly (YAML at top of SKILL.md)
-   - Maintain third-person imperative voice ("This skill helps..." not "I can help you")
-   - Address all findings from the evaluation report
-4. **Apply improvements**: Write improved content back to SKILL.md
-
-**Key principles:**
-- **Frontmatter protection**: Never modify the YAML frontmatter
-- **Voice consistency**: Maintain imperative form throughout
-- **Concrete over abstract**: Use specific examples and trigger phrases
-- **Progressive disclosure**: Extract detailed content to references/ as needed
-
-**If improvements made:** Continue to Step 4
-**If no improvements needed:** Continue to Step 4
-**If LLM fails or unavailable:** Warn and continue to Step 4 (deterministic fixes already applied in Step 2)
-
-#### Step 4: Validate Result
-```bash
-superskill skill validate <skill-path>
-```
-
-**If FAIL:** Warn but complete (user may need manual fix)
-
-### Migration Mode Flow (--migrate)
-
-| Step | Name | Handler | Success Criteria |
-|------|------|---------|------------------|
-| M1 | Migrate | `refine.ts --migrate` | Applies rd2→cc transforms |
-| M2 | Validate | `validate.ts` | Structure valid |
-
-**M1 script applies:**
-- Add name: field if missing
-- Add metadata.platforms if missing
-- Add metadata.openclaw if missing
-- Add Platform Notes section
-
----
-
-### Alternative: TDD-Based Refinement
-
-For deeper skill improvement, use **TDD for Skills** approach:
-
-#### The Iron Law
-
-> **NO SKILL WITHOUT A FAILING TEST FIRST.**
-
-If you did not watch an agent fail without the skill, you do not know if the skill teaches the right thing.
-
-#### TDD Workflow
-
-| Phase | Action | Description |
-|-------|--------|-------------|
-| **RED** | Run WITHOUT skill | Document agent failures and rationalizations |
-| **GREEN** | Write minimal skill | Address specific failures |
-| **REFACTOR** | Iterate | Close loopholes, re-test until bulletproof |
-
-#### When to Use TDD
-
-| Use TDD | Skip TDD |
-|---------|----------|
-| Skill addresses common violations | Skill is purely informational |
-| Behavior change is critical | Behavior already correct |
-| Multiple agents need consistent behavior | Time constraints |
-| Rationalizations are predictable | |
-
-#### Common Rationalizations
-
-| Rationalization | Counter |
-|---------------|---------|
-| "This is just a small change" | "Every change, regardless of size, requires..." |
-| "The user needs it urgently" | "Time pressure is not a valid reason to skip..." |
-| "I'll fix it later" | "Complete the implementation now..." |
-| "This is temporary" | "Treat all code as production code..." |
-
-#### Integration with Standard Refine
-
-| Approach | Purpose |
-|----------|---------|
-| **Standard Refine** | Structural fixes, best practices |
-| **TDD Refine** | Behavioral changes, agent compliance |
-
-Use TDD when standard refine doesn't achieve desired agent behavior.
-
----
-
-## Evolve Workflow
-
-Analyze longitudinal improvements with persisted proposals and embedded LLM review before apply.
-
-### Closed-Loop Phases
-
-This workflow follows the shared evolution loop:
-
-1. Observe signals from evaluation and history
-2. Analyze patterns and gaps
-3. Propose bounded improvements
-4. Apply approved changes
-5. Verify the resulting behavior
-6. Snapshot version history
-7. Roll back if needed
-8. Learn from the recorded outcome
-
-### Workflow Steps
-
-| Step | Name | Handler | Success Criteria | On Failure |
-|------|------|---------|------------------|-------------|
-| 1 | Analyze Signals | `evolve.ts --analyze` | Signal report generated | Abort |
-| 2 | Generate Proposals | `evolve.ts --propose` | Proposal set persisted | Retry step 2 |
-| 3 | Embedded LLM Content Improvement | LLM (invoking agent) | Proposals are reviewed, tightened, and prioritized | Back to step 2 |
-| 4 | Apply or Roll Back | `evolve.ts --apply` / `--rollback` | Approved change applied safely | Abort |
-
-### Step Details
-
-#### Step 1: Analyze Signals
-```bash
-superskill skill evolve <skill-name> --propose-only
-```
-
-#### Step 2: Generate Proposals
-```bash
-superskill skill evolve <skill-name> --propose-only
-```
-
-The script persists deterministic proposals and supporting rationale.
-
-#### Step 3: Embedded LLM Content Improvement
-
-The invoking agent reviews the proposal set before any apply step:
-
-The invoking agent applies the **filing bar** below to each proposal, then orders the survivors
-by frequency × severity. This review is part of the normal evolve flow — no separate CLI flag.
-
-##### The filing bar (when a proposal is warranted)
-
-The CLI gate is mechanical — deterministic validate, Δ-margin, `anchor_hash` match, Skeptic veto.
-It answers *"is this change safe?"*, never *"should this change exist?"* That second question is
-this step's job, and it is the one that keeps skills from accreting.
-
-**Do not propose changes by default.** Ask: *would a competent agent, following the current
-instructions, still be expected to fail this way?* If yes, there is a gap. If no, defer.
-
-File a proposal only when **all** of these hold:
-
-- The failure traces to a missing, wrong, or underspecified instruction on a **named owning
-  surface** — this skill, another skill, or in-repo guidance.
-- You can state, in one sentence, the single reusable rule that surface should have carried.
-- Had that rule been present and followed, the observed failure would not have happened.
-- The gap appears in **more than one** signal, or a single occurrence is severe enough to prove
-  a missing contract on its own.
-
-Do **not** file when:
-
-- The existing instruction already required the correct behavior and the model ignored it.
-- The failure is model variance — same prompt, same tools, different choice.
-- The only available edit is restating, hedging, or bolting on more examples.
-- The real fix lives in code, schema, or CLI rather than an instruction surface.
-
-Two rules govern the edit itself:
-
-- **Replace, don't append.** Amending existing guidance in place beats adding another paragraph
-  beside it; appended prose is how a skill doubles in size without gaining a rule.
-- **Smallest expression wins.** State the intended behavioral rule and its owning surface first,
-  then make the minimum edit that expresses it.
-
-When nothing clears the bar, **file nothing and say why, per finding — that is a success, not an
-empty run.** A speculative change is worse than no change: it costs context on every future load
-and cannot be traced back to evidence when it later turns out to be wrong.
-
-#### Step 4: Apply or Roll Back
-```bash
-superskill skill evolve <skill-name> --accept <proposal-id>
-```
-
-
----
-
-## Adapt Workflow
-
-Generate or refresh cross-platform companions for the skill.
-
-### Workflow Steps
-
-| Step | Name | Handler | Success Criteria | On Failure |
-|------|------|---------|------------------|-------------|
-| 1 | Inspect Source Skill | `adapt.ts` | Source skill is readable | Abort |
-| 2 | Generate Companions | `adapt.ts` | Target companions created | Retry step 2 |
-| 3 | Validate Output | `validate.ts` / adapter checks | Generated companions are structurally valid | Warn |
-| 4 | Embedded LLM Review | LLM (invoking agent) | Platform notes and examples stay aligned with generated companions | Loop back to step 2 |
-
-### Step Details
-
-#### Step 1: Inspect Source Skill
-
-#### Step 2: Generate Companions
-
-The script generates platform-specific outputs such as:
-
-- `agents/openai.yaml`
-- `metadata.openclaw`
-- other supported platform companions
-
-#### Step 3: Validate Output
-
-Deterministic checks confirm:
-
-- generated files are present
-- generated metadata is structurally valid
-- no critical companion-generation failure occurred
-
-#### Step 4: Embedded LLM Review
-
-The invoking agent reviews the adapted output to:
-
-1. confirm examples and guidance still match generated companions
-2. tighten weak platform notes
-3. loop back to regenerate if the source skill needs improvement first
-
----
-
-## Package Workflow
-
-Prepare skill for distribution.
-
-### Workflow Steps
-
-```
-┌─────────────────────────────────────────────────────────────────────┐
-│ PACKAGE WORKFLOW                                                    │
-├─────────────────────────────────────────────────────────────────────┤
-│                                                                      │
-│  ┌──────────┐    ┌──────────┐    ┌──────────┐    ┌──────────┐   │
-│  │ Step 1   │───▶│ Step 2   │───▶│ Step 3   │───▶│ Step 4   │   │
-│  │ Pre-     │    │ Copy     │    │ Generate │    │ LLM      │   │
-│  │ Validate │    │ Files    │    │ Companions│   │ Content  │   │
-│  │ (Script) │    │ (Script) │    │ (Script)  │   │ (Checklist)│ │
-│  └──────────┘    └──────────┘    └──────────┘    └──────────┘   │
-│       │                                                    │       │
-│       ▼                                                    ▼       │
-│  [FAIL: Abort]                                        [COMPLETE]  │
-│       │                                                    │       │
-│       └────────────────┬───────────────────────────────┘       │
-│                        │                                        │
-│                        ▼                                        │
-│                   ┌──────────┐                                  │
-│                   │ Step 5   │                                  │
-│                   │ Archive  │                                  │
-│                   │ (Script) │                                  │
-│                   └──────────┘                                  │
-│                        │                                        │
-│                        ▼                                        │
-│                   [COMPLETE]                                     │
-│                                                                      │
-└─────────────────────────────────────────────────────────────────────┘
-```
-
-| Step | Name | Handler | Success Criteria | On Failure |
-|------|------|---------|------------------|-------------|
-| 1 | Pre-Validate | `validate.ts` | Validation passes | Abort |
-| 2 | Copy Files | `package.ts` | Files copied | Abort |
-| 3 | Generate Companions | `package.ts` | Companions exist | Retry step 3 |
-| 4 | LLM Content Improvement | LLM (invoking agent) | Improves content using LLM | Warn |
-| 5 | Archive | `package.ts` | Archive created | Retry step 5 |
-
-### Step Details
-
-#### Step 1: Pre-Validate
-```bash
-superskill skill validate <skill-path>
-```
-
-**If FAIL:** Abort - cannot package invalid skill
-
-#### Step 2: Copy Files
-
-**What script does:**
-- Creates output directory
-- Copies SKILL.md
-- Copies references/, assets/
-
-#### Step 3: Generate Companions
-
-**What script does:**
-- Generates platform companions
-- Validates companions
-
-#### Step 4: LLM Content Improvement
-**Handler:** LLM (invoking agent using its own LLM capability)
-
-**What the invoking agent does:**
-1. Reads the packaged SKILL.md and companions
-2. Identifies content issues: inconsistent voice, weak descriptions, missing examples
-3. Uses LLM to rewrite and strengthen content
-4. Preserves frontmatter exactly (name, description, type, metadata)
-5. Ensures companions are consistent with improved SKILL.md
-6. Adds Examples section if missing or weak
-7. Validates "When to Use" section is specific and actionable
-
-**Important:**
-- Frontmatter MUST NOT be modified
-- Only improve body content and examples
-- Ensure all companions reflect SKILL.md updates
-- Verify no circular references were introduced
-
-**If FAIL:** Warn but continue
-
-#### Step 5: Archive
-- Creates .zip or .tar.gz
-- Includes all files
-- Ready for distribution
-
----
-
-## Migrate Workflow
-
-Multi-source skill migration combining deterministic script phases with LLM content refinement and validation.
-
-### Workflow Steps
-
-```
-┌─────────────────────────────────────────────────────────────────────┐
-│ MIGRATE WORKFLOW                                                     │
-├─────────────────────────────────────────────────────────────────────┤
-│                                                                      │
-│  ┌──────────┐    ┌──────────┐    ┌──────────┐    ┌──────────┐   │
-│  │ Step 1   │───▶│ Step 2   │───▶│ Step 3   │───▶│ Step 4   │   │
-│  │ Inventory│    │ Merge    │    │ Reconcile│    │ Apply +  │   │
-│  │ (Script) │    │ Plan     │    │ + Convert│    │ Report   │   │
-│  │          │    │ (Script) │    │ (Script) │    │ (Script) │   │
-│  └──────────┘    └──────────┘    └──────────┘    └──────────┘   │
-│       │              │               │                │            │
-│       ▼              ▼               ▼                ▼            │
-│  [No sources]  [No conflicts]  [Low quality]    [Apply or       │
-│  [Abort]       [Skip to 4]    [Continue]       dry-run]        │
-│                                                     │            │
-│                                                     ▼            │
-│  ┌──────────┐    ┌──────────┐                                   │
-│  │ Step 5   │───▶│ Step 6   │──────────────────▶ [COMPLETE]     │
-│  │ LLM      │    │ Validate │                                   │
-│  │ Content  │    │ Result   │                                   │
-│  │ Refine   │    │ (Script) │                                   │
-│  │ (LLM)    │    │          │                                   │
-│  └──────────┘    └──────────┘                                   │
-│       │              │                                            │
-│       ▼              ▼                                            │
-│  [Skip if       [FAIL: Back                                     │
-│   dry-run]      to Step 5]                                      │
-│                                                                      │
-└─────────────────────────────────────────────────────────────────────┘
-```
-
-| Step | Name | Handler | Success Criteria | On Failure |
-|------|------|---------|------------------|-------------|
-| 1 | Inventory Sources | `skill-migrate.ts --dry-run` | All sources resolved and scanned | Abort |
-| 2 | Merge Planning | `skill-migrate.ts` (cont.) | Merge plan created, conflicts identified | Abort |
-| 3 | Reconcile + Convert | `skill-migrate.ts` (cont.) | Conflicts reconciled, Python converted to TS | Continue (warnings logged) |
-| 4 | Apply + Report | `skill-migrate.ts --apply` | Files written, report generated | Abort |
-| 5 | LLM Content Refinement | LLM (invoking agent) | Coherent content, TODO markers resolved | Retry step 5 (max 2) |
-| 6 | Validate Result | `superskill skill evaluate <skill-dir>` | Verdict PASS (≥0.70) | Back to step 5 |
-
-### Step Details
-
-#### Step 1: Inventory Sources (Script)
-
-**What script does:**
-- Resolves all `--from` paths (supports `rd2:`, `cc:`, bare name, `path:`, relative including `vendors/` paths)
-- Resolves `--to` path as a filesystem destination (always absolute/relative, never a skill name lookup)
-- Recursively scans each source for SKILL.md, tests/, references/
-- Reports file counts and capabilities per source
-
-**Output:** Source inventories with file metadata
-
-**If sources cannot be resolved:** Abort with error
-
-#### Step 2: Merge Planning (Script)
-
-**What script does:**
-- Compares inventories across sources
-- Detects files that already exist at the destination (destination conflicts)
-- Categorizes each file: **add** (unique to one source), **merge** (present in multiple sources), **merge-with-dest** (source conflicts with existing destination file), **convert** (Python files needing TypeScript conversion)
-- Builds a merge plan with conflict descriptions
-
-**Output:** Merge plan with per-file action and conflict details
-
-**If no conflicts:** Skip reconciliation in Step 3, proceed to Step 4
-
-#### Step 3: Reconcile + Convert (Script)
-
-**What script does:**
-- Runs `reconcileMultiSource()` from `cc:knowledge-extraction` for overlapping files (multi-source)
-- Runs `reconcileMultiSource()` for source-vs-destination conflicts (2-source: source + existing destination)
-- Runs `convertPythonToTypeScript()` for `.py` files
-- Produces quality scores per merged file
-- Logs TODO markers for unconvertible Python patterns (e.g., `// TODO: Convert import`)
-
-**Output:** Reconciled content with quality scores and conversion warnings
-
-**If quality is low:** Continue — LLM refinement in Step 5 addresses quality gaps
-
-#### Step 4: Apply + Report (Script)
-
-**What script does:**
-- Detects destination conflicts (files already at destination with same path)
-- With destination conflicts: **blocks apply** unless `--force` is set (prevents silent overwrites)
-- Writes all files to `--to` destination (adds, merges, converted files)
-- Generates migration report at `docs/.migration/migration-report-<skillName>-<timestamp>.md` (NOT inside the skill directory)
-- With `--strict`: blocks apply if average quality score < 70
-
-**Output:** Migrated skill directory + migration report
-
-**If `--dry-run`:** Report only, no files written. Skip Steps 5-6.
-
-#### Step 5: LLM Content Refinement (Invoking Agent)
-**Handler:** LLM (invoking agent using its own LLM capability)
-
-This step runs only when `--apply` was used (files exist to refine).
-
-**Inputs:**
-- Migration report from Step 4
-- `description` argument from the command (free-text guidance for refinement focus)
-
-**What the invoking agent does:**
-1. **Read the migration report** from Step 4 to understand what was merged, converted, and flagged
-2. **Honor the `description` guidance** if provided (e.g., "absorb emerging patterns", "focus on deduplication and conciseness")
-3. **Deduplicate content**: Identify and collapse duplicate or near-duplicate content that survived deterministic reconciliation:
-   - Repeated concepts covered in multiple source sections → merge into one concise treatment
-   - Duplicate tables, checklists, or reference lists → consolidate, remove copies
-   - Overlapping "When to Use" / "When Not to Use" language → unify into non-redundant triggers
-   - Token bloat from long merged content → trim to quality bar (concise is key)
-4. **Resolve semantic conflicts**:
-   - Tone shifts between sections from different sources
-   - Contradictory claims (source A says X, source B says not-X)
-   - Broken internal references or cross-links
-5. **Resolve TODO markers** in converted TypeScript files:
-   - `// TODO: Convert import` markers from Python→TS conversion
-   - `// CONVERSION WARNINGS` blocks at end of converted files
-   - Manual review flags left by the converter
-6. **Ensure voice consistency**: Merged SKILL.md reads as one cohesive document in third-person imperative voice
-7. **Preserve frontmatter exactly**: Only body content is modified
-8. **Write improved content** back to the destination files
-
-**Skip conditions:**
-- `--dry-run` mode: Skip entirely (no files to refine)
-- avgQualityScore >= 90 AND no TODO markers exist AND no obvious duplicates: Skip, proceed to Step 6
-
-**If LLM fails or is unavailable:** Warn and continue to Step 6 (deterministic merge already applied in Steps 1-4)
-
-#### Step 6: Validate Result (Script)
-```bash
-superskill skill evaluate <destination-path> --save
-```
-
-**What script does:**
-- Runs full evaluation on the migrated skill
-- Scores across all 10 quality dimensions
-
-**If score >= 70:** Migration complete
-**If score < 70:** Back to Step 5 for another refinement pass (max 2 retries)
-
----
-
-## Workflow Selection Matrix
-
-| Situation | Workflow | Steps |
-|-----------|----------|-------|
-| New skill | Create | 1 → 2 → 3 → 4 |
-| Structure check | Validate | 1 → 2 → 3 |
-| Quality check | Evaluate | 1 → 2 → 3 → 4 |
-| Fix deterministic only | Refine --best-practices | 1 → 2 → 4 |
-| Fix Progressive Disclosure | Refine + PD extraction | 1 → 2 → 3a → 4 |
-| Fix fuzzy content | Refine checklist | 1 → 2 → 3a → 3b → 4 |
-| Fix all | Refine --best-practices | 1 → 2 → 3a → 3b → 4 |
-| Migrate rd2 frontmatter only | Refine --migrate | M1 → M2 |
-| Full multi-source migration | Migrate | 1 → 2 → 3 → 4 → 5 → 6 |
-| Longitudinal improve | Evolve | 1 → 2 → 3 → 4 |
-| Cross-platform companions | Adapt | 1 → 2 → 3 → 4 |
-| Pre-publish | Package | 1 → 2 → 3 → 4 → 5 |
-
----
-
-## Retry Policy
-
-| Failure Point | Retry Action | Max Retries |
-|---------------|--------------|-------------|
-| Scaffold | Re-run scaffold | 3 |
-| Validate structure | Abort | N/A |
-| LLM Content Improvement | Back to appropriate step | 2 |
-| Generate companions | Re-generate | 3 |
-| Package files | Re-package | 3 |
-| Migrate script (inventory/plan) | Abort | N/A |
-| Migrate LLM refinement | Back to step 5 | 2 |
+The last positional argument is the destination; preceding arguments are source skills.
+The deterministic merge writes the destination, so inspect existing content and authorization
+before running it. Review frontmatter conflicts, duplicate or contradictory instructions,
+relative links, scripts, and native metadata afterward. A textual merge is not a semantic
+migration or a language/runtime conversion.
+
+`--refine` writes the merged file before emitting evolution briefs; it is not a dry run.
+`--refine --ingest <file>` applies a supplied proposal through the evolution gate, restoring
+the deterministic merge if rejected. Source owners:
+`packages/core/src/operations/migrate.ts` and `apps/cli/src/operations/migrate.ts`.
+
+For installing an existing skill, inspect `superskill skill add --help` and the source before
+execution. For a superskill plugin, follow [scripts-and-install.md](scripts-and-install.md).
+Installing into another host, publishing, and updating shared copies must remain within the
+requested scope. Check the installed name, resource paths, native discovery, and invocation;
+successful source validation or file copying is not a native host smoke test.

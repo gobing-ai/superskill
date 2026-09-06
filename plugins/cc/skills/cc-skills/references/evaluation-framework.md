@@ -1,170 +1,137 @@
 # Evaluation Framework
 
-The authoritative source for dimension weights is `packages/core/src/rubrics/skill.yaml`. This document describes the evaluation model, scoring modes, and rubric resolution. Do not restate weights inline — they drift.
+Evaluate whether a skill helps its intended users, tasks, and hosts. Fix the success criteria
+before optimizing the skill. A static grade, a persuasive review, and a successful runtime trial
+are different evidence; report them separately.
 
-## Scoring Model
+## Evidence layers
 
-Skills are scored across **5 dimensions** with rubric-weighted heuristics:
+| Layer | Check | What it cannot establish |
+|---|---|---|
+| Structural | Frontmatter, layout, resolvable references, declared dependencies | Factual correctness, safe tools, actual discovery |
+| Semantic | Correct instructions, preserved intent, useful boundaries, source-backed facts | Measured task success or performance |
+| Native host | Installed name, discovery, invocation controls, tools, resource loading | Transfer to another host/model/version |
+| Behavioral | Task artifacts/state, required process, failures, triggering, resource use | General reliability beyond the cases and environment tested |
 
-| Dimension | What It Checks |
-|-----------|----------------|
-| **completeness** | Required frontmatter fields present? Sections structured? |
-| **clarity** | Unambiguous instruction? Penalizes vague verbs. |
-| **trigger-accuracy** | Fires on right inputs? Counts *distinct* trigger branches — synonym clusters collapse to one. |
-| **anti-hallucination** | Prevents fabrication? Checks verification language density. |
-| **conciseness** | Short as possible while complete? Penalizes bloat. |
+Use the smallest sufficient check for the change. A repaired link needs a resolution check;
+a changed trigger needs discovery cases; a tool workflow needs checks of its resulting state.
+For substantive improvement claims, compare baseline and candidate on representative tasks.
+Do not introduce a new evaluation framework when existing tests or a small reproducible trial suffice.
 
-**Verdict:** PASS (≥0.70) / FAIL (<0.70).
-**Grade:** A (≥0.90) / B (≥0.75) / C (≥0.60) / D (≥0.45) / F (<0.45).
+## Define the target
 
-## Scoring Modes
+Record the intended tasks, host/model versions, tool versions, skill revision, installed path,
+other active instructions/skills, permissions, and environment needed to reproduce a result.
+Use existing records rather than creating a mandatory metadata schema.
 
-### 1. Heuristic (default)
+Separate these purposes:
 
-Deterministic scorers in `packages/core/src/quality/skill.ts` compute per-dimension scores from frontmatter + body analysis. Rubric weights from `skill.yaml` are applied for the weighted aggregate. No LLM required.
+- **Capability uplift:** compare with the base agent without this skill as well as the previous
+  version where useful. If the base agent now succeeds, investigate whether the workaround can retire.
+- **Encoded preferences and process:** assess fidelity to operator requirements and project
+  constraints. Base-model competence does not make those requirements obsolete.
+- **Domain knowledge:** verify sources and version applicability, then test the errors the knowledge
+  is meant to prevent. Generic prose cannot replace a missing dependency or runtime capability.
 
-```bash
-superskill skill evaluate ./skills/my-skill
-# → human: table + verdict + grade + findings + recommendations
-# → --json: full QualityReport
-```
+Freeze inputs and expected outcomes before rewriting. Include ordinary requests, edge cases, known
+failures, missing prerequisites, and relevant trust-boundary cases. Retain a separate holdout when
+iteratively tuning the skill; cases used to select an edit are development evidence, not unseen tests.
 
-### 2. Rubric + LLM (two-call seam)
+## Test discovery separately
 
-For LLM-enriched scoring:
+Exercise the host's actual selection path with the intended installed skill catalog:
 
-1. **Envelope-out:** `superskill skill evaluate --rubric skill.yaml --json > envelope.json`
-   - Emits content + rubric + heuristic baseline as a JSON work order.
-2. **Scorer:** Agent reads the envelope, scores each dimension against rubric criteria, writes `scores.json`. See the Scorer contract below.
-3. **Ingest-in:** `superskill skill evaluate --ingest scores.json --save`
-   - Validates scores against rubric schema, computes weighted aggregate, persists.
+- Requests that should trigger, including realistic paraphrases and implicit requests.
+- Near misses that share terminology but should not trigger.
+- Neighboring skills with overlapping descriptions and a clear expected owner.
+- Explicit invocation and explicit-only behavior when those are part of the contract.
 
-This seam keeps LLM scoring offline and auditable.
+Record expected and observed selection. Report counts of false positives and false negatives;
+use precision/recall only with a clear denominator and label undefined values. Artificially forcing
+the skill into a prompt tests execution with the skill loaded, not discovery. A count of trigger
+phrases is not a measured firing rate, and merely mentioning a skill is not proof it loaded.
 
-#### The Scorer contract
+## Compare task results
 
-The rubric owns *what* each dimension means — its `criterion` and `anchors` in
-`packages/core/src/rubrics/skill.yaml`. This contract owns *how* to turn that judgment into a
-number, so two Scorer runs over the same content land in the same place.
+1. Reproduce the baseline when practical. Keep task inputs, tool access, working state, and execution
+   budgets comparable. Use clean contexts and isolated fixtures; prevent one candidate's files,
+   conversation, caches, or memory from supplying the other's answer.
+2. Run the candidate against the same development cases and then untouched holdouts. Inspect
+   output artifacts and resulting state with deterministic checks where possible. Judge a patch
+   with applicable tests; judge a generated file's actual structure and content, not the claim
+   that it was created.
+3. Check required process and constraints as well as outcomes: read-only requests, authorization,
+   resource routing, preservation of data, missing dependencies, and honest failure reporting.
+   Untrusted evaluation fixtures must not cause real external side effects.
+4. For subjective criteria, use an anchored rubric and examples. Where useful, compare outputs
+   blind to identity, vary ordering, permit ties, and calibrate the judge against human judgments.
+   Review source evidence; a second model's confidence is not verification.
+5. Repeat noisy cases enough to assess variation within the task's budget. Report trial counts,
+   failure distribution, and uncertainty; a single lucky run cannot establish reliable uplift.
+   Do not promote a noisy average by hiding severe regressions or weakening the grader.
 
-**Calibrate to bands, not to a feeling.** Pick the band whose description fits, then emit its
-score. Do not free-hand intermediate values — a 0.63 asserts a precision the judgment does not have.
+Keep the evaluator independent of candidate instructions. Do not let a proposal rewrite acceptance
+criteria, reference answers, or safety constraints to make itself pass. If a criterion was wrong,
+correct it explicitly and re-evaluate both baseline and candidate under the corrected criterion.
 
-| Band | Score | When it applies |
-|------|-------|-----------------|
-| `excellent` | 1.0 | Matches the dimension's `anchors.excellent`. |
-| `adequate` | 0.8 | Meets the criterion with a slip or two that cost nothing downstream. |
-| `weak` | 0.4 | Repeatedly falls short of the criterion, or one shortfall forces the reader to guess. |
-| `poor` | 0.2 | Matches the dimension's `anchors.poor`. |
+## Cost and selection
 
-**Every `note` must cite, not assert.** One to three sentences that (a) quote or name the specific
-locus — a heading, a phrase, a frontmatter field — and (b) name what would fix it. A note that
-restates the band (`"clarity is weak"`) or the criterion carries no information and cannot be
-audited later.
+Measure task success and fidelity alongside elapsed time, tool calls, and token usage when useful.
+Distinguish context size, billed/cached tokens, and monetary cost; source length alone measures none
+of them precisely. Compare similar conditions and note environment or model changes.
 
-- ✓ `"Step 4 ends on 'iterate as needed' with no done-condition; give it a checkable exit like 'until validate exits 0'."`
-- ✗ `"Instructions are somewhat vague in places."`
+Choose the smallest candidate that satisfies the requirements and holds up on relevant cases.
+Retain a longer example or guard when it prevents an observed failure or preserves an explicit
+requirement. If behavior is unchanged but context cost falls, report that specific improvement.
+If evidence is inconclusive, say so; do not force a winner or invent a target percentage.
 
-**There is no `insufficient_evidence` band on this plane.** Static evaluation always has its
-artifact — the SKILL.md is right there in the envelope. A missing-evidence verdict only makes
-sense where the evidence can genuinely be absent, which is the usage plane below. Do not add the
-band here to express "I found this hard to score"; pick the band and cite why.
+Recheck after relevant model, tool, host, or task changes. Retire stale workarounds when comparative
+evidence supports it, while retaining operator preferences and project constraints.
 
-### 3. Default command surface
+## CLI scoring and persistence
 
-The slash command `/cc:skill-evaluate` runs the heuristic mode with rubric weights. It produces a PASS/FAIL verdict, letter grade, per-dimension findings, and actionable recommendations — no LLM call.
+`superskill skill evaluate <nameOrPath> --json` produces a heuristic `QualityReport`.
+The source owners are `packages/core/src/quality/skill.ts`,
+`packages/core/src/quality/types.ts`, and `packages/core/src/rubrics/skill.yaml`.
+The rubric owns dimensions, weights, and anchors; do not duplicate them in skill instructions.
+`packages/core/src/quality/rubric.ts` owns rubric resolution and validation.
 
-## The Usage Plane (not built)
+These heuristics inspect the artifact. Trigger-branch counts do not measure discovery; verification
+language does not measure truthfulness; length does not measure usefulness. Report a grade as a
+static diagnostic even when the label is PASS.
 
-Every mode above scores the **artifact**: what the SKILL.md says. None of them can see what the
-skill actually *did* — whether it fired when it should have, or whether the sessions it ran in went
-well. Two known gaps follow from that, both recorded here as named paths rather than built:
+The optional rubric Scorer seam and `--save` behavior are defined in
+[workflows.md](workflows.md#optional-scorer-seam). Ground notes in a specific location and evidence,
+use the rubric's anchors, and disclose unavailable evidence. Do not promise identical model scores
+across runs. `evaluate --history` reads saved evaluation rows; `evolve --history` concerns versions.
 
-- **`skill_coverage`** — the fraction of real sessions in which an installed skill actually
-  triggered. This is the ground truth that `trigger-accuracy` currently approximates by counting
-  distinct trigger branches in the description. A skill that never fires in any observed session is
-  usually a description problem, and no amount of static branch-counting will reveal it.
-- **Transcript-grounded `evolve`** — today `superskill skill evolve` trends *evaluation history*,
-  i.e. the record of our own static scores. Real conversation transcripts, scored for efficiency and
-  outcome, would let a proposal cite an observed failure instead of a score trend.
+## The usage plane
 
-**Blocker — do not skip this.** Both require a transcript source this repository does not own.
-`spur history import/analyze`, `sp:history-anatomy`, and `sp:issue-finding` live in the **spur**
-product, not in superskill; treating them as in-tree modules is a false premise and would produce a
-second collector built against an unowned data plane. Commission a spike that names an owned or
-explicitly-adapted source **first**. Crossing that boundary is a cross-package decision and belongs
-in `docs/00_ADR.md` before any code.
+Runtime evidence can come from authorized local trials, existing tests, or available session traces.
+It need not wait for an automated transcript collector. Record what the evidence actually contains:
+selection events, loaded resources, actions, outcomes, or only final prose.
 
-Until then, proposals cite static-score trends, and that limit is stated rather than papered over.
+The optional CLI `--eval-gate` is an output replay check with case-resolution and backend limits
+described in [workflows.md](workflows.md#gate-limits). Its runner injects skill text directly and
+returns output text; it does not test native discovery or automatically verify every tool-side effect.
+Mock replay fixtures test gate logic, not model quality. A continuous cross-host telemetry collector
+is separate product work; do not invent one or claim it already exists.
 
-## Rubric Resolution
+## Research basis and limits
 
-The rubric file is resolved through 4 tiers (implemented in `resolveRubricContent`):
+Research cutoff: **2026-08-31**. The dated sources below support this method; none establish a
+universally optimal skill prompt. Rolling format and host documentation is identified separately
+in [platform-compatibility.md](platform-compatibility.md).
 
-1. `--rubric <path>` flag — explicit override
-2. `~/.superskill/rubrics/<type>.yaml` — per-user override
-3. `packages/core/src/rubrics/<type>.yaml` — development default
-4. `rubrics/<type>.yaml` — production default
+| Primary source | Published | Application and limit |
+|---|---|---|
+| [Anthropic: Demystifying evals for AI agents](https://www.anthropic.com/engineering/demystifying-evals-for-ai-agents) | 2026-01-09 | Inspect outcomes and traces, use appropriate graders and repeated trials; an evaluation harness needs its own scrutiny. |
+| [SkillsBench, v1](https://arxiv.org/html/2602.12670v1) | 2026-02-13 | Curated skills helped on average in its benchmark, with substantial task/domain variation; self-generated skills did not show the same average benefit. This motivates task-specific comparisons, not a fixed module count or promised uplift. |
+| [Anthropic: Improving skill-creator](https://claude.com/blog/improving-skill-creator-test-measure-and-refine-agent-skills) | 2026-03-03 | Separate triggering from output evaluation, compare skill/no-skill and versions, and revisit capability workarounds as models improve. Product-specific implementation is not a required universal workflow. |
+| [SWE-Skills-Bench, v1](https://arxiv.org/html/2603.15401v1) | 2026-03-16 | Many public software-engineering skills provided little benefit in its matched tasks and could add substantial token cost; some specialized skills helped. Different tasks and methods prevent direct equivalence with SkillsBench. |
+| [Anthropic: Context engineering for Claude 5 generation models](https://claude.com/blog/the-new-rules-of-context-engineering-for-claude-5-generation-models) | 2026-07-24 | Vendor coding evaluations supported pruning older scaffolding for those models. Apply this as a model-specific hypothesis to test, not a universal deletion quota or permission to remove operator requirements. |
+| [Anthropic: Value of Claude Code sessions](https://claude.com/blog/maximizing-the-value-of-your-claude-code-sessions) | 2026-08-14 | Loaded context, repeated turns, and cache behavior affect cost differently. Measure the actual host's usage; do not equate file length with tokens billed each turn or copy fixed cache settings across hosts. |
+| [Anthropic: Effective context engineering](https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents) | 2025-09-29 | Select useful context and retrieve detail as needed. Minimal sufficient context is task-dependent; deleting requirements is not an optimization. |
 
-The canonical rubric for skills is `packages/core/src/rubrics/skill.yaml` (version 1, 5 dimensions, weights sum to 1.0 ± 0.001).
-
-## Platform-Specific Evaluation
-
-### Claude Code
-- Validates `!`cmd`` syntax
-- Checks `$ARGUMENTS` usage
-- Verifies `context: fork` compatibility
-- Validates `hooks:` configuration
-
-### Codex
-- Validates `agents/openai.yaml` format
-- Checks UI metadata completeness
-- Verifies frontmatter strictness (no unknown fields)
-
-### OpenClaw
-- Extracts `metadata.openclaw` validation
-- Checks emoji configuration
-- Validates requires specifications
-
-### OpenCode
-- Checks permission configurations
-- Validates config-level skill hints
-- Verifies skill invocation patterns
-
-### Antigravity
-- Validates Gemini CLI compatibility
-- Checks for Gemini-specific extensions
-- Verifies standard format compliance
-
-## Iterative Improvement
-
-1. Run evaluation: `superskill skill evaluate ./skills/my-skill`
-2. Review findings and recommendations
-3. Apply refinements: `superskill skill refine <nameOrPath> --auto --save`
-4. Re-run evaluation to verify improvements
-
-## Persistence
-
-When `--save` is used, evaluations are stored in SQLite. Use `superskill skill history <name>` to view prior scores and track improvement over time.
-
-## JSON Output
-
-The `--json` output is a `QualityReport` object. The schema is additive (fields added, never removed or renamed):
-
-```json
-{
-  "content": "my-skill",
-  "type": "skill",
-  "target": "claude",
-  "aggregate": 0.87,
-  "dimensions": {
-    "completeness": {"score": 1.0, "note": "All required fields present", "findings": [], "recommendations": []},
-    "clarity": {"score": 0.86, "note": "Good imperative style"},
-    "trigger-accuracy": {"score": 1.0, "note": "5 trigger phrases found"},
-    "anti-hallucination": {"score": 0.50, "note": "Includes verification language"},
-    "conciseness": {"score": 1.0, "note": "Body length: 14161 chars"}
-  },
-  "verdict": "PASS",
-  "grade": "B"
-}
-```
+The workflow choices here are engineering judgments informed by these sources. They are not a claim
+that this meta skill, or every skill it edits, has passed a cross-model benchmark.
