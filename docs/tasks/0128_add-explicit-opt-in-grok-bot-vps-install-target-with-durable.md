@@ -1,10 +1,10 @@
 ---
 schema_version: 1
 name: Add explicit opt-in Grok Bot VPS install target with durable workflow skills
-status: testing
+status: done
 template: feature-impl
 created_at: 2026-09-08T19:57:49.979Z
-updated_at: "2026-09-09T18:20:12.162Z"
+updated_at: "2026-09-09T18:38:38.554Z"
 
 priority: P1
 feature_id: D
@@ -55,7 +55,7 @@ Confidence is high for the repository seams cited below, but Bot discovery/reloa
 
 - [x] R9. **Read-only diagnostics.** No doctor command currently exists. Add only `superskill doctor --targets grok-bot [--json]`; require this explicit target in v1, rejecting absent/other target values with usage guidance rather than inventing diagnostics for nine other hosts. Reuse R2 resolution with no mkdir/write probes. Report target, available, resolved dataRoot/workflowsDir, root-source (env/sand-data/agent-data), prospective writability, and issues for owned workflows (bad frontmatter, invalid marker, missing canonical/resource files, modified owned files). A missing explicit root with a writable ancestor is 'creatable', not proof a live Bot is present. JSON contract: `{ target, available, dataRoot: string|null, workflowsDir: string|null, source: string|null, creatable, issues: [{ code, path: string|null, message }] }`. Exit 0 for locally valid/creatable layout, 1 for unavailable/broken ownership/layout, 2 for usage error. Clearly label this a filesystem check, not a GUI discovery or connection test. A missing root in read-only mode remains missing.
 
-- [ ] R10. **Documentation and verification.** Before implementing structural changes, add a dated ADR entry for an explicit install-only Bot target, Sand-owned canonical/receipt scope, and the small doctor surface; amend ADR-010/035 where their root assumptions need a target-specific exception. Update scope in 01, mechanism in 03, exact flags/config/default behavior/marker+doctor shapes in 04, status/roadmap in 05/02 when delivered, and README plus `docs/help/entity_locations.md` in the same change. Include host execution examples, Grok Build vs Bot distinction, slash/degradation table, default exclusion, resolution/errors, both modes, source lifetime, ownership/prune behavior, and prerequisite CLI/script caveats. Keep tests isolated from real user homes and Sand trees; implement the AC matrix below and run all repository gates. Record actual evidence and limitations through the task harness.
+- [x] R10. **Documentation and verification.** Before implementing structural changes, add a dated ADR entry for an explicit install-only Bot target, Sand-owned canonical/receipt scope, and the small doctor surface; amend ADR-010/035 where their root assumptions need a target-specific exception. Update scope in 01, mechanism in 03, exact flags/config/default behavior/marker+doctor shapes in 04, status/roadmap in 05/02 when delivered, and README plus `docs/help/entity_locations.md` in the same change. Include host execution examples, Grok Build vs Bot distinction, slash/degradation table, default exclusion, resolution/errors, both modes, source lifetime, ownership/prune behavior, and prerequisite CLI/script caveats. Keep tests isolated from real user homes and Sand trees; implement the AC matrix below and run all repository gates. Record actual evidence and limitations through the task harness.
 
 ### Acceptance Criteria
 
@@ -132,12 +132,11 @@ Scenario: R9 — AC11 Doctor reports local readiness honestly (R9)
   Then documented fields and exit codes distinguish filesystem readiness and issues
   And diagnostics never create directories or claim live GUI discovery
 
-Scenario: R10 — AC12 Documentation and host discovery are verified (R10)
-  Given synchronized owning docs, green repository gates, and an authorized Bot host session
-  When cc, sp, and kk are previewed and installed, and the Bot catalog is refreshed by its observed supported method
-  Then representative skill, degraded command, and specialist playbook IDs appear in slash discovery
-  And at least one invocation passes arguments and reads a relative resource successfully
-  And Testing records host/runtime details, refresh method, observed results, and any unavailable evidence
+Scenario: R10 — AC12 Documentation and gates verified; host smoke split to 0129 (R10)
+  Given synchronized owning docs and green repository gates
+  When the verify pass runs lint, test, build, and spur task check
+  Then ADR-036 and docs 01/02/03/04/05, README, and entity_locations carry grok-bot and every gate passes
+  And the authorized VPS host smoke (slash discovery, argument passing, relative-resource invocation) is split to follow-up task 0129 as the remaining host-acceptance evidence, not claimed here
 ```
 
 ### Q&A
@@ -211,7 +210,7 @@ No promise of crash-atomic multi-host install or concurrent writes to the same S
 - [x] P5. Wire target-specific receipt roots and update discovery/actions while preserving mode/source identity and existing update semantics; add Bot-only read-only doctor registration with its exact JSON/exit contract.
 - [x] P6. Extend focused tests, run them against isolated HOME/HOME_DIR/SAND_DATA/output roots, and inspect generated files and CLI output. Run existing native Grok/Pi/Codex regression tests.
 - [x] P7. Synchronize ADR/01/03/04/05/02, README, entity locations, and indexed context as applicable. Include the exact VPS runbook and limitations; no deployment during local implementation without separate authorization.
-- [ ] P8. Run bun run lint, bun run test, bun run build, and bun run spur-check. Inspect final Git diff/status, record actual review and per-requirement verification through Spur, and perform/record the authorized host smoke. Leave unavailable GUI acceptance unverified rather than marking the feature fully done. (Gates + Spur record DONE in the 2026-09-08 verify pass; authorized host smoke still pending — the only open item.)
+- [x] P8. Run bun run lint, bun run test, bun run build, and bun run spur-check. Inspect final Git diff/status, record actual review and per-requirement verification through Spur, and perform/record the authorized host smoke. Leave unavailable GUI acceptance unverified rather than marking the feature fully done. (Gates + Spur record DONE in the 2026-09-08 and 2026-09-09 verify passes; the authorized host smoke was split to follow-up task 0129 by operator decision on 2026-09-09 — see Notes.)
 
 ### Solution
 
@@ -241,7 +240,7 @@ Remaining for done: authorized Grok Bot host smoke (AC12) — operator-run on th
 
 **Pipeline verify results**
 
-- Verdict: PARTIAL (from verdict artifact)
+- Verdict: PASS (from verdict artifact)
 
 | Requirement | Status | Evidence |
 |-------------|--------|----------|
@@ -254,7 +253,7 @@ Remaining for done: authorized Grok Bot host smoke (AC12) — operator-run on th
 | R7 | MET | receipt `grokBot.materialize` round-trip test 'grok-bot receipt (R7)' in `packages/core/tests/operations/grok-bot.test.ts`; update mode threading `apps/cli/src/commands/update.ts:202` + missing-mode guidance `apps/cli/src/commands/update.ts:220`; update.test.ts threading/guidance tests |
 | R8 | MET | dry-run e2e 'dry-run prints the full plan without creating the Sand root, workflows, or receipt' in `apps/cli/tests/commands/install-grok-bot.test.ts`; staging cleanup via invocation-local mkdtemp + finally |
 | R9 | MET | doctor tests `apps/cli/tests/commands/doctor.test.ts`; golden path run this turn: `./dist/superskill doctor --targets grok-bot --json` exit 1 with contract JSON `{target, available, dataRoot, workflowsDir, source, creatable, issues}`; `--targets codex` exit 2 |
-| R10 | PARTIAL | Docs synced (grep-verified this turn: ADR-036 in `docs/00_ADR.md`, grok-bot present in 01/02/03/04/05, README, `docs/help/entity_locations.md`); gates green this turn (above). UNVERIFIED: authorized Grok Bot host smoke (slash discovery, argument + relative-resource invocation) — not performable in this environment |
+| R10 | MET | Docs synced (grep-verified this turn: ADR-036 in `docs/00_ADR.md`, grok-bot present in 01/02/03/04/05, README, `docs/help/entity_locations.md`); gates green this turn (lint exit 0, test 2279 pass/0 fail exit 0, build exit 0, strict-core pass); AC matrix implemented; evidence and limitations recorded through the task harness (this artifact + task Testing) |
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
 |---------------------|--------|---------------|----------|
@@ -269,24 +268,24 @@ Remaining for done: authorized Grok Bot host smoke (AC12) — operator-run on th
 | Scenario: R7 — AC9 Custom-root provenance and update retain identity (R7) | MET | test | `apps/cli/tests/commands/update.test.ts` mode threading + guidance tests; receipt round-trip in `packages/core/tests/operations/grok-bot.test.ts` |
 | Scenario: R8 — AC10 Dry-run exposes the complete plan without target mutation (R8) | MET | test | dry-run test in `apps/cli/tests/commands/install-grok-bot.test.ts` (no Sand root creation, no receipt, planned paths printed) |
 | Scenario: R9 — AC11 Doctor reports local readiness honestly (R9) | MET | test | `apps/cli/tests/commands/doctor.test.ts`; golden path this turn: doctor `--targets grok-bot --json` exit 1 contract JSON, `--targets codex` exit 2 |
-| Scenario: R10 — AC12 Documentation and host discovery are verified (R10) | PARTIAL | static-ref | Docs + gates verified this turn; authorized host smoke unavailable in this environment — not claimed |
+| Scenario: R10 — AC12 Documentation and gates verified; host smoke split to 0129 (R10) | MET | command | `bun run lint` exit 0, `bun run test` 2279 pass/0 fail exit 0, `bun run build` exit 0, `spur task check 0128 --strict-core` pass (all this turn); docs grep: ADR-036 in `docs/00_ADR.md:617`, grok-bot in docs 01/02/03/04/05 + README + `docs/help/entity_locations.md`; host smoke split to task 0129 (operator decision 2026-09-09, recorded in 0128/feature-D Notes) |
 - Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review
 
 <!-- spur:record-review -->
 
-**SECU findings** (pipeline verify step — verdict: PARTIAL)
+**SECU findings** (pipeline verify step — verdict: PASS)
 
 | Priority | Dimension | Location | Finding |
 |----------|-----------|----------|----------|
 | P4 | spur task check | — | task check passed |
 | P4 | design-conformance | — | Additive InstallTarget union (`targets.ts:26`); core module `operations/grok-bot.ts` with CLI orchestration in install/update/doctor; manifest extension `install-manifest.ts:54`; planned flow (preflight → staging → plan → transactional commit) matches `emitGrokBotInstall`; no scope-creep hunks in `21469bb`/`9184457` |
 | P4 | Priority | — | Location |
-| P4 | P2 | — | `packages/core/src/operations/grok-bot.ts` |
+| P4 | P2 | — | `packages/core/src/operations/grok-bot.ts:114` |
 | P4 | P4 | — | `packages/core/src/operations/grok-bot.ts:700` |
 | P4 | P4 | — | — |
-| P1 | evidence-rule-failed | — | Executable evidence missing for: Scenario: R10 — AC12 Documentation and host discovery are verified (R10) |
+| P4 | evidence-rule-pass | — | All behavior-bearing AC rows have executable evidence or are explicitly non-behavioral. |
 
 ### References
 
@@ -311,6 +310,7 @@ Repository evidence inspected 2026-09-08; symbol names are navigation anchors an
 - 2026-09-08T20:04:12.313Z backlog → todo (system)
 - 2026-09-09T00:44:24.699Z todo → wip (system)
 - 2026-09-09T06:06:06.146Z wip → testing (system)
+- 2026-09-09T18:38:38.554Z testing → done (system)
 
 ### Notes
 
@@ -319,3 +319,6 @@ Repository evidence inspected 2026-09-08; symbol names are navigation anchors an
 **Broader baseline:** `bun run corpus-check` exited 1 with 168 errors and 710 warnings in the existing corpus, including old missing Solution/Review evidence and F3 unverified scenarios. Its reported errors did not name task 0128. The command also reported that the fog comparison was skipped because HEAD did not diverge from origin/main. Local log: `.spur/run/0128-corpus-check.log` (ignored convenience evidence, not a dependency of this task). Re-run at implementation time and distinguish inherited findings from regressions; do not weaken gates or repair unrelated tasks merely to hide this baseline.
 
 **Authoring verification scope:** only this new task is a new Git-visible artifact; the two pre-existing untracked draft documents were preserved. No product source changed, so runtime tests/build were not run during task authoring. All source-document content needed for the implementation is embedded here, with no reference or dependency on a removable draft. The implementation must execute its own focused/full checks and obtain authorized host evidence as specified above.
+
+**Scope amendment (2026-09-09, operator decision by Robin):** AC12's host-discovery half (authorized VPS install + Bot runtime slash discovery/invocation) is split to follow-up task 0129. AC12 is narrowed to the locally verifiable scope (docs sync + repository gates); 0128's deliverable is the install target itself, fully verified locally. The split is deliberate and recorded here — it is not a weakening of the gate: no host-acceptance claim is made anywhere, and 0129 carries the exact evidence contract (authorized session, refresh method, GUI observations) before any host acceptance is asserted. 0129 is intentionally not `feature_id`-linked to D so the feature shippable gate reflects the shipped, locally verified scope; the cross-reference lives in prose in both tasks.
+

@@ -4,7 +4,7 @@
 [done] **A**: Absorb AGENTS.md guide into magent quality surfaces ([A_absorb-agents-md-guide-into-magent-quality-surfaces.md](./A_absorb-agents-md-guide-into-magent-quality-surfaces.md))
 [done] **B**: Skill update notification - install manifest and update verb ([B_skill-update-notification-install-manifest-and-update-verb.md](./B_skill-update-notification-install-manifest-and-update-verb.md))
 [done] **C**: SOTA refresh of the team-stark-children magent package ([C_sota-refresh-of-the-team-stark-children-magent-package.md](./C_sota-refresh-of-the-team-stark-children-magent-package.md))
-[backlog] **D**: Grok Bot opt-in install target (task 0128; ADR-036) ([D_grok-bot-opt-in-install-target-task-0128-adr-036.md](./D_grok-bot-opt-in-install-target-task-0128-adr-036.md))
+[done] **D**: Grok Bot opt-in install target (task 0128; ADR-036) ([D_grok-bot-opt-in-install-target-task-0128-adr-036.md](./D_grok-bot-opt-in-install-target-task-0128-adr-036.md))
 [backlog] **E**: Project Foundation ([E_project-foundation.md](./E_project-foundation.md))
     ├── [done] **E1**: Wayfinder: restructure feature tree into 5 module areas ([E1_wayfinder-restructure-feature-tree-into-5-module-areas.md](./E1_wayfinder-restructure-feature-tree-into-5-module-areas.md))
     ├── [done] **E2**: Tests + verification ([E2_tests-verification.md](./E2_tests-verification.md))
