@@ -62,10 +62,10 @@ Tools are bound by **role**; roles are permanent, bindings evolve. This table is
 project-variable section besides Lessons — update the binding when the toolchain migrates.
 
 | Role | Current binding | Notes |
-|------|-----------------|-------|
+| ------ | ----------------- | ------- |
 | Spec lifecycle — tasks | `spur task` (WBS markdown task files) | Task files are tool-owned; edit through the tool, never the Write tool |
 | Spec lifecycle — features | `spur feature` (feature markdown files) | Same tool-owned rule |
-| Delivery harness | `spur` (constraint rules, workflows, agent runner, history analytics) | Quality gates are self-hosted through it where possible. `spur task check --corpus` ratchets accepted terminal legacy-task errors through `config/corpus-baseline.json`; current and new work must pass normal task checks. |
+| Delivery harness | `spur` (constraint rules, workflows, agent runner, history analytics) | Quality gates are self-hosted through it where possible. `spur task check --corpus` (`bun run corpus-check`) is an explicit, unsuppressed audit of the whole corpus — spur 0.3.78 retired the `config/corpus-baseline.json` ratchet, so the audit is advisory and stays out of the `spur-check` gate; current and new work must pass normal task checks. |
 | Agent-facing wrappers | per-project plugin dir (e.g. `plugins/sp/`) | **Fat Skills, thin others:** skills are the SSOT for agent-facing behavior and may be arbitrarily rich; slash commands and subagents are thin wrappers of skills (every agent supports skills; command/subagent support varies) |
 
 ## 4. Common file layout
@@ -76,7 +76,7 @@ Each project's `AGENTS.md` embeds an instantiated copy of this table (§4.4). A 
 **one** doc; other docs link to it, never restate it.
 
 | Doc | Owns the question | Authority | Read / edit when |
-|-----|-------------------|-----------|------------------|
+| ----- | ------------------- | ----------- | ------------------ |
 | `docs/00_ADR.md` | **WHY** — which cross-cutting decision was made, and the one-line reason | **Authoritative** (wins all content) | Read before any structural change; add a dated entry before diverging from a decision |
 | `docs/01_PRD.md` | **WHAT** — product vision, users, scope (in / out / deferred) | **Authoritative on scope** | Read before adding a command/feature; edit when scope changes |
 | `docs/02_ROADMAP.md` | **WHEN** — phases, current vs deferred, sequencing | Derived | Read to place work in a phase; edit when phase status changes |
@@ -96,7 +96,7 @@ Each project's `AGENTS.md` embeds an instantiated copy of this table (§4.4). A 
 ### 4.2 Working layers (outside the authority chain)
 
 | Location | Purpose | Rules |
-|----------|---------|-------|
+| ---------- | --------- | ------- |
 | `docs/plans/YYYY-MM-DD-<topic>.md` | Dated working documents: research, triage, design discussions, decision records-in-progress | They **record**, they do not **govern**. Once concluded, immutable except dated correction sections. Decisions they reach must be promoted into `00`–`05` to take effect |
 | `docs/tasks/` | Task files | Tool-owned (§3). Never edited with raw file writes |
 | `docs/features/` | Feature files | Tool-owned (§3). Same rule |
@@ -157,7 +157,7 @@ it. Each trigger below has a stable ID (referenced by doc frontmatter `sync:` li
 names the docs that must be touched **in the same commit / same change**:
 
 | ID | When this happens | Touch (same change) |
-|----|-------------------|---------------------|
+| ---- | ------------------- | --------------------- |
 | T1 | New cross-cutting decision, or reversal of one | `00` **first** (dated entry), then `03` mechanism, `01` if scope shifts |
 | T2 | A code change would contradict an existing ADR | **Stop.** Add the superseding/amending ADR entry first — never silently diverge |
 | T3 | Command, flag, config key, env var, schema, or DTO added/changed | `04` + the `AGENTS.md` surface block |

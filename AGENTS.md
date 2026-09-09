@@ -59,7 +59,7 @@ so the two axes never collide. Read it before editing any doc below. Each number
 its contract as YAML frontmatter (constitution §4.3).
 
 | Doc | Owns the question | Authority | Read / edit when |
-|-----|-------------------|-----------|------------------|
+| ----- | ------------------- | ----------- | ------------------ |
 | `docs/00_ADR.md` | **WHY** — which cross-cutting decision was made, and the one-line reason | **Authoritative** (wins all) | Read before any structural change; add a dated entry before diverging from a decision |
 | `docs/01_PRD.md` | **WHAT** — product vision, users, scope (in / out / deferred) | **Authoritative on scope** | Read before adding a command/feature; edit when scope changes |
 | `docs/02_ROADMAP.md` | **WHEN** — phases, current vs deferred, sequencing | Derived | Read to place work in a phase; edit when phase status changes |
@@ -89,6 +89,7 @@ touches a command/config/schema keeps `04_DESIGN.md` in sync in the **same commi
 - Imports/exports are auto-sorted by Biome — don't hand-order them.
 - `any` is an **error** (`noExplicitAny`). Narrow the type; if unavoidable, justify with `// biome-ignore`.
 - TS source imports use extensionless relative specifiers. Library builds patch emitted `dist/*.js` after `tsc`.
+
 ```bash
 bun run lint       # biome check + typecheck  (the gate)
 bun run format     # biome check --write       (autofix)
@@ -98,8 +99,8 @@ bun run test:full  # bun test with lcov coverage + snapshots
 bun run build      # compile to standalone binary
 bun run dev        # watch mode (runs CLI from source)
 bun run check      # lint + test (CI gate)
-bun run corpus-check # two-sided legacy corpus ratchet
-bun run spur-check # lint + pre-check rules + corpus ratchet + test + post-check rules
+bun run corpus-check # explicit corpus audit (spur >=0.3.78: unsuppressed, advisory — not part of the gate)
+bun run spur-check # lint + pre-check rules + test + post-check rules
 ```
 
 CLI binary: `apps/cli` exposes `bin: { superskill: "dist/index.js" }`. Root `bun run build` compiles the standalone executable to `dist/superskill`; package `prepack` runs `build:bundle` to create the published `apps/cli/dist/index.js` bundle and package assets.
@@ -110,7 +111,7 @@ CLI binary: `apps/cli` exposes `bin: { superskill: "dist/index.js" }`. Root `bun
 2. `bun run test` passes; no test skipped, `.skip`'d, or commented out to go green.
 3. `bun run build` succeeds across all workspaces that declare a `build` script.
 4. `git status` shows only intentional changes.
-5. `bun run spur-check` — recommended pre-check rules (33) + corpus baseline ratchet + post-check rules (coverage-gate + tsdoc-export + skill-citations-resolve) all green.
+5. `bun run spur-check` — recommended pre-check rules (33) + post-check rules (coverage-gate + tsdoc-export + skill-citations-resolve) all green. (`spur task check --corpus` stays available via `bun run corpus-check` as an explicit, unsuppressed audit — spur 0.3.78 retired the `config/corpus-baseline.json` ratchet, so it is advisory and no longer part of the gate.)
 
 ## Testing
 
