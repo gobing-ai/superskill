@@ -50,6 +50,8 @@ export interface InstallManifestV1 {
     superskillVersion: string;
     installed: InstallSnapshot;
     upstream: InstallSnapshot;
+    /** grok-bot only (task 0128): how the Bot catalog was materialized. */
+    grokBot?: { materialize: 'bridge' | 'full' };
 }
 
 /**
@@ -266,6 +268,14 @@ function validateInstallManifest(value: unknown, label: string): InstallManifest
     const marketplaceLocator =
         rec.marketplaceLocator === undefined ? undefined : requiredString(rec, 'marketplaceLocator', label);
     const resolvedRef = rec.resolvedRef === undefined ? undefined : requiredString(rec, 'resolvedRef', label);
+    let grokBot: InstallManifestV1['grokBot'];
+    if (rec.grokBot !== undefined) {
+        const g = rec.grokBot as Record<string, unknown> | null;
+        if (!g || typeof g !== 'object' || (g.materialize !== 'bridge' && g.materialize !== 'full')) {
+            throw new Error(`Install manifest grokBot.materialize must be bridge or full: ${label}`);
+        }
+        grokBot = { materialize: g.materialize };
+    }
     return {
         schemaVersion: 1,
         plugin,
@@ -278,6 +288,7 @@ function validateInstallManifest(value: unknown, label: string): InstallManifest
         superskillVersion,
         installed: validateSnapshot(rec.installed, `${label} installed`),
         upstream: validateSnapshot(rec.upstream, `${label} upstream`),
+        ...(grokBot !== undefined ? { grokBot } : {}),
     };
 }
 

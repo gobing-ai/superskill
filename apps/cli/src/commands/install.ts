@@ -18,11 +18,18 @@ import {
     adaptSubagentToCodex,
     adaptSubagentToPi,
     assembleMagentContent,
+    assertBotHostGlobal,
     assertSafePathSegment,
     CLAUDE_PACKAGE_FILES,
+    collectBotSkillEntries,
+    emitGrokBotInstall,
+    type GrokBotSource,
     getGitHubToken,
+    INSTALL_TARGETS,
     type InstallManifestV1,
+    type InstallTarget,
     isClaudeImportStyle,
+    isInstallTarget,
     listRegularFilesUnder,
     listResolvablePlugins,
     listRuleMarkdownFiles,
@@ -35,8 +42,10 @@ import {
     mapPluginToRulesync,
     materializeRepoSubdir,
     parseGitHubRepoUrl,
+    planGrokBotInstall,
     resolveMarketplaceRegistration,
     resolvePlugin,
+    resolveSandRoot,
     rewriteSkillReferences,
     runRulesync,
     snapshotFiles,
@@ -95,19 +104,33 @@ export function registerInstall(program: Command): void {
             'Remove leftover dest skill dirs matching <plugin>-* on flattened skills dests (shared root safe)',
             false,
         )
+        .option(
+            '--materialize <mode>',
+            "grok-bot only: catalog materialization mode — 'bridge' (default; canonical copy + thin pointer) or 'full' (everything under workflows/)",
+        )
         .action(async (plugin, options) => {
             try {
                 const config = loadConfig();
-                const targets =
-                    options.targets !== undefined
-                        ? parseTargets(options.targets)
-                        : config.targets.length > 0
-                          ? [...config.targets]
-                          : parseTargets(undefined);
+                const resolved = resolveInstallTargets(options.targets, config.targets);
+                if (resolved.botFiltered) {
+                    echoError(
+                        "Target 'grok-bot' is opt-in only: it is excluded from implicit selections — pass it explicitly via --targets grok-bot",
+                    );
+                }
+                const targets = resolved.targets;
                 const global = options.global !== false;
                 const dryRun = options.dryRun === true;
                 const verbose = options.verbose === true;
                 const prune = options.prune === true;
+                const materializeRaw = options.materialize as string | undefined;
+                if (materializeRaw !== undefined && materializeRaw !== 'bridge' && materializeRaw !== 'full') {
+                    echoError(`Invalid --materialize '${materializeRaw}' — expected 'bridge' or 'full'`);
+                    process.exit(2);
+                }
+                if (materializeRaw !== undefined && !targets.includes('grok-bot')) {
+                    echoError("--materialize applies only to target 'grok-bot'");
+                    process.exit(2);
+                }
                 const marketplaceSource = options.marketplaceSource as MarketplaceSource | undefined;
                 const configuredPlugin = config.plugins.find((entry) => entry.name === plugin);
                 await executeInstall(plugin, targets, {
@@ -121,6 +144,7 @@ export function registerInstall(program: Command): void {
                     dryRun,
                     verbose,
                     prune,
+                    materialize: materializeRaw as 'bridge' | 'full' | undefined,
                     magent: options.magent as string | undefined,
                     marketplaceSource,
                 });
@@ -148,6 +172,8 @@ export interface InstallOptions {
     marketplaceSource?: MarketplaceSource;
     /** Remove or replace only dest skill dirs matching `<plugin>-*` on flattened skills dests (R4/R5). */
     prune?: boolean;
+    /** grok-bot materialization mode (task 0128): bridge (default) or full. */
+    materialize?: 'bridge' | 'full';
 }
 
 interface InstallDependencies {
@@ -314,7 +340,7 @@ export async function resolveRemoteMarketplace(
 /** Execute the full install flow: resolve → map → pipeline → rulesync → dispatch. */
 export async function executeInstall(
     plugin: string,
-    targets: Target[],
+    targets: readonly InstallTarget[],
     options: InstallOptions,
     dependencies: InstallDependencies = {},
 ): Promise<void> {
@@ -341,7 +367,17 @@ export async function executeInstall(
         );
     }
 
-    const incompatibleNativeTargets = targets.filter(
+    // grok-bot is install-only (task 0128 / ADR-036): partition it out before any
+    // per-target rulesync/native logic and fail fast on its preflight contract.
+    const botRequested = targets.includes('grok-bot');
+    const execTargets = targets.filter((t): t is Target => t !== 'grok-bot');
+    let sandRoot = null;
+    if (botRequested) {
+        assertBotHostGlobal(options.global);
+        sandRoot = resolveSandRoot({ sandData: process.env.SAND_DATA, homeDir: resolveHomeDir(), createMissing: true });
+    }
+
+    const incompatibleNativeTargets = execTargets.filter(
         (target) => target === 'claude' || target === 'omp' || target === 'grok',
     );
     if (!hasAllFeatures && incompatibleNativeTargets.length > 0) {
@@ -422,9 +458,88 @@ export async function executeInstall(
             }
         }
 
+        // Step 2b: grok-bot emission (task 0128 / ADR-036) — flat Bot catalog into the
+        // Sand data root. Bot consumes only the mapper's skill-shaped output
+        // (skills/commands/subagents all fold into skills/); hooks/mcp/magents are
+        // unsupported by the Bot runtime and are reported, not silently dropped.
+        if (botRequested && sandRoot) {
+            const skippedKinds = [
+                mapResult.hooks ? 'hooks' : null,
+                mapResult.mcp ? 'mcp' : null,
+                mapResult.magents > 0 ? 'magents' : null,
+                mapResult.scripts > 0 ? 'scripts' : null,
+            ].filter((kind): kind is string => kind !== null);
+            if (skippedKinds.length > 0) {
+                echo(`grok-bot: skipping artifact classes unsupported by the Bot runtime: ${skippedKinds.join(', ')}`);
+            }
+            const botEntries = collectBotSkillEntries(join(outputDir, 'skills'));
+            if (botEntries.length === 0) {
+                throw new Error(
+                    `Plugin '${plugin}' produced no skill-shaped artifacts (skills/commands/subagents) for target 'grok-bot'`,
+                );
+            }
+            const botSource: GrokBotSource = {
+                channel: resolution.channel,
+                locator: resolution.marketplaceLocator ?? '@gobing-ai/superskill',
+            };
+            const botMaterialize = options.materialize ?? 'bridge';
+            const botPlan = planGrokBotInstall({
+                entries: botEntries,
+                resolution: sandRoot,
+                plugin,
+                source: botSource,
+                prune: options.prune === true,
+                materialize: botMaterialize,
+            });
+            if (options.dryRun) {
+                for (const item of botPlan.owned) {
+                    echo(`grok-bot (dry-run): ${item.kind} workflows/${item.id} (${botMaterialize})`);
+                }
+                for (const id of botPlan.skippedForeign) echo(`grok-bot (dry-run): skip foreign workflow ${id}`);
+            } else {
+                const nowIso = new Date().toISOString();
+                const emitted = await emitGrokBotInstall({
+                    entries: botEntries,
+                    resolution: sandRoot,
+                    plugin,
+                    source: botSource,
+                    materialize: botMaterialize,
+                    superskillVersion: cliVersion,
+                    nowIso,
+                    prune: options.prune === true,
+                    pruneCandidates: botPlan.pruneCandidates,
+                    // Receipt write lives inside the emit rollback scope (R6): a
+                    // manifest failure restores prior Bot workflows/canonicals.
+                    finalize: (installed) =>
+                        writeInstallManifest(sandRoot.dataRoot, 'grok-bot', plugin, {
+                            schemaVersion: 1,
+                            plugin,
+                            target: 'grok-bot',
+                            channel: resolution.channel,
+                            upstreamVersion: resolution.upstreamVersion,
+                            ...(resolution.marketplaceLocator !== undefined
+                                ? { marketplaceLocator: resolution.marketplaceLocator }
+                                : {}),
+                            ...(resolvedRef !== undefined ? { resolvedRef } : {}),
+                            installedAt: nowIso,
+                            superskillVersion: cliVersion,
+                            installed,
+                            upstream: snapshotFiles(pluginRoot, listRegularFilesUnder(pluginRoot)),
+                            grokBot: { materialize: botMaterialize },
+                        }),
+                });
+                if (emitted.pruned.length > 0) {
+                    echo(
+                        `grok-bot: pruned ${emitted.pruned.length} obsolete workflow(s): ${emitted.pruned.join(', ')}`,
+                    );
+                }
+                echo(`grok-bot: ${botEntries.length} skills at ${sandRoot.workflowsDir}`);
+            }
+        }
+
         // Step 3: Build target-specific rulesync inputs through the conversion pipeline.
         const targetInputRoots = new Map<Target, string>();
-        for (const target of targets) {
+        for (const target of execTargets) {
             const targetInputRoot = prepareTargetRulesyncInput(outputDir, target, plugin);
             targetInputRoots.set(target, targetInputRoot);
         }
@@ -436,8 +551,10 @@ export async function executeInstall(
         const rulesyncFeatures: Array<'skills' | 'mcp'> = [];
         if (mapResult.skills + mapResult.commands + mapResult.subagents > 0) rulesyncFeatures.push('skills');
         if (mapResult.mcp) rulesyncFeatures.push('mcp');
-        const rulesyncTargets = targets.filter((t) => t !== 'claude' && t !== 'hermes' && t !== 'omp' && t !== 'grok');
-        if (targets.includes('hermes') && !targets.includes('opencode')) {
+        const rulesyncTargets = execTargets.filter(
+            (t) => t !== 'claude' && t !== 'hermes' && t !== 'omp' && t !== 'grok',
+        );
+        if (execTargets.includes('hermes') && !execTargets.includes('opencode')) {
             if (!targetInputRoots.has('opencode')) {
                 targetInputRoots.set('opencode', prepareTargetRulesyncInput(outputDir, 'opencode', plugin));
             }
@@ -457,7 +574,7 @@ export async function executeInstall(
         // Shared skills roots stay multi-plugin: only dirs matching `^<plugin>-` are touched.
         if (options.prune) {
             const outputRootPre = options.outputRoot ?? (options.global ? resolveHomeDir() : process.cwd());
-            prunePluginDestSkills(outputDir, plugin, targets, outputRootPre, options);
+            prunePluginDestSkills(outputDir, plugin, execTargets, outputRootPre, options);
         }
 
         // R6 dual-path hygiene: Grok loads both native plugins (/plugin:cmd) and
@@ -820,25 +937,25 @@ export async function executeInstall(
             }
         }
         // Magents optional: plugins without magents/ (and no --magent) no-op cleanly.
-        const magentFiles = emitMagents(plugin, targets, outputDir, outputRoot, options);
+        const magentFiles = emitMagents(plugin, execTargets, outputDir, outputRoot, options);
         for (const [target, files] of magentFiles) {
             addReceiptFiles(target, files);
         }
         // Plugin-level rules optional: plugins without rules/ no-op cleanly.
-        const ruleFilesWritten = emitPluginRules(pluginRoot, targets, outputRoot, options);
+        const ruleFilesWritten = emitPluginRules(pluginRoot, execTargets, outputRoot, options);
         for (const [target, files] of ruleFilesWritten) {
             addReceiptFiles(target, files);
         }
         // Plugin-level scripts → shared agents scripts root for rulesync + hermes only.
         // Native class (claude/omp/grok) already receives scripts/ via host plugin install (R3-B / R6);
         // do not invent ~/.agents/scripts as a required second tree for native-only installs (AC5).
-        const needsSharedScriptsRoot = targets.some((t) => t !== 'claude' && t !== 'omp' && t !== 'grok');
+        const needsSharedScriptsRoot = execTargets.some((t) => t !== 'claude' && t !== 'omp' && t !== 'grok');
         if (needsSharedScriptsRoot) {
             const scriptCount = stagePluginScripts(outputDir, plugin, outputRoot, options, mapResult.scripts);
             if (scriptCount > 0 && !options.dryRun) {
                 const scriptDest = join(outputRoot, '.agents', 'scripts', plugin);
                 const scriptFiles = listRegularFilesUnder(scriptDest);
-                for (const target of targets) {
+                for (const target of execTargets) {
                     if (target !== 'claude' && target !== 'omp' && target !== 'grok') {
                         addReceiptFiles(target, scriptFiles);
                     }
@@ -866,7 +983,7 @@ export async function executeInstall(
         } else {
             writeInstallProvenance({
                 plugin,
-                targets,
+                targets: execTargets,
                 outputRoot,
                 pluginRoot,
                 resolution,
@@ -1528,6 +1645,52 @@ export function parseTargets(raw: string | undefined): Target[] {
 }
 
 /**
+ * Parse an explicit `--targets` list against the install-target union (task 0128
+ * / ADR-036). Bare `all` and an omitted list expand to the nine execution
+ * targets only — grok-bot is opt-in and never joins a default expansion; a
+ * combined `all,<t>` stays invalid (same shape as parseTargets).
+ */
+export function parseInstallTargets(raw: string): InstallTarget[] {
+    if (raw === 'all') return [...TARGETS];
+    const requested = raw
+        .split(',')
+        .map((t) => t.trim())
+        .filter((t) => t.length > 0);
+    for (const t of requested) {
+        if (!isInstallTarget(t)) {
+            throw new Error(`Unknown target '${t}'. Valid targets: ${INSTALL_TARGETS.join(', ')}`);
+        }
+    }
+    return requested as InstallTarget[];
+}
+
+/**
+ * Shared target-selection policy for install/update (task 0128 R1). An explicit
+ * CLI list wins verbatim (via parseInstallTargets). Without one, configured
+ * targets are honored, but a configured grok-bot can never enable itself: it is
+ * filtered with guidance, and a selection that becomes empty fails instead of
+ * silently installing nothing (or, worse, silently expanding to all targets).
+ */
+export function resolveInstallTargets(
+    raw: string | undefined,
+    configTargets: readonly string[],
+): { targets: InstallTarget[]; botFiltered: boolean } {
+    if (raw !== undefined) return { targets: parseInstallTargets(raw), botFiltered: false };
+    if (configTargets.length === 0) return { targets: [...TARGETS], botFiltered: false };
+    const configured = configTargets.filter((t) => isInstallTarget(t));
+    const filtered = configured.filter((t): t is Target => (TARGETS as readonly string[]).includes(t));
+    const botFiltered = configured.some((t) => t === 'grok-bot');
+    if (filtered.length === 0) {
+        throw new Error(
+            `Configured targets contain only 'grok-bot', which is install-only and opt-in. ` +
+                `Re-run with an explicit --targets list (e.g. --targets grok-bot) to install to Grok Bot, ` +
+                `or add execution targets to superskill.jsonc.`,
+        );
+    }
+    return { targets: filtered, botFiltered };
+}
+
+/**
  * Locate the CLI's own installed package root for self-location (R6/T5).
  *
  * In `bun build --target bun` output, `import.meta.dir` is the real `dist/`
@@ -1986,7 +2149,7 @@ function writeInstallProvenance(args: {
  * would cause the verbose echo to inspect a different directory than
  * rulesync wrote to.)
  */
-function resolveHomeDir(): string {
+export function resolveHomeDir(): string {
     return process.env.HOME_DIR ?? homedir();
 }
 

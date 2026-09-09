@@ -19,7 +19,7 @@ sync: [T3]
 ## Phase 1 install surface
 
 ```text
-superskill install <plugin> [--marketplace <locator>] [--targets <list>] [--no-global]
+superskill install <plugin> [--marketplace <locator>] [--targets <list>] [--no-global] [--materialize <mode>]
     [--magent <name>] [--marketplace-source <directory|github>] [--dry-run] [--verbose]
 
 superskill update [plugin] [--check] [--targets <list>] [--marketplace <locator>] [--no-global]
@@ -30,7 +30,8 @@ superskill update [plugin] [--check] [--targets <list>] [--marketplace <locator>
 | `<plugin>` | Required plugin name — a **bare segment** (`assertSafePathSegment`); never a URL/path |
 | `--marketplace <locator>` | Marketplace locator (ADR-034). **Local-first disambiguation:** an existing local path is local; only a non-existent `^[\w.-]+/[\w.-]+$` is GitHub shorthand; `https://`/`git@` are always remote. Local probe: direct file (`.../marketplace.json`) → `<X>/marketplace.json` → `<X>/.claude-plugin/marketplace.json`. Remote content caches at `~/.cache/superskill/marketplaces/<owner>/<repo>/<ref>/`. Overrides configured plugin path and ambient discovery |
 | `--marketplace-source <mode>` | **Deprecated** (ADR-034): warns to stderr, keeps behavior, removal planned. Prefer `--marketplace <locator>` |
-| `--targets <list>` | Comma-separated target names or `all`; overrides configured targets |
+| `--targets <list>` | Comma-separated target names or `all`; overrides configured targets. `all` excludes `grok-bot` (ADR-036): the Bot target is install-only and opt-in — passing it without `--targets grok-bot` errors with guidance |
+| `--materialize <mode>` | `bridge` (default) \| `full` — grok-bot only (ADR-036). `bridge` writes the canonical copy under `<sandRoot>/.superskill/grok-bot/skills/<id>/` plus a thin `workflows/<id>/SKILL.md` pointer; `full` writes everything under `workflows/<id>/`. Other targets reject the flag |
 | `superskill.jsonc` | Project-local JSONC; supports line/block comments and trailing commas |
 | `version` | Literal `1` |
 | `plugins` | `{ name: string, path: string }[]`; matching path is used when `--marketplace` is absent |
@@ -69,6 +70,34 @@ default `execution`) and maps it to Codex per-agent `model` and
 values throw at install time. The tier classification rubric lives at
 `plugins/cc/skills/cc-agents/references/model-tiers.md`; the agent quality
 rubric's `model-fit` dimension verifies the declared tier at authoring time.
+
+For the `grok-bot` target the mapped staging `skills/` catalog (flat, one directory per skill with
+`SKILL.md` YAML frontmatter `name`/`description`) is published as-is (ADR-036):
+
+- **Sand root resolution** (host-global only, never creates alias roots): `SAND_DATA` env (absolute,
+  existing or creatable) → existing `<home>/sand-data` → existing `<home>/agent-data` containing
+  `workflows/` or `managed-skills/`. Set-but-blank `SAND_DATA` and dangling alias symlinks fail.
+- **Dialect**: skill prose has `/skill:<id>` rewritten to `/<id>` (Grok Bot's `/cc-skill-add` runtime
+  registers slash commands by skill name).
+- **Ownership**: each emitted `workflows/<id>/` gets a `.superskill-origin.json` marker (schema v1,
+  content hashes, `mode: bridge\|full`, `canonicalPath` for bridge). Reinstall/prune only touch
+  marker-gated entries; unmarked or foreign-owned entries fail instead of being overwritten.
+  Locally edited owned files or unowned extras that a replace/prune would destroy are a clear
+  preflight conflict (no force/adopt flag in v1). An explicit bridge→full reinstall also removes
+  the obsolete canonical tree for that workflow.
+- **Emission**: all workflow/canonical writes and prunes run inside one `FilesystemTransaction`;
+  the receipt write is part of the rollback scope, so an emission or receipt failure restores
+  prior Bot files and reports rollback errors.
+- **Receipt**: recorded at `<sandRoot>/.superskill/manifests/grok-bot/<plugin>/.superskill-manifest.json`;
+  the schema gains optional `grokBot: { materialize: 'bridge' \| 'full' }`.
+- **Doctor**: `superskill doctor --targets grok-bot [--json]` is a read-only health check of the
+  Sand root + catalog (per-workflow marker/canonical/drift issues). Exit 0 healthy/creatable, 1
+  broken, 2 usage. No Sand root resolving is `available` for first install.
+
+`superskill update` scans the Bot manifest as an extra candidate root when a Sand root resolves;
+without one it warns on stderr and skips `grok-bot`. A stale Bot marketplace install is
+reinstalled with the receipt's recorded `grokBot.materialize` mode (never silently switched); a
+Bot receipt without the field skips the Bot reinstall and prints explicit reinstall guidance.
 
 ## Command surface
 

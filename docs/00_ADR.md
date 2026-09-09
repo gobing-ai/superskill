@@ -143,6 +143,8 @@ Reversals = new entries naming what they supersede. Burned numbers get a `Skippe
 
 **Amendment (2026-06-21, task 0045 R1).** `RulesyncOptions` gains an optional `outputRoot?: string` that overrides the root rulesync writes into. When omitted, the original ADR-010 derivation holds (`global ? homedir() : process.cwd()`). This widens — does not replace — the original decision: production install never sets `outputRoot` (global → `$HOME` is correct), but tests and a future `--output <dir>` flag can isolate writes to a temp root. The override is threaded uniformly into `runRulesync`, surrogate copies (hermes/omp), and Pi native-agent dispatch, closing the gap where the rulesync skill payload silently ignored `outputRoot` and leaked to `$HOME`/`cwd`. Additionally, `executeInstall` pre-creates per-target skills parent dirs (via `TARGET_SKILLS_RELDIR`, project mode) before rulesync writes, preventing an `ENOENT mkdir` crash on `install --no-global` from a clean cwd (task 0045 R2).
 
+**Target-specific exception (2026-09-08, task 0128 / ADR-036).** The install-only target `grok-bot` derives its per-target scope root from the resolved Sand data root (`SAND_DATA` / home fallbacks), not from `homedir()`/`cwd`; it is outside the rulesync paths this ADR governs and never uses `outputRoot` derivation.
+
 **Amendment (2026-06-23).** Pi, codex, and antigravity (cli + ide) now all route to the `codexcli` rulesync target, which writes skills to `~/.agents/skills/` (global) / `.agents/skills/` (project). Research confirms Pi, OMP, and Antigravity 2.0 all natively support `~/.agents/skills/`. This eliminates duplicate skill copies when an agent reads from both its own directory and `~/.agents/skills/`. OMP's superskill-owned copy step is removed — it reads from `~/.agents/skills/` natively. Only hermes retains a superskill copy (from opencode). `TARGET_TO_RULESYNC` updated: `pi` and `antigravity-*` now map to `'codexcli'`. `TARGET_SKILLS_RELDIR` updated to match.
 
 **Amendment (2026-07-07, task 0072).** Supersedes the 2026-06-23 amendment for the Antigravity targets only. The 2026-06-23 unification claim was wrong for `antigravity-cli` / `antigravity-ide`: the Antigravity CLI (`agy`) reads global skills from `~/.gemini/antigravity-cli/skills/` and the Antigravity IDE reads from `~/.gemini/config/skills/` — neither reads `~/.agents/skills/`. The unification still holds for `codex` / `pi` / `omp`, which all natively read `~/.agents/skills/`. `TARGET_TO_RULESYNC['antigravity-cli']` and `TARGET_TO_RULESYNC['antigravity-ide']` revert to their native rulesync strings (`'antigravity-cli'` / `'antigravity-ide'`), and rulesync's native Antigravity generators (verified against `vendors/rulesync/src/features/skills/antigravity-{cli,ide}-skill.ts`) write to the correct global dirs. `TARGET_TO_RULESYNC_HOOKS` was already correct (per the 2026-06-23 amendment's own exception for hooks). Re-verified empirically: `bun run install cc --targets antigravity-cli,antigravity-ide --global` against an isolated `$HOME` lands skills at the expected paths; `codex` / `pi` / `omp` paths unchanged. Downstream docs (`docs/03_ARCHITECTURE.md`, `docs/help/cmd_install.md`) and tests (`packages/core/tests/targets.test.ts`, `apps/cli/tests/commands/install.integration.test.ts`) updated to match.
@@ -600,6 +602,78 @@ only additive scope: a release-smoke `update --check` step in the release
 checklist and bundled-channel `update` printing the package-manager upgrade
 command (the bundle is version-locked to the CLI).
 
+**Target-specific exception (2026-09-08, task 0128 / ADR-036).** For the
+install-only `grok-bot` target, the manifest scope root is the resolved Sand
+data root (receipt at
+`<sandRoot>/.superskill/manifests/grok-bot/<plugin>/.superskill-manifest.json`),
+and schema v1 gains a backward-compatible optional `grokBot: { materialize:
+'bridge' | 'full' }` field emitted only for Bot; existing targets and legacy
+receipts without the field remain readable.
+
 **Detail:** see `docs/design/skill-update-notification.md` (surface + schema +
 diff algorithm); `docs/04_DESIGN.md` updates land in the same commit as the
 verb (T3).
+
+## ADR-036: `grok-bot` is an explicit opt-in, install-only target scoped to a Sand root
+
+**Status:** Accepted (design) · **Date:** 2026-09-08 · **Task:** 0128
+
+**Decision.** Plugin `install`/`update` gain a tenth, install-only target id
+`grok-bot` that publishes a flat skill catalog into Grok Bot's Sand data root
+(`SAND_DATA`, default `$HOME/sand-data`, alias `$HOME/agent-data`):
+`workflows/<id>/SKILL.md` with Bot-dialect frontmatter (`name` = directory id,
+nonempty string `description`). `grok-bot` is deliberately outside the existing
+`TARGETS` execution/authoring union: it expands no executor mapping, joins no
+rulesync/native/magent/rule/script path, and appears only in
+`INSTALL_TARGETS = [...TARGETS, 'grok-bot']` used by plugin install/update and
+the new `superskill doctor --targets grok-bot` diagnostic. Bot is opt-in only:
+omitted/empty configured targets and bare `--targets all` expand to the existing
+nine regardless of any Sand detection on the machine; only an explicit target
+list naming `grok-bot` (or an equivalent programmatic selection) enables it.
+Bot installs are host-global only (`--no-global` + explicit Bot fails
+preflight).
+
+Materialization has two modes, default `bridge`: bridge writes the adapted
+canonical tree under `<sandRoot>/.superskill/grok-bot/skills/<id>/` and a thin
+`workflows/<id>/SKILL.md` pointing at it; `full` publishes the whole adapted
+tree under `workflows/<id>/`. Ownership is marker-based
+(`.superskill-origin.json`, schemaVersion 1, per-workflow hashes; private
+canonical dirs carry equivalent evidence) — a directory prefix never grants
+ownership, and unmarked/foreign/malformed markers fail replacement instead of
+overwriting. Provenance reuses the ADR-031/035 manifest `InstallManifestV1`
+with a backward-compatible optional `grokBot: { materialize }` field, scoped
+per target at the Sand root: `<sandRoot>/.superskill/manifests/grok-bot/<plugin>/.superskill-manifest.json`.
+
+**Why a Sand-owned canonical copy instead of pointing at laptop output.**
+Mapping is invocation-local staging; commands/agents have no durable SKILL.md
+until adapted; shared `~/.agents/skills` can be stale or use a foreign dialect
+(Pi colon prefix), and the Bot runtime may outlive the laptop that produced a
+bridge. One stable, Bot-host-owned canonical location makes standalone Bot
+installs, reinstall, update, and prune deterministic without touching another
+target's files — canonical selection resolves to exactly one location rather
+than a fall-through list of unrelated installs.
+
+**Why marker-gated ownership instead of prefix prune.** The existing flattened
+prune is prefix-scoped over a single output root; Sand `workflows/` is a shared
+host tree where a name prefix proves nothing. Per-file hashes make idempotent
+reinstall, drift detection, and plugin+source-scoped `--prune` honest, and keep
+no-prune obsolete IDs intact.
+
+**Target-specific root exception (amends ADR-010/ADR-035 scope).** ADR-010's
+output-root derivation (`global ? homedir() : process.cwd()`) and ADR-035's
+receipt scope gain one documented exception: for `grok-bot`, the per-target
+scope root is the resolved Sand data root, resolved from `SAND_DATA` or the
+documented home fallbacks, never created implicitly, and shared by install,
+update, and doctor. Existing targets keep their HOME/project roots unchanged.
+
+**Doctor scope.** Only `superskill doctor --targets grok-bot [--json]` exists;
+it is a read-only filesystem readiness check (resolution, frontmatter, marker,
+canonical/resource presence, owned-file drift) with a fixed JSON contract and
+exit codes (0 valid/creatable, 1 unavailable/broken, 2 usage). It is explicitly
+not a GUI discovery or connection test; other targets have no doctor surface.
+
+**Consequences.** No new dependency, runtime, transport, or auto-deployment;
+operators run superskill on the Bot VPS (a mounted path is just an explicit
+filesystem destination). Failure modes preserve prior output via the existing
+filesystem transaction rollback; installs to the same Bot/plugin must be
+serialized by the operator.

@@ -5,7 +5,7 @@ Each coding agent stores skills, slash commands, subagents, and hooks in differe
 ## Entity locations — global (user-level, `~`)
 
 | Agent | Skills | Slash Commands | Subagents | Hooks |
-|-------|--------|---------------|-----------|-------|
+| ------- | -------- | --------------- | ----------- | ------- |
 | **Claude Code** | `~/.claude/plugins/<name>/skills/` | `~/.claude/plugins/<name>/commands/` | `~/.claude/plugins/<name>/agents/` | `~/.claude/plugins/<name>/hooks/hooks.json` |
 | **Codex** | `~/.agents/skills/` | `~/.codex/prompts/` | `~/.codex/agents/` | — |
 | **Pi** | `~/.pi/agent/skills/` ¹ | `~/.pi/agent/prompts/` | `~/.pi/agent/agents/` ² | extensions ³ |
@@ -15,11 +15,21 @@ Each coding agent stores skills, slash commands, subagents, and hooks in differe
 | **Antigravity CLI** | `~/.gemini/antigravity-cli/skills/` | — | — | `.agents/hooks.json` (project) |
 | **Hermes** | `~/.hermes/skills/` | config.yaml ⁴ | — ⁵ | `~/.hermes/hooks/<name>/HOOK.yaml` |
 | **OpenClaw** | `~/.openclaw/plugin-skills/` | — ⁶ | — ⁷ | webhooks ⁸ |
+| **Grok Bot** ⁹ | `<sandRoot>/workflows/<plugin>-<name>/SKILL.md` (bridge: thin pointer) | — | — | — |
+
+⁹ **Grok Bot** is the opt-in, install-only Sand-host target (ADR-036), explicit via
+`--targets grok-bot` only. Root resolution order: `SAND_DATA` → `<home>/sand-data` → qualifying
+`<home>/agent-data`; host-global only, never project-level. Bridge mode keeps the adapted canonical
+copy at `<sandRoot>/.superskill/grok-bot/skills/<id>/` with an origin marker
+(`.superskill-origin.json`) in each workflow, plus a receipt at
+`<sandRoot>/.superskill/manifests/grok-bot/<plugin>/.superskill-manifest.json`. `--materialize full`
+writes the whole tree under `workflows/<id>/` instead. `superskill doctor --targets grok-bot`
+checks the layout read-only.
 
 ## Entity locations — project-level (relative to workspace root)
 
 | Agent | Skills | Slash Commands | Subagents | Hooks |
-|-------|--------|---------------|-----------|-------|
+| ------- | -------- | --------------- | ----------- | ------- |
 | **Claude Code** | `.claude/skills/` | `.claude/commands/` | `.claude/agents/` | `.claude/hooks/hooks.json` |
 | **Codex** | `.agents/skills/` | `.codex/prompts/` | `.codex/agents/` | — |
 | **Pi** | `.pi/skills/` | `.pi/prompts/` | `.pi/agents/` ² | `.pi/extensions/` |
@@ -51,7 +61,7 @@ Each coding agent stores skills, slash commands, subagents, and hooks in differe
 ## How superskill installs
 
 | Agent | Engine | Notes |
-|-------|--------|-------|
+| ------- | -------- | ------- |
 | **Claude Code** | `claude plugin marketplace add` + `claude plugin install` | Native plugin system — handles all entity types automatically |
 | **Codex** | rulesync | `codex` → `codexcli` |
 | **Pi** | rulesync + superskill shim | Subagents adapted as Skills 2.0 skill directories; Pi native agents written directly to `~/.pi/agent/agents/` |
@@ -67,7 +77,7 @@ Since ts-ai-runner 0.3.21, `omp`, `hermes`, and `antigravity-cli` are canonical 
 ## Known gaps
 
 | Gap | Status |
-|-----|--------|
+| ----- | -------- |
 | **antigravity-cli** commands/subagents | Rulesync doesn't support `antigravity-cli` for commands/subagents (only `antigravity` project-level). |
 | **Hermes hooks format** | Superskill writes `hooks.json`; Hermes expects `~/.hermes/hooks/<name>/HOOK.yaml` + `handler.py`. |
 | **Hermes commands** | No `commands/` directory. Install commands as skills for slash-command auto-discovery. |

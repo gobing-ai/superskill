@@ -1,6 +1,7 @@
 import { Command } from 'commander';
 import { registerAgent } from './commands/agent';
 import { registerCommand } from './commands/command';
+import { registerDoctor } from './commands/doctor';
 import { registerHook } from './commands/hook';
 import { registerInstall } from './commands/install';
 import { registerMagent } from './commands/magent';
@@ -20,6 +21,7 @@ export function createProgram(): Command {
 
     registerInstall(program);
     registerUpdate(program);
+    registerDoctor(program);
 
     registerAgent(program);
     registerSkill(program);

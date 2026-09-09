@@ -16,7 +16,7 @@ sync: [T1]
 ## Stack
 
 | Layer | Choice | ADR |
-|-------|--------|-----|
+| ------- | -------- | ----- |
 | Runtime | Bun 1.3 | 001 |
 | Language | TypeScript 5.x | 001 |
 | Lint / format | Biome | 001 |
@@ -115,6 +115,7 @@ packages/core/src/                # ── Reusable domain logic (@gobing-ai/sup
 │
 ├── operations/                   # ── Reusable operation APIs with no app dependency ──
 │   ├── install-manifest.ts       # Install provenance DTO, path, snapshot, atomic write (ADR-035)
+│   ├── grok-bot.ts               # Grok Bot Sand root resolution + bridge/full emission (ADR-036)
 │   ├── migrate.ts                # Deterministic skill merge/migration core
 │   ├── package.ts                # Package content for distribution
 │   ├── scaffold.ts               # Scaffold content files from templates
@@ -181,6 +182,7 @@ apps/cli/src/                     # ── CLI app (@gobing-ai/superskill) ─�
 
 - [apps/cli/](../apps/cli/): Commander CLI binary — command registration, option parsing, output formatting, exit-code mapping, operation adapters, and the persistence layer.
 - [packages/core/](../packages/core/): Reusable domain logic — content editing, quality scoring, conversion pipeline, target taxonomy, marketplace resolution, plugin mapping, rulesync wrapper, and no-app operation APIs. Consumed by the CLI via `@gobing-ai/superskill-core`.
+
 ## Data flow
 
 ### Phase 1: Distribution
@@ -330,7 +332,7 @@ under `<X>`, not its parent (ADR-034).
 Carried from cc-agents/scripts. Pipeline stages are pure functions per invariant 5.
 
 | Stage | Applies to | Effect |
-|-------|-----------|--------|
+| ------- | ----------- | -------- |
 | `rewriteColonRefs` | all prose | `plugin:command` → `plugin-command` |
 | `translateSlashCommand` | commands | `/plugin:cmd` → per-agent dialect (delegates to `@gobing-ai/ts-ai-runner`); superskill `Target` is bridged to `AgentName` via `TARGET_TO_AGENT_NAME` (ADR-009 amendment) |
 | `normalizeFrontmatter` | commands, subagents | Inject `name:`, normalize `allowed-tools:` |
@@ -344,7 +346,7 @@ Carried from cc-agents/scripts. Pipeline stages are pure functions per invariant
 superskill maps each `Target` to a rulesync `ToolTarget` (`TARGET_TO_RULESYNC`) and to a ts-ai-runner `AgentName` for slash-dialect translation (`TARGET_TO_AGENT_NAME`, ADR-009 amendment). **superskill does not own per-target install paths** — rulesync resolves them from `<outputRoot>/<relativeDirPath>` (ADR-010). The global skill paths below are rulesync's resolved output *given* `outputRoot = ~`; they are documented for reference, not reimplemented in superskill.
 
 | Target | rulesync target | AgentName (slash) | Global skill path | Note |
-|--------|----------------|-------------------|------------------|------|
+| -------- | ---------------- | ------------------- | ------------------ | ------ |
 | `claude` | — | `claude` | native plugin cache | Native host-plugin install |
 | `codex` | `codexcli` | `codex` | `~/.agents/skills/` | Dual-emit - subagents -> Codex native agent TOML at `~/.codex/agents/` (ADR-033) |
 | `pi` | `codexcli` | `pi` | `~/.agents/skills/` | Unified — subagents → Pi native agent format |
@@ -354,6 +356,23 @@ superskill maps each `Target` to a rulesync `ToolTarget` (`TARGET_TO_RULESYNC`) 
 | `antigravity-ide` | `antigravity-ide` | `opencode` | `~/.gemini/config/skills/` | Native — IDE reads this dir |
 | `hermes` | — | `hermes` | `~/.hermes/skills/` | Copied by superskill |
 | `grok` | — | `grok` | native plugin cache | Native host-plugin install; slash conversion bypassed |
+| `grok-bot` | — | — | Sand `workflows/` (see below) | Install-only opt-in (ADR-036); never in `TARGETS` defaults |
+
+**Grok Bot mechanism (ADR-036).** `grok-bot` is an `InstallTarget`, not a `Target`: it never joins
+`TARGETS` default expansion, `TARGET_TO_RULESYNC`, or `TARGET_TO_AGENT_NAME` — no rulesync dispatch,
+no ts-ai-runner executor. Root resolution (`resolveSandRoot`, `operations/grok-bot.ts`):
+`SAND_DATA` env → existing `<home>/sand-data` → qualifying `<home>/agent-data`; host-global only,
+fails loudly on invalid explicit roots, never creates fallback alias roots. Mapped flat entities
+get Bot dialect (`/skill:<id>` → `/<id>`); bridge mode (default) writes the canonical copy under
+`<sandRoot>/.superskill/grok-bot/skills/<id>/` plus a thin `workflows/<id>/SKILL.md` pointer,
+`--materialize full` writes everything under `workflows/`. Per-workflow `.superskill-origin.json`
+markers (schema v1) gate reinstall/prune ownership; locally edited owned files or unowned extras
+are a preflight conflict, never silently overwritten. Emission (workflows, canonicals, prune,
+receipt) runs in one `FilesystemTransaction` with rollback on failure; `update` threads the
+receipt's recorded `grokBot.materialize` into Bot reinstalls and emits explicit reinstall
+guidance when the field is absent. Receipt lives at
+`<sandRoot>/.superskill/manifests/grok-bot/<plugin>/` with optional `grokBot.materialize` in
+`InstallManifestV1`. `superskill doctor --targets grok-bot` is a read-only filesystem check.
 
 **Output root (ADR-010).** rulesync writes to `<outputRoot>/<relativeDirPath>` and never resolves `~`. `runRulesync` sets `outputRoots: [os.homedir()]` for `--global`, `[process.cwd()]` otherwise; rulesync's `global` flag only swaps the relative subdir. Claude, OMP, Hermes, and Grok have no `ToolTarget` mapping: Claude/OMP/Grok use native host-plugin dispatch, Hermes copies opencode-generated skills to `~/.hermes/skills/`, and OMP also reads the shared `~/.agents/skills/` output natively (ADR-010 amendment 2026-06-23).
 
@@ -362,7 +381,7 @@ superskill maps each `Target` to a rulesync `ToolTarget` (`TARGET_TO_RULESYNC`) 
 Commander registers seven root families. Exact signatures and flags are transcribed in [04_DESIGN.md](04_DESIGN.md).
 
 | Family | Registered subcommands |
-|--------|------------------------|
+| -------- | ------------------------ |
 | `install` | root command |
 | `agent` | `scaffold`, `validate`, `evaluate`, `refine`, `evolve` |
 | `skill` | `add`, `list`, `remove`/`rm`, `update`, `scaffold`, `validate`, `evaluate`, `refine`, `evolve`, `package`, `migrate` |
@@ -370,6 +389,7 @@ Commander registers seven root families. Exact signatures and flags are transcri
 | `hook` | `validate`, `evaluate`, `refine`, `evolve`, `emit`, `run` |
 | `magent` | `scaffold`, `validate`, `evaluate`, `refine`, `evolve` |
 | `script` | `run`, `path`, `convert` |
+| `doctor` | root command (grok-bot target only; task 0128) |
 
 ## Command Sequence Diagrams & Briefings
 
@@ -378,6 +398,7 @@ Commander registers seven root families. Exact signatures and flags are transcri
 ### 1. `superskill install <plugin>`
 
 #### Briefing
+
 Resolves the plugin root from the workspace directory or an optional marketplace locator. Maps source files into canonical `.rulesync/` layouts, applies targeted markdown conversions, executes `rulesync` for supported target agents, invokes native host-plugin installers for Claude/OMP/Grok, and copy-dispatches the Hermes fallback.
 
 #### Sequence Diagram
@@ -421,6 +442,7 @@ sequenceDiagram
 ### 2. `superskill <type> scaffold <name>`
 
 #### Briefing
+
 Loads built-in templates embedded from `packages/core/src/templates/` or user overrides from `~/.superskill/templates/<type>/`, substitutes template variables (`<!-- NAME -->`, `<!-- DESCRIPTION -->`, `<!-- TARGET -->`, `<!-- BODY -->`), and writes the initial structured draft to disk. Overwriting existing files is disabled unless `--force` is provided.
 
 #### Sequence Diagram
@@ -450,6 +472,7 @@ sequenceDiagram
 ### 3. `superskill <type> validate <nameOrPath>`
 
 #### Briefing
+
 Performs multi-category syntax and configuration checks on a definition file. Parses the frontmatter safely to review required fields, data types, and target platform conventions (e.g., Pi singular `tool:` naming or Codex command naming). Verifies all internal reference links (`skill:`, `agent:`, `command:`) point to valid files on disk. Strict mode checks additional recommendations, such as character limits and deprecated fields.
 
 #### Sequence Diagram
@@ -480,6 +503,7 @@ sequenceDiagram
 ### 4. `superskill <type> evaluate <nameOrPath>`
 
 #### Briefing
+
 Analyzes resource quality across a type-specific registry of dimensions (e.g., completeness, clarity, trigger accuracy). Outputs a breakdown of scores (from 0.0 to 1.0) along with detailed notes suggesting areas of improvement, together with a consolidated aggregate score. If `--save` is active, it hashes the file content and records the results under the `.superskill/evaluations.db` database.
 
 Evaluators take an optional `basePath`. It is the directory that relative markdown links in the evaluated content resolve against, which lets a dimension credit a governance area satisfied by a link to a file that exists on disk rather than only by an inline section — the disclosure-aware path in `magent`'s `completeness`. A link whose target does not resolve earns nothing, so the same mechanism detects stale links. At the core API level omitting `basePath` disables link resolution (`resolvesOnDisk` returns false) and leaves scores byte-identical to the pre-`basePath` behavior; only `magent`'s evaluator consumes it. The CLI operation (`apps/cli/src/operations/evaluate.ts`) always supplies one, defaulting to the evaluated file's own directory (`dirname(resolvedPath)`) — a plain `superskill <type> evaluate <file>` therefore resolves links. `magent evaluate` exposes the override as `--base-path <dir>` for content authored to live elsewhere (e.g. a scaffold template scored as if already at a project root). Defaulting on is safe because link credit is additive: `scoreCompleteness` short-circuits on a heading match and only *adds* on a link match, so no re-evaluation can regress a stored score.
@@ -516,6 +540,7 @@ sequenceDiagram
 ### 5. `superskill <type> refine <nameOrPath>`
 
 #### Briefing
+
 Implements a validator-evaluator repair loop. Identifies issues via the validation engine and assigns fix strategies (`auto-apply`, `suggest`, or `flag`). Backs up the target file, applies low-risk syntax changes (e.g., correcting frontmatter array nesting or generating missing keys), prompts the user interactively to approve suggestions, and updates the file on disk. A post-verify evaluation is then triggered to calculate and display the quality score improvement delta.
 
 #### Sequence Diagram
@@ -571,6 +596,7 @@ sequenceDiagram
 ### 6. `superskill <type> evolve <name>`
 
 #### Briefing
+
 Executes the self-evolution lifecycle. Gathers the historical evaluations of a specific resource to analyze multi-run score trends. If any quality metrics are declining or remain flat below threshold levels, it compiles structural recommendations, writes a markdown proposal draft, and logs it under the proposals store. Through interactive review (or direct `--accept`/`--reject`), the changes are applied to the file, and a verification evaluation is run to ensure performance has improved.
 
 #### Sequence Diagram

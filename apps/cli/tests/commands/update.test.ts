@@ -2,7 +2,12 @@ import { afterEach, describe, expect, it, mock, spyOn } from 'bun:test';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { listRegularFilesUnder, snapshotFiles, type Target, writeInstallManifest } from '@gobing-ai/superskill-core';
+import {
+    type InstallTarget,
+    listRegularFilesUnder,
+    snapshotFiles,
+    writeInstallManifest,
+} from '@gobing-ai/superskill-core';
 import type { ProcessExecutor, ProcessOptions } from '@gobing-ai/ts-runtime';
 import { Command } from 'commander';
 import * as installNs from '../../src/commands/install';
@@ -51,7 +56,13 @@ function writeManifest(
     scope: string,
     plugin: string,
     pluginRoot: string,
-    extras: { version?: string; channel?: 'bundled' | 'marketplace'; locator?: string; target?: Target } = {},
+    extras: {
+        version?: string;
+        channel?: 'bundled' | 'marketplace';
+        locator?: string;
+        target?: InstallTarget;
+        grokBot?: { materialize: 'bridge' | 'full' };
+    } = {},
 ): void {
     const upstream = snapshotFiles(pluginRoot, listRegularFilesUnder(pluginRoot));
     const target = extras.target ?? 'codex';
@@ -66,6 +77,7 @@ function writeManifest(
         superskillVersion: '0.3.19',
         installed: upstream,
         upstream,
+        ...(extras.grokBot !== undefined ? { grokBot: extras.grokBot } : {}),
     });
 }
 
@@ -304,7 +316,7 @@ describe('executeUpdate', () => {
         const oldPluginRoot = writePlugin(oldRoot, 'demo', '1.0.0', '# old\n');
         writeManifest(root, 'demo', oldPluginRoot, { version: '1.0.0', locator: market, target: 'codex' });
         writeManifest(root, 'demo', oldPluginRoot, { version: '0.1.0', channel: 'bundled', target: 'claude' });
-        const calls: Array<{ plugin: string; targets: Target[] }> = [];
+        const calls: Array<{ plugin: string; targets: InstallTarget[] }> = [];
         const stdout = spyOn(process.stdout, 'write').mockImplementation(() => true);
 
         const code = await executeUpdate(
@@ -581,5 +593,73 @@ describe('executeUpdate', () => {
         const code = await executeUpdate('demo', ['codex'], { check: true, global: true, marketplacePath: market });
         delete process.env.HOME_DIR;
         expect(code).toBe(0);
+    });
+
+    it('threads the recorded grok-bot materialize mode into a marketplace reinstall (R7)', async () => {
+        const root = workspace();
+        writePlugin(root, 'demo', '2.0.0', '# new\n');
+        const market = writeMarket(root, 'demo', '2.0.0');
+        const oldRoot = join(root, 'old');
+        const oldPluginRoot = writePlugin(oldRoot, 'demo', '1.0.0', '# old\n');
+        const sandRoot = join(root, 'sand-data');
+        mkdirSync(sandRoot, { recursive: true });
+        process.env.SAND_DATA = sandRoot;
+        writeManifest(sandRoot, 'demo', oldPluginRoot, {
+            version: '1.0.0',
+            locator: market,
+            target: 'grok-bot',
+            grokBot: { materialize: 'full' },
+        });
+        const calls: Array<{ targets: string[]; materialize?: string }> = [];
+        spyOn(process.stdout, 'write').mockImplementation(() => true);
+        try {
+            const code = await executeUpdate(
+                'demo',
+                ['grok-bot'],
+                { check: false, global: false, marketplacePath: market, outputRoot: root },
+                {
+                    executeInstall: async (_name, targets, options) => {
+                        calls.push({ targets: [...targets], materialize: options.materialize });
+                    },
+                },
+            );
+            expect(code).toBe(0);
+            expect(calls).toEqual([{ targets: ['grok-bot'], materialize: 'full' }]);
+        } finally {
+            delete process.env.SAND_DATA;
+        }
+    });
+
+    it('skips a grok-bot reinstall with guidance when the receipt has no recorded mode (R7)', async () => {
+        const root = workspace();
+        writePlugin(root, 'demo', '2.0.0', '# new\n');
+        const market = writeMarket(root, 'demo', '2.0.0');
+        const oldRoot = join(root, 'old');
+        const oldPluginRoot = writePlugin(oldRoot, 'demo', '1.0.0', '# old\n');
+        const sandRoot = join(root, 'sand-data');
+        mkdirSync(sandRoot, { recursive: true });
+        process.env.SAND_DATA = sandRoot;
+        writeManifest(sandRoot, 'demo', oldPluginRoot, { version: '1.0.0', locator: market, target: 'grok-bot' });
+        let installs = 0;
+        spyOn(process.stdout, 'write').mockImplementation(() => true);
+        const stderr = spyOn(process.stderr, 'write').mockImplementation(() => true);
+        try {
+            const code = await executeUpdate(
+                'demo',
+                ['grok-bot'],
+                { check: false, global: false, marketplacePath: market, outputRoot: root },
+                {
+                    executeInstall: async () => {
+                        installs += 1;
+                    },
+                },
+            );
+            expect(code).toBe(0);
+            expect(installs).toBe(0);
+            const errOut = stderr.mock.calls.map((call) => String(call[0])).join('');
+            expect(errOut).toContain('no recorded materialization mode');
+        } finally {
+            delete process.env.SAND_DATA;
+        }
     });
 });

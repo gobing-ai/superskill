@@ -49,7 +49,7 @@ The `cc-agents/scripts` toolchain synchronizes Claude Code plugin-format skills,
 ### Phase 1 — Distribution: `superskill install`
 
 | Item | Description | ADR |
-|------|-------------|-----|
+| ------ | ------------- | ----- |
 | `superskill install` | Install a Claude Code plugin's skills, commands, subagents, magents, hooks, MCP config to specified coding agents; `--magent` selects a main-agent config | 005, 006, 034 |
 | Plugin → `.rulesync/` mapper | Canonical intermediate representation | 005 |
 | rulesync programmatic API | `rulesync.generate()` called from TypeScript | 005 |
@@ -63,7 +63,7 @@ The `cc-agents/scripts` toolchain synchronizes Claude Code plugin-format skills,
 Source: bundled `plugins/cc/skills/cc-*` authoring skills.
 
 | Command | Origin skill | Capabilities | ADR |
-|---------|-------------|--------------|-----|
+| --------- | ------------- | -------------- | ----- |
 | `superskill agent` | `cc-agents` | Scaffold, validate, evaluate, refine, evolve subagents | — |
 | `superskill skill` | `cc-skills` | Add, list, remove, update, scaffold, validate, evaluate, refine, evolve, package, migrate skills | 028–031 |
 | `superskill command` | `cc-commands` | Scaffold, validate, evaluate, refine, evolve slash commands | — |
@@ -74,7 +74,7 @@ Source: bundled `plugins/cc/skills/cc-*` authoring skills.
 The `agent`, `command`, `magent`, and `skill` authoring lifecycles support five shared operations:
 
 | Operation | What it does |
-|-----------|-------------|
+| ----------- | ------------- |
 | `create` / `scaffold` | Generate a new item from a template |
 | `validate` | Structural + schema check (frontmatter, required fields, format compliance) |
 | `evaluate` | Quality scoring across multiple dimensions |
@@ -101,18 +101,18 @@ The `agent`, `command`, `magent`, and `skill` authoring lifecycles support five 
 ### Deferred (needs design reconfirmation)
 
 | Item | Condition to reactivate |
-|------|------------------------|
+| ------ | ------------------------ |
 | Remote in-manifest plugin `source` objects (Layer B: `github`, `url`, `git-subdir`, `npm`) | In-manifest object `source` still deferred. **Remote *marketplaces* ship via `--marketplace <locator>`** (local dir, `.claude-plugin/`, GitHub URL, or `owner/repo` shorthand; ADR-034) with content cached at `~/.cache/superskill/marketplaces/<owner>/<repo>/<ref>/`. `--marketplace-source github` is deprecated (ADR-034). |
 | Import from non-Claude formats (Codex, Pi) | After Phase 1 install is stable; needs custom import mapper |
 | `rulesync` upstream contribution (Hermes, omp) | When Hermes/omp adoption warrants it; local targets sufficient initially |
 | Cross-platform adaptation (adapt command) | After Phase 2 authoring commands stabilize; generate Codex/Pi/etc. variants from a single abstract definition |
-| `superskill list`, `doctor`, `init` | After Phase 1 install is stable; thin commands that read config + check paths |
+| `superskill list`, `doctor`, `init` | After Phase 1 install is stable; thin commands that read config + check paths. `doctor` shipped grok-bot-scoped in task 0128 (ADR-036); general diagnostics deferred |
 | GUI / TUI | When target-user workflow demands it |
 
 ### Out of scope
 
 | Item | Reason |
-|------|--------|
+| ------ | -------- |
 | Runtime agent orchestration | Separate concern (`@gobing-ai/ts-ai-runner`) |
 | Skill content authoring UX | CLI-first; a GUI is deferred |
 | Cloud sync / registry | Local-first; npm publish is the distribution channel |

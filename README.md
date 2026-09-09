@@ -65,7 +65,7 @@ Full walkthrough: [Quick start guide](docs/help/quick_start.md).
 ## Supported agents
 
 | Agent | Skills | Commands | Subagents | Hooks |
-|-------|:------:|:--------:|:---------:|:-----:|
+| ------- | :------: | :--------: | :---------: | :-----: |
 | Claude Code | ✓ | ✓ | ✓ | ✓ |
 | Grok | ✓ | ✓ | ✓ | ✓ |
 | Codex | ✓ | ✓ | ✓ | ✓ |
@@ -75,6 +75,7 @@ Full walkthrough: [Quick start guide](docs/help/quick_start.md).
 | Antigravity IDE | ✓ | ✓ | — | ✓ |
 | Antigravity CLI | ✓ | ✓ | — | ✓ |
 | Hermes | ✓ | ✓ | — | ✓ |
+| Grok Bot (opt-in) ⁶ | ✓ | — | — | — |
 
 Both Antigravity targets get skills, commands, and hooks from rulesync
 (`codexcli`/`antigravity-cli`/`antigravity-ide` adapters); subagents are not part of the
@@ -93,6 +94,13 @@ Grok loads the Claude-format plugin natively — slash form is `/plugin:command`
 appear in Grok as `/plugin-command` (hyphen form) when Grok discovers the shared
 skills root; prefer the colon form for plugin commands.
 
+⁶ **Grok Bot** (Grok chat on its own VPS/Sand host) is an opt-in, install-only target
+(`--targets grok-bot`, excluded from `all`; ADR-036). It publishes the flat skill catalog to the
+Sand `workflows/` directory (bridge by default: thin pointers to a private canonical copy under
+`<sandRoot>/.superskill/grok-bot/skills/`; `--materialize full` for everything under `workflows/`).
+Slash form is `/plugin-skill-name`; commands/subagents install as skills/playbooks, hooks/MCP are
+not installed. Run `superskill doctor --targets grok-bot` for a filesystem health check.
+
 See [entity locations](docs/help/entity_locations.md) for the exact install directories per agent.
 
 > Agents that don't natively support some entity types still get them. `superskill install` adapts commands and subagents as Skills 2.0 skill directories for targets that lack them — so every agent receives the full plugin surface, regardless of native feature set.
@@ -100,7 +108,7 @@ See [entity locations](docs/help/entity_locations.md) for the exact install dire
 ## Commands
 
 | Command | What it does | Docs |
-|---------|-------------|------|
+| --------- | ------------- | ------ |
 | `install` | Distribute a plugin's skills, commands, subagents, magents, hooks, and MCP config to target agents | [cmd_install.md](docs/help/cmd_install.md) |
 | `agent` | Manage subagent definitions (scaffold / validate / evaluate / refine / evolve) | [cmd_agent.md](docs/help/cmd_agent.md) |
 | `skill` | Manage skill definitions (lifecycle + `package`, `migrate`) | [cmd_skill.md](docs/help/cmd_skill.md) |
@@ -108,13 +116,14 @@ See [entity locations](docs/help/entity_locations.md) for the exact install dire
 | `hook` | Manage hook definitions (+ `emit`, `run`) | [cmd_hook.md](docs/help/cmd_hook.md) |
 | `magent` | Manage main-agent configurations | [cmd_magent.md](docs/help/cmd_magent.md) |
 | `script` | Run / resolve / build portable twins for plugin scripts (`run`, `path`, `convert`) | [how to organize](docs/help/how_to_organize_scripts_for_plugin_development.md) |
+| `doctor` | Read-only health check for the `grok-bot` Sand target (`--targets grok-bot [--json]`) | [entity locations](docs/help/entity_locations.md) |
 
 The five type commands share a common lifecycle: **scaffold → validate → evaluate → refine → evolve**, with type-specific quality dimensions and rubrics.
 
 ## Further reading
 
 | Topic | Document |
-|-------|----------|
+| ------- | ---------- |
 | Full help index | [docs/help/index.md](docs/help/index.md) |
 | Quality system (rubrics, scoring, evolve gate) | [docs/help/quality_system.md](docs/help/quality_system.md) |
 | Entity locations per target agent | [docs/help/entity_locations.md](docs/help/entity_locations.md) |

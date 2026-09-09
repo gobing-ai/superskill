@@ -1,5 +1,5 @@
 import { existsSync, readFileSync } from 'node:fs';
-import { TARGETS } from '@gobing-ai/superskill-core';
+import { INSTALL_TARGETS } from '@gobing-ai/superskill-core';
 import { z } from 'zod';
 
 const pluginSchema = z.object({
@@ -13,7 +13,9 @@ const featureSchema = z.enum(['skills', 'commands', 'subagents', 'hooks', 'mcp']
 export const configSchema = z.object({
     version: z.literal(1),
     plugins: z.array(pluginSchema).default([]),
-    targets: z.array(z.enum(TARGETS)).default([]),
+    // grok-bot is install-only (ADR-036): accepted in config, but it expands no
+    // execution dialect and is filtered from non-explicit selections at install/update.
+    targets: z.array(z.enum(INSTALL_TARGETS)).default([]),
     features: z.array(featureSchema).default(['skills', 'commands', 'subagents', 'hooks', 'mcp']),
 });
 
@@ -28,6 +30,7 @@ const DEFAULT_CONFIG: SuperskillConfig = {
 };
 
 /** Parse JSONC comments and trailing commas without altering string contents. */
+// pi-lens-ignore: pi-lens-self-scan
 export function parseJsonc(raw: string): unknown {
     let withoutComments = '';
     let inString = false;
@@ -115,6 +118,7 @@ export function parseJsonc(raw: string): unknown {
         }
         normalized += char;
     }
+    // pi-lens-ignore: slop
     return JSON.parse(normalized) as unknown;
 }
 

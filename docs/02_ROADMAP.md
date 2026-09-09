@@ -115,6 +115,9 @@ sync: [T5]
 
 - [x] Remote marketplace locators (`--marketplace <github-url|owner/repo>`) — fetch + cache layer (task 0113, ADR-034). In-manifest object `source` (Layer B) remains deferred.
 - [ ] Thin commands: `superskill list`, `doctor`, `init`.
+  - `doctor` partially shipped (task 0128, ADR-036): `superskill doctor --targets grok-bot [--json]`
+    is a read-only Sand-filesystem health check for the Grok Bot target; general multi-target
+    diagnostics remain deferred.
 
 **Exit:** a remote marketplace source installs end-to-end; `list`/`doctor`/`init` ship and pass the gate.
 

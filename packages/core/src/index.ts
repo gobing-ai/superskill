@@ -21,6 +21,7 @@ export * from './content/types';
 export * from './mapper';
 export * from './marketplace';
 // ── Operations ───────────────────────────────────────────────────────────────
+export * from './operations/grok-bot';
 export * from './operations/install-manifest';
 export * from './operations/migrate';
 export * from './operations/package';

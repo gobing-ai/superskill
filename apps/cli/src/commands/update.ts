@@ -3,30 +3,34 @@ import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
 import {
     assertSafePathSegment,
+    BOT_SAND_DATA_ENV,
     buildUpdateCheckResult,
     compareBundledVersion,
     compareMarketplaceManifest,
+    type InstallTarget,
     installManifestPath,
     listRegularFilesUnder,
     listResolvablePlugins,
     type PluginUpdateResult,
     readInstallManifest,
     resolvePlugin,
+    resolveSandRoot,
+    type SandRootResolution,
     snapshotFiles,
     TARGETS,
     type Target,
 } from '@gobing-ai/superskill-core';
 import { NodeProcessExecutor, type ProcessExecutor } from '@gobing-ai/ts-runtime';
-import { echo } from '@gobing-ai/ts-utils';
+import { echo, echoError } from '@gobing-ai/ts-utils';
 import type { Command } from 'commander';
 import { loadConfig } from '../config';
 import {
     executeInstall,
     isRemoteMarketplaceLocator,
-    parseTargets,
     readMarketplacePluginVersion,
     readPluginJsonVersion,
     resolveInstalledPackageRoot,
+    resolveInstallTargets,
     resolveRemoteMarketplace,
 } from './install';
 
@@ -68,12 +72,13 @@ export function registerUpdate(program: Command): void {
         .action(async (plugin: string | undefined, options) => {
             try {
                 const config = loadConfig();
-                const targets =
-                    options.targets !== undefined
-                        ? parseTargets(options.targets)
-                        : config.targets.length > 0
-                          ? [...config.targets]
-                          : parseTargets(undefined);
+                const resolved = resolveInstallTargets(options.targets, config.targets);
+                if (resolved.botFiltered) {
+                    echoError(
+                        "Target 'grok-bot' is opt-in only: it is excluded from implicit selections — pass it explicitly via --targets grok-bot",
+                    );
+                }
+                const targets = resolved.targets;
                 const code = await executeUpdate(plugin, targets, {
                     check: options.check === true,
                     global: options.global !== false,
@@ -95,20 +100,34 @@ export function registerUpdate(program: Command): void {
  */
 export async function executeUpdate(
     plugin: string | undefined,
-    targets: Target[],
+    targets: readonly InstallTarget[],
     options: UpdateOptions,
     dependencies: UpdateDependencies = {},
 ): Promise<number> {
     if (plugin !== undefined) assertSafePathSegment(plugin, 'plugin name');
     const scopeRoot = options.outputRoot ?? (options.global ? resolveHomeDir() : process.cwd());
     const config = loadConfig();
-    const candidates = collectCandidates(
-        scopeRoot,
-        plugin,
-        config.plugins.map((entry) => entry.name),
-        targets,
-        dependencies.listBundledPlugins ?? listBundledMarketplacePlugins,
-    );
+    // grok-bot receipts live under the Sand data root (ADR-036), not the normal scope root.
+    const botRequested = targets.includes('grok-bot');
+    const botRoot = botRequested ? tryResolveSandRoot() : null;
+    if (botRequested && botRoot === null) {
+        echoError(
+            `Unable to resolve a Grok Bot Sand data root (${BOT_SAND_DATA_ENV} or $HOME/sand-data) — skipping grok-bot manifest scan`,
+        );
+    }
+    const execTargets = targets.filter((t): t is Target => t !== 'grok-bot');
+    const candidates = [
+        ...new Set([
+            ...collectCandidates(
+                scopeRoot,
+                plugin,
+                config.plugins.map((entry) => entry.name),
+                execTargets,
+                dependencies.listBundledPlugins ?? listBundledMarketplacePlugins,
+            ),
+            ...(botRoot !== null ? collectCandidates(botRoot.dataRoot, plugin, [], ['grok-bot'], () => []) : []),
+        ]),
+    ].sort(utf8Sort);
     const rows: PluginUpdateResult[] = [];
     const marketplaceWork = new Map<string, Promise<MarketplaceUpstream | undefined>>();
     const marketplaceActions = new Map<string, MarketplaceInstallAction>();
@@ -118,7 +137,10 @@ export async function executeUpdate(
     const npmLatest = dependencies.npmLatest ?? (() => fetchNpmLatest(dependencies.processExecutor));
 
     for (const candidate of candidates) {
-        const manifests = readCandidateManifests(scopeRoot, candidate, targets);
+        const manifests = [
+            ...readCandidateManifests(scopeRoot, candidate, execTargets),
+            ...(botRoot !== null ? readCandidateManifests(botRoot.dataRoot, candidate, ['grok-bot']) : []),
+        ];
         if (manifests.length === 0) {
             rows.push({ plugin: candidate, status: 'legacy' });
             continue;
@@ -165,14 +187,20 @@ export async function executeUpdate(
                 locator,
             );
             rows.push(comparison);
-            if (comparison.status === 'stale' && isTarget(manifest.target)) {
+            if (comparison.status === 'stale' && (isTarget(manifest.target) || manifest.target === 'grok-bot')) {
                 const actionKey = JSON.stringify([candidate, locator]);
                 const action = marketplaceActions.get(actionKey) ?? {
                     plugin: candidate,
                     locator,
-                    targets: new Set<Target>(),
+                    targets: new Set<InstallTarget>(),
                 };
                 action.targets.add(manifest.target);
+                if (manifest.target === 'grok-bot') {
+                    // R7: thread the recorded materialization mode into the Bot
+                    // reinstall; a receipt without it gets explicit reinstall
+                    // guidance, never a guessed mode.
+                    if (manifest.grokBot) action.botMaterialize = manifest.grokBot.materialize;
+                }
                 marketplaceActions.set(actionKey, action);
             }
         }
@@ -186,13 +214,30 @@ export async function executeUpdate(
         for (const action of marketplaceActions.values()) {
             const locator = options.marketplacePath ?? action.locator;
             const pluginRootOnly = options.marketplacePath === undefined && isPluginRootOnlyLocator(locator);
-            await installImpl(action.plugin, [...action.targets], {
+            let targets: InstallTarget[] = [...action.targets];
+            let materialize: 'bridge' | 'full' | undefined;
+            if (targets.includes('grok-bot')) {
+                if (action.botMaterialize === undefined) {
+                    // R4/R7: never guess the mode — a silent bridge reinstall would
+                    // switch a full-mode catalog. Guide an explicit reinstall instead.
+                    targets = targets.filter((target) => target !== 'grok-bot');
+                    echoError(
+                        `grok-bot: receipt for '${action.plugin}' has no recorded materialization mode — ` +
+                            `reinstall explicitly: superskill install ${action.plugin} --targets grok-bot --materialize <bridge|full>`,
+                    );
+                } else {
+                    materialize = action.botMaterialize;
+                }
+            }
+            if (targets.length === 0) continue;
+            await installImpl(action.plugin, targets, {
                 marketplacePath: pluginRootOnly ? undefined : locator,
                 pluginPath: pluginRootOnly ? locator : undefined,
                 global: options.global,
                 dryRun: false,
                 verbose: false,
                 outputRoot: options.outputRoot,
+                materialize,
             });
         }
     }
@@ -208,14 +253,25 @@ interface MarketplaceUpstream {
 interface MarketplaceInstallAction {
     plugin: string;
     locator: string;
-    targets: Set<Target>;
+    targets: Set<InstallTarget>;
+    /** Recorded grok-bot materialization mode from the Bot receipt (R7). */
+    botMaterialize?: 'bridge' | 'full';
+}
+
+/** Resolve the Sand data root for Bot receipt scans; null when this host has none. */
+function tryResolveSandRoot(): SandRootResolution | null {
+    try {
+        return resolveSandRoot({ sandData: process.env.SAND_DATA, homeDir: resolveHomeDir() });
+    } catch {
+        return null;
+    }
 }
 
 function collectCandidates(
     scopeRoot: string,
     plugin: string | undefined,
     configured: string[],
-    targets: Target[],
+    targets: readonly InstallTarget[],
     listBundled: () => string[],
 ): string[] {
     const names = new Set<string>();
@@ -234,7 +290,7 @@ function collectCandidates(
     return [...names].sort(utf8Sort);
 }
 
-function listManifestPlugins(scopeRoot: string, targets: Target[]): string[] {
+function listManifestPlugins(scopeRoot: string, targets: readonly InstallTarget[]): string[] {
     const root = join(resolve(scopeRoot), '.superskill', 'manifests');
     if (!existsSync(root) || !statSync(root).isDirectory()) return [];
     const plugins = new Set<string>();
@@ -255,7 +311,7 @@ function listManifestPlugins(scopeRoot: string, targets: Target[]): string[] {
 function readCandidateManifests(
     scopeRoot: string,
     plugin: string,
-    targets: Target[],
+    targets: readonly InstallTarget[],
 ): Array<ReturnType<typeof readInstallManifest> & { target: string }> {
     const found: Array<ReturnType<typeof readInstallManifest> & { target: string }> = [];
     const root = join(resolve(scopeRoot), '.superskill', 'manifests');

@@ -37,6 +37,7 @@ Design: [design-doc-phase1.md](design/design-doc-phase1.md)
 | G13 | [Conversion pipeline + rulesync integration](features/G13_conversion-pipeline-rulesync-integration.md) | G11 | ✅ | `pipeline/*`, `rulesync.ts` |
 | F3 | [superskill install command + target dispatch](features/F3_superskill-install-command-marketplace-registration.md) | G11, G12, G13, G14 | ✅ | `commands/install.ts` |
 | B | [Skill update notification — install manifest and update verb](features/B_skill-update-notification-install-manifest-and-update-verb.md) | F3 | ✅ | `operations/install-manifest.ts`, `operations/update.ts`, `commands/update.ts` |
+| D | [Grok Bot opt-in install target (task 0128; ADR-036)](features/D_grok-bot-opt-in-install-target-task-0128-adr-036.md) | F3, B | 🔶 | `targets.ts`, `operations/grok-bot.ts`, `commands/install.ts`, `commands/update.ts`, `commands/doctor.ts` — implemented, all local gates green; pending authorized host smoke (AC12) |
 | C | [SOTA refresh of the team-stark-children magent package](features/C_sota-refresh-of-the-team-stark-children-magent-package.md) | — | ✅ | `magents/team-stark-children/**`, `plugins/cc/rules/01-discipline.md`, `plugins/cc/rules/02-harness-first.md` |
 | E2 | [Tests + verification](features/E2_tests-verification.md) | G11–F3, G14 | ✅ | `tests/*` |
 | G14 | [Marketplace manifest resolver](features/G14_marketplace-manifest-resolver.md) | — | ✅ | `marketplace.ts` |

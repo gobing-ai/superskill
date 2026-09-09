@@ -17,6 +17,22 @@ export const TARGETS = [
 /** Union type of all supported target agents. */
 export type Target = (typeof TARGETS)[number];
 
+/**
+ * Install-only targets (task 0128 / ADR-036): accepted by plugin install/update
+ * and diagnostics, but excluded from the execution dialect map, rulesync
+ * transforms, and the default/`all` target expansion. `grok-bot` publishes a
+ * flat skill catalog into Grok Bot's Sand data root and joins no other path.
+ */
+export const INSTALL_TARGETS = [...TARGETS, 'grok-bot'] as const;
+
+/** Union of install targets: every execution target plus install-only ids. */
+export type InstallTarget = (typeof INSTALL_TARGETS)[number];
+
+/** True when `value` names any install target, including the install-only grok-bot (ADR-036). */
+export function isInstallTarget(value: string): value is InstallTarget {
+    return (INSTALL_TARGETS as readonly string[]).includes(value);
+}
+
 /** Map superskill targets to rulesync `ToolTarget` strings. Claude Code, omp, hermes, and grok are not in rulesync. */
 export const TARGET_TO_RULESYNC: Partial<Record<Target, ToolTarget>> = {
     // Codex, pi, and omp all share '~/.agents/skills/' natively (ADR-010 amendment 2026-06-23)
