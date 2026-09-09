@@ -102,6 +102,22 @@ describe('resolveSandRoot (R2)', () => {
         symlinkSync(join(tmp, 'nope'), link);
         expect(() => resolveSandRoot({ homeDir: tmp })).toThrow(/broken symlink/);
     });
+
+    it('rejects a root resolving into a protected Sand tree (managed-skills/plugins/plugin-skills)', () => {
+        for (const name of ['managed-skills', 'plugins', 'plugin-skills']) {
+            const protectedDir = join(tmp, `root-${name}`, name);
+            mkdirSync(protectedDir, { recursive: true });
+            expect(() => resolveSandRoot({ sandData: protectedDir, homeDir: tmp })).toThrow(/protected Sand tree/);
+            // A symlinked path resolving into the protected tree is also rejected.
+            const link = join(tmp, `link-${name}`);
+            symlinkSync(protectedDir, link);
+            expect(() => resolveSandRoot({ sandData: link, homeDir: tmp })).toThrow(/protected Sand tree/);
+        }
+        // A missing (creatable) protected-named root is rejected before creation.
+        expect(() =>
+            resolveSandRoot({ sandData: join(tmp, 'fresh', 'managed-skills'), homeDir: tmp, createMissing: true }),
+        ).toThrow(/protected Sand tree/);
+    });
 });
 
 describe('applyGrokBotDialect (R3)', () => {

@@ -110,6 +110,9 @@ function nearestExistingAncestor(dir: string): string {
     }
 }
 
+/** Sand-internal trees that are never a valid data root (R6 protected-tree containment). */
+const PROTECTED_ROOT_BASENAMES = new Set(['managed-skills', 'plugins', 'plugin-skills']);
+
 function assertRealDir(path: string, label: string): string {
     // Resolve host-global symlinks (e.g. /home/box/sand-data → /mnt/volume) so
     // markers and receipts reference one stable location per root.
@@ -122,6 +125,12 @@ function assertRealDir(path: string, label: string): string {
     }
     if (!statSync(real).isDirectory()) {
         throw new GrokBotPreflightError(`${label} '${path}' is not a directory`);
+    }
+    if (PROTECTED_ROOT_BASENAMES.has(basename(real))) {
+        throw new GrokBotPreflightError(
+            `${label} '${path}' resolves into the protected Sand tree '${basename(real)}' — ` +
+                `set ${BOT_SAND_DATA_ENV} to the Sand data root itself`,
+        );
     }
     return real;
 }
@@ -183,6 +192,12 @@ export function resolveSandRoot(options: ResolveSandRootOptions): SandRootResolu
         if (!existsSync(value)) {
             if (!createMissing) {
                 throw new GrokBotPreflightError(`${BOT_SAND_DATA_ENV} '${value}' does not exist`);
+            }
+            if (PROTECTED_ROOT_BASENAMES.has(basename(resolve(value)))) {
+                throw new GrokBotPreflightError(
+                    `${BOT_SAND_DATA_ENV} '${value}' resolves into the protected Sand tree '${basename(resolve(value))}' — ` +
+                        `set ${BOT_SAND_DATA_ENV} to the Sand data root itself`,
+                );
             }
             assertCreatable(value);
             return {
