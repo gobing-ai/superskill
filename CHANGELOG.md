@@ -4,6 +4,26 @@ All notable changes to `@gobing-ai/superskill` are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Conventional Commits](https://www.conventionalcommits.org/).
 
+## [0.3.22] - 2026-09-09
+
+### Added
+
+- **opt-in `grok-bot` install target with doctor diagnostic, marker-based ownership, and two materialize modes (task 0128, ADR-036).** New install-only target `grok-bot` (ADR-036): flat skill catalog into Grok Bot's Sand data root (`SAND_DATA` → `<home>/sand-data` → qualifying `<home>/agent-data`); opt-in via explicit `--targets grok-bot`, excluded from `all` and implicit config-driven selection; `--no-global` + Bot fails preflight. Two `--materialize` modes (`bridge` canonical copy under `<sandRoot>/.superskill/grok-bot/skills/<id>/` + thin `workflows/<id>/SKILL.md` pointer; `full` everything under `workflows/<id>/`). Marker-based ownership (`.superskill-origin.json` schema v1, per-workflow hashes); unmarked/foreign/malformed entries fail replace instead of overwrite. All writes inside one `FilesystemTransaction` with rollback. Install manifest gains optional `grokBot: { materialize }` field; receipts at `<sandRoot>/.superskill/manifests/grok-bot/<plugin>/.superskill-manifest.json`. `update` threads the recorded mode into Bot reinstalls. New `superskill doctor --targets grok-bot [--json]` (exit 0 healthy/creatable, 1 broken, 2 usage). Core: `operations/grok-bot.ts`; `targets.ts` gains `INSTALL_TARGETS`/`InstallTarget`/`isInstallTarget`; Bot never joins execution dialect or rulesync paths; CLI install/update share `resolveInstallTargets` that filters Bot from non-explicit selections. Bot runtime is install-only: hooks/MCP/magents/scripts reported as skipped on install, never silently dropped. ADR-036 in `docs/00_ADR.md`; feature D + task0128; grok-bot target spec + discovery-channel spec; architecture, design, features, entity-locations, README updated. (21469bb)
+
+### Fixed
+
+- **reject grok-bot roots resolving into protected Sand trees (task 0128).** R6 requires never resolving a Sand root into `managed-skills/plugins/plugin-skills`; the resolver had no guard. Verify-pass SECUA finding repaired under `/sp-dev-verify 0128 --fix all`: reject protected-tree basenames (realpath-resolved, symlink-following, and creatable-missing env roots) with actionable SAND_DATA guidance. (9184457)
+
+### Documentation
+
+- **close 0128 with PASS verdict; split VPS host smoke to follow-up 0129 (feature D → done).** Operator decision 2026-09-09: AC12's authorized Grok Bot host smoke (slash discovery, argument passing, relative-resource invocation) is not performable from the development laptop and is split to follow-up task 0129, which carries the full host-evidence contract and requires explicit VPS authorization. 0128's AC12 narrowed to the locally-verifiable scope (docs sync + repository gates). Re-verify 2026-09-09: verdict PASS (R1-R10 MET, AC1-AC12 MET), gates green (lint/test 2279 pass/build/strict-core), Shippable PASS for feature D; 0128 testing → done; feature D synced to done. (cbe69b3)
+- **record 0128 re-verify verdict PARTIAL with shippable gate.** `/sp-dev-verify 0128 --fix all` re-run 2026-09-09: R1-R9 MET (incl. new protected-tree guard), R10/AC12 PARTIAL pending authorized Grok Bot host smoke; Shippable FAIL for feature D until the host evidence lands. (c13cf5b)
+
+### Other
+
+- **capture grok-bot update warning instead of leaking it to stderr.** The "no Sand root resolves" update test exercised the `echoError` path without spying `process.stderr`, so the warning leaked into the dots reporter stream. Capture stderr and assert the skip warning, turning the leak into message coverage. (4a02df3)
+- **retire `config/corpus-baseline.json` ratchet (spur ≥0.3.78 advisory).** Delete `config/corpus-baseline.json` (3789 lines) — spur 0.3.78 retired the legacy corpus ratchet. Drop `bun run corpus-check` from `spur-check` / `spur-check:full` scripts; keep it as an explicit, unsuppressed audit under `bun run corpus-check`. Update `AGENTS.md` and `docs/99_PROJECT_CONSTITUTION.md` comments to reflect the retired ratchet and the advisory status of the audit. (04dc168)
+
 ## [0.3.21] - 2026-09-05
 
 ### Fixed
