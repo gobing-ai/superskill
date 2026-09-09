@@ -194,6 +194,7 @@ describe('grok-bot install (task 0128)', () => {
         saved.SAND_DATA = process.env.SAND_DATA;
         process.env.HOME_DIR = home;
         delete process.env.SAND_DATA;
+        const stderrSpy = spyOn(process.stderr, 'write').mockImplementation(() => true);
         const code = await executeUpdate(
             'nothing-installed',
             ['grok-bot'],
@@ -201,5 +202,8 @@ describe('grok-bot install (task 0128)', () => {
             {},
         );
         expect(code).toBe(0);
+        const errOut = stderrSpy.mock.calls.map((call) => String(call[0])).join('');
+        stderrSpy.mockRestore();
+        expect(errOut).toContain('skipping grok-bot manifest scan');
     });
 });
