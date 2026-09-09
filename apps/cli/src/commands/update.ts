@@ -380,7 +380,9 @@ function formatUpdateRow(row: PluginUpdateResult): string {
         return `${row.plugin}: upstream unavailable (${row.locator ?? ''})`;
     }
     if (row.status === 'current') {
-        return `${row.plugin}: up to date`;
+        return row.installedVersion !== undefined
+            ? `${row.plugin}: ${row.installedVersion} up to date`
+            : `${row.plugin}: up to date`;
     }
     if (row.channel === 'bundled') {
         return `${row.plugin}: stale: superskill <${row.upstreamVersion}> available (installed <${row.installedVersion}>)`;

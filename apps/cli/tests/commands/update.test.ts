@@ -146,7 +146,7 @@ describe('executeUpdate', () => {
         stdout.mockRestore();
         expect(code).toBe(0);
         expect(installed).toBe(0);
-        expect(output).toContain('demo: up to date');
+        expect(output).toContain('demo: 1.0.0 up to date');
     });
 
     it('treats a missing manifest for an explicit plugin as legacy guidance', async () => {
