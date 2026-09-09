@@ -4,7 +4,7 @@ name: Add explicit opt-in Grok Bot VPS install target with durable workflow skil
 status: testing
 template: feature-impl
 created_at: 2026-09-08T19:57:49.979Z
-updated_at: "2026-09-09T06:06:06.146Z"
+updated_at: "2026-09-09T18:20:12.162Z"
 
 priority: P1
 feature_id: D
@@ -244,33 +244,32 @@ Remaining for done: authorized Grok Bot host smoke (AC12) — operator-run on th
 - Verdict: PARTIAL (from verdict artifact)
 
 | Requirement | Status | Evidence |
-| ------------- | -------- | ---------- |
-| R1 | MET | `packages/core/src/targets.ts:26` (INSTALL_TARGETS additive, `all` excludes grok-bot); CLI e2e `apps/cli/tests/commands/install-grok-bot.test.ts` + update opt-in filter in `apps/cli/src/commands/update.ts:75` |
-| R2 | MET | core resolver tests `packages/core/tests/operations/grok-bot.test.ts` describe 'resolveSandRoot (R2)' (7 tests: env/alias/dangling/relative/URL/ssh/blank/creatable); `packages/core/src/operations/grok-bot.ts:154` |
-| R3 | MET | `packages/core/tests/operations/grok-bot.test.ts` 'applyGrokBotDialect (R3)' + 'parseBotSkillEntry / collectBotSkillEntries (R4)'; mapper precedence unchanged (mapper.ts untouched, existing suites pass) |
-| R4 | MET | bridge/full e2e in `apps/cli/tests/commands/install-grok-bot.test.ts` (bridge pointer + canonical + receipt; full mode); mode-switch cleanup test `packages/core/tests/operations/grok-bot.test.ts` 'mode switch cleanup (R6)' (bridge→full removes obsolete canonical) |
-| R5 | MET | `packages/core/src/operations/grok-bot.ts:254` dialect rewrite; skip-class echo `apps/cli/src/commands/install.ts:473`; Bot partition before rulesync/native dispatch `apps/cli/src/commands/install.ts:372` |
-| R6 | MET | markers + ownership `packages/core/src/operations/grok-bot.ts:364`; drift-conflict gate `packages/core/src/operations/grok-bot.ts:442` (assertOwnedUndrifted) with tests 'replace/prune conflict gate (R6)' (3 tests); transactional emission via FilesystemTransaction `packages/core/src/operations/grok-bot.ts:600` with rollback tests 'emission rollback (R6/R8)' (2 tests) |
-| R7 | MET | receipt with `grokBot.materialize` round-trip test in `packages/core/tests/operations/grok-bot.test.ts` 'grok-bot receipt (R7)'; update mode threading `apps/cli/src/commands/update.ts:202` + missing-mode guidance `apps/cli/src/commands/update.ts:220`; tests 'threads the recorded grok-bot materialize mode…' and 'skips a grok-bot reinstall with guidance…' in apps/cli/tests/commands/update.test.ts |
-| R8 | MET | dry-run e2e `apps/cli/tests/commands/install-grok-bot.test.ts` 'dry-run prints the full plan without creating the Sand root, workflows, or receipt'; staging cleanup via invocation-local mkdtemp + finally (task 0127 seam) |
-| R9 | MET | doctor tests `apps/cli/tests/commands/doctor.test.ts` (exit 0/1/2, JSON contract, issues); golden-path command run this turn: `./dist/superskill doctor --targets grok-bot --json` exit 1 with contract JSON; `--targets codex` exit 2 |
-| R10 | PARTIAL | Docs synced: ADR-036 in `docs/00_ADR.md`, 01/02/03/04/05 + README + `docs/help/entity_locations.md` all carry grok-bot (grep-verified this turn); gates green this turn (lint PASS, 2278 tests/0 fail exit 0, build PASS, corpus baseline unchanged 168/711, pre-existing red confirmed on clean db63531 worktree: 197/718 exit 1). UNVERIFIED: authorized Grok Bot host smoke (slash discovery, argument + relative-resource invocation) — not performable in this environment |
+|-------------|--------|----------|
+| R1 | MET | `packages/core/src/targets.ts:26` (INSTALL_TARGETS additive, `all` excludes grok-bot); CLI e2e `apps/cli/tests/commands/install-grok-bot.test.ts`; update opt-in filter `apps/cli/src/commands/update.ts:75` |
+| R2 | MET | `packages/core/src/operations/grok-bot.ts:163` (resolveSandRoot); tests describe 'resolveSandRoot (R2)' in `packages/core/tests/operations/grok-bot.test.ts` (8 tests: env/alias/dangling/relative/URL/ssh/blank/creatable/protected-tree) |
+| R3 | MET | `packages/core/tests/operations/grok-bot.test.ts` describes 'applyGrokBotDialect (R3)' + 'parseBotSkillEntry / collectBotSkillEntries (R4)'; mapper precedence unchanged (mapper.ts untouched, existing suites pass) |
+| R4 | MET | bridge/full e2e in `apps/cli/tests/commands/install-grok-bot.test.ts` (bridge pointer + canonical + receipt; full mode); mode-switch cleanup test `packages/core/tests/operations/grok-bot.test.ts` 'mode switch cleanup (R6)' |
+| R5 | MET | `packages/core/src/operations/grok-bot.ts:269` dialect rewrite; skip-class echo `apps/cli/src/commands/install.ts:473`; Bot partition before rulesync/native dispatch `apps/cli/src/commands/install.ts:372` |
+| R6 | MET | markers + ownership `packages/core/src/operations/grok-bot.ts:379`; drift-conflict gate `packages/core/src/operations/grok-bot.ts:457` (assertOwnedUndrifted, 3 tests); protected-tree root guard `packages/core/src/operations/grok-bot.ts:114` (new this run, commit `9184457`); transactional emission `packages/core/src/operations/grok-bot.ts:615` with rollback tests 'emission rollback (R6/R8)' |
+| R7 | MET | receipt `grokBot.materialize` round-trip test 'grok-bot receipt (R7)' in `packages/core/tests/operations/grok-bot.test.ts`; update mode threading `apps/cli/src/commands/update.ts:202` + missing-mode guidance `apps/cli/src/commands/update.ts:220`; update.test.ts threading/guidance tests |
+| R8 | MET | dry-run e2e 'dry-run prints the full plan without creating the Sand root, workflows, or receipt' in `apps/cli/tests/commands/install-grok-bot.test.ts`; staging cleanup via invocation-local mkdtemp + finally |
+| R9 | MET | doctor tests `apps/cli/tests/commands/doctor.test.ts`; golden path run this turn: `./dist/superskill doctor --targets grok-bot --json` exit 1 with contract JSON `{target, available, dataRoot, workflowsDir, source, creatable, issues}`; `--targets codex` exit 2 |
+| R10 | PARTIAL | Docs synced (grep-verified this turn: ADR-036 in `docs/00_ADR.md`, grok-bot present in 01/02/03/04/05, README, `docs/help/entity_locations.md`); gates green this turn (above). UNVERIFIED: authorized Grok Bot host smoke (slash discovery, argument + relative-resource invocation) — not performable in this environment |
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
-| --------------------- | -------- | --------------- | ---------- |
+|---------------------|--------|---------------|----------|
 | Scenario: R1 — AC1 Explicit opt-in protects default hosts (R1) | MET | test | `apps/cli/tests/commands/install-grok-bot.test.ts` + `apps/cli/tests/commands/update.test.ts`; resolveInstallTargets botFiltered path |
-| Scenario: R2 — AC2 Resolve only valid host destinations (R2) | MET | test | `packages/core/tests/operations/grok-bot.test.ts` 'resolveSandRoot (R2)' (7 tests) |
-| Scenario: R3 — AC3 All invocable entity kinds form valid skills (R3) | MET | test | `packages/core/tests/operations/grok-bot.test.ts` 'parseBotSkillEntry / collectBotSkillEntries (R4)'; zero-entity prewrite failure test 'errors when the plugin produces no skill-shaped artifacts for grok-bot' in apps/cli/tests/commands/install-grok-bot.test.ts |
-| Scenario: R4 — AC4 Bridge survives staging and source removal (R4) | MET | test | bridge e2e test 'installs the flat catalog into SAND_DATA workflows with bridge pointers, markers, and a receipt' in apps/cli/tests/commands/install-grok-bot.test.ts |
-| Scenario: R4 — AC5 Full mode and mode switches preserve usable content (R4, R6) | MET | test | full-mode test 'full materialization writes everything under workflows/ and no canonical tree' in apps/cli/tests/commands/install-grok-bot.test.ts; `packages/core/tests/operations/grok-bot.test.ts` 'mode switch cleanup (R6)' |
+| Scenario: R2 — AC2 Resolve only valid host destinations (R2) | MET | test | `packages/core/tests/operations/grok-bot.test.ts` 'resolveSandRoot (R2)' (8 tests, incl. new protected-tree rejections) |
+| Scenario: R3 — AC3 All invocable entity kinds form valid skills (R3) | MET | test | `packages/core/tests/operations/grok-bot.test.ts` 'parseBotSkillEntry / collectBotSkillEntries (R4)'; zero-entity prewrite failure test in `apps/cli/tests/commands/install-grok-bot.test.ts` |
+| Scenario: R4 — AC4 Bridge survives staging and source removal (R4) | MET | test | bridge e2e test in `apps/cli/tests/commands/install-grok-bot.test.ts` |
+| Scenario: R4 — AC5 Full mode and mode switches preserve usable content (R4, R6) | MET | test | full-mode test in `apps/cli/tests/commands/install-grok-bot.test.ts`; `packages/core/tests/operations/grok-bot.test.ts` 'mode switch cleanup (R6)' |
 | Scenario: R5 — AC6 Bot dialect and skipped capabilities are isolated (R5) | MET | test | `packages/core/tests/operations/grok-bot.test.ts` 'applyGrokBotDialect (R3)'; Bot-only e2e asserts no shared-root writes |
-| Scenario: R6 — AC7 Ownership limits reinstall and prune (R6) | MET | test | `packages/core/tests/operations/grok-bot.test.ts` 'replace/prune conflict gate (R6)' + foreign/unmarked marker tests; CLI ownership test 'respects reinstall ownership: unmarked workflows fail instead of being overwritten' in apps/cli/tests/commands/install-grok-bot.test.ts |
-| Scenario: R6 — AC8 Failed Bot writes recover prior output (R6, R8) | MET | test | `packages/core/tests/operations/grok-bot.test.ts` 'emission rollback (R6/R8)' — receipt-write failure restores prior canonical/workflow content; pruned workflows restored |
+| Scenario: R6 — AC7 Ownership limits reinstall and prune (R6) | MET | test | `packages/core/tests/operations/grok-bot.test.ts` 'replace/prune conflict gate (R6)' + foreign/unmarked marker tests + new protected-tree test; CLI ownership test in `apps/cli/tests/commands/install-grok-bot.test.ts` |
+| Scenario: R6 — AC8 Failed Bot writes recover prior output (R6, R8) | MET | test | `packages/core/tests/operations/grok-bot.test.ts` 'emission rollback (R6/R8)' (2 tests) |
 | Scenario: R7 — AC9 Custom-root provenance and update retain identity (R7) | MET | test | `apps/cli/tests/commands/update.test.ts` mode threading + guidance tests; receipt round-trip in `packages/core/tests/operations/grok-bot.test.ts` |
-| Scenario: R8 — AC10 Dry-run exposes the complete plan without target mutation (R8) | MET | test | `apps/cli/tests/commands/install-grok-bot.test.ts` dry-run test (no Sand root creation, no receipt, planned paths printed) |
-| Scenario: R9 — AC11 Doctor reports local readiness honestly (R9) | MET | test | `apps/cli/tests/commands/doctor.test.ts`; golden path: `./dist/superskill doctor --targets grok-bot --json` exit 1 with `{target, available, dataRoot, workflowsDir, source, creatable, issues}`; `--targets codex` exit 2 |
-| Scenario: R10 — AC12 Documentation and host discovery are verified (R10) | PARTIAL | static-ref | Docs + gates done and verified this turn (grep + gate runs above); authorized host smoke unavailable in this environment — not claimed |
-
+| Scenario: R8 — AC10 Dry-run exposes the complete plan without target mutation (R8) | MET | test | dry-run test in `apps/cli/tests/commands/install-grok-bot.test.ts` (no Sand root creation, no receipt, planned paths printed) |
+| Scenario: R9 — AC11 Doctor reports local readiness honestly (R9) | MET | test | `apps/cli/tests/commands/doctor.test.ts`; golden path this turn: doctor `--targets grok-bot --json` exit 1 contract JSON, `--targets codex` exit 2 |
+| Scenario: R10 — AC12 Documentation and host discovery are verified (R10) | PARTIAL | static-ref | Docs + gates verified this turn; authorized host smoke unavailable in this environment — not claimed |
 - Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review
@@ -282,6 +281,11 @@ Remaining for done: authorized Grok Bot host smoke (AC12) — operator-run on th
 | Priority | Dimension | Location | Finding |
 |----------|-----------|----------|----------|
 | P4 | spur task check | — | task check passed |
+| P4 | design-conformance | — | Additive InstallTarget union (`targets.ts:26`); core module `operations/grok-bot.ts` with CLI orchestration in install/update/doctor; manifest extension `install-manifest.ts:54`; planned flow (preflight → staging → plan → transactional commit) matches `emitGrokBotInstall`; no scope-creep hunks in `21469bb`/`9184457` |
+| P4 | Priority | — | Location |
+| P4 | P2 | — | `packages/core/src/operations/grok-bot.ts` |
+| P4 | P4 | — | `packages/core/src/operations/grok-bot.ts:700` |
+| P4 | P4 | — | — |
 | P1 | evidence-rule-failed | — | Executable evidence missing for: Scenario: R10 — AC12 Documentation and host discovery are verified (R10) |
 
 ### References
