@@ -1,10 +1,10 @@
 ---
 schema_version: 1
 name: Run authorized Grok Bot VPS host smoke for the grok-bot install target (split from 0128 AC12)
-status: backlog
+status: cancelled
 template: standard
 created_at: 2026-09-09T18:34:28.511Z
-updated_at: "2026-09-09T18:35:11.903Z"
+updated_at: "2026-09-10T04:31:18.365Z"
 
 ---
 
@@ -73,7 +73,16 @@ Scenario: AC2 Bot runtime discovers and invokes installed workflows
 <!-- Links to features, docs, ADRs, related tasks, or external references. -->
 
 ### History
+
+- 2026-09-10T04:10:41.898Z backlog → cancelled (system)
+
 ### Notes
 
-Split from task 0128 (AC12) by operator decision on 2026-09-09. 0128 ships the target with local verification; this task is the remaining host-acceptance evidence. Deliberately not linked to feature D via `feature_id` so the feature shippable gate reflects the shipped, locally verified scope — the cross-reference to D and 0128 lives here in prose.
+Split from task 0128 (AC12) by operator decision on 2026-09-09. 0128 ships the target with local verification; this task originally held the remaining host-acceptance evidence. Deliberately not linked to feature D via feature_id; the cross-reference to D and 0128 remains historical context.
+
+Retired on 2026-09-09 at Robin's request: verification alone does not warrant a separate implementation task. Spur exposes no task-delete verb, so this task is cancelled rather than directly deleting tool-owned corpus files. Cancellation is not host acceptance and does not invalidate the locally verified work in 0128.
+
+Carry into the next implementation task after the approach is agreed: authorized host session; runtime/tool version and resolved Sand root; doctor/dry-run/install evidence; actual registry refresh and per-Bot enablement method; representative skill/command/playbook slash discovery; invocation with arguments and relative-resource access; explicit recording of missing/blocked evidence. Add bridge/full host-write round-trip and reinstall checks identified during the patch review.
+
+Robin approved the internal install-helper direction on 2026-09-09. Replacement task 0130 (`docs/tasks/0130_prepare-safe-grok-bot-slash-registration-handoffs-within-ins.md`) owns implementation and these host checks under feature D. Its Requirements and Design are self-contained: no new top-level register command. Original requirements and AC above are retained as historical inputs, not an active verification assignment. Review: `.spur/run/grok-bot-slash-idea-eval-20260909.md`.
 

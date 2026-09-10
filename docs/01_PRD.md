@@ -2,10 +2,10 @@
 doc: 01_PRD
 owns: WHAT — product vision, users, scope (in / out / deferred)
 authority: authoritative-on-scope
-version: 3.5.0
+version: 3.5.1
 derived_from: [00_ADR]
 owner: Robin Min
-updated_at: 2026-08-12
+updated_at: 2026-09-09
 read_before: adding a command or feature; edit when scope changes
 edit_rules: 99 §6.2
 sync: [T1, T4, T6]
@@ -55,6 +55,7 @@ The `cc-agents/scripts` toolchain synchronizes Claude Code plugin-format skills,
 | rulesync programmatic API | `rulesync.generate()` called from TypeScript | 005 |
 | Conversion pipeline | Slash dialect, colon→hyphen, @-file stripping, Pi subagent format | 006 |
 | Target agents | Claude Code, Codex, Pi, omp, OpenCode, antigravity-cli, antigravity-ide, Hermes, Grok | 005 |
+| Target post-install customization | Reusable customization actions within install/update, first applied to Grok Bot registration handoff preparation; future coding-agent customizations use the same mechanism. Grok Bot remains explicit opt-in; host registration and per-Bot enablement remain separate. Scope: [feature D](features/D_grok-bot-opt-in-install-target-task-0128-adr-036.md) | 036, 037 |
 | Plugin resolution via marketplace | `--marketplace <locator>` resolves `<plugin>` from a local marketplace path, GitHub URL, or `owner/repo` shorthand; defaults to CWD's marketplace, falls back to `plugins/<name>/` scan | 011, 034 |
 | `--dry-run` / `--verbose` | Preview and diagnostics | — |
 

@@ -2,11 +2,11 @@
 schema_version: 1
 id: "D"
 name: "Grok Bot opt-in install target (task 0128; ADR-036)"
-status: done
+status: active
 priority: P2
 tags: []
 created_at: "2026-09-09T00:18:21.958Z"
-updated_at: "2026-09-09T18:39:15.636Z"
+updated_at: "2026-09-10T05:33:41.746Z"
 ---
 
 # D: Grok Bot opt-in install target (task 0128; ADR-036)
@@ -29,6 +29,10 @@ Opt-in install-only target `grok-bot` (ADR-036) that publishes a plugin's flat s
 Excluded from `all` and implicit/config-only selections by design (opt-in).
 
 **Out of scope:** remote/SSH transport, auto-deployment, native Bot subagents, hook/MCP emission for Bot, marketplace UX, and changes to other targets' behavior (ADR-036; task 0128 Q&A).
+
+**Approved extension (2026-09-09, Robin):** installation prepares a safe, plugin-scoped Grok Bot registration handoff through a reusable target post-install action mechanism shared with update; doctor distinguishes filesystem health from unverified slash visibility. Host registration and per-Bot enablement are separate observed steps. No new public register command, registration flag or host API transport. Verification-only 0129 is cancelled; its useful checks belong to the follow-up implementation task.
+
+**Mechanism clarification (Robin, 2026-09-09):** task 0130 builds the common post-install action mechanism first and applies it to Grok Bot. Future coding-agent customizations use the same registration/dispatch contract (ADR-037); extensibility is verified with a second-target action test. Existing OMP customization is a reference case, with migration deferred.
 
 ## Acceptance Criteria
 
@@ -100,21 +104,84 @@ Feature: Grok Bot opt-in install target (task 0128; ADR-036)
     And the authorized VPS host smoke is split to follow-up task 0129 as the remaining host-acceptance evidence, not claimed here
 ```
 
+```gherkin
+Scenario: R11 — Install prepares a Grok Bot handoff automatically
+  Given a plugin and an explicit grok-bot install selection
+  When the Bot install succeeds
+  Then a stable plugin-scoped JSON handoff and its next-step message are available
+  And ordinary target installs create no Bot handoff
+
+Scenario: R12 — Dry-run and failed installs do not publish a new handoff
+  Given a prior Bot install or a missing Sand destination
+  When dry-run or a failing catalog, handoff, or receipt write runs
+  Then dry-run leaves destinations untouched and failures restore prior Bot artifacts
+  And no new successful handoff is advertised
+
+Scenario: R13 — Bridge and full handoffs preserve executable recipes
+  Given bridge and full skills with custom frontmatter, arguments and relative resources
+  When handoff records are generated and a preserving host-write round trip is simulated
+  Then bridge instructions read the distinct canonical recipe and full records retain the actual recipe
+  And self-referential replacement bodies are rejected and required metadata and resources survive
+
+Scenario: R14 — Reinstall update and prune keep the handoff current
+  Given an existing handoff, changed plugin catalog and recorded materialization mode
+  When reinstall, marketplace update, mode switch or owned prune runs
+  Then one current handoff contains exactly this install batch and reflects its mode and committed files
+  And foreign files and plugins remain untouched and no host registry deletion is claimed
+
+Scenario: R15 — Host rewrites retain ownership conflict protection
+  Given a registered workflow whose bytes or resources differ from its ownership evidence
+  When doctor and reinstall inspect the modified files
+  Then meaningful edits remain protected and unsafe host normalization is reported as a conflict
+  And no automatic rehash, force overwrite or delete-recreate hides the change
+
+Scenario: R16 — Doctor separates filesystem health from slash visibility
+  Given healthy, creatable, unavailable and broken Bot filesystem fixtures
+  When doctor runs in human and JSON modes
+  Then existing filesystem fields and exit semantics remain compatible and slash visibility is unknown
+  And guidance distinguishes handoff preparation, host registration and per-Bot enablement
+
+Scenario: R17 — Documentation and repository gates cover the install adaptation
+  Given the implemented helper, diagnostics and focused regression tests
+  When owning documentation is synchronized and required repository gates run
+  Then the install-only handoff contract is documented and all required checks pass
+  And no register command, registration flag, host transport or new dependency is added
+
+Scenario: R18 — Host acceptance evidence remains explicit within implementation
+  Given local tests and a separately authorized Bot session when one is available
+  When representative skills, degraded commands and specialist playbooks are exercised
+  Then Testing distinguishes local results from observed host registration, enablement, slash discovery and invocation
+  And missing host access, unknown ids or unsafe host rewrites are recorded as unverified or blocked rather than successful
+```
+
+```gherkin
+Scenario: R19 — Target post-install actions share an extensible lifecycle
+  Given registered Grok Bot and second-target test actions
+  When selected targets install, preview, fail or reinstall through update
+  Then the shared mechanism selects and runs eligible actions in order with explicit results and failures
+  And a second target requires only its action and registration without changing dispatcher logic
+  And dry-run does not apply actions and a failed base install runs no dependent action
+```
+
 ## Tasks
 
 <!-- AUTO-GENERATED by spur feature refresh -->
 | WBS | Task | Status |
 | --- | ---- | ------ |
 | 0128 | Add explicit opt-in Grok Bot VPS install target with durable workflow skills | done |
+| 0130 | Prepare safe Grok Bot slash registration handoffs within install | todo |
 <!-- END AUTO-GENERATED -->
 
 ## Notes
 
 **2026-09-09 (operator decision, Robin):** AC12 narrowed to docs+gates (locally verified); the authorized VPS host smoke split to task 0129, deliberately not `feature_id`-linked so this gate reflects shipped scope. Host acceptance remains unclaimed until 0129 records real VPS evidence.
 
+**2026-09-09 amendment (Robin approved):** the earlier reference to 0129 is historical. Task 0129 is cancelled; its host checks transfer to the install-helper implementation task. The R11–R18 extension is planned, not shipped; task 0128 remains locally verified. Host acceptance remains unclaimed without runtime evidence.
+
 ## History
 
 - 2026-09-09T18:39:15.322Z backlog → active (system)
 - 2026-09-09T18:39:15.490Z active → verifying (system)
 - 2026-09-09T18:39:15.636Z verifying → done (system)
+- 2026-09-10T04:29:05.202Z done → active (system)
 

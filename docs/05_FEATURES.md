@@ -2,10 +2,10 @@
 doc: 05_FEATURES
 owns: STATUS — feature decomposition + state (✅ done / 🔶 partial / ⏳ planned / 💤 deferred)
 authority: derived
-version: 6.3.0
+version: 6.3.1
 derived_from: [01_PRD, 02_ROADMAP]
 owner: Robin Min
-updated_at: 2026-09-01
+updated_at: 2026-09-09
 read_before: finding a feature's state; edit when a feature's status changes
 edit_rules: 99 §6.6
 sync: [T4]
@@ -37,7 +37,7 @@ Design: [design-doc-phase1.md](design/design-doc-phase1.md)
 | G13 | [Conversion pipeline + rulesync integration](features/G13_conversion-pipeline-rulesync-integration.md) | G11 | ✅ | `pipeline/*`, `rulesync.ts` |
 | F3 | [superskill install command + target dispatch](features/F3_superskill-install-command-marketplace-registration.md) | G11, G12, G13, G14 | ✅ | `commands/install.ts` |
 | B | [Skill update notification — install manifest and update verb](features/B_skill-update-notification-install-manifest-and-update-verb.md) | F3 | ✅ | `operations/install-manifest.ts`, `operations/update.ts`, `commands/update.ts` |
-| D | [Grok Bot opt-in install target (task 0128; ADR-036)](features/D_grok-bot-opt-in-install-target-task-0128-adr-036.md) | F3, B | ✅ | `targets.ts`, `operations/grok-bot.ts`, `commands/install.ts`, `commands/update.ts`, `commands/doctor.ts` — implemented, all gates green, verify PASS; authorized host smoke split to follow-up task 0129 (operator decision 2026-09-09) |
+| D | [Grok Bot opt-in install target (ADR-036/037)](features/D_grok-bot-opt-in-install-target-task-0128-adr-036.md) | F3, B | 🔶 | Task 0128 filesystem installer is locally verified. [0130](tasks/0130_prepare-safe-grok-bot-slash-registration-handoffs-within-ins.md) builds the reusable post-install mechanism first, then Grok Bot handoffs, diagnostics and integrated host checks; verification-only 0129 is cancelled. Acceptance: feature D R11–R19, including second-target extensibility; host visibility remains unverified. |
 | C | [SOTA refresh of the team-stark-children magent package](features/C_sota-refresh-of-the-team-stark-children-magent-package.md) | — | ✅ | `magents/team-stark-children/**`, `plugins/cc/rules/01-discipline.md`, `plugins/cc/rules/02-harness-first.md` |
 | E2 | [Tests + verification](features/E2_tests-verification.md) | G11–F3, G14 | ✅ | `tests/*` |
 | G14 | [Marketplace manifest resolver](features/G14_marketplace-manifest-resolver.md) | — | ✅ | `marketplace.ts` |
