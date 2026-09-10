@@ -16,10 +16,13 @@ import {
     BOT_ORIGIN_MARKER,
     BOT_SAND_DATA_ENV,
     botCanonicalSkillDir,
+    botRegisterHandoffPath,
+    buildBotRegisterHandoff,
     collectBotSkillEntries,
     emitGrokBotInstall,
     GROK_BOT_TARGET,
     inspectGrokBotTarget,
+    markerHashesCurrent,
     parseBotSkillEntry,
     planGrokBotInstall,
     readOriginMarker,
@@ -635,5 +638,231 @@ describe('bridge pointer rendering', () => {
         expect(pointer).toContain('name: w1');
         expect(pointer).toContain('line one line two');
         expect(pointer).toMatch(/canonical: \.\.\/\.\.\/\.superskill\/grok-bot\/skills\/w1\/SKILL\.md/);
+        // R3 (task 0130): pointer body carries the invocation intent for host consumers.
+        expect(pointer).toContain('read and follow the canonical skill at');
+        expect(pointer).toContain('Pass any user arguments through unchanged');
+    });
+});
+
+describe('registration handoff (task 0130)', () => {
+    const HANDOFF_WIRING =
+        (res: ReturnType<typeof resolveSandRoot>): Parameters<typeof emitGrokBotInstall>[0]['postActions'] =>
+        (write) => ({
+            actions: [
+                {
+                    id: 'grok-bot/register-handoff',
+                    preview: () => ({ writtenFiles: [], messages: ['preview'] }),
+                    apply: () => {
+                        const handoff = buildBotRegisterHandoff({
+                            plugin: 'sp',
+                            entries: [entry('w1')],
+                            source: SOURCE,
+                            materialize: 'bridge',
+                            dataRoot: res.dataRoot,
+                        });
+                        const path = botRegisterHandoffPath(res.dataRoot, 'sp');
+                        // Mirrors the CLI wiring: write inside the emission transaction.
+                        return (async () => {
+                            await write(path, `${JSON.stringify(handoff, null, 2)}\n`);
+                            return { writtenFiles: [path], messages: [`handoff prepared at ${path}`] };
+                        })();
+                    },
+                },
+            ],
+            stagingRoot: '/staging',
+        });
+
+    it('writes a deterministic handoff inside the emission and reports it after success', async () => {
+        const res = resolveSandRoot({ sandData: join(tmp, 'root'), homeDir: tmp, createMissing: true });
+        const emitted = await emitGrokBotInstall({
+            entries: [entry('w1')],
+            resolution: res,
+            plugin: 'sp',
+            source: SOURCE,
+            materialize: 'bridge',
+            superskillVersion: '0.0.0-test',
+            nowIso: '2026-01-01T00:00:00Z',
+            prune: false,
+            pruneCandidates: [],
+            postActions: HANDOFF_WIRING(res),
+        });
+        const path = botRegisterHandoffPath(res.dataRoot, 'sp');
+        expect(emitted.postInstall.writtenFiles).toEqual([path]);
+        expect(emitted.postInstall.messages.join(' ')).toContain(path);
+        const first = readFileSync(path, 'utf-8');
+        const handoff = JSON.parse(first);
+        expect(handoff.schemaVersion).toBe(1);
+        expect(handoff.target).toBe('grok-bot');
+        expect(handoff.plugin).toBe('sp');
+        expect(handoff.materialize).toBe('bridge');
+        expect(handoff.skills).toHaveLength(1);
+        expect(handoff.skills[0].recipePath).toBe(
+            join(realpathSync(res.dataRoot), '.superskill', 'grok-bot', 'skills', 'w1', 'SKILL.md'),
+        );
+        // Bridge body reads the distinct canonical recipe explicitly.
+        expect(handoff.skills[0].body).toContain(handoff.skills[0].recipePath);
+        expect(handoff.skills[0].frontmatter).toEqual({ name: 'w1', description: 'does things' });
+        expect(handoff.skills[0].resources).toEqual({ 'ref.md': '# ref\n' });
+        // Deterministic: identical batch → byte-identical handoff.
+        const emitted2 = await emitGrokBotInstall({
+            entries: [entry('w1')],
+            resolution: res,
+            plugin: 'sp',
+            source: SOURCE,
+            materialize: 'bridge',
+            superskillVersion: '0.0.0-test',
+            nowIso: '2026-01-02T00:00:00Z',
+            prune: false,
+            pruneCandidates: [],
+            postActions: HANDOFF_WIRING(res),
+        });
+        expect(readFileSync(botRegisterHandoffPath(res.dataRoot, 'sp'), 'utf-8')).toBe(first);
+        expect(emitted2.postInstall.messages.join(' ')).not.toContain('registered');
+    });
+
+    it('rolls the handoff back with the catalog when a post-install action fails', async () => {
+        const res = resolveSandRoot({ sandData: join(tmp, 'root'), homeDir: tmp, createMissing: true });
+        await emitGrokBotInstall({
+            entries: [entry('w1')],
+            resolution: res,
+            plugin: 'sp',
+            source: SOURCE,
+            materialize: 'bridge',
+            superskillVersion: '0.0.0-test',
+            nowIso: '2026-01-01T00:00:00Z',
+            prune: false,
+            pruneCandidates: [],
+        });
+        const priorCanonical = readFileSync(join(botCanonicalSkillDir(res.dataRoot, 'w1'), 'SKILL.md'), 'utf-8');
+        await expect(
+            emitGrokBotInstall({
+                entries: [entry('w1', 'updated')],
+                resolution: res,
+                plugin: 'sp',
+                source: SOURCE,
+                materialize: 'bridge',
+                superskillVersion: '0.0.0-test',
+                nowIso: '2026-01-02T00:00:00Z',
+                prune: false,
+                pruneCandidates: [],
+                postActions: (write) => ({
+                    actions: [
+                        {
+                            id: 'boom',
+                            preview: () => ({ writtenFiles: [], messages: [] }),
+                            apply: () =>
+                                write(join(tmp, 'never.json'), '{}').then(() => {
+                                    throw new Error('action exploded');
+                                }),
+                        },
+                    ],
+                    stagingRoot: '/staging',
+                }),
+            }),
+        ).rejects.toThrow(/post-install action 'boom' failed for target 'grok-bot': action exploded/);
+        expect(existsSync(join(tmp, 'never.json'))).toBe(false);
+        expect(existsSync(botRegisterHandoffPath(res.dataRoot, 'sp'))).toBe(false);
+        expect(readFileSync(join(botCanonicalSkillDir(res.dataRoot, 'w1'), 'SKILL.md'), 'utf-8')).toBe(priorCanonical);
+    });
+
+    it('rolls the handoff back when the receipt write fails after actions', async () => {
+        const res = resolveSandRoot({ sandData: join(tmp, 'root'), homeDir: tmp, createMissing: true });
+        await expect(
+            emitGrokBotInstall({
+                entries: [entry('w1')],
+                resolution: res,
+                plugin: 'sp',
+                source: SOURCE,
+                materialize: 'bridge',
+                superskillVersion: '0.0.0-test',
+                nowIso: '2026-01-01T00:00:00Z',
+                prune: false,
+                pruneCandidates: [],
+                postActions: HANDOFF_WIRING(res),
+                finalize: () => {
+                    throw new Error('receipt write exploded');
+                },
+            }),
+        ).rejects.toThrow(/receipt write exploded/);
+        expect(existsSync(botRegisterHandoffPath(res.dataRoot, 'sp'))).toBe(false);
+    });
+
+    it('rejects full-mode records whose body self-references the replaced workflow file', () => {
+        const res = resolveSandRoot({ sandData: join(tmp, 'root'), homeDir: tmp, createMissing: true });
+        const workflowPath = join(res.workflowsDir, 'w1', 'SKILL.md');
+        expect(() =>
+            buildBotRegisterHandoff({
+                plugin: 'sp',
+                entries: [{ ...entry('w1'), skillMd: `---\nname: w1\ndescription: d\n---\nRead ${workflowPath}.\n` }],
+                source: SOURCE,
+                materialize: 'full',
+                dataRoot: res.dataRoot,
+            }),
+        ).toThrow(/self-references its replacement target/);
+    });
+
+    it('rejects full-mode self-reference via the unresolved symlinked-root form', () => {
+        // On a symlinked Sand root the canonical guard sees the realpath'd path;
+        // a body citing the unresolved absolute form must be rejected too.
+        const realRoot = join(tmp, 'real-root');
+        mkdirSync(realRoot, { recursive: true });
+        const linkRoot = join(tmp, 'link-root');
+        symlinkSync(realRoot, linkRoot, 'dir');
+        const unresolvedWorkflowPath = join(linkRoot, 'workflows', 'w1', 'SKILL.md');
+        expect(() =>
+            buildBotRegisterHandoff({
+                plugin: 'sp',
+                entries: [
+                    {
+                        ...entry('w1'),
+                        skillMd: `---\nname: w1\ndescription: d\n---\nRead ${unresolvedWorkflowPath}.\n`,
+                    },
+                ],
+                source: SOURCE,
+                materialize: 'full',
+                dataRoot: linkRoot,
+            }),
+        ).toThrow(/self-references its replacement target/);
+    });
+
+    it('full-mode records preserve a host write round-trip: applying bodies keeps markers current', async () => {
+        const res = resolveSandRoot({ sandData: join(tmp, 'root'), homeDir: tmp, createMissing: true });
+        await emitGrokBotInstall({
+            entries: [entry('w1')],
+            resolution: res,
+            plugin: 'sp',
+            source: SOURCE,
+            materialize: 'full',
+            superskillVersion: '0.0.0-test',
+            nowIso: '2026-01-01T00:00:00Z',
+            prune: false,
+            pruneCandidates: [],
+        });
+        const handoff = buildBotRegisterHandoff({
+            plugin: 'sp',
+            entries: [entry('w1')],
+            source: SOURCE,
+            materialize: 'full',
+            dataRoot: res.dataRoot,
+        });
+        const record = handoff.skills.at(0);
+        if (!record) throw new Error('expected one skill record');
+        expect(record.recipePath).toBe(join(realpathSync(res.dataRoot), 'workflows', 'w1', 'SKILL.md'));
+        // Preserving host write: bytes come from the record, not the on-disk recipe.
+        writeFileSync(record.recipePath, record.body, 'utf-8');
+        const marker = readOriginMarker(join(res.workflowsDir, 'w1'), 'sp');
+        if (!marker) throw new Error('expected origin marker');
+        expect(markerHashesCurrent(marker, join(res.workflowsDir, 'w1'))).toBe(true);
+    });
+
+    it('doctor reports slash registry unknown with guidance, without affecting availability', async () => {
+        const root = join(tmp, 'root');
+        mkdirSync(root, { recursive: true });
+        process.env[BOT_SAND_DATA_ENV] = root;
+        const report = inspectGrokBotTarget({ sandData: root, homeDir: tmp });
+        expect(report.slashRegistry.status).toBe('unknown');
+        expect(report.slashRegistry.handoffDir).toBe(join(realpathSync(root), '.superskill', 'grok-bot', 'register'));
+        expect(report.slashRegistry.guidance.join(' ')).toMatch(/Plugins > Yours/);
+        expect(report.available).toBe(true); // empty root is healthy; slashRegistry never affects availability
     });
 });

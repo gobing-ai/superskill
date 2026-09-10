@@ -94,4 +94,41 @@ describe('doctor command (task 0128 / R6)', () => {
             rmSync(home, { recursive: true, force: true });
         }
     });
+
+    it('reports slash registry unknown with handoff guidance without changing exit semantics (task 0130)', async () => {
+        const home = mkdtempSync(join(tmpdir(), 'superskill-doctor-home3-'));
+        const savedHome = process.env.HOME_DIR;
+        const savedSand = process.env.SAND_DATA;
+        process.env.HOME_DIR = home;
+        delete process.env.SAND_DATA;
+        try {
+            const sand = join(home, 'sand-data');
+            mkdirSync(sand, { recursive: true });
+            const json = await runDoctor(['--targets', 'grok-bot', '--json']);
+            expect(json.code).toBe(0); // guidance never breaks a healthy root
+            const report = JSON.parse(json.output) as {
+                slashRegistry: { status: string; handoffDir: string | null; guidance: string[] };
+            };
+            expect(report.slashRegistry.status).toBe('unknown');
+            expect(report.slashRegistry.handoffDir).toBe(
+                join(realpathSync(sand), '.superskill', 'grok-bot', 'register'),
+            );
+            expect(report.slashRegistry.guidance.join(' ')).toContain('Plugins > Yours');
+            const human = await runDoctor(['--targets', 'grok-bot']);
+            expect(human.code).toBe(0);
+            expect(human.output).toContain('slash registry: unknown');
+            expect(human.output).toContain('verified registration method');
+            // Unresolved root still surfaces the caveat.
+            delete process.env.SAND_DATA;
+            process.env.HOME_DIR = join(home, 'missing-home');
+            const unresolved = await runDoctor(['--targets', 'grok-bot']);
+            expect(unresolved.output).toContain('slash registry: unknown');
+        } finally {
+            if (savedHome === undefined) delete process.env.HOME_DIR;
+            else process.env.HOME_DIR = savedHome;
+            if (savedSand === undefined) delete process.env.SAND_DATA;
+            else process.env.SAND_DATA = savedSand;
+            rmSync(home, { recursive: true, force: true });
+        }
+    });
 });

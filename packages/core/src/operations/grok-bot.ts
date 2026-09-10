@@ -29,6 +29,8 @@ import { FrontmatterError, parseFrontmatter } from '../content/frontmatter';
 import { assertSafePathSegment } from '../content/identity';
 import { FilesystemTransaction } from '../skills-ecosystem/installer';
 import { type InstallSnapshot, snapshotFiles } from './install-manifest.js';
+import type { PostInstallAction, TransactionalWrite } from './post-install.js';
+import { runPostInstallActions } from './post-install.js';
 
 /** Bot materialization mode: bridge (canonical + thin pointer) or full (in place). */
 export type GrokBotMaterialize = 'bridge' | 'full';
@@ -342,6 +344,135 @@ export function botCanonicalSkillDir(dataRoot: string, id: string): string {
     return join(resolve(dataRoot), '.superskill', GROK_BOT_TARGET, 'skills', id);
 }
 
+/**
+ * Deterministic handoff directory for slash-registration preparation
+ * (task 0130). Preparation only: the CLI never claims successful
+ * registration (host visibility is unverifiable from here).
+ */
+function botRealpath(p: string): string {
+    try {
+        return realpathSync(p);
+    } catch {
+        // Root not materialized yet (dry-run preview): keep the resolved form.
+        return resolve(p);
+    }
+}
+
+/** Handoff file where install/update stages one plugin's slash-registration request (R7/R8): consumed by the host agent, never by this CLI. */
+export function botRegisterHandoffPath(dataRoot: string, plugin: string): string {
+    assertSafePathSegment(plugin, 'grok-bot plugin id');
+    return join(botRealpath(dataRoot), '.superskill', GROK_BOT_TARGET, 'register', `${plugin}.json`);
+}
+
+/** Directory holding all registration handoffs under the resolved Bot data root. */
+export function botRegisterHandoffDir(dataRoot: string): string {
+    return join(botRealpath(dataRoot), '.superskill', GROK_BOT_TARGET, 'register');
+}
+
+/** One skill record inside a registration handoff. */
+export interface BotRegisterSkillRecord {
+    id: string;
+    name: string;
+    description: string;
+    mode: GrokBotMaterialize;
+    /** Absolute SKILL.md the host should treat as the recipe (canonical for bridge, workflow for full). */
+    recipePath: string;
+    /**
+     * Executable content: bridge instructions that read the canonical recipe,
+     * or the full real SKILL.md content (never a pointer back to the workflow
+     * file a preserving host write would overwrite).
+     */
+    body: string;
+    /** Original frontmatter metadata for a preserving host write. */
+    frontmatter: Record<string, unknown>;
+    /** Support files beside the recipe: relative path → content. */
+    resources: Record<string, string>;
+}
+
+/** Versioned handoff document written to `botRegisterHandoffPath`. */
+export interface BotRegisterHandoff {
+    schemaVersion: 1;
+    target: 'grok-bot';
+    plugin: string;
+    dataRoot: string;
+    source: GrokBotSource;
+    materialize: GrokBotMaterialize;
+    skills: BotRegisterSkillRecord[];
+}
+
+/** Shared slash-registration caveat: handoff preparation ≠ registration. */
+export const BOT_SLASH_CAVEAT =
+    'Slash registration is NOT automatic: have the host agent consume the handoff with a verified ' +
+    'host method (one registration attempt per id, never delete-and-recreate), then enable the ' +
+    'plugin per Bot under Grok Bot Settings > Plugins > Yours.';
+
+function bridgeRecordBody(recipePath: string): string {
+    return (
+        `When this skill is invoked, read and follow the canonical skill file at:\n${recipePath}\n\n` +
+        'Pass any user arguments through unchanged, and resolve any resources referenced by that ' +
+        'skill from the directory containing it.'
+    );
+}
+
+/**
+ * Build the deterministic registration handoff for one committed install
+ * batch (this batch's entries only — never retained obsolete workflows).
+ * Throws on content that could not round-trip a preserving host write.
+ */
+export function buildBotRegisterHandoff(args: {
+    plugin: string;
+    entries: readonly BotSkillEntry[];
+    source: GrokBotSource;
+    materialize: GrokBotMaterialize;
+    dataRoot: string;
+}): BotRegisterHandoff {
+    // Normalize once so reinstall handoffs stay byte-identical across root materialization.
+    const dataRoot = botRealpath(args.dataRoot);
+    const workflowsDir = join(dataRoot, 'workflows');
+    const skills = args.entries.map((entry) => {
+        const parsed = parseFrontmatter(entry.skillMd);
+        const workflowSkillPath = join(workflowsDir, entry.id, 'SKILL.md');
+        const isBridge = args.materialize === 'bridge';
+        const recipePath = isBridge ? join(botCanonicalSkillDir(dataRoot, entry.id), 'SKILL.md') : workflowSkillPath;
+        // Full bodies are applied in place: pointing back at the overwritten file would destroy the recipe.
+        // Check the unresolved form too: on a symlinked Sand root (e.g. /tmp → /private/tmp) a body
+        // citing the non-canonicalized absolute path is equally destructive.
+        const unresolvedWorkflowSkillPath = join(resolve(args.dataRoot), 'workflows', entry.id, 'SKILL.md');
+        if (
+            !isBridge &&
+            (entry.skillMd.includes(workflowSkillPath) || entry.skillMd.includes(unresolvedWorkflowSkillPath))
+        ) {
+            throw new GrokBotPreflightError(
+                `grok-bot handoff record '${entry.id}' self-references its replacement target ${workflowSkillPath}`,
+            );
+        }
+        return {
+            id: entry.id,
+            name: entry.id,
+            description: entry.description,
+            mode: args.materialize,
+            recipePath,
+            body: isBridge ? bridgeRecordBody(recipePath) : entry.skillMd,
+            frontmatter: parsed.data,
+            resources: Object.fromEntries(entry.files),
+        };
+    });
+    return {
+        schemaVersion: 1,
+        target: GROK_BOT_TARGET,
+        plugin: args.plugin,
+        dataRoot,
+        source: args.source,
+        materialize: args.materialize,
+        skills,
+    };
+}
+
+/** Deterministic serialization: stable key order, 2-space indent, trailing newline. */
+export function serializeBotRegisterHandoff(handoff: BotRegisterHandoff): string {
+    return `${JSON.stringify(handoff, null, 2)}\n`;
+}
+
 function hashEntry(entry: BotSkillEntry): Record<string, string> {
     const hashes: Record<string, string> = { 'SKILL.md': sha256Text(entry.skillMd) };
     for (const [rel, content] of entry.files) hashes[rel] = sha256Text(content);
@@ -573,11 +704,12 @@ export function renderBridgePointer(entry: BotSkillEntry, canonicalSkillDir: str
         `canonical: ${relPointer}`,
         '---',
         '',
-        `This workflow is managed by superskill (bridge mode). The full skill lives at:`,
+        `This workflow is managed by superskill (bridge mode). When invoked, read and follow the canonical skill at:`,
         '',
         `\`${relPointer}\``,
         '',
-        'Edit the canonical copy; reinstalling its plugin republishes this pointer.',
+        'Pass any user arguments through unchanged, and resolve any resources referenced by that skill from the directory containing it.',
+        'Edit only the canonical copy; reinstalling its plugin republishes this pointer.',
         '',
     ].join('\n');
 }
@@ -601,6 +733,8 @@ export interface EmitGrokBotResult {
     pruned: string[];
     skippedForeign: string[];
     installedSnapshot: InstallSnapshot;
+    /** Post-install action outcome (task 0130); empty when no actions ran. */
+    postInstall: { writtenFiles: string[]; messages: string[] };
 }
 
 /**
@@ -610,7 +744,9 @@ export interface EmitGrokBotResult {
  * `finalize` (receipt) failure rolls every touched destination back to its
  * prior state, and rollback failures are reported in the thrown error.
  * `finalize` runs after catalog writes and before commit so a receipt failure
- * still restores prior Bot output.
+ * still restores prior Bot output. Registered post-install actions (task 0130)
+ * run after catalog/prune writes and before the receipt snapshot, inside the
+ * same rollback boundary, through their transaction-scoped writer.
  */
 export async function emitGrokBotInstall(args: {
     entries: readonly BotSkillEntry[];
@@ -624,6 +760,14 @@ export async function emitGrokBotInstall(args: {
     pruneCandidates: readonly { id: string; kind: 'canonical' | 'workflow' }[];
     /** Optional receipt writer — runs inside the rollback scope (R6). */
     finalize?: (installed: InstallSnapshot) => void;
+    /**
+     * Post-install hook: receives a transaction-scoped writer bound to this
+     * emission's rollback boundary and returns the actions to run (R9).
+     */
+    postActions?: (write: TransactionalWrite) => {
+        actions: readonly PostInstallAction[];
+        stagingRoot: string;
+    };
 }): Promise<EmitGrokBotResult> {
     const { resolution } = args;
     const transaction = new FilesystemTransaction();
@@ -676,6 +820,31 @@ export async function emitGrokBotInstall(args: {
                 if (candidate.kind === 'workflow') pruned.push(candidate.id);
             }
         }
+        // Post-install actions: once, in registration order, before the receipt (R9).
+        const postInstall = { writtenFiles: [] as string[], messages: [] as string[] };
+        if (args.postActions) {
+            const writeTransactional: TransactionalWrite = async (absPath, content) => {
+                await transaction.replace(absPath, async (destination) => {
+                    mkdirSync(resolve(destination, '..'), { recursive: true });
+                    writeFileSync(destination, content, 'utf-8');
+                });
+            };
+            const plan = args.postActions(writeTransactional);
+            const results = await runPostInstallActions(
+                {
+                    target: GROK_BOT_TARGET,
+                    plugin: args.plugin,
+                    installRoot: resolution.dataRoot,
+                    stagingRoot: plan.stagingRoot,
+                    dryRun: false,
+                },
+                plan.actions,
+            );
+            for (const result of results) {
+                postInstall.writtenFiles.push(...result.writtenFiles);
+                postInstall.messages.push(...result.messages);
+            }
+        }
         // Receipt snapshot over every file superskill owns for this plugin install.
         const ownedFiles: string[] = [];
         for (const entry of args.entries) {
@@ -697,7 +866,7 @@ export async function emitGrokBotInstall(args: {
         );
         args.finalize?.(installed);
         await transaction.commit();
-        return { published, pruned, skippedForeign: [], installedSnapshot: installed };
+        return { published, pruned, skippedForeign: [], installedSnapshot: installed, postInstall };
     } catch (error) {
         try {
             await transaction.rollback();
@@ -734,6 +903,40 @@ export interface GrokBotDoctorReport {
     source: SandRootResolution['source'] | null;
     creatable: boolean;
     issues: GrokBotDoctorIssue[];
+    /**
+     * Slash-registration status (task 0130): always `unknown` — filesystem
+     * health is not proof of registration, and the CLI has no verified way
+     * to query the host. Carries the handoff location and next steps.
+     */
+    slashRegistry: GrokBotDoctorSlashRegistry;
+}
+
+/**
+ * Doctor's view of slash-command registration (R6). `status` is always
+ * `unknown`: healthy on-disk files do not prove host visibility, and the CLI
+ * has no verified way to query the host, so doctor surfaces the handoff
+ * location and next steps instead of a verdict.
+ */
+export interface GrokBotDoctorSlashRegistry {
+    status: 'unknown';
+    /** Where install/update prepares registration handoffs; null if no root resolved. */
+    handoffDir: string | null;
+    guidance: string[];
+}
+
+/** Doctor guidance lines for slash registration: why the CLI cannot verify it and how to register safely. */
+export const BOT_DOCTOR_SLASH_GUIDANCE = [
+    'Healthy on-disk files do not prove slash visibility; the CLI cannot verify host registration.',
+    'Install/update prepares a handoff at <dataRoot>/.superskill/grok-bot/register/<plugin>.json — have the host agent consume it with a verified registration method (one attempt per id, never delete-and-recreate).',
+    'After registration, enable the plugin per Bot under Grok Bot Settings > Plugins > Yours (private skills may also need per-Bot enablement).',
+];
+
+function botDoctorSlashRegistry(dataRoot: string | null): GrokBotDoctorSlashRegistry {
+    return {
+        status: 'unknown',
+        handoffDir: dataRoot === null ? null : botRegisterHandoffDir(dataRoot),
+        guidance: BOT_DOCTOR_SLASH_GUIDANCE,
+    };
 }
 
 /**
@@ -760,12 +963,19 @@ export function inspectGrokBotTarget(options: { sandData?: string; homeDir: stri
             source: null,
             creatable: false,
             issues,
+            slashRegistry: botDoctorSlashRegistry(null),
         };
     }
     let available = true;
     if (!existsSync(resolution.workflowsDir)) {
         // Missing workflows/ on an existing root is fine (first install creates it).
-        return { ...resolution, target: GROK_BOT_TARGET, available, issues };
+        return {
+            ...resolution,
+            target: GROK_BOT_TARGET,
+            available,
+            issues,
+            slashRegistry: botDoctorSlashRegistry(resolution.dataRoot),
+        };
     }
     for (const dirent of readdirSync(resolution.workflowsDir, { withFileTypes: true })) {
         if (!dirent.isDirectory() || dirent.isSymbolicLink()) continue;
@@ -829,5 +1039,11 @@ export function inspectGrokBotTarget(options: { sandData?: string; homeDir: stri
             });
         }
     }
-    return { ...resolution, target: GROK_BOT_TARGET, available, issues };
+    return {
+        ...resolution,
+        target: GROK_BOT_TARGET,
+        available,
+        issues,
+        slashRegistry: botDoctorSlashRegistry(resolution.dataRoot),
+    };
 }

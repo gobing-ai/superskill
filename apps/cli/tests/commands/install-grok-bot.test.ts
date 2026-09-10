@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, spyOn } from 'bun:test';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { installManifestPath, readInstallManifest } from '@gobing-ai/superskill-core';
@@ -97,7 +97,8 @@ describe('grok-bot install (task 0128)', () => {
             materialize: 'full',
         });
         expect(existsSync(join(sand, 'workflows', 'demo-a', 'SKILL.md'))).toBe(true);
-        expect(existsSync(join(sand, '.superskill', 'grok-bot'))).toBe(false);
+        // No canonical tree in full mode; task 0130 adds only the register/ handoff artifact.
+        expect(existsSync(join(sand, '.superskill', 'grok-bot', 'skills'))).toBe(false);
         const manifest = readInstallManifest(installManifestPath(sand, 'grok-bot', 'demo'));
         expect(manifest.grokBot).toEqual({ materialize: 'full' });
     });
@@ -205,5 +206,147 @@ describe('grok-bot install (task 0128)', () => {
         const errOut = stderrSpy.mock.calls.map((call) => String(call[0])).join('');
         stderrSpy.mockRestore();
         expect(errOut).toContain('skipping grok-bot manifest scan');
+    });
+});
+
+describe('grok-bot registration handoff (task 0130)', () => {
+    let stdout: string;
+
+    beforeEach(() => {
+        tempDir = mkdtempSync(join(tmpdir(), 'superskill-grok-bot-cli-'));
+        stdout = '';
+        stdoutSpy = spyOn(process.stdout, 'write').mockImplementation((chunk) => {
+            stdout += String(chunk);
+            return true;
+        });
+    });
+
+    it('install prepares a deterministic handoff file and reports it without claiming registration', async () => {
+        const { sand } = botEnv();
+        const pluginRoot = createPlugin(tempDir);
+        await executeInstall('demo', ['grok-bot'], {
+            pluginPath: pluginRoot,
+            global: true,
+            dryRun: false,
+            verbose: false,
+            prune: false,
+        });
+        // Root exists at emission time: paths print in canonical (realpathed) form.
+        const handoffPath = join(realpathSync(sand), '.superskill', 'grok-bot', 'register', 'demo.json');
+        expect(existsSync(handoffPath)).toBe(true);
+        const first = readFileSync(handoffPath, 'utf-8');
+        const handoff = JSON.parse(first) as {
+            schemaVersion: number;
+            target: string;
+            plugin: string;
+            materialize: string;
+            skills: Array<{
+                id: string;
+                recipePath: string;
+                body: string;
+                mode: string;
+                resources: Record<string, string>;
+            }>;
+        };
+        expect(handoff.schemaVersion).toBe(1);
+        expect(handoff.target).toBe('grok-bot');
+        expect(handoff.plugin).toBe('demo');
+        expect(handoff.materialize).toBe('bridge');
+        expect(handoff.skills[0]?.id).toBe('demo-a');
+        expect(handoff.skills[0]?.mode).toBe('bridge');
+        // First and reinstall handoffs are byte-identical (no timestamps; realpath normalization).
+        expect(handoff.skills[0]?.recipePath).toBe(
+            join(realpathSync(sand), '.superskill', 'grok-bot', 'skills', 'demo-a', 'SKILL.md'),
+        );
+        // Bridge body reads the distinct canonical recipe; never points at the pointer workflow.
+        expect(handoff.skills[0]?.body).toContain('read and follow the canonical skill file at');
+        expect(handoff.skills[0]?.body).not.toContain(join(sand, 'workflows'));
+        expect(stdout).toContain(`handoff prepared at ${handoffPath}`);
+        expect(stdout).toContain('NOT automatic');
+        expect(stdout).toContain('Plugins > Yours');
+        expect(stdout).not.toContain('registered at');
+        // R4: reinstall regenerates byte-identical handoff (no timestamps inside).
+        await executeInstall('demo', ['grok-bot'], {
+            pluginPath: pluginRoot,
+            global: true,
+            dryRun: false,
+            verbose: false,
+            prune: false,
+        });
+        expect(readFileSync(handoffPath, 'utf-8')).toBe(first);
+    });
+
+    it('dry-run previews the handoff and slash caveat without creating anything', async () => {
+        const { sand } = botEnv(); // sand intentionally absent
+        const pluginRoot = createPlugin(tempDir);
+        await executeInstall('demo', ['grok-bot'], {
+            pluginPath: pluginRoot,
+            global: true,
+            dryRun: true,
+            verbose: false,
+            prune: false,
+        });
+        expect(stdout).toContain('grok-bot (dry-run): handoff would be prepared at');
+        expect(stdout).toContain(join('.superskill', 'grok-bot', 'register', 'demo.json'));
+        expect(stdout).toContain('NOT automatic');
+        expect(existsSync(sand)).toBe(false);
+        expect(existsSync(join(sand, '.superskill', 'grok-bot', 'register', 'demo.json'))).toBe(false);
+    });
+
+    it('reinstall switches handoff records to full recipes and --prune drops removed entries', async () => {
+        const { sand } = botEnv();
+        const pluginRoot = createPlugin(tempDir);
+        writeFileSync(join(pluginRoot, 'skills', 'b.md'), '---\nname: b\ndescription: Skill b\n---\nBody b.\n');
+        await executeInstall('demo', ['grok-bot'], {
+            pluginPath: pluginRoot,
+            global: true,
+            dryRun: false,
+            verbose: false,
+            prune: false,
+        });
+        await executeInstall('demo', ['grok-bot'], {
+            pluginPath: pluginRoot,
+            global: true,
+            dryRun: false,
+            verbose: false,
+            prune: false,
+            materialize: 'full',
+        });
+        const handoffPath = join(sand, '.superskill', 'grok-bot', 'register', 'demo.json');
+        let handoff = JSON.parse(readFileSync(handoffPath, 'utf-8')) as {
+            materialize: string;
+            skills: Array<{ id: string; mode: string; recipePath: string }>;
+        };
+        expect(handoff.materialize).toBe('full');
+        expect(handoff.skills.map((s) => s.id)).toEqual(['demo-a', 'demo-b']);
+        expect(handoff.skills[1]?.recipePath).toBe(join(realpathSync(sand), 'workflows', 'demo-b', 'SKILL.md'));
+        // --prune replace: the handoff covers this committed batch only.
+        rmSync(join(pluginRoot, 'skills', 'b.md'));
+        await executeInstall('demo', ['grok-bot'], {
+            pluginPath: pluginRoot,
+            global: true,
+            dryRun: false,
+            verbose: false,
+            prune: true,
+            materialize: 'full',
+        });
+        handoff = JSON.parse(readFileSync(handoffPath, 'utf-8'));
+        expect(handoff.skills.map((s) => s.id)).toEqual(['demo-a']);
+        expect(existsSync(join(sand, 'workflows', 'demo-b'))).toBe(false);
+    });
+
+    it('ordinary target installs never create a Bot handoff or Sand root', async () => {
+        const { sand } = botEnv();
+        const pluginRoot = createPlugin(tempDir);
+        await executeInstall('demo', ['codex'], {
+            pluginPath: pluginRoot,
+            global: true,
+            dryRun: false,
+            verbose: false,
+            prune: false,
+            outputRoot: tempDir,
+        });
+        expect(existsSync(sand)).toBe(false);
+        expect(stdout).not.toContain('handoff prepared');
     });
 });

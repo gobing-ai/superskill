@@ -3,20 +3,29 @@ import { echo } from '@gobing-ai/ts-utils';
 import type { Command } from 'commander';
 import { resolveHomeDir } from './install';
 
+function printSlashRegistry(report: GrokBotDoctorReport): void {
+    const where = report.slashRegistry.handoffDir ?? 'unresolved Sand root';
+    echo(`grok-bot: slash registry: ${report.slashRegistry.status} (handoffs at ${where})`);
+    for (const line of report.slashRegistry.guidance) echo(`  ${line}`);
+}
+
 function printHuman(report: GrokBotDoctorReport): void {
     if (report.dataRoot === null) {
         echo(`grok-bot: no Sand data root resolved — ${report.issues[0]?.message ?? 'unresolved'}`);
-        return;
+    } else {
+        echo(
+            `grok-bot: Sand root ${report.dataRoot} (source: ${report.source}${report.creatable ? ', creatable' : ''})`,
+        );
+        if (!report.issues.length) {
+            echo(`grok-bot: OK — workflows at ${report.workflowsDir}`);
+        } else {
+            for (const issue of report.issues) {
+                echo(`grok-bot: [${issue.code}] ${issue.path}`);
+                echo(`  ${issue.message}`);
+            }
+        }
     }
-    echo(`grok-bot: Sand root ${report.dataRoot} (source: ${report.source}${report.creatable ? ', creatable' : ''})`);
-    if (!report.issues.length) {
-        echo(`grok-bot: OK — workflows at ${report.workflowsDir}`);
-        return;
-    }
-    for (const issue of report.issues) {
-        echo(`grok-bot: [${issue.code}] ${issue.path}`);
-        echo(`  ${issue.message}`);
-    }
+    printSlashRegistry(report);
 }
 
 /**

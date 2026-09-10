@@ -22,6 +22,7 @@ import {
     assertSafePathSegment,
     CLAUDE_PACKAGE_FILES,
     collectBotSkillEntries,
+    createPostInstallRegistry,
     emitGrokBotInstall,
     type GrokBotSource,
     getGitHubToken,
@@ -47,6 +48,7 @@ import {
     resolvePlugin,
     resolveSandRoot,
     rewriteSkillReferences,
+    runPostInstallActions,
     runRulesync,
     snapshotFiles,
     stageMagentsFromDir,
@@ -71,6 +73,7 @@ import {
 } from '../hooks';
 import { generateOmpHookModules, type OmpHookResult } from '../omp-hooks';
 import { cliVersion } from '../version';
+import { createGrokBotRegisterAction, type GrokBotRegisterActionArgs } from './install-post-actions';
 
 /**
  * Register the `superskill install` subcommand on the given Commander program.
@@ -491,11 +494,47 @@ export async function executeInstall(
                 prune: options.prune === true,
                 materialize: botMaterialize,
             });
+            // One construction site for handoff-action args (task 0130): dry-run and apply
+            // differ only in the writer (guard vs transactional), so they cannot drift.
+            const botRegisterArgs = (
+                writeTransactional: GrokBotRegisterActionArgs['writeTransactional'],
+            ): GrokBotRegisterActionArgs => ({
+                plugin,
+                entries: botEntries,
+                source: botSource,
+                materialize: botMaterialize,
+                dataRoot: sandRoot.dataRoot,
+                writeTransactional,
+            });
             if (options.dryRun) {
                 for (const item of botPlan.owned) {
                     echo(`grok-bot (dry-run): ${item.kind} workflows/${item.id} (${botMaterialize})`);
                 }
                 for (const id of botPlan.skippedForeign) echo(`grok-bot (dry-run): skip foreign workflow ${id}`);
+                // R2 (task 0130): preview the registration handoff + slash caveat; the
+                // guard writer fails loudly if a preview ever attempts a write.
+                const previewRegistry = createPostInstallRegistry();
+                previewRegistry.register(
+                    'grok-bot',
+                    createGrokBotRegisterAction(
+                        botRegisterArgs(async () => {
+                            throw new Error('preview attempted a write');
+                        }),
+                    ),
+                );
+                const previews = await runPostInstallActions(
+                    {
+                        target: 'grok-bot',
+                        plugin,
+                        installRoot: sandRoot.dataRoot,
+                        stagingRoot: outputDir,
+                        dryRun: true,
+                    },
+                    previewRegistry.resolve('grok-bot'),
+                );
+                for (const message of previews.flatMap((result) => result.messages)) {
+                    echo(`grok-bot (dry-run): ${message}`);
+                }
             } else {
                 const nowIso = new Date().toISOString();
                 const emitted = await emitGrokBotInstall({
@@ -527,6 +566,13 @@ export async function executeInstall(
                             upstream: snapshotFiles(pluginRoot, listRegularFilesUnder(pluginRoot)),
                             grokBot: { materialize: botMaterialize },
                         }),
+                    // R9 (task 0130): registration handoff runs inside the emit
+                    // transaction/rollback boundary, before the receipt and final echo.
+                    postActions: (write) => {
+                        const registry = createPostInstallRegistry();
+                        registry.register('grok-bot', createGrokBotRegisterAction(botRegisterArgs(write)));
+                        return { actions: registry.resolve('grok-bot'), stagingRoot: outputDir };
+                    },
                 });
                 if (emitted.pruned.length > 0) {
                     echo(
@@ -534,6 +580,9 @@ export async function executeInstall(
                     );
                 }
                 echo(`grok-bot: ${botEntries.length} skills at ${sandRoot.workflowsDir}`);
+                // R1 (task 0130): prepared-handoff messages only — echoed after commit,
+                // never claiming registration success (R6).
+                for (const message of emitted.postInstall.messages) echo(`grok-bot: ${message}`);
             }
         }
 

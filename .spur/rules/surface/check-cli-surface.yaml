@@ -17,6 +17,8 @@ include:
 
 exclude:
   - "apps/cli/src/commands/helpers.ts"
+  # support module (action factories consumed by install/update), not a command
+  - "apps/cli/src/commands/install-post-actions.ts"
 
 rules:
   - id: cli-register-pattern
