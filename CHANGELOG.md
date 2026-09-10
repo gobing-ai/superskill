@@ -4,6 +4,26 @@ All notable changes to `@gobing-ai/superskill` are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Conventional Commits](https://www.conventionalcommits.org/).
 
+## [0.3.23] - 2026-09-10
+
+### Added
+
+- **emit deterministic Grok Bot slash-registration handoffs from install/update (task 0130).** First consumer of the new post-install runner: every successful `grok-bot` install/update writes one byte-stable `<plugin>.json` under `<sandRoot>/.superskill/grok-bot/register/`, carrying `id`/`name`/`description`/`mode`, realpath-canonical recipe path, and a bridge body that instructs the host to read and follow the distinct canonical SKILL.md, pass arguments through, and resolve resources beside it (R3). Full-mode records carry the real recipe body and frontmatter; self-referential bodies are rejected preflight. The action runs inside `emitGrokBotInstall`'s `FilesystemTransaction` after catalog/prune writes and before the receipt snapshot — any action, catalog or receipt failure rolls back the handoff alongside prior artifacts (R2). Dry-run preview reuses the same registry with a guard writer, so preview and apply cannot drift (R1). Success messages say **prepared** — never **registered** (R6). `doctor --targets grok-bot` gains a `slashRegistry.status: unknown` section with the handoff directory and verified-host-method next steps; exit semantics 0/1/2 unchanged. (3917703)
+
+### Fixed
+
+- **include installed version in `superskill update` `up to date` row.** `formatUpdateRow` now emits `<plugin>: <installedVersion> up to date` when the manifest carries a version, falling back to the bare `<plugin>: up to date` when it does not — operators get an explicit version stamp to verify targeted reinstalls. (bc545bc)
+
+### Changed
+
+- **add reusable post-install action runner and registry (ADR-037).** New `packages/core/src/operations/post-install.ts`: per-invocation `PostInstallRegistry` keyed by target, ordered `PostInstallAction` contract with preview/apply, and a `runPostInstallActions` dispatcher that rejects duplicate ids, runs once per target/plugin invocation, surfaces dry-run previews without writes, and wraps failures with target/action identity. Re-exported from `packages/core/src/index.ts`. Foundation for the Grok Bot handoff and any future target customization. (bf427f7)
+
+### Documentation
+
+- **accept ADR-037 with internal post-install action contract.** Target-specific customization needs one consistent lifecycle and extension point rather than accumulating independent installer branches. ADR-037 binds that contract to core's runner and the CLI's target-keyed registry, with each action owning its own transaction. Architecture section documents runner boundaries (no cross-target transaction, no implicit remote transport, dry-run = preview only). Design names `PostInstallContext`/`PostInstallAction`/`PostInstallResult`/`runPostInstallActions` as planned types; no public command or flag change. Task 0130 applies the contract to Grok Bot as its first consumer; future customizations use the same registration path. (b36c3e6)
+- **activate feature D and plan task 0130 for Grok Bot handoffs.** Feature D remains active: task 0128's filesystem installer is locally verified, but slash visibility depends on host registry registration that FS writes alone do not achieve. Cancellation of verification-only 0129 keeps its useful host checks and folds them into a single implementation task. Task 0130 carries R11–R19 acceptance scenarios and the shared post-install mechanism (ADR-037) before the Grok Bot consumer. The supplied slash-registry patch spec is captured as superseded review input. (812100a)
+- **sync ADR-036/037 and architecture/design for task 0130; lift post-install runner into the implemented tree.** Flip ADR-036 and ADR-037 from "Accepted (design)" to "Accepted" — they are shipped, per the status transition rule recorded in `.spur/memory/learnings.md`. Architecture lifts the post-install runner into the implemented tree and adds the live transaction boundary, staging lifetime, and "prepared not registered" message discipline to the action lifecycle. Design documents the implemented contract (`TransactionalWrite`, registry, runner error wrapping) and adds the Grok Bot registration handoff subsection with `schemaVersion: 1` shape, determinism rules, and the dry-run preview path; `doctor` is added to the command surface table. Features note now reads "implemented" for D; the feature file flips active → done; INDEX reflects the transition. `help/entity_locations.md` and `README.md` describe the handoff location and the non-automatic caveat. `skill-update-notification.md` gets a Correction block pointing at ADR-035's `grokBot.materialize` amendment. Wrapup learnings and metrics appended. Task 0130 Solution and Testing sections record the implementation map and per-requirement evidence. (513b6b9)
+
 ## [0.3.22] - 2026-09-09
 
 ### Added
