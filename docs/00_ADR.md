@@ -2,9 +2,9 @@
 doc: 00_ADR
 owns: WHY — which cross-cutting decision was made, and the one-line reason
 authority: authoritative
-version: 1.11.0
+version: 1.12.0
 owner: Robin Min
-updated_at: 2026-08-31
+updated_at: 2026-09-09
 read_before: any structural change; add a dated entry before diverging from a decision
 edit_rules: 99 §6.1
 sync: [T1, T2]
@@ -677,3 +677,13 @@ operators run superskill on the Bot VPS (a mounted path is just an explicit
 filesystem destination). Failure modes preserve prior output via the existing
 filesystem transaction rollback; installs to the same Bot/plugin must be
 serialized by the operator.
+
+## ADR-037: Target customizations share an internal post-install action mechanism
+
+**Status:** Accepted (design) · **Date:** 2026-09-09 · **Task:** 0130
+
+**Decision.** Implement a reusable target post-install action mechanism within plugin install/update before applying it to Grok Bot; subsequent coding-agent customizations use the same extension contract. This extends ADR-036 without adding a public command or changing target opt-in rules.
+
+**Why.** Target-specific customization needs one consistent lifecycle and extension point rather than accumulating independent installer branches.
+
+**Detail:** `03_ARCHITECTURE.md` §Target post-install actions; `04_DESIGN.md` §Internal post-install action contract; task 0130.

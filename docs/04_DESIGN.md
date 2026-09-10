@@ -2,10 +2,10 @@
 doc: 04_DESIGN
 owns: SURFACE — concrete shapes: every CLI command, flag, config key, env var, table, DTO
 authority: derived
-version: 2.9.1
+version: 2.10.0
 derived_from: [00_ADR, 01_PRD, 02_ROADMAP]
 owner: Robin Min
-updated_at: 2026-08-31
+updated_at: 2026-09-09
 read_before: changing a command, flag, env var, or schema
 edit_rules: 99 §6.5
 sync: [T3]
@@ -15,6 +15,26 @@ sync: [T3]
 
 - Phase 1 — Distribution: [design-doc-phase1.md](design/design-doc-phase1.md) — `superskill install` and supporting commands.
 - Phase 2 — Authoring + quality: [design-doc-phase2.md](design/design-doc-phase2.md) — artifact-specific `superskill agent|skill|command|hook|magent` lifecycles.
+
+## Internal post-install action contract (accepted design — ADR-037; not yet built)
+
+Task 0130 introduces internal `PostInstallContext`, `PostInstallAction`, `PostInstallResult` and
+`runPostInstallActions` in `packages/core/src/operations/post-install.ts`. These are planned names,
+not currently available APIs. No public command, flag, environment variable or configuration key is added.
+
+| Contract | Shape |
+| --- | --- |
+| Context | Readonly `target: InstallTarget`, `plugin: string`, `installRoot: string`, `stagingRoot: string`, `dryRun: boolean` |
+| Action | Stable `id: string`; `preview(context)` and `apply(context)` returning `PostInstallResult` synchronously or asynchronously |
+| Result | `writtenFiles: string[]`, `messages: string[]`; preview reports no written files and describes intended effects in messages |
+| Runner | `runPostInstallActions(context, actions)` returns ordered results; invokes preview for dry-run and apply otherwise; propagates failure with target/action identity |
+| Registration | Internal target-keyed action factories in `apps/cli/src/commands/install-post-actions.ts`; absent target entry is a no-op; duplicate action ids for one target are rejected |
+
+Factories capture validated target-specific data and target-owned write/transaction capabilities.
+The common context does not grow a field for each target's metadata. Call sites supply the actual
+target root; Grok Bot uses its resolved Sand root. A second target's action and registration suffice
+to extend behavior; the runner needs no target-specific branch. Lifecycle and failure boundaries
+are owned by [03](03_ARCHITECTURE.md#target-post-install-actions-accepted-design--adr-037-not-yet-built).
 
 ## Phase 1 install surface
 
