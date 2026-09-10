@@ -99,7 +99,11 @@ skills root; prefer the colon form for plugin commands.
 Sand `workflows/` directory (bridge by default: thin pointers to a private canonical copy under
 `<sandRoot>/.superskill/grok-bot/skills/`; `--materialize full` for everything under `workflows/`).
 Slash form is `/plugin-skill-name`; commands/subagents install as skills/playbooks, hooks/MCP are
-not installed. Run `superskill doctor --targets grok-bot` for a filesystem health check.
+not installed. Every install/update also prepares a deterministic registration handoff at
+`<sandRoot>/.superskill/grok-bot/register/<plugin>.json` (task 0130) — slash registration is
+NOT automatic: have the host agent consume the handoff with a verified host method, then enable
+the plugin per Bot under Settings > Plugins > Yours. Run `superskill doctor --targets grok-bot`
+for a filesystem health check (it reports slash-registry status as unknown with next steps).
 
 See [entity locations](docs/help/entity_locations.md) for the exact install directories per agent.
 

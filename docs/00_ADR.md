@@ -2,9 +2,9 @@
 doc: 00_ADR
 owns: WHY — which cross-cutting decision was made, and the one-line reason
 authority: authoritative
-version: 1.12.0
+version: 1.13.0
 owner: Robin Min
-updated_at: 2026-09-09
+updated_at: 2026-09-10
 read_before: any structural change; add a dated entry before diverging from a decision
 edit_rules: 99 §6.1
 sync: [T1, T2]
@@ -616,7 +616,7 @@ verb (T3).
 
 ## ADR-036: `grok-bot` is an explicit opt-in, install-only target scoped to a Sand root
 
-**Status:** Accepted (design) · **Date:** 2026-09-08 · **Task:** 0128
+**Status:** Accepted · **Date:** 2026-09-08 · **Task:** 0128
 
 **Decision.** Plugin `install`/`update` gain a tenth, install-only target id
 `grok-bot` that publishes a flat skill catalog into Grok Bot's Sand data root
@@ -680,7 +680,7 @@ serialized by the operator.
 
 ## ADR-037: Target customizations share an internal post-install action mechanism
 
-**Status:** Accepted (design) · **Date:** 2026-09-09 · **Task:** 0130
+**Status:** Accepted · **Date:** 2026-09-09 · **Task:** 0130
 
 **Decision.** Implement a reusable target post-install action mechanism within plugin install/update before applying it to Grok Bot; subsequent coding-agent customizations use the same extension contract. This extends ADR-036 without adding a public command or changing target opt-in rules.
 

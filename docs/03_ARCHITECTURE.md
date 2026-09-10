@@ -2,10 +2,10 @@
 doc: 03_ARCHITECTURE
 owns: HOW — module boundaries, data flow, runtime model, invariants
 authority: derived
-version: 2.13.0
+version: 2.14.0
 derived_from: [00_ADR, 01_PRD]
 owner: Robin Min
-updated_at: 2026-09-09
+updated_at: 2026-09-10
 read_before: cross-module, seam, or schema work
 edit_rules: 99 §6.4
 sync: [T1]
@@ -13,32 +13,38 @@ sync: [T1]
 
 # Architecture
 
-## Target post-install actions (accepted design — ADR-037; not yet built)
+## Target post-install actions (ADR-037; task 0130 — implemented)
 
-Plugin installation gains a small shared action runner in core and target-keyed action registration
-in the CLI installer. Build that mechanism first; Grok Bot registration handoff generation is its
-first consumer. Target actions own customization logic; the runner owns deterministic selection,
-preview/apply dispatch and result/error propagation. Target-specific data stays in typed action
-factories/closures, not Bot-specific fields or branches in the runner. Future agents add an action
-and registry entry without modifying the runner.
+Plugin installation has a small shared action runner in core (`runPostInstallActions`,
+`createPostInstallRegistry` in `packages/core/src/operations/post-install.ts`) and target-keyed
+action registration at the CLI install dispatch (Grok Bot's registration handoff is the first
+consumer, built in `apps/cli/src/commands/install-post-actions.ts`). Target actions own
+customization logic; the runner owns deterministic selection, preview/apply dispatch and
+result/error propagation. Target-specific data stays in typed action factories/closures, not
+Bot-specific fields or branches in the runner. Future agents add an action and registry entry
+without modifying the runner — a second-target synthetic action test proves the common contract
+through the same dispatcher.
 
 Post-install means after the target payload is materialized, before that target's receipt and final
-success. Each registered action runs once per target/plugin invocation, in registration order.
-Dry-run calls only preview. Unselected targets and failed base installations never run apply.
-Results identify written files for provenance and messages emitted after successful completion.
-Mapping staging remains alive through action execution; update uses the same install path.
+success (`emitGrokBotInstall` runs actions after catalog/prune writes, before the receipt snapshot,
+inside its `FilesystemTransaction`; messages are echoed only after commit). Each registered action
+runs once per target/plugin invocation, in registration order. Dry-run calls only preview. Unselected
+targets and failed base installations never run apply. Results identify written files for provenance
+and messages emitted after successful completion. Mapping staging remains alive through action
+execution (`stagingRoot`); update uses the same install path, so reinstall/update regenerate the
+handoff.
 
-The target adapter retains ownership of its transaction: Grok Bot binds action writes to its
-existing filesystem transaction so action/catalog/receipt failures restore prior artifacts.
+The target adapter retains ownership of its transaction: Grok Bot hands its action factory a
+transaction-scoped `TransactionalWrite` so action writes share the emission rollback boundary —
+action, catalog, or receipt failures restore prior artifacts, and rollback failures are reported.
 The runner does not claim a transaction spanning targets or external native installers. Action
 errors propagate with target/action identity, suppress success, and report any already-completed
 target work honestly. Preview cannot promise host registration and apply has no implicit remote
-transport or deployment authorization.
+transport or deployment authorization — handoff messages say **prepared**, never registered.
 
-Existing `postInstallOmp` (`apps/cli/src/commands/install.ts`) confirms another customization case.
-Task 0130 preserves its behavior; migrating it is separate work. A second-target test action proves
-the common contract works without modifying runner logic. There is no runtime plugin discovery,
-user-configured shell hook system or new CLI command. Contract: [04](04_DESIGN.md#internal-post-install-action-contract-accepted-design--adr-037-not-yet-built).
+Existing `postInstallOmp` (`apps/cli/src/commands/install.ts`) is preserved unchanged; migrating it
+is separate work. There is no runtime plugin discovery, user-configured shell hook system or new
+CLI command. Contract and handoff shape: [04](04_DESIGN.md#internal-post-install-action-contract-adr-037--task-0130-implemented).
 
 ## Stack
 
@@ -145,6 +151,7 @@ packages/core/src/                # ── Reusable domain logic (@gobing-ai/sup
 │   ├── grok-bot.ts               # Grok Bot Sand root resolution + bridge/full emission (ADR-036)
 │   ├── migrate.ts                # Deterministic skill merge/migration core
 │   ├── package.ts                # Package content for distribution
+│   ├── post-install.ts           # Shared target post-install action runner + registry (ADR-037)
 │   ├── scaffold.ts               # Scaffold content files from templates
 │   ├── update.ts                 # Pure marketplace/bundled comparison + aggregate exit (ADR-035)
 │   └── validate.ts               # Syntax and layout verification engine
@@ -166,9 +173,11 @@ apps/cli/src/                     # ── CLI app (@gobing-ai/superskill) ─�
 ├── commands/                     # ── Command CLI entry handlers ──
 │   ├── agent.ts                  # superskill agent subcommands
 │   ├── command.ts                # superskill command subcommands
+│   ├── doctor.ts                 # read-only grok-bot Sand root / catalog inspection (task 0128)
 │   ├── helpers.ts                # common options, target resolution, and operation runners
 │   ├── hook-run.ts               # registered plugin hook runtime dispatcher
 │   ├── hook.ts                   # superskill hook subcommands
+│   ├── install-post-actions.ts   # target post-install action factories (grok-bot handoff, ADR-037)
 │   ├── install.ts                # superskill install command
 │   ├── magent.ts                 # superskill magent subcommands
 │   ├── script-convert.ts         # portable .mjs build command

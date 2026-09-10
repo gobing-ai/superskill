@@ -174,3 +174,159 @@ No task/feature corpus written. Learnings artifact at `.spur/run/wrapup-learning
 - opencode, hermes, grok, and omp receive no plugin rules at install time, so the CRITICAL safety table and verification gate cannot be relocated out of the root file — compress them in place.
 - The "~32 KiB Codex cap" is asserted in a comment in the codex override, not enforced by any code — treat it as a documented budget checked with `wc -c`, not as a gate.
 - Doc-side audit after the task: the dead-verb class did not propagate into the numbered docs (`docs/00`, `03`, `04`, `docs/design/*` carry no `spur status` / `spur init`), and a docs-only changeset fires no T3 sync trigger. Open follow-up: feature C shipped without a `docs/05_FEATURES.md` row (T4) — flagged, not repaired, as 05 was outside the wrapup's enumerated repair scope.
+Doc-evolve wrapup complete. Repairs applied, artifact written.
+
+## What was done
+
+**Drift audit (deterministic detection + judgment) for batch tasks 0128 (grok-bot install target) + 0130 (post-install action mechanism):**
+
+| Doc | Finding | Repair |
+|---|---|---|
+| `docs/00_ADR.md` | ADR-036/037 read "Accepted (design)" but are shipped (tasks done; 03/04 say implemented) — §6.1 r5 | Flipped both to `Accepted`; bumped version 1.12.0→1.13.0, `updated_at`→2026-09-10 |
+| `docs/03_ARCHITECTURE.md` | Module tree missing `post-install.ts` (operations/) and `doctor.ts`+`install-post-actions.ts` (commands/) — §6.4 r4 | Added all three tree rows; version 2.13.0→2.14.0 |
+| `docs/04_DESIGN.md` | `doctor` root command only in prose, not the command surface — §7 audit gap | Added table row transcribed from `registerDoctor` (`--targets grok-bot` required, `--json`, exit 0/1/2); version 2.10.0→2.11.0 |
+| `docs/design/skill-update-notification.md` | Manifest schema predates the `grokBot.materialize` field (ADR-035 amendment) | Added §4.2-sanctioned `## Correction (2026-09-10)` block, no rewrite |
+
+**Not edited (verified clean):** phase design docs (phase1-5) — their "doctor deferred in Phase 1" statements are historical scope records, not current-state claims. No task/feature corpus writes (tool-owned per §3). Flagged pre-existing same-class drift: ADR-035 is shipped but still reads "Accepted (design)" — out of batch scope.
+
+**Verification:** re-ran the audit checks (statuses, tree rows, command row, correction section all landed); diff is intentional and additive over the tasks' own same-commit edits.
+
+Artifact written to `.spur/run/38cf6018-2f29-4d34-b51b-4daa1eeddcd2-wrapup-learnings.md`.
+
+---
+
+# Wrapup Learnings — tasks 0128, 0130 (Grok Bot install target + post-install action mechanism)
+
+Batch: feature D — opt-in grok-bot install target and safe slash-registration handoffs.
+Doc-evolve wrapup run 2026-09-10. Grouped by date, then task WBS. Raw notes, not prose.
+
+---
+
+## 2026-09-08 — task 0128 (Add explicit opt-in Grok Bot VPS install target with durable workflow skills)
+
+### Conventions
+- **Install-only targets are a separate taxonomy from execution targets.** `grok-bot` lives in
+  `INSTALL_TARGETS = [...TARGETS, 'grok-bot']`, never in `TARGETS`. It expands no executor
+  mapping, joins no rulesync/native/magent/rule/script path. Widening `parseTargets` demands
+  auditing every legacy transform/emitter so the new target cannot leak in. (targets.ts:26)
+- **Explicit opt-in beats ambient detection.** Sand directories or `SAND_DATA` existing on a
+  laptop must never enable Bot install. Omitted/empty configured targets and bare `--targets all`
+  expand to the nine existing targets regardless of detection; only an explicit `--targets
+  grok-bot` (or direct programmatic selection) opts in.
+- **Marker-gated ownership, never prefix-based prune.** Sand `workflows/` is a shared host tree
+  where a name prefix proves nothing. `.superskill-origin.json` (schemaVersion 1, per-workflow
+  hashes) is the ownership/drift basis; unmarked/foreign/malformed markers fail replacement
+  instead of overwriting. The existing flattened prune path is never entered for Bot.
+- **Resolve the destination once per invocation, never at module-import time.** Resolution order:
+  nonempty `SAND_DATA` → existing `<home>/sand-data` → qualifying `<home>/agent-data`; no
+  fallback creation, no relative/URL/SSH/blank/dangling-link acceptance; share the result with
+  install/update/doctor.
+- **Bot is host-global only.** `--no-global` + explicit Bot fails preflight; a mixed-target
+  preflight failure must occur before any target output write.
+
+### Errors fixed (verify-pass `--fix all`, run inline-0128-20260908-155657-44026)
+- **Docstring-claimed rollback was not implemented.** `emitGrokBotInstall` claimed rollback but
+  performed plain writes. Repair: all workflow/canonical writes and prunes run inside
+  `FilesystemTransaction`, receipt write in the rollback scope via a `finalize` callback.
+  Regression: emission/receipt failure restores prior Bot output and reports rollback errors.
+- **Drift-conflict gate was missing.** `planGrokBotInstall` replaced/pruned owned workflows
+  without checking marker hashes — locally edited managed files were silently overwritten.
+  Repair: `assertOwnedUndrifted` fails preflight on drifted owned content or unowned extras
+  (bridge pointer stub is derived and carved out). 3 regression tests.
+- **Update mode threading silently switched modes.** Bot marketplace reinstall ignored the
+  receipt's `grokBot.materialize` — a silent full→bridge switch on update. Repair: thread the
+  recorded mode into reinstall; a legacy Bot receipt without the field emits explicit reinstall
+  guidance instead of guessing.
+- **False pre-existing-red claim, root-caused.** Testing claimed `bun run test` exit 1 was
+  pre-existing on clean HEAD. Re-run on clean db63531 in a worktree: 2239 pass / exit 0 — the
+  claim was false. Root cause: new `doctor.ts` shipped at 78.57% line coverage, tripping bun
+  1.3.14 per-file coverage thresholds. Fixed by covering human-output paths → 100/100, exit 0.
+
+### Gotchas
+- **Verify "pre-existing red" claims against a clean worktree before asserting them.** A false
+  pre-existing claim hides a real regression (the new file's coverage) and lets a new file ship
+  red. `bun run test` on clean HEAD is the baseline, not memory.
+- **Corpus-check exit 1 is a standing baseline.** 168 errors / 710 warnings on the batch tree;
+  clean db63531 worktree shows 197 errors / 718 warnings — strictly worse before the batch.
+  Distinguish inherited findings from regressions; zero findings named task 0128 or feature D.
+- **VPS host smoke is a separate deliverable.** Local fixture tests prove the filesystem
+  contract; actual slash discovery/reload/invocation need an authorized Bot session. Never claim
+  a local file listing proves GUI support. AC12's host half split to 0129 by operator decision.
+
+---
+
+## 2026-09-09 — task 0130 (Prepare safe Grok Bot slash registration handoffs within install)
+
+### Conventions
+- **Mechanism-first, consumer-second.** Build the reusable target post-install action contract
+  (`PostInstallContext`/`PostInstallAction`/`PostInstallResult`/`TransactionalWrite`,
+  `runPostInstallActions`, `createPostInstallRegistry` in post-install.ts) before the Grok Bot
+  action. Future coding-agent customizations use the same extension path (ADR-037). OMP's
+  `postInstallOmp` is the seam reference case, not an unrequested migration.
+- **No public command or flag for what an internal hook can do.** A register command was
+  rejected: it duplicates installed-catalog discovery and still requires the host agent. Handoff
+  is generated inside `install` (apply path) within the existing `FilesystemTransaction`, before
+  the receipt snapshot; dry-run previews without writes (guard writer throws).
+- **Target-keyed registry, not subclass/factory discovery or shell hooks.** Per-invocation
+  registry, duplicate-id reject per target, absent target = no-op. Second-target support = one
+  action + one registration entry; the runner has zero target branches. Tested with a synthetic
+  action on an existing non-Bot target through the same dispatcher.
+- **Host boundary honesty: "prepared, never registered."** CLI preparation writes a stable
+  `<sandRoot>/.superskill/grok-bot/register/<plugin>.json` handoff; it does not claim to have
+  called `update_state` or solved unknown-id registration. `doctor` keeps filesystem fields and
+  exit 0/1/2, adds `slashRegistry.status: 'unknown'` + guidance (verified host method, per-Bot
+  enablement). Healthy files are never proof of registration/visibility.
+- **Preserve, don't rehash, host-modified content.** A preserving round-trip regression asserts
+  writing record bytes back keeps `markerHashesCurrent` true; changed full recipes/resources
+  must surface as a conflict, never silently rehashed/overwritten/deleted-recreated.
+
+### Errors fixed / patterns
+- **Deterministic byte-stable handoff.** Realpath-normalized paths, 2-space JSON + trailing
+  newline, no timestamps — reinstall produces byte-identical records. `botRealpath` uses
+  realpathSync with resolve fallback so handoff bytes stay identical across symlinked roots.
+- **Self-referential full-mode bodies rejected** (`GrokBotPreflightError`): a full record must
+  not point its replacement body back at the workflow file it overwrites. Bridge bodies
+  explicitly read/follow the distinct absolute canonical SKILL.md, pass arguments through,
+  resolve resources beside it.
+- **Actions run inside the target's transaction** via a `TransactionalWrite` handed to the
+  factory; action/catalog/receipt failures restore prior artifacts, rollback failures reported.
+  Success messages echo only post-commit.
+- **Stale owned workflows are still inventoried for later prune** under no-prune reinstalls;
+  prune computes the selected plugin's desired set, not all workflows; foreign/unmarked markers
+  are reported by doctor, never adopted or deleted.
+
+### Gotchas / residuals (recorded, not hidden)
+- **P3 realpath guard gap:** the full-mode self-reference rejection matches only the
+  realpath-normalized workflow path. On a symlinked Sand root (e.g. `/tmp`→`/private/tmp`), a
+  body citing the unresolved-form absolute path passes R3 rejection. Carried as follow-up; the
+  destructive path requires the host to ignore carried frontmatter/body.
+- **`update` after `--plugin-path` install reports `upstream unavailable`** — task-0128-era
+  upstream resolution for bare path locators; unchanged by 0130 (marketplace updates thread
+  materialize + reinstall via `executeInstall`).
+- **Host session was not authorized** (planning approval ≠ host authorization); R8's fallback
+  applied — messages/caveat/doctor never claim registration. Local-vs-host evidence split must
+  transcribe into `## Testing` at record (P3 residual).
+
+---
+
+## Cross-task doc-sync conventions (wrapup 2026-09-10)
+
+- **A shipped ADR must read "Accepted", not "Accepted (design)".** §6.1 rule 5: readers must
+  tell decided from shipped. ADR-036/037 said "Accepted (design)" while 03/04 and reality said
+  implemented — repaired by flipping status (a state transition, like Superseded) + frontmatter
+  bump. Pre-existing same-class drift: ADR-035 (update provenance manifest) is shipped but still
+  reads "Accepted (design)" — flagged, out of batch scope.
+- **Module trees drift silently on feature add.** Task 0130 added `post-install.ts`
+  (operations/) and `doctor.ts` + `install-post-actions.ts` (commands/) without the wrapup pass
+  catching the missing tree rows — §6.4 rule 4. The module list is a regenerate-from-code block,
+  not a hand edit.
+- **Every command belongs in the 04 command surface.** `doctor` was documented only in prose
+  under the grok-bot section; the §7 audit item "04 covers every command" needs a table row.
+  Transcribe flags from the registration (`--targets grok-bot` required, `--json`, exit 0/1/2).
+- **Concluded design docs get dated correction sections, not rewrites** (§4.2).
+  skill-update-notification.md predates the `grokBot.materialize` field (ADR-035 amendment
+  2026-09-08); repaired with a `## Correction (2026-09-10)` block pointing to 04/ADR-035.
+  Phase design docs (phase1-5) needed no edit — their "doctor deferred in Phase 1" statements are
+  historical scope records, not current-state claims.
+- **Do not write task/feature corpus in a doc-evolve wrapup.** Repairs stayed in 00/03/04 +
+  docs/design/*; task files remain tool-owned (§3).

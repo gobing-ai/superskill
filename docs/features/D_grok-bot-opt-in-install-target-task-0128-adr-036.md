@@ -2,11 +2,11 @@
 schema_version: 1
 id: "D"
 name: "Grok Bot opt-in install target (task 0128; ADR-036)"
-status: active
+status: done
 priority: P2
 tags: []
 created_at: "2026-09-09T00:18:21.958Z"
-updated_at: "2026-09-10T05:33:41.746Z"
+updated_at: "2026-09-10T15:41:31.013Z"
 ---
 
 # D: Grok Bot opt-in install target (task 0128; ADR-036)
@@ -169,7 +169,7 @@ Scenario: R19 — Target post-install actions share an extensible lifecycle
 | WBS | Task | Status |
 | --- | ---- | ------ |
 | 0128 | Add explicit opt-in Grok Bot VPS install target with durable workflow skills | done |
-| 0130 | Prepare safe Grok Bot slash registration handoffs within install | todo |
+| 0130 | Prepare safe Grok Bot slash registration handoffs within install | done |
 <!-- END AUTO-GENERATED -->
 
 ## Notes
@@ -184,4 +184,6 @@ Scenario: R19 — Target post-install actions share an extensible lifecycle
 - 2026-09-09T18:39:15.490Z active → verifying (system)
 - 2026-09-09T18:39:15.636Z verifying → done (system)
 - 2026-09-10T04:29:05.202Z done → active (system)
+- 2026-09-10T15:41:30.790Z active → verifying (system)
+- 2026-09-10T15:41:31.013Z verifying → done (system)
 

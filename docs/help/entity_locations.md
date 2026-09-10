@@ -22,9 +22,11 @@ Each coding agent stores skills, slash commands, subagents, and hooks in differe
 `<home>/agent-data`; host-global only, never project-level. Bridge mode keeps the adapted canonical
 copy at `<sandRoot>/.superskill/grok-bot/skills/<id>/` with an origin marker
 (`.superskill-origin.json`) in each workflow, plus a receipt at
-`<sandRoot>/.superskill/manifests/grok-bot/<plugin>/.superskill-manifest.json`. `--materialize full`
+`<sandRoot>/.superskill/manifests/grok-bot/<plugin>/.superskill-manifest.json`, and a deterministic
+slash-registration handoff at `<sandRoot>/.superskill/grok-bot/register/<plugin>.json` (task 0130:
+preparation only — host registration is never claimed or performed). `--materialize full`
 writes the whole tree under `workflows/<id>/` instead. `superskill doctor --targets grok-bot`
-checks the layout read-only.
+checks the layout read-only and reports the handoff directory with registration next steps.
 
 ## Entity locations — project-level (relative to workspace root)
 

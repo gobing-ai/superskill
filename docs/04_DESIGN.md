@@ -2,10 +2,10 @@
 doc: 04_DESIGN
 owns: SURFACE — concrete shapes: every CLI command, flag, config key, env var, table, DTO
 authority: derived
-version: 2.10.0
+version: 2.11.0
 derived_from: [00_ADR, 01_PRD, 02_ROADMAP]
 owner: Robin Min
-updated_at: 2026-09-09
+updated_at: 2026-09-10
 read_before: changing a command, flag, env var, or schema
 edit_rules: 99 §6.5
 sync: [T3]
@@ -16,25 +16,43 @@ sync: [T3]
 - Phase 1 — Distribution: [design-doc-phase1.md](design/design-doc-phase1.md) — `superskill install` and supporting commands.
 - Phase 2 — Authoring + quality: [design-doc-phase2.md](design/design-doc-phase2.md) — artifact-specific `superskill agent|skill|command|hook|magent` lifecycles.
 
-## Internal post-install action contract (accepted design — ADR-037; not yet built)
+## Internal post-install action contract (ADR-037; task 0130 — implemented)
 
-Task 0130 introduces internal `PostInstallContext`, `PostInstallAction`, `PostInstallResult` and
-`runPostInstallActions` in `packages/core/src/operations/post-install.ts`. These are planned names,
-not currently available APIs. No public command, flag, environment variable or configuration key is added.
+`PostInstallContext`, `PostInstallAction`, `PostInstallResult`, `TransactionalWrite`,
+`runPostInstallActions` and `createPostInstallRegistry` live in
+`packages/core/src/operations/post-install.ts` (re-exported from the core barrel). No public
+command, flag, environment variable or configuration key is added.
 
 | Contract | Shape |
 | --- | --- |
 | Context | Readonly `target: InstallTarget`, `plugin: string`, `installRoot: string`, `stagingRoot: string`, `dryRun: boolean` |
 | Action | Stable `id: string`; `preview(context)` and `apply(context)` returning `PostInstallResult` synchronously or asynchronously |
 | Result | `writtenFiles: string[]`, `messages: string[]`; preview reports no written files and describes intended effects in messages |
-| Runner | `runPostInstallActions(context, actions)` returns ordered results; invokes preview for dry-run and apply otherwise; propagates failure with target/action identity |
-| Registration | Internal target-keyed action factories in `apps/cli/src/commands/install-post-actions.ts`; absent target entry is a no-op; duplicate action ids for one target are rejected |
+| Runner | `runPostInstallActions(context, actions)` returns ordered results; invokes preview for dry-run and apply otherwise; rejects duplicate ids; propagates failure with target/action identity |
+| Registration | Per-invocation target-keyed registry (`createPostInstallRegistry()`); absent target entry is a no-op; duplicate action ids per target rejected at registration and run time |
+| Writer | `TransactionalWrite = (absPath, content) => Promise<void>` — the emission hands its transaction-scoped writer to the action factory so action writes share the target's rollback boundary |
 
 Factories capture validated target-specific data and target-owned write/transaction capabilities.
 The common context does not grow a field for each target's metadata. Call sites supply the actual
 target root; Grok Bot uses its resolved Sand root. A second target's action and registration suffice
 to extend behavior; the runner needs no target-specific branch. Lifecycle and failure boundaries
-are owned by [03](03_ARCHITECTURE.md#target-post-install-actions-accepted-design--adr-037-not-yet-built).
+are owned by [03](03_ARCHITECTURE.md#target-post-install-actions-adr-037--task-0130-implemented).
+
+### Grok Bot registration handoff (ADR-036/037; task 0130)
+
+On every `grok-bot` install/update (apply path), after catalog/prune writes and before the receipt
+snapshot — inside the emission's `FilesystemTransaction` rollback boundary — one action
+(`grok-bot/register-handoff`, defined in `apps/cli/src/commands/install-post-actions.ts`) writes
+`<dataRoot>/.superskill/grok-bot/register/<plugin>.json`: a deterministic (byte-stable across
+reinstall; no timestamps, realpath-normalized) `schemaVersion: 1` handoff with one record per
+installed entry: `id`, `name`, `description`, `mode`, `recipePath` (canonical SKILL.md for bridge,
+workflow SKILL.md for full), `body` (bridge: instructions that explicitly read and follow the
+distinct absolute canonical SKILL.md, preserve user arguments and resolve resources beside it;
+full: the real SKILL.md content — self-referential replacement bodies are rejected),
+`frontmatter` (original metadata) and `resources` (relative path → content). Dry-run previews the
+handoff path and slash caveat without writing. Success messages report the handoff as
+**prepared**, never registered; `doctor` reports `slashRegistry.status: 'unknown'` with the handoff
+directory and next steps (verified host method, per-Bot enablement) without affecting exit semantics.
 
 ## Phase 1 install surface
 
@@ -132,6 +150,7 @@ Bot receipt without the field skips the Bot reinstall and prints explicit reinst
 
 | Additional signature | Flags |
 | ---------------------- | ------- |
+| `superskill doctor` | `--targets grok-bot` (only supported value; read-only), `--json` — exit 0 healthy/creatable, 1 broken/unavailable, 2 usage (ADR-036, task 0128) |
 | `skill package <name>` | `-o, --output <dir>`, `--include-companions` |
 | `skill migrate <sources...>` | `--refine`, `--ingest <file>`, `-t, --target <agent>`, `--margin <n>` |
 | `hook emit <name>` | `-t, --target <agent>`, `--global`, `--dry-run` |
