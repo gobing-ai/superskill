@@ -25,6 +25,7 @@ export * from './operations/grok-bot';
 export * from './operations/install-manifest';
 export * from './operations/migrate';
 export * from './operations/package';
+export * from './operations/post-install';
 export * from './operations/scaffold';
 export * from './operations/update';
 export * from './operations/validate';
