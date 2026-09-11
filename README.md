@@ -8,7 +8,10 @@ Multi-agent skill, command, subagent, magent, hook, and MCP config distribution 
 # go with bun, suggested
 bun add -g @gobing-ai/superskill
 
-# go with npm
+# or, run ad-hoc, no install:
+bunx @gobing-ai/superskill --help
+
+# or, go with npm
 npm i -g @gobing-ai/superskill
 
 ```
