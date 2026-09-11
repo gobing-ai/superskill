@@ -4,6 +4,32 @@ All notable changes to `@gobing-ai/superskill` are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Conventional Commits](https://www.conventionalcommits.org/).
 
+## [0.3.24] - 2026-09-11
+
+### Added
+
+- feat: complete grok bot post-install skill registration with safe bootstrap fallback (0132) (`2bf08b4`)
+- feat(cc): add grok-bot post-install registration recovery skill (`cd09dcf`)
+- feat(help): native cc marketplace pilot verified + spec status flip (`28e3751`)
+
+### Fixed
+
+- fix(grok-bot): scope registration bootstrap and gate bridge pointer drift (`be51ff1`)
+
+### Changed
+
+- docs: unify canonical landing (README + installation.md) (`1f0994d`)
+- docs: sync architecture + design docs for task 0131 (`bf720a3`)
+- docs: sync 0132 follow-up guidance with observed-behavior honesty rules (`c937c1a`)
+- docs(planning): plan task 0132 grok-bot registration completion (`468a4dd`)
+- docs(grok-bot): documents clean up (`d685336`)
+
+### Other
+
+- chore(config): update the spur config file (`30535be`)
+- chore(deps): bump @gobing-ai workspace deps to 0.4.62 (`5659d04`)
+- chore(memory): task 0131 wrapup learnings + metrics (`b689487`)
+
 ## [0.3.23] - 2026-09-10
 
 ### Added
