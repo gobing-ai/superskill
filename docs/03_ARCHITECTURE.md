@@ -2,7 +2,7 @@
 doc: 03_ARCHITECTURE
 owns: HOW — module boundaries, data flow, runtime model, invariants
 authority: derived
-version: 2.15.0
+version: 2.16.0
 derived_from: [00_ADR, 01_PRD]
 owner: Robin Min
 updated_at: 2026-09-10
@@ -33,6 +33,11 @@ targets and failed base installations never run apply. Results identify written 
 and messages emitted after successful completion. Mapping staging remains alive through action
 execution (`stagingRoot`); update uses the same install path, so reinstall/update regenerate the
 handoff.
+
+Grok bridge drift checks reconstruct the derived pointer from the current canonical recipe
+and compare pointer/resource bytes alongside canonical hashes. Install, mode switch, prune and
+doctor therefore surface host serialization changes without resetting ownership hashes; root
+aliases are resolved before comparing the relative pointer. Full mode retains its marker hash check.
 
 The target adapter retains ownership of its transaction: Grok Bot hands its action factory a
 transaction-scoped `TransactionalWrite` so action writes share the emission rollback boundary —

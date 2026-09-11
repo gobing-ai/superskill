@@ -2,7 +2,7 @@
 doc: 04_DESIGN
 owns: SURFACE — concrete shapes: every CLI command, flag, config key, env var, table, DTO
 authority: derived
-version: 2.12.0
+version: 2.13.0
 derived_from: [00_ADR, 01_PRD, 02_ROADMAP]
 owner: Robin Min
 updated_at: 2026-09-10
@@ -61,10 +61,16 @@ ID is not double-prefixed). Its workflow recipe lives at
 `<dataRoot>/workflows/cc-grok-bot-register/SKILL.md` when the cc plugin is installed with skills
 selected. Install/update/preview then emit first-run **bootstrap** guidance: with the recovery
 skill present, the resolved recovery path is reported with the authorized-Shell note for bridge
-hidden-path Read denial; without it, a self-contained consume-this-handoff prompt plus an optional
+hidden-path Read denial and `--plugin <installed-plugin>` to keep recovery scoped to that install.
+Preview labels bootstrap paths as prospective. Without recovery, a self-contained prompt validates
+handoff identity, containment, ownership/drift and preserving host upsert capability, with an optional
 explicit `superskill install cc --targets grok-bot` instruction — no implicit cc install, no
 registry-side writes, and registration/evidence remains host-side (automatic CLI registration is
-unavailable: no documented, CLI-callable host mechanism exists as of 2026-09-11).
+unavailable in the verified installing context; the public docs do not establish a callable tool schema).
+The recovery procedure and its conditional host requirements are owned by
+[the recovery skill](../plugins/cc/skills/grok-bot-register/SKILL.md). Missing-root doctor guidance
+names the root repair step without a workflow path. Acknowledged writes, enablement, picker
+visibility and invocation are distinct evidence states.
 
 ## Phase 1 install surface
 

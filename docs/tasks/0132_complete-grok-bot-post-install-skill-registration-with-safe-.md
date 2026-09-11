@@ -4,7 +4,7 @@ name: Complete Grok Bot post-install skill registration with safe bootstrap fall
 status: done
 template: feature-impl
 created_at: 2026-09-11T04:27:45.771Z
-updated_at: "2026-09-11T05:02:59.779Z"
+updated_at: "2026-09-11T05:29:20.365Z"
 feature_id: D
 priority: P1
 tags:
@@ -253,23 +253,21 @@ Local fallback delivery can pass after its actual code/skill/docs gates and capa
 
 ### Solution
 
-Change-map (auto-generated — implement step did not record a Solution).
-Each entry cites the first changed line per file (`file:line`).
+Delivered the primary agent-assisted fallback: no verified CLI-callable host registration capability was available. The recovery source maps exactly once to cc-grok-bot-register; automatic host registration and picker repair remain unverified.
 
-| Change (`file:line`) |
-|----------------------|
-| `apps/cli/src/commands/install-post-actions.ts:20` |
-| `apps/cli/src/commands/install-post-actions.ts:55` |
-| `apps/cli/src/commands/install-post-actions.ts:62` |
-| `apps/cli/src/commands/install-post-actions.ts:73` |
-| `apps/cli/src/commands/install-post-actions.ts:80` |
-| `apps/cli/tests/commands/install-post-actions.test.ts:111` |
-| `packages/core/src/operations/grok-bot.ts:403` |
-| `packages/core/src/operations/grok-bot.ts:974` |
-| `packages/core/src/operations/grok-bot.ts:976` |
-| `packages/core/tests/mapper.test.ts:286` |
-| `packages/core/tests/operations/grok-bot.test.ts:18` |
-| `packages/core/tests/operations/grok-bot.test.ts:870` |
+Forced verification corrected these prior gaps:
+
+- Scoped bootstrap to the installed plugin, quoted resolved paths, and labeled previews prospective; the cc-absent prompt now carries validation, preserving upsert and per-ID result rules. Evidence: `packages/core/src/operations/grok-bot.ts:422`, `apps/cli/src/commands/install-post-actions.ts:52`, `apps/cli/tests/commands/install-post-actions.test.ts:51`.
+- Removed unverified host facts; completed root/schema/source/record/containment/drift validation, registry capability checks, full/bridge preservation and truthful status reporting in `plugins/cc/skills/grok-bot-register/SKILL.md:64`. Optional self synthesis is deliberately omitted: missing self requires reinstall, preserving the approved design's safe branch.
+- Bridge workflow host edits are now conflict-gated alongside canonical hashes. Doctor, reinstall, mode switch, prune and actual marketplace update detect changed bytes without rehashing. Evidence: `packages/core/src/operations/grok-bot.ts:641`, `packages/core/tests/operations/grok-bot.test.ts:394`, `apps/cli/tests/commands/install-grok-bot.test.ts:156`.
+- Real cc mixed-catalog install tests verify mapped/workflow/handoff set equality in both modes, and the standalone mapper test initializes its own scratch directory: `apps/cli/tests/commands/install-grok-bot.test.ts:103`, `packages/core/tests/mapper.test.ts:286`.
+- Owning documentation updated: `docs/03_ARCHITECTURE.md:38`, `docs/04_DESIGN.md:58`, `README.md:104`, `docs/help/entity_locations.md:28`.
+
+No new runtime, dependency, global mapper rule, host transport or registry store. Approved design claims are implemented; optional synthesis is omitted as documented above. Host-dependent branches remain conditional and require a separately authorized host session.
+
+Fresh gate evidence: bun run lint and bun run build exit 0; bun run spur-check exits 0 including all 2312 tests, 33 pre-check and 3 post-check rules. Aggregate coverage: functions 99.56%, lines 98.86%. Skill strict validation passes; evaluation PASS (80.63%, B), with advisory body-length finding. Built CLI dry-run/install/doctor smoke passes in project-local scratch.
+
+The prior cited discovery/replay files were absent. This pass recreated them from fresh checks rather than trusting the old Testing table. Exact gitignored deliverables and limits are recorded by the verification artifact and transcribed Testing section. No Grok host write, enablement, desktop picker, invocation or mobile observation is certified.
 
 ### Testing
 
@@ -279,33 +277,33 @@ Each entry cites the first changed line per file (`file:line`).
 
 | Requirement | Status | Evidence |
 |-------------|--------|----------|
-| R1 | MET | .spur/run/0132-grok-register-capability-discovery.md (no CLI-callable host mechanism; decision-table row 1 disposition); mapper trace via grok-bot.ts:408 |
-| R2 | MET | plugins/cc/skills/grok-bot-register/SKILL.md:2 (frontmatter grok-bot-register); packages/core/tests/mapper.test.ts:286-301 (cc-cc ID regression asserted false); grok-bot.ts:408 |
-| R3 | MET | grok-bot.ts:422-452 botBootstrapMessages; install-post-actions.ts:55,73; install-post-actions.test.ts:112-129 |
-| R4 | MET | Fallback branch per disposition doc; no invented transport; handoff transactional (install-post-actions.ts:72) |
-| R5 | MET | SKILL.md:97-99 invalid-SAND_DATA explicit error; SKILL.md:135-160 schema/id/path/conflict rules; replay cases 2-5 |
-| R6 | MET | SKILL.md:83-95 flags/intersection/self-first/empty-no-op; replay cases 1,6,7 |
-| R7 | MET | canonical-path preservation (SKILL.md policy + grok-bot.ts:454-458); review P2s at SKILL.md:7-8/315/301 remediated |
-| R8 | MET | SKILL.md register rules (one attempt, no delete/recreate, explicit id, per-ID reporting) + replay case 7; live host upsert out of local scope per R12 disposition |
-| R9 | MET | 2308 tests green (.spur/run/0132-repair-gate-evidence.log); update reuses executeInstall |
-| R10 | MET | grok-bot.ts:974-978 doctor guidance tiers; SKILL.md evidence tiers |
-| R11 | MET | mapper/grok-bot/install-post tests; replay transcript; docs 03/04/05/README/entity_locations synced; repair gate build_rc=0 spurcheck_rc=0 |
-| R12 | MET | executable smoke: bun apps/cli/src/index.ts install cc --targets grok-bot --dry-run -> explicit no-Sand-root repair message (.spur/run/0132-r12-smoke-command.log); .spur/run/0132-grok-register-capability-discovery.md marks host behaviors UNVERIFIED/BLOCKED and distinguishes fallback vs automatic fix |
+| R1 | MET | `apps/cli/tests/commands/install-grok-bot.test.ts:103` executes the real mixed cc mapping/install. `bun .spur/run/0132-grok-register-inventory.ts` exit 0: cc 7/17/5 = 29 ids, sp 32/39/4 = 75; kk unavailable. Capability disposition records no callable host schema. Run scratch evidence: `.spur/run/0132-grok-register-capability-discovery.md` lines 1-54; `.spur/run/0132-grok-register-inventory.ts` lines 1-20 and `.spur/run/0132-grok-register-inventory.json` lines 1-135. |
+| R2 | MET | `packages/core/tests/mapper.test.ts:286` and `apps/cli/tests/commands/install-grok-bot.test.ts:103` pass: exactly one cc-grok-bot-register, no double prefix, equal mapped/workflow/handoff sets in bridge and full. |
+| R3 | MET | `packages/core/src/operations/grok-bot.ts:422`; `apps/cli/tests/commands/install-post-actions.test.ts:51`; `apps/cli/tests/commands/install-grok-bot.test.ts:156`: scoped recovery, cc-absent preserving prompt, actual update; built CLI dry-run/install exit 0. |
+| R4 | MET | `apps/cli/src/commands/install-post-actions.ts:72` keeps fallback inside transactional preparation; `packages/core/tests/operations/grok-bot.test.ts:792` passes rollback. No host mechanism invented; built CLI reports pending registration and primary fallback. |
+| R5 | MET | `plugins/cc/skills/grok-bot-register/SKILL.md:122` complete v1/source/path/ownership validation; explicit malformed/stale/conflict manual replay, run scratch `.spur/run/0132-grok-register-replay.md` lines 1-52. Local validation/ownership executable evidence: `packages/core/tests/operations/grok-bot.test.ts:173`, `packages/core/tests/operations/grok-bot.test.ts:218`, passing in full suite. |
+| R6 | MET | `plugins/cc/skills/grok-bot-register/SKILL.md:77` and `plugins/cc/skills/grok-bot-register/SKILL.md:185`; manual no-args/plugin/self/dry-run intersection replay; real mixed catalog `apps/cli/tests/commands/install-grok-bot.test.ts:103` passes; mock self-first/stable-order trace has one attempt/id. |
+| R7 | MET | `plugins/cc/skills/grok-bot-register/SKILL.md:199`; `packages/core/tests/operations/grok-bot.test.ts:897` resource/body preservation and `apps/cli/tests/commands/install-grok-bot.test.ts:156` metadata/arguments update pass. Hidden Read/Shell and unsupported serializer cases explicitly simulated. |
+| R8 | MET | `plugins/cc/skills/grok-bot-register/SKILL.md:236` conditions writes on live schema/registry identity. Two executable mock invocations each attempt 3 ids once, acknowledge 2, reject 1; registry cardinality stays 2. Run scratch `.spur/run/0132-grok-register-mock-host.ts` lines 1-22 and `.spur/run/0132-grok-register-mock-trace.jsonl` lines 1-6. Local procedure accepted; actual Grok upsert/schema remains unverified under R12 fallback. |
+| R9 | MET | `packages/core/src/operations/grok-bot.ts:641`; `packages/core/tests/operations/grok-bot.test.ts:394` proves both-mode host-byte drift blocks reinstall/switch/prune and surfaces in doctor; `apps/cli/tests/commands/install-grok-bot.test.ts:156` actual marketplace update rejects drift. All pass. |
+| R10 | MET | `packages/core/src/operations/grok-bot.ts:997`; `packages/core/tests/operations/grok-bot.test.ts:940` missing-root repair and `packages/core/tests/operations/grok-bot.test.ts:927` unknown registry pass. Built JSON doctor exit 0: available true, issues empty, slashRegistry unknown. |
+| R11 | MET | All repository gates pass (2312 tests, lint/typecheck, build, 36 rules), strict skill validation passes. Owning docs: `docs/03_ARCHITECTURE.md:37`, `docs/04_DESIGN.md:58`, `README.md:104`, `docs/help/entity_locations.md:28`. Concrete manual/schema-assumption replay plus executable mock trace retained. Measured coverage: functions 99.56%, lines 98.86% (the writer's trailing N/A describes its own measurement, not this measured suite). Run scratch: `.spur/run/0132-spur-check.log` lines 1-129; `.spur/run/0132-verify-answer.txt` lines 1-66 regenerates `.spur/run/0132-verdict.json` lines 1-173. |
+| R12 | MET | `apps/cli/tests/commands/install-grok-bot.test.ts:103` local install evidence; built CLI dry-run/install/doctor exit 0. Capability disposition separately marks every live host outcome UNVERIFIED/BLOCKED and gives the remaining authorized-host smoke procedure. Run scratch: `.spur/run/0132-grok-register-dry-run.log` lines 1-38; `.spur/run/0132-grok-register-install.log` lines 1-10; `.spur/run/0132-grok-register-doctor.json` lines 1-21. Input hints are not certified fixed. |
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
 |---------------------|--------|---------------|----------|
-| Scenario: R1 — Registration capability and mapped catalog have explicit evidence | MET | test | capability doc; mapper.test.ts:286 |
-| Scenario: R2 — Recovery skill ships under the intended canonical ID | MET | test | mapper.test.ts:294-301; SKILL.md frontmatter |
-| Scenario: R3 — Install and update provide a working empty-picker bootstrap | MET | test | install-post-actions.test.ts:112-129; grok-bot.ts:430-441 |
-| Scenario: R4 — Automatic registration follows verified capabilities with a complete fallback | MET | test | install-post-actions.test.ts:112-129 executed; transactional handoff write (grok-bot.ts:800-860); per-ID accuracy bounds in SKILL.md |
-| Scenario: R5 — Handoff consumption rejects unsafe stale and conflicting records | MET | test | producer-side validation tests executed in 2308-test suite (grok-bot.test.ts); replay cases 2-5 (manual-review) |
-| Scenario: R6 — Recovery selection covers all artifact kinds deterministically | MET | test | SKILL.md inputs + replay cases 1/6/7 |
-| Scenario: R7 — Registration preserves readable executable recipes in both modes | MET | test | grok-bot.test.ts bridge-body/resources/self-reference tests executed (791,805,829-857); replay case 7 manual-review |
-| Scenario: R8 — Host upserts are bounded preserving and independently reported | MET | test | SKILL.md steps 5-7 rules + replay case 7; live host out of scope (R12 Given: unavailable access) |
-| Scenario: R9 — Registration recovery preserves install update and ownership guarantees | MET | test | repair gate log, 2308 pass |
-| Scenario: R10 — Diagnostics distinguish preparation registration enablement and visibility | MET | test | doctor suites executed in grok-bot.test.ts; grok-bot.ts:974-980 tiers |
-| Scenario: R11 — Focused regressions and owning documentation validate the final change | MET | test | repair gate log; docs synced |
-| Scenario: R12 — Host acceptance distinguishes observed success from unavailable evidence | MET | command | executed: bun apps/cli/src/index.ts install cc --targets grok-bot --dry-run -> explicit no-Sand-root repair message (.spur/run/0132-r12-smoke-command.log); capability-discovery doc UNVERIFIED/BLOCKED labels |
+| Scenario: R1 — Registration capability and mapped catalog have explicit evidence | MET | command | `bun .spur/run/0132-grok-register-inventory.ts` exit 0; cc 29 and sp 75 enumerated ids. Fresh tool catalog has no Grok/update_state tool; capability-discovery file records fallback and public-doc limits. |
+| Scenario: R2 — Recovery skill ships under the intended canonical ID | MET | test | `apps/cli/tests/commands/install-grok-bot.test.ts:103` and `packages/core/tests/mapper.test.ts:286`; full suite exit 0; exact recovery id and set equality. |
+| Scenario: R3 — Install and update provide a working empty-picker bootstrap | MET | test | `apps/cli/tests/commands/install-post-actions.test.ts:51`, `apps/cli/tests/commands/install-grok-bot.test.ts:156`, `apps/cli/tests/commands/install-grok-bot.test.ts:373`; full suite exit 0. |
+| Scenario: R4 — Automatic registration follows verified capabilities with a complete fallback | MET | test | `apps/cli/tests/commands/install-grok-bot.test.ts:318`, `packages/core/tests/operations/grok-bot.test.ts:792`; full suite exit 0. Unavailable-capability branch delivered; host automatic branch remains conditional. |
+| Scenario: R5 — Handoff consumption rejects unsafe stale and conflicting records | MET | test | `packages/core/tests/operations/grok-bot.test.ts:218` local ownership validation passes; recovery replay validation rows cover malformed/future/cross-root/unsafe/stale/duplicate inputs with zero selected writes. This is local procedural replay, not an executable Grok consumer test. |
+| Scenario: R6 — Recovery selection covers all artifact kinds deterministically | MET | test | `apps/cli/tests/commands/install-grok-bot.test.ts:103` actual mixed catalog passes; recovery replay covers flag intersections and all three artifact kinds; mock trace observes selected self-first order. |
+| Scenario: R7 — Registration preserves readable executable recipes in both modes | MET | test | `packages/core/tests/operations/grok-bot.test.ts:859`, `packages/core/tests/operations/grok-bot.test.ts:897`, `apps/cli/tests/commands/install-grok-bot.test.ts:156` pass; manual hidden-path/stale-shared/unsupported-schema replay. Actual host serialization is unverified. |
+| Scenario: R8 — Host upserts are bounded preserving and independently reported | MET | command | `bun .spur/run/0132-grok-register-mock-host.ts first cc-grok-bot-register cc-agent-add cc-expert-agent` and the rerun variant exit 0: 3 attempts/run, 2 acknowledged, 1 independent rejection, no duplicate registry rows. Assumed-schema mock only, satisfying local fallback replay scope. |
+| Scenario: R9 — Registration recovery preserves install update and ownership guarantees | MET | test | `packages/core/tests/operations/grok-bot.test.ts:394`, `apps/cli/tests/commands/install-grok-bot.test.ts:156`, `packages/core/tests/operations/grok-bot.test.ts:837`; full suite exit 0; host-byte drift and receipt rollback covered. |
+| Scenario: R10 — Diagnostics distinguish preparation registration enablement and visibility | MET | test | `packages/core/tests/operations/grok-bot.test.ts:940` passes; `env SAND_DATA=<project-local-fixture> dist/superskill doctor --targets grok-bot --json` exit 0, unknown host state with separate evidence tiers. |
+| Scenario: R11 — Focused regressions and owning documentation validate the final change | MET | command | `bun run lint`, `bun run build`, `bun run spur-check`, strict skill validation all exit 0; 2312 tests and 36 rules pass. |
+| Scenario: R12 — Host acceptance distinguishes observed success from unavailable evidence | MET | command | Built CLI dry-run/install/JSON doctor against project-local Sand fixture exit 0; discovery disposition and remaining smoke matrix explicitly retain all live host outcomes UNVERIFIED/BLOCKED. No external host writes. |
 - Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review
@@ -317,12 +315,15 @@ Each entry cites the first changed line per file (`file:line`).
 | Priority | Dimension | Location | Finding |
 |----------|-----------|----------|----------|
 | P4 | spur task check | — | task check passed |
+| P4 | design-conformance | — | Eight design groups implemented; optional self synthesis omitted with explicit reinstall path documented in Solution; automatic branch unavailable with permitted primary fallback. |
+| P4 | scope-creep | — | Every changed source/test/doc maps to R1-R12; no release, deployment, workflow or external-message changes. |
+| P4 | cli-golden-path-present | — | Built binary dry-run/install and doctor --json exit 0 in project-local fixtures; full/bridge integration passes. |
+| P4 | task-check | — | spur task check 0132 --strict-core --json exit 0 before record; final check follows recording. |
 | P4 | evidence-rule-pass | — | All behavior-bearing AC rows have executable evidence or are explicitly non-behavioral. |
-| P4 | proof-input-digest | — | sha256:45c03b290f302b1393b68fe74f39a638e126ed9215fc245c3a6f91e98fb2b744 |
 
 ### References
 
-- [Original supplied recovery skill](plugins/cc/skills/cc-grok-bot-register/SKILL.md) — design input; the planned normalized source path is plugins/cc/skills/grok-bot-register/SKILL.md. Update this reference when the implementation renames it.
+- [Recovery skill](plugins/cc/skills/grok-bot-register/SKILL.md) — normalized source, installed as cc-grok-bot-register; original supplied input remains recoverable in Git.
 - [Feature D](docs/features/D_grok-bot-opt-in-install-target-task-0128-adr-036.md) — this task owns appended scenarios R20–R31 by title.
 - [Completed post-install baseline 0130](docs/tasks/0130_prepare-safe-grok-bot-slash-registration-handoffs-within-ins.md) — shipped common action/registry, handoff, rollback, diagnostics and local-versus-host evidence boundary.
 - [Filesystem baseline 0128](docs/tasks/0128_add-explicit-opt-in-grok-bot-vps-install-target-with-durable.md) and [cancelled host checklist 0129](docs/tasks/0129_run-authorized-grok-bot-vps-host-smoke-for-the-grok-bot-inst.md) — context only beyond dependency 0130.

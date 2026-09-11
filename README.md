@@ -105,7 +105,8 @@ not installed. Every install/update also prepares a deterministic registration h
 NOT automatic: have the host agent consume the handoff with a verified host method, then enable
 the plugin per Bot under Settings > Plugins > Yours. First use with an empty slash picker: ask a
 Bot to read and follow `<sandRoot>/workflows/cc-grok-bot-register/SKILL.md` (bundled cc recovery
-skill, task 0132) — or, when cc is absent, the handoff file directly; bridge's hidden `.superskill`
+skill, task 0132) with `--plugin <installed-plugin>` — or, when cc is absent, paste the validated
+handoff recovery prompt printed by install; bridge's hidden `.superskill`
 recipes may need the Bot's authorized Shell tool if Read denies them. Run `superskill doctor --targets grok-bot`
 for a filesystem health check (it reports slash-registry status as unknown with next steps).
 
