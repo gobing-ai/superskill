@@ -32,8 +32,9 @@ superskill hook evaluate block-force-push --save
 Flags: `--json`, `-t, --target`, `--save`, `--rubric <file>` (envelope-out with `--json`),
 `--ingest <file>` (ingest-in with `--save`).
 
-Hook-specific dimensions: `correctness` (0.25), `event-coverage` (0.20), `safety` (0.35),
-`pattern-match-quality` (0.20) — safety carries the highest weight on purpose.
+Hook-specific dimensions: `correctness`, `event-coverage`, `safety`, `pattern-match-quality` —
+weights in the [quality-dimensions table](./quality-system.md#quality-dimensions-by-type); safety
+carries the highest weight on purpose.
 
 ## `refine` — suggest-only, by design
 

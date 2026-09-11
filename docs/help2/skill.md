@@ -84,8 +84,9 @@ These four follow the shared type-command lifecycle — see
   `--reject <id>`, `--json`, `--ingest <file>`, `--margin <n>`, `--eval-gate`, `--analyze`,
   `--history`, `--rollback <id>` (requires `--confirm`).
 
-Skill quality is scored across five dimensions — completeness (0.25), clarity (0.25),
-trigger-accuracy (0.20), anti-hallucination (0.15), conciseness (0.15). Required frontmatter:
+Skill quality is scored across five dimensions — completeness, clarity, trigger-accuracy,
+anti-hallucination, conciseness; weights in the
+[quality-dimensions table](./quality-system.md#quality-dimensions-by-type). Required frontmatter:
 `name`, `description`.
 
 ```bash

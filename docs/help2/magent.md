@@ -49,9 +49,11 @@ superskill magent evaluate claude-config --save
 Flags: `--json`, `-t, --target`, `--save`, `--rubric <file>` (envelope-out with `--json`),
 `--ingest <file>` (ingest-in with `--save`).
 
-Magent-specific dimensions: `completeness` (0.25), `platform-coverage` (0.25), `tone-consistency`
-(0.20), `conciseness` (0.15), `safety` (0.15). Platform coverage and completeness carry the highest
-weights on purpose — a main-agent config must cover every platform it claims.
+Magent-specific dimensions: `completeness`, `platform-coverage`, `tone-consistency`,
+`conciseness`, `safety` — weights in the
+[quality-dimensions table](./quality-system.md#quality-dimensions-by-type). Platform coverage and
+completeness carry the highest weights on purpose — a main-agent config must cover every platform
+it claims.
 
 ## `refine` — auto-fix and suggest
 

@@ -5,10 +5,12 @@ Multi-agent skill, command, subagent, magent, hook, and MCP config distribution 
 ## Install
 
 ```bash
+# go with bun, suggested
+bun add -g @gobing-ai/superskill
+
+# go with npm
 npm i -g @gobing-ai/superskill
 
-# or go with bun
-bun add -g @gobing-ai/superskill
 ```
 
 No clone, no checkout, no extra flags. The published package bundles the `cc`
@@ -16,7 +18,17 @@ plugin and the `team-stark-children` main-agent config, and the CLI locates them
 at runtime, so install works from any directory:
 
 ```bash
-superskill install cc --magent team-stark-children
+# go with owner/repo shorthand → GitHub
+superskill install cc --magent team-stark-children --marketplace gobing-ai/spur
+# or, go with the full path of the github URL
+superskill install cc --magent team-stark-children --marketplace https://github.com/gobing-ai/spur
+# or, go with pre-installed via bun
+superskill install cc --magent team-stark-children --marketplace $(bun pm bin -g)/@gobing-ai/spur
+# or, go with pre-installed via npm
+superskill install cc --magent team-stark-children --marketplace $(npm root -g)/@gobing-ai/spur
+# or, go with already downloaded source code
+superskill install cc --magent team-stark-children --marketplace /Users/robin/xprojects/spur-new
+
 ```
 
 That distributes `cc` (skills, commands, subagents, hooks, rules) to every
@@ -65,18 +77,18 @@ Full walkthrough: [Quick start guide](docs/help/quick_start.md).
 
 ## Supported agents
 
-| Agent | Skills | Commands | Subagents | Hooks |
-| ------- | :------: | :--------: | :---------: | :-----: |
-| Claude Code | ✓ | ✓ | ✓ | ✓ |
-| Grok | ✓ | ✓ | ✓ | ✓ |
-| Codex | ✓ | ✓ | ✓ | ✓ |
-| Pi | ✓ | ✓ | ✓ | ✓ |
-| omp | ✓ | ✓ | ✓ | ✓ |
-| OpenCode | ✓ | ✓ | ✓ | ✓ |
-| Antigravity IDE | ✓ | ✓ | — | ✓ |
-| Antigravity CLI | ✓ | ✓ | — | ✓ |
-| Hermes | ✓ | ✓ | — | ✓ |
-| Grok Bot (opt-in) ⁶ | ✓ | — | — | — |
+| Agent               | Skills | Commands | Subagents | Hooks |
+| ------------------- | :----: | :------: | :-------: | :---: |
+| Claude Code         |   ✓    |    ✓     |     ✓     |   ✓   |
+| Grok                |   ✓    |    ✓     |     ✓     |   ✓   |
+| Codex               |   ✓    |    ✓     |     ✓     |   ✓   |
+| Pi                  |   ✓    |    ✓     |     ✓     |   ✓   |
+| omp                 |   ✓    |    ✓     |     ✓     |   ✓   |
+| OpenCode            |   ✓    |    ✓     |     ✓     |   ✓   |
+| Antigravity IDE     |   ✓    |    ✓     |     —     |   ✓   |
+| Antigravity CLI     |   ✓    |    ✓     |     —     |   ✓   |
+| Hermes              |   ✓    |    ✓     |     —     |   ✓   |
+| Grok Bot (opt-in) ⁶ |   ✓    |    —     |     —     |   —   |
 
 Both Antigravity targets get skills, commands, and hooks from rulesync
 (`codexcli`/`antigravity-cli`/`antigravity-ide` adapters); subagents are not part of the
@@ -119,31 +131,31 @@ See [entity locations](docs/help/entity_locations.md) for the exact install dire
 
 ## Commands
 
-| Command | What it does | Docs |
-| --------- | ------------- | ------ |
-| `install` | Distribute a plugin's skills, commands, subagents, magents, hooks, and MCP config to target agents | [cmd_install.md](docs/help/cmd_install.md) |
-| `agent` | Manage subagent definitions (scaffold / validate / evaluate / refine / evolve) | [cmd_agent.md](docs/help/cmd_agent.md) |
-| `skill` | Manage skill definitions (lifecycle + `package`, `migrate`) | [cmd_skill.md](docs/help/cmd_skill.md) |
-| `command` | Manage slash command definitions | [cmd_command.md](docs/help/cmd_command.md) |
-| `hook` | Manage hook definitions (+ `emit`, `run`) | [cmd_hook.md](docs/help/cmd_hook.md) |
-| `magent` | Manage main-agent configurations | [cmd_magent.md](docs/help/cmd_magent.md) |
-| `script` | Run / resolve / build portable twins for plugin scripts (`run`, `path`, `convert`) | [how to organize](docs/help/how_to_organize_scripts_for_plugin_development.md) |
-| `doctor` | Read-only health check for the `grok-bot` Sand target (`--targets grok-bot [--json]`) | [entity locations](docs/help/entity_locations.md) |
+| Command   | What it does                                                                                       | Docs                                                                           |
+| --------- | -------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------ |
+| `install` | Distribute a plugin's skills, commands, subagents, magents, hooks, and MCP config to target agents | [cmd_install.md](docs/help/cmd_install.md)                                     |
+| `agent`   | Manage subagent definitions (scaffold / validate / evaluate / refine / evolve)                     | [cmd_agent.md](docs/help/cmd_agent.md)                                         |
+| `skill`   | Manage skill definitions (lifecycle + `package`, `migrate`)                                        | [cmd_skill.md](docs/help/cmd_skill.md)                                         |
+| `command` | Manage slash command definitions                                                                   | [cmd_command.md](docs/help/cmd_command.md)                                     |
+| `hook`    | Manage hook definitions (+ `emit`, `run`)                                                          | [cmd_hook.md](docs/help/cmd_hook.md)                                           |
+| `magent`  | Manage main-agent configurations                                                                   | [cmd_magent.md](docs/help/cmd_magent.md)                                       |
+| `script`  | Run / resolve / build portable twins for plugin scripts (`run`, `path`, `convert`)                 | [how to organize](docs/help/how_to_organize_scripts_for_plugin_development.md) |
+| `doctor`  | Read-only health check for the `grok-bot` Sand target (`--targets grok-bot [--json]`)              | [entity locations](docs/help/entity_locations.md)                              |
 
 The five type commands share a common lifecycle: **scaffold → validate → evaluate → refine → evolve**, with type-specific quality dimensions and rubrics.
 
 ## Further reading
 
-| Topic | Document |
-| ------- | ---------- |
-| Full help index | [docs/help/index.md](docs/help/index.md) |
-| Quality system (rubrics, scoring, evolve gate) | [docs/help/quality_system.md](docs/help/quality_system.md) |
-| Entity locations per target agent | [docs/help/entity_locations.md](docs/help/entity_locations.md) |
-| Bundled `cc` plugin | [docs/help/bundled_plugin.md](docs/help/bundled_plugin.md) |
-| Development guide (stack, build, tests) | [docs/help/development.md](docs/help/development.md) |
-| Architecture decisions (authoritative) | [docs/00_ADR.md](docs/00_ADR.md) |
-| Product scope | [docs/01_PRD.md](docs/01_PRD.md) |
-| CLI surface reference | [docs/04_DESIGN.md](docs/04_DESIGN.md) |
+| Topic                                          | Document                                                       |
+| ---------------------------------------------- | -------------------------------------------------------------- |
+| Full help index                                | [docs/help/index.md](docs/help/index.md)                       |
+| Quality system (rubrics, scoring, evolve gate) | [docs/help/quality_system.md](docs/help/quality_system.md)     |
+| Entity locations per target agent              | [docs/help/entity_locations.md](docs/help/entity_locations.md) |
+| Bundled `cc` plugin                            | [docs/help/bundled_plugin.md](docs/help/bundled_plugin.md)     |
+| Development guide (stack, build, tests)        | [docs/help/development.md](docs/help/development.md)           |
+| Architecture decisions (authoritative)         | [docs/00_ADR.md](docs/00_ADR.md)                               |
+| Product scope                                  | [docs/01_PRD.md](docs/01_PRD.md)                               |
+| CLI surface reference                          | [docs/04_DESIGN.md](docs/04_DESIGN.md)                         |
 
 ## License
 
