@@ -25,6 +25,7 @@ plugin, or only specific agents? `superskill install cc` (no `--magent`) and
 `superskill install cc --targets codex,pi` work too. See
 [cmd_install.md](docs/help/cmd_install.md) for the full surface, including
 installing from a GitHub marketplace (`--marketplace gobing-ai/superskill`).
+For native Claude Code marketplace installation (`claude plugin install cc@superskill`), see the [Native cc Marketplace Pilot](docs/help/native_cc_marketplace_pilot.md).
 
 From source (contributors):
 
