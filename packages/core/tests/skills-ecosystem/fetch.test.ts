@@ -14,6 +14,7 @@ import {
     getSkillFolderHashFromTree,
     ghAuthTokenFromCli,
     isGitHubHttpsCloneUrl,
+    MAX_MATERIALIZED_FILES,
     materializeRepoSubdir,
     parseGitHubRepoUrl,
     spawnGh,
@@ -758,8 +759,8 @@ describe('fetch.ts - bounded acquisition (R9/F9)', () => {
         expect(peak).toBeLessThanOrEqual(8);
     }, 20000);
 
-    it('throws naming the materialization cap before writing any file at 2049 blobs', async () => {
-        const tree = Array.from({ length: 2049 }, (_, i) => ({
+    it('throws naming the materialization cap before writing any file at cap + 1 blobs', async () => {
+        const tree = Array.from({ length: MAX_MATERIALIZED_FILES + 1 }, (_, i) => ({
             path: `.claude-plugin/file-${i}.txt`,
             type: 'blob',
             sha: `b${i}`,
@@ -773,7 +774,7 @@ describe('fetch.ts - bounded acquisition (R9/F9)', () => {
         const destDir = await mkdtemp(join(tmpdir(), 'superskill-matcap-'));
         try {
             await expect(materializeRepoSubdir('owner/repo', '.claude-plugin', destDir, { fetchFn })).rejects.toThrow(
-                /over the 2048/,
+                /over the \d+ materialization cap/,
             );
             expect(rawFetches).toBe(0);
             expect(readdirSync(destDir)).toEqual([]);
@@ -782,8 +783,8 @@ describe('fetch.ts - bounded acquisition (R9/F9)', () => {
         }
     });
 
-    it('accepts exactly 2048 materialized files', async () => {
-        const count = 2048;
+    it('accepts exactly the materialization cap of files', async () => {
+        const count = MAX_MATERIALIZED_FILES;
         const tree = Array.from({ length: count }, (_, i) => ({
             path: `.claude-plugin/file-${i}.txt`,
             type: 'blob',

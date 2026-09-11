@@ -96,8 +96,10 @@ export class AcquisitionLimitError extends Error {
 
 /** Maximum candidate SKILL.md paths fetched per tryBlobInstall call. */
 export const MAX_CANDIDATE_SKILL_PATHS = 256;
-/** Maximum files materialized per materializeRepoSubdir call. */
-export const MAX_MATERIALIZED_FILES = 2048;
+/** Maximum files materialized per materializeRepoSubdir call. Initial limit (task 0126 R9):
+ * 2048; raised to 4096 when the spur marketplace corpus (~2.4k files) crossed it. Raise
+ * again when a real marketplace trips it — the error names the limit and the source. */
+export const MAX_MATERIALIZED_FILES = 4096;
 /** Maximum concurrent outbound fetches across the blob/download/materialize fan-outs. */
 const MAX_CONCURRENT_FETCHES = 8;
 /** Hard read caps (bytes): tree JSON, raw file text, download-manifest JSON. */
