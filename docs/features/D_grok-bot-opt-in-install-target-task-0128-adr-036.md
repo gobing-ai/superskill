@@ -2,11 +2,11 @@
 schema_version: 1
 id: "D"
 name: "Grok Bot opt-in install target (task 0128; ADR-036)"
-status: done
+status: active
 priority: P2
 tags: []
 created_at: "2026-09-09T00:18:21.958Z"
-updated_at: "2026-09-10T15:41:31.013Z"
+updated_at: "2026-09-11T04:24:18.774Z"
 ---
 
 # D: Grok Bot opt-in install target (task 0128; ADR-036)
@@ -33,6 +33,8 @@ Excluded from `all` and implicit/config-only selections by design (opt-in).
 **Approved extension (2026-09-09, Robin):** installation prepares a safe, plugin-scoped Grok Bot registration handoff through a reusable target post-install action mechanism shared with update; doctor distinguishes filesystem health from unverified slash visibility. Host registration and per-Bot enablement are separate observed steps. No new public register command, registration flag or host API transport. Verification-only 0129 is cancelled; its useful checks belong to the follow-up implementation task.
 
 **Mechanism clarification (Robin, 2026-09-09):** task 0130 builds the common post-install action mechanism first and applies it to Grok Bot. Future coding-agent customizations use the same registration/dispatch contract (ADR-037); extensibility is verified with a second-target action test. Existing OMP customization is a reference case, with migration deferred.
+
+**Planned extension (Robin, 2026-09-10):** complete the post-install registration experience for all mapped skills, degraded commands and subagent playbooks. Prefer supported, capability-verified automatic registration through the existing install/update flow; when it cannot be safely established, make the hardened cc-grok-bot-register skill the primary post-install step, retaining it as a repair fallback when automation works. Include bootstrap naming/distribution, safe host-side handoff consumption and honest registration/enablement/visibility diagnostics. This extends task 0130 rather than reimplementing its mechanism. No public register command, speculative registry transport, implicit cc install, native Bot subagent support, host deployment or automatic per-Bot enablement is included. Existing ADR restrictions remain binding; a verified new host transport would require an ADR amendment before implementation.
 
 ## Acceptance Criteria
 
@@ -163,6 +165,80 @@ Scenario: R19 — Target post-install actions share an extensible lifecycle
   And dry-run does not apply actions and a failed base install runs no dependent action
 ```
 
+```gherkin
+Scenario: R20 — Registration capability and mapped catalog have explicit evidence
+  Given the current mapper, Grok installer and supplied registration skill
+  When the implementer inventories mapped outputs and inspects supported host capabilities within the discovery budget
+  Then the record identifies all artifact kinds, verified contracts and unsupported claims
+  And unavailable automatic capability selects the specified fallback without claiming registration success
+
+Scenario: R21 — Recovery skill ships under the intended canonical ID
+  Given the cc plugin includes the recovery source skill and uses the existing prefix mapper
+  When the plugin is mapped and installed for grok-bot with skills selected
+  Then exactly one recovery entry has ID cc-grok-bot-register in workflows and the handoff
+  And there is no cc-cc-grok-bot-register output and other skill IDs remain unchanged
+
+Scenario: R22 — Install and update provide a working empty-picker bootstrap
+  Given an empty desktop slash picker and an install with or without the cc recovery skill
+  When install, marketplace update or dry-run produces next-step guidance
+  Then the guidance uses a real or explicitly prospective path or a self-contained handoff prompt
+  And first use needs no registered slash command, and dry-run has no destination or host writes
+
+Scenario: R23 — Automatic registration follows verified capabilities with a complete fallback
+  Given a committed Bot catalog and a verified available, unavailable or failing host registration capability
+  When the post-install completion flow chooses a registration path
+  Then a supported authorized path registers only the committed selection after filesystem commit
+  And unavailable or partial registration leaves a complete usable fallback with accurate per-ID outcomes and detectable attempted failures
+
+Scenario: R24 — Handoff consumption rejects unsafe stale and conflicting records
+  Given sorted v1 handoffs including malformed, future-version, cross-root, unsafe-path, stale and conflicting-ID cases
+  When the recovery skill validates and selects records
+  Then each invalid or conflicting ID has a reason and no host write
+  And independent valid IDs remain eligible and foreign workflows are preserved
+
+Scenario: R25 — Recovery selection covers all artifact kinds deterministically
+  Given valid records for skills, adapted commands and subagent playbooks across cc, sp and kk
+  When recovery runs with no args, plugin, self-only and dry-run selections
+  Then the eligible set matches the requested intersection and self is first only when selected
+  And every remaining ID is considered once in stable order and empty or invalid input is explicitly reported
+
+Scenario: R26 — Registration preserves readable executable recipes in both modes
+  Given bridge and full recipes with arguments, custom metadata, resources and a stale shared skills tree
+  When registration prepares preserving payloads and the runtime reads the selected recipe
+  Then current Bot content, unchanged arguments and relative resources remain usable
+  And no shared-path existence shortcut or self-referential full/self replacement destroys recipe content
+
+Scenario: R27 — Host upserts are bounded preserving and independently reported
+  Given a verified host write schema and eligible IDs with successful, rejected and unknown-registry cases
+  When recovery attempts registration and is later rerun
+  Then each selected eligible ID receives at most one preserving write per run with explicit id
+  And failures are isolated, refresh creates no duplicates, and delete/recreate is never used
+
+Scenario: R28 — Registration recovery preserves install update and ownership guarantees
+  Given owned bridge/full installations, prior receipts, host serialization changes and foreign files
+  When reinstall, update, mode switch, prune or a failing filesystem transaction runs
+  Then the previous transaction guarantees and drift protection remain effective
+  And host side effects are reported separately and filesystem prune never performs registry deletion
+
+Scenario: R29 — Diagnostics distinguish preparation registration enablement and visibility
+  Given healthy, missing and broken filesystem states with no reliable host registry read
+  When install, update and doctor render human and JSON guidance
+  Then filesystem readiness and host registration, enablement, picker and invocation evidence are distinct
+  And doctor retains read-only exit semantics, unknown host status and conditionally accurate desktop/mobile guidance
+
+Scenario: R30 — Focused regressions and owning documentation validate the final change
+  Given the implemented recovery and post-install changes with focused behavioral regression checks
+  When owning docs and all required repository and scoped harness gates are run
+  Then each requirement has traceable evidence and the required local gates pass
+  And unsupported host claims, unrelated targets and toolchains have not been silently changed
+
+Scenario: R31 — Host acceptance distinguishes observed success from unavailable evidence
+  Given a locally verified implementation and either an authorized Bot session or unavailable host access
+  When the task records registration, enablement, picker and invocation results
+  Then each live result is supported by observed evidence or explicitly marked unverified or blocked
+  And fallback delivery is distinguished from a proven automatic input-hints fix within the same task
+```
+
 ## Tasks
 
 <!-- AUTO-GENERATED by spur feature refresh -->
@@ -170,6 +246,7 @@ Scenario: R19 — Target post-install actions share an extensible lifecycle
 | --- | ---- | ------ |
 | 0128 | Add explicit opt-in Grok Bot VPS install target with durable workflow skills | done |
 | 0130 | Prepare safe Grok Bot slash registration handoffs within install | done |
+| 0132 | Complete Grok Bot post-install skill registration with safe bootstrap fallback | todo |
 <!-- END AUTO-GENERATED -->
 
 ## Notes
@@ -177,6 +254,8 @@ Scenario: R19 — Target post-install actions share an extensible lifecycle
 **2026-09-09 (operator decision, Robin):** AC12 narrowed to docs+gates (locally verified); the authorized VPS host smoke split to task 0129, deliberately not `feature_id`-linked so this gate reflects shipped scope. Host acceptance remains unclaimed until 0129 records real VPS evidence.
 
 **2026-09-09 amendment (Robin approved):** the earlier reference to 0129 is historical. Task 0129 is cancelled; its host checks transfer to the install-helper implementation task. The R11–R18 extension is planned, not shipped; task 0128 remains locally verified. Host acceptance remains unclaimed without runtime evidence.
+
+**2026-09-10 planning update:** task 0130's local implementation is complete; earlier notes saying its R11–R19 extension is planned are historical. Host registration/visibility remain unverified. New scenarios R20–R31 cover Robin's requested automatic-first registration improvement with a complete fallback; one task will own investigation, code, recovery skill, docs and verification. The supplied skill is design input, not authority for update_state behavior or unsupported UI claims. Public docs checked 2026-09-10: https://docs.x.ai/grok-bot/skills-routines-and-automations supports desktop slash references and per-Bot private-skill enablement. No live host mutation is authorized by this planning request.
 
 ## History
 
@@ -186,4 +265,5 @@ Scenario: R19 — Target post-install actions share an extensible lifecycle
 - 2026-09-10T04:29:05.202Z done → active (system)
 - 2026-09-10T15:41:30.790Z active → verifying (system)
 - 2026-09-10T15:41:31.013Z verifying → done (system)
+- 2026-09-11T04:24:18.034Z done → active (system)
 
