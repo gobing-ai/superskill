@@ -27,99 +27,57 @@ bootstrap:
   scheduler:
     enabled: false
 
-# ── Spur app section (validated by spurConfigSchema in @gobing-ai/spur-config) ──
+# ── Teams (feature M) — declarative rosters materialized by `spur team up` ──
+# The sample team below keeps the Teams board tabs (Roster / Messages /
+# Activity / Terminal) populated. `spur team up demo` writes agent specs to
+# .spur/agents/<teamId>-<localId>.yaml — those files are runtime scratch
+# (gitignored, ADR-086); this roster is the committed source of truth.
+# Members are NOT autostarted (autostart defaults to false) — start one
+# explicitly with `spur team start <agent-id>` to populate live data.
 agent:
-  default: omp
-
-  # ── Executors (ADR-033 adaptive model routing) ──
-  # `tier` is DECLARED, never inferred. Without it, agent-service falls back to a
-  # regex over `name + model + agent` which misclassifies silently — e.g.
-  # `deepseek-v4-pro` matched `\bpro\b` and became the only `capable` executor,
-  # while `claude`/`codex`/`grok` fell to `standard` and were excluded from every
-  # capable-tier stage.
-  #
-  # Selection: a stage takes the CHEAPEST executor whose tier >= its `min_tier`
-  # (cheap=1 < standard=2 < capable-1=3 < capable-2=4 < capable-3=5). Sub-tiers
-  # replace array-order *across* capable-1/2/3; array order remains the last-
-  # resort tie-break only for executors that share the exact same tier value.
+  # Project-level executor overrides — merge into the global `executors` block by `name`
+  # (config-global config.yaml carries the canonical agent/model/tier list).
+  # These overrides add `executionCapabilities` to specific executors so capability
+  # attestation (0706 R5) can satisfy stage `requiresCapabilities` (fsWrite,
+  # processSpawn, fsRead). The pi agent actively edits files and spawns processes,
+  # so native-known is the honest provenance; operator-configured would also work.
   executors:
-    # cheap — mechanical, high-volume work
-    - name: minimax
-      agent: omp
-      model: minimax/MiniMax-M3
-      tier: cheap
-
-    # standard — implementation, tests, wrap-up
-    - name: omp
-      agent: omp
-      tier: standard
-    # - name: omp-xf
-    #   agent: omp
-    #   model: astron-code-latest
-    #   tier: standard
-    - name: omp-zai
-      agent: omp
-      model: zai/glm-5.3
-      tier: standard
-    - name: omp-zai-volc
-      agent: omp
-      model: volc/glm-5.3
-      tier: standard
-    - name: pi
+    - name: pi-dsv4-flash-volc
       agent: pi
       tier: standard
-    - name: pi-xf
+      # Disabled 2026-09-10: volc account monthly quota exhausted (HTTP 429
+      # AccountQuotaExceeded, resets 2026-09-18). Every agent.run stage started
+      # here and burned ~10min before the escalation ladder climbed. Flip back
+      # to `disabled: false` after the reset.
+      disabled: true
+      executionCapabilities:
+        version: 1
+        axes:
+          fsRead:
+            state: available
+            provenance: native-known
+          fsWrite:
+            state: available
+            provenance: native-known
+          processSpawn:
+            state: available
+            provenance: native-known
+    - name: pi-zai
       agent: pi
-      model: astron-code-latest
       tier: standard
-
-    # capable-1/2/3 — planning, verification, dogfooding (0343)
-    # 1 = low output quality within the capable band, 3 = high. Declare
-    # explicitly — inference never invents capable-2/3.
-    # - name: omp-deepseek
-    #   agent: omp
-    #   model: deepseek/deepseek-v4-pro
-    #   tier: capable-1
-    - name: pi-k3
-      agent: pi
-      model: kimi/k3
-      tier: capable-1
-    - name: grok
-      agent: grok
-      tier: capable-2
-    - name: claude
-      agent: claude
-      tier: capable-3
-    - name: codex
-      agent: codex
-      tier: capable-3
-
-  # `default-by-phase` retired 2026-07-26 (ADR-033). Retained only as a
-  # backward-compat shim that emits a one-time deprecation warning. When present
-  # it is still authoritative for matching phases and shadows stage routing —
-  # do not re-enable unless you intentionally need that fail-fast map.
-  # default-by-phase:
-  #   dev-fixall: omp-zai
-  #   dev-runall: omp-zai
-  #   dev-gitmsg: minimax
-
-  # ── Teams (feature M) — declarative rosters materialized by `spur team up` ──
-  # A sample team so the Teams board tabs (Roster / Messages / Activity /
-  # Terminal) have data to render. `spur team up demo` writes agent specs to
-  # .spur/agents/<teamId>-<localId>.yaml; members are NOT autostarted (autostart
-  # defaults to false) — start one explicitly with `spur team start <agent-id>`
-  # to populate Terminal / Messages / Activity with live data.
-  team:
-    demo:
-      name: "Team SuperSkill"
-      work_dir: "~/xprojects/superskill"
-      members:
-        - executor: claude
-          purpose: "Lead — planning & review"
-        - executor: omp-zai
-          purpose: "Implementer — code generation"
-        - executor: codex
-          purpose: "Verifier — second opinion"
+      disabled: false
+      executionCapabilities:
+        version: 1
+        axes:
+          fsRead:
+            state: available
+            provenance: native-known
+          fsWrite:
+            state: available
+            provenance: native-known
+          processSpawn:
+            state: available
+            provenance: native-known
 
 rules:
   paths:
