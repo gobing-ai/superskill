@@ -428,18 +428,27 @@ export function botBootstrapMessages(args: {
     if (args.entries.some((entry) => entry.id === BOT_RECOVERY_SKILL_ID)) {
         return [
             `First use (empty slash picker is expected): ask any Grok Bot on this Sand root to`,
-            `read and follow ${botRecoveryWorkflowSkillPath(args.dataRoot)}`,
-            `— it consumes the handoffs and registers the listed skills (per-Bot enablement may still be needed).`,
+            `read and follow ${JSON.stringify(botRecoveryWorkflowSkillPath(args.dataRoot))} with --plugin ${args.plugin}.`,
+            `Consume only ${JSON.stringify(handoffPath)}; report registration pending if no verified host method is available.`,
             `If the Bot's Read tool denies the hidden canonical file under .superskill (bridge installs),`,
-            `use the Bot's authorized Shell tool to read that exact path instead; there is no slash entry yet.`,
+            `use the Bot's authorized Shell tool to read that exact path instead.`,
         ];
     }
     return [
         `First use (empty slash picker is expected): ask any Grok Bot on this Sand root to`,
-        `read and follow the registration handoff ${handoffPath}`,
-        `— ask it to register each listed skill id via the host skill write with the record's id, name,`,
-        `description, body and recipe (bridge recipes live under .superskill; use the Bot's authorized`,
-        `Shell tool if Read denies the hidden path).`,
+        `read only the registration handoff ${JSON.stringify(handoffPath)} for plugin ${args.plugin}.`,
+        `Validate schemaVersion=1, target=grok-bot, plugin/source, matching resolved dataRoot and modes,`,
+        `nonempty id/name/description/body, safe single-segment ids, frontmatter objects and resources string maps.`,
+        `Resolve recipe/resource paths within this Sand root; reject symlink escapes, stale content,`,
+        `foreign ownership markers or hashes, and conflicting duplicate ids before any write.`,
+        `Using only a verified host schema with confirmed registry ownership and preserving upsert behavior,`,
+        `register each listed skill id at most once in stable order with its exact name, description, body,`,
+        `frontmatter and resources. Preserve full recipes; never replace them with a self-pointer.`,
+        `For bridge recipes, use the Bot's authorized Shell tool if Read denies the exact canonical path;`,
+        `keep arguments unchanged and resources beside that recipe. Ignore unrelated shared skills.`,
+        `Never delete/recreate or reset ownership hashes. Continue independent failures; report each id as`,
+        `acknowledged, failed, conflict, skipped or pending. Without a verified method, leave registration pending.`,
+        `Enablement is pending/unknown; picker visibility and invocation remain unverified until observed.`,
         `To consume handoffs with the bundled recovery skill instead, install the cc plugin explicitly:`,
         `superskill install cc --targets grok-bot (no implicit dependency install happens here).`,
     ];
@@ -626,33 +635,23 @@ export interface GrokBotPlan {
 /**
  * R6 conflict gate: locally edited managed files or extra unowned files that a
  * replace/prune would destroy are a clear conflict — never silently overwrite
- * or delete them (no force/adopt flag in v1). Bridge mode hashes cover the
- * canonical tree (the pointer SKILL.md is derived), so the pointer dir is only
- * checked for unowned extras.
+ * or delete them (no force/adopt flag in v1). Bridge checks include the derived
+ * pointer: a host serializer changing it must not be silently overwritten.
  */
 function assertOwnedUndrifted(marker: GrokBotOriginMarker, workflowDir: string): void {
     const id = basename(workflowDir);
     if (marker.mode === 'bridge') {
         const canonicalDir = marker.canonicalPath ? resolve(marker.canonicalPath, '..') : null;
-        if (canonicalDir && existsSync(canonicalDir) && !markerHashesCurrent(marker, canonicalDir)) {
+        if (!canonicalDir || !existsSync(canonicalDir) || !markerHashesCurrent(marker, canonicalDir)) {
             throw new GrokBotPreflightError(
-                `Workflow '${id}' canonical files were locally modified — refusing to overwrite or prune; ` +
+                `Workflow '${id}' canonical files are missing or locally modified — refusing to overwrite or prune; ` +
                     'restore the original content or remove the workflow manually',
             );
         }
-        // Pointer dir = derived SKILL.md stub + the same owned resource files as
-        // canonical + the marker. Gate edited/missing resources and unowned
-        // extras. ponytail: the pointer stub itself is fully derived from the
-        // canonical entry, so its local edits are not conflict-gated in v1 —
-        // reinstall regenerates it; the meaningful content lives in canonical.
-        for (const rel of listRegularFilesRel(workflowDir)) {
-            if (rel === 'SKILL.md' || rel === BOT_ORIGIN_MARKER) continue;
-            const expected = marker.hashes[rel];
-            if (expected === undefined || sha256File(join(workflowDir, rel)) !== expected) {
-                throw new GrokBotPreflightError(
-                    `Workflow '${id}' has unowned or locally modified files (${rel}) — refusing to overwrite or prune`,
-                );
-            }
+        if (!bridgeWorkflowCurrent(marker, canonicalDir, workflowDir)) {
+            throw new GrokBotPreflightError(
+                `Workflow '${id}' has missing, unowned or locally modified files — refusing to overwrite or prune`,
+            );
         }
     } else if (!markerHashesCurrent(marker, workflowDir)) {
         throw new GrokBotPreflightError(
@@ -757,6 +756,22 @@ export function renderBridgePointer(entry: BotSkillEntry, canonicalSkillDir: str
         'Edit only the canonical copy; reinstalling its plugin republishes this pointer.',
         '',
     ].join('\n');
+}
+
+function bridgeWorkflowCurrent(marker: GrokBotOriginMarker, canonicalDir: string, workflowDir: string): boolean {
+    try {
+        const pointer = renderBridgePointer(
+            parseBotSkillEntry(canonicalDir),
+            realpathSync(canonicalDir),
+            realpathSync(workflowDir),
+        );
+        return markerHashesCurrent(
+            { ...marker, hashes: { ...marker.hashes, 'SKILL.md': sha256Text(pointer) } },
+            workflowDir,
+        );
+    } catch {
+        return false;
+    }
 }
 
 function writeTree(dir: string, entry: BotSkillEntry, skillMd: string, extraMarker: string): void {
@@ -975,6 +990,7 @@ export const BOT_DOCTOR_SLASH_GUIDANCE = [
     'Install/update prepares a handoff at <dataRoot>/.superskill/grok-bot/register/<plugin>.json — have the host agent consume it with a verified registration method (one attempt per id, never delete-and-recreate).',
     'First use: ask any Grok Bot on this Sand root to read and follow <dataRoot>/workflows/cc-grok-bot-register/SKILL.md (when the bundled recovery skill is installed it consumes all handoffs); otherwise ask it to read and follow the handoff file directly.',
     'Bridge recipes live under the hidden .superskill tree: if the Bot Read tool denies them, use the Bot authorized Shell tool to read the exact same path.',
+    'A host write acknowledgement does not prove enablement, picker visibility or invocation; those remain pending/unknown or unverified until observed.',
     'After registration, enable the plugin per Bot under Grok Bot Settings > Plugins > Yours (private skills may also need per-Bot enablement).',
 ];
 
@@ -982,7 +998,12 @@ function botDoctorSlashRegistry(dataRoot: string | null): GrokBotDoctorSlashRegi
     return {
         status: 'unknown',
         handoffDir: dataRoot === null ? null : botRegisterHandoffDir(dataRoot),
-        guidance: BOT_DOCTOR_SLASH_GUIDANCE,
+        guidance:
+            dataRoot === null
+                ? [
+                      'Set SAND_DATA to an existing absolute Sand root on the Bot host, then reinstall the selected plugin. Host registration, enablement, picker visibility and invocation remain unverified.',
+                  ]
+                : BOT_DOCTOR_SLASH_GUIDANCE,
     };
 }
 
@@ -1076,6 +1097,13 @@ export function inspectGrokBotTarget(options: { sandData?: string; homeDir: stri
                     code: 'owned-drift',
                     path: canonical,
                     message: 'Canonical skill files drifted from the ownership marker hashes',
+                });
+            }
+            if (!bridgeWorkflowCurrent(marker, resolve(canonical, '..'), dir)) {
+                issues.push({
+                    code: 'owned-drift',
+                    path: dir,
+                    message: 'Bridge workflow files differ from the installed pointer or ownership marker hashes',
                 });
             }
         } else if (!markerHashesCurrent(marker, dir)) {

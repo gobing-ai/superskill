@@ -5,6 +5,7 @@ import {
     mkdtempSync,
     readFileSync,
     realpathSync,
+    renameSync,
     rmSync,
     symlinkSync,
     writeFileSync,
@@ -390,6 +391,68 @@ describe('mode switch cleanup (R6)', () => {
 });
 
 describe('replace/prune conflict gate (R6)', () => {
+    it('detects changed host serialization in both modes before doctor, reinstall, mode switch or prune (0132 R9)', async () => {
+        for (const materialize of ['bridge', 'full'] as const) {
+            const res = resolveSandRoot({ sandData: join(tmp, materialize), homeDir: tmp, createMissing: true });
+            await emitGrokBotInstall({
+                entries: [entry('w1')],
+                resolution: res,
+                plugin: 'sp',
+                source: SOURCE,
+                materialize,
+                superskillVersion: '0.0.0-test',
+                nowIso: '2026-01-01T00:00:00Z',
+                prune: false,
+                pruneCandidates: [],
+            });
+            const workflow = join(res.workflowsDir, 'w1', 'SKILL.md');
+            const original = readFileSync(workflow, 'utf-8');
+            const markerPath = join(res.workflowsDir, 'w1', BOT_ORIGIN_MARKER);
+            const marker = readFileSync(markerPath, 'utf-8');
+            // Simulated preserving host serialization is byte-identical; no live registry is exercised.
+            writeFileSync(workflow, original);
+            expect(inspectGrokBotTarget({ sandData: res.dataRoot, homeDir: tmp }).issues).toEqual([]);
+            const changed = `${original}\nHost annotation.\n`;
+            writeFileSync(workflow, changed);
+            expect(
+                inspectGrokBotTarget({ sandData: res.dataRoot, homeDir: tmp }).issues.some(
+                    (issue) => issue.code === 'owned-drift',
+                ),
+            ).toBe(true);
+            for (const nextMode of ['bridge', 'full'] as const) {
+                for (const prune of [false, true]) {
+                    expect(() =>
+                        planGrokBotInstall({
+                            entries: prune ? [] : [entry('w1')],
+                            resolution: res,
+                            plugin: 'sp',
+                            source: SOURCE,
+                            prune,
+                            materialize: nextMode,
+                        }),
+                    ).toThrow(/locally modified/);
+                }
+            }
+            expect(readFileSync(workflow, 'utf-8')).toBe(changed);
+            expect(readFileSync(markerPath, 'utf-8')).toBe(marker);
+            if (materialize === 'bridge') {
+                const canonical = botCanonicalSkillDir(res.dataRoot, 'w1');
+                renameSync(canonical, `${canonical}-saved`);
+                expect(() =>
+                    planGrokBotInstall({
+                        entries: [],
+                        resolution: res,
+                        plugin: 'sp',
+                        source: SOURCE,
+                        prune: true,
+                        materialize,
+                    }),
+                ).toThrow(/missing or locally modified/);
+                expect(readFileSync(workflow, 'utf-8')).toBe(changed);
+            }
+        }
+    });
+
     it('refuses to replace a locally modified owned workflow', async () => {
         const res = resolveSandRoot({ sandData: join(tmp, 'root'), homeDir: tmp, createMissing: true });
         await emitGrokBotInstall({
@@ -414,6 +477,11 @@ describe('replace/prune conflict gate (R6)', () => {
                 materialize: 'bridge',
             }),
         ).toThrow(/locally modified/);
+        expect(
+            inspectGrokBotTarget({ sandData: res.dataRoot, homeDir: tmp }).issues.some(
+                (issue) => issue.code === 'owned-drift',
+            ),
+        ).toBe(true);
     });
 
     it('refuses to prune a stale owned workflow with unowned extras', async () => {
@@ -869,8 +937,14 @@ describe('registration handoff (task 0130)', () => {
 });
 
 describe('botBootstrapMessages (task 0132 R3/R10)', () => {
+    it('doctor gives root repair guidance without invented workflow paths when root resolution fails', () => {
+        const report = inspectGrokBotTarget({ sandData: ' ', homeDir: tmp });
+        expect(report.slashRegistry.handoffDir).toBeNull();
+        expect(report.slashRegistry.guidance.join(' ')).toContain('Set SAND_DATA');
+        expect(report.slashRegistry.guidance.join(' ')).not.toContain('workflows/');
+    });
     it('names the resolved recovery skill path when the recovery skill is in the committed selection', () => {
-        const root = join(tmp, 'root-self');
+        const root = join(tmp, 'root self');
         mkdirSync(root);
         const lines = botBootstrapMessages({
             dataRoot: root,
@@ -881,6 +955,10 @@ describe('botBootstrapMessages (task 0132 R3/R10)', () => {
         expect(text).toContain(join(realpathSync(root), 'workflows', 'cc-grok-bot-register', 'SKILL.md'));
         expect(text).toMatch(/Shell tool/); // bridge .superskill Read denial → authorized Shell fallback
         expect(text).not.toMatch(/install cc --targets/); // never suggests installing cc when it is present
+        expect(text).toContain(
+            `"${join(realpathSync(root), 'workflows', 'cc-grok-bot-register', 'SKILL.md')}" with --plugin cc`,
+        );
+        expect(text).toContain('Consume only');
     });
 
     it('gives a self-contained handoff prompt plus explicit cc instruction when recovery is absent', () => {
@@ -896,6 +974,10 @@ describe('botBootstrapMessages (task 0132 R3/R10)', () => {
         expect(text).toMatch(/register each listed skill/);
         expect(text).toMatch(/superskill install cc --targets grok-bot/); // optional explicit instruction
         expect(text).not.toContain(join(root, 'workflows', 'cc-grok-bot-register', 'SKILL.md'));
+        expect(text).toContain('confirmed registry ownership');
+        expect(text).toContain('frontmatter and resources');
+        expect(text).toContain('conflicting duplicate ids');
+        expect(text).toContain('leave registration pending');
     });
 
     it('bare agent-data fallback never silently selects a different root (existing resolver contract)', () => {

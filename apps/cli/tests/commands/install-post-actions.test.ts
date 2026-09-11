@@ -59,6 +59,11 @@ describe('createGrokBotRegisterAction (task 0130 handoff action)', () => {
                 result.messages.some((message) => message.includes(botRegisterHandoffPath(args.dataRoot, args.plugin))),
             ).toBe(true);
             expect(result.messages).toContain(BOT_SLASH_CAVEAT);
+            expect(
+                result.messages
+                    .filter((message) => message.includes('bootstrap'))
+                    .every((message) => message.startsWith('prospective bootstrap (after install):')),
+            ).toBe(true);
         } finally {
             cleanup();
         }
@@ -129,6 +134,8 @@ describe('createGrokBotRegisterAction (task 0130 handoff action)', () => {
             expect(text).toContain(join(args.dataRoot, 'workflows', 'cc-grok-bot-register', 'SKILL.md'));
             expect(text).toContain('Shell tool');
             expect(text).toContain(botRegisterHandoffPath(args.dataRoot, args.plugin));
+            expect(text).toContain(`--plugin ${args.plugin}`);
+            expect(text).toContain('Consume only');
         } finally {
             cleanup();
         }

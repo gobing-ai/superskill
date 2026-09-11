@@ -284,6 +284,7 @@ describe('mapPluginToRulesync', () => {
     });
 
     it('maps the real cc recovery skill to the installed id cc-grok-bot-register (task 0132)', () => {
+        tmpDir = mkdtempSync('superskill-mapper-');
         // Regression for the double-prefix bug: the recovery skill's source directory was
         // named cc-grok-bot-register, which the existing plugin-prefix convention mapped to
         // cc-cc-grok-bot-register. R2 normalizes only that source name to grok-bot-register;

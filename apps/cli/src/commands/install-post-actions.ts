@@ -62,7 +62,7 @@ export function createGrokBotRegisterAction(args: GrokBotRegisterActionArgs): Po
                 messages: [
                     `handoff would be prepared at ${path()} (${summarize(handoff)})`,
                     BOT_SLASH_CAVEAT,
-                    ...bootstrap.map((line) => `bootstrap: ${line}`),
+                    ...bootstrap.map((line) => `prospective bootstrap (after install): ${line}`),
                 ],
             };
         },

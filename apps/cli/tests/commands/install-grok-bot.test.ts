@@ -1,8 +1,23 @@
 import { afterEach, beforeEach, describe, expect, it, spyOn } from 'bun:test';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import {
+    existsSync,
+    mkdirSync,
+    mkdtempSync,
+    readdirSync,
+    readFileSync,
+    realpathSync,
+    rmSync,
+    writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { installManifestPath, readInstallManifest } from '@gobing-ai/superskill-core';
+import {
+    type BotRegisterHandoff,
+    collectBotSkillEntries,
+    installManifestPath,
+    mapPluginToRulesync,
+    readInstallManifest,
+} from '@gobing-ai/superskill-core';
 import { executeInstall } from '../../src/commands/install';
 import { executeUpdate } from '../../src/commands/update';
 
@@ -85,6 +100,41 @@ describe('grok-bot install (task 0128)', () => {
         expect(manifest.grokBot).toEqual({ materialize: 'bridge' });
     });
 
+    it('installs the real mixed cc catalog once with a scoped recovery bootstrap in bridge and full modes (0132)', async () => {
+        const { sand } = botEnv();
+        const pluginRoot = join(import.meta.dir, '../../../..', 'plugins/cc');
+        const mappedRoot = join(tempDir, 'mapped');
+        const mapped = mapPluginToRulesync(pluginRoot, 'cc', mappedRoot, {
+            features: ['skills', 'commands', 'subagents'],
+        });
+        expect(mapped.skills).toBeGreaterThan(0);
+        expect(mapped.commands).toBeGreaterThan(0);
+        expect(mapped.subagents).toBeGreaterThan(0);
+        const expectedIds = collectBotSkillEntries(join(mappedRoot, 'skills')).map((skill) => skill.id);
+        for (const materialize of ['bridge', 'full'] as const) {
+            await executeInstall('cc', ['grok-bot'], {
+                pluginPath: pluginRoot,
+                global: true,
+                dryRun: false,
+                verbose: false,
+                prune: false,
+                materialize,
+            });
+            const handoff = JSON.parse(
+                readFileSync(join(sand, '.superskill/grok-bot/register/cc.json'), 'utf-8'),
+            ) as BotRegisterHandoff;
+            expect(handoff.skills.map((skill) => skill.id)).toEqual(expectedIds);
+            expect(readdirSync(join(sand, 'workflows')).sort()).toEqual(expectedIds);
+            expect(expectedIds.filter((id) => id === 'cc-grok-bot-register')).toHaveLength(1);
+            expect(expectedIds).not.toContain('cc-cc-grok-bot-register');
+            const recovery = handoff.skills.find((skill) => skill.id === 'cc-grok-bot-register');
+            expect(recovery?.mode).toBe(materialize);
+            expect(readFileSync(recovery?.recipePath ?? '', 'utf-8')).toContain('Host capability evidence');
+            expect(stdout).toContain('with --plugin cc');
+            expect(stdout).toContain('registration pending');
+        }
+    });
+
     it('full materialization writes everything under workflows/ and no canonical tree', async () => {
         const { sand } = botEnv();
         const pluginRoot = createPlugin(tempDir);
@@ -101,6 +151,50 @@ describe('grok-bot install (task 0128)', () => {
         expect(existsSync(join(sand, '.superskill', 'grok-bot', 'skills'))).toBe(false);
         const manifest = readInstallManifest(installManifestPath(sand, 'grok-bot', 'demo'));
         expect(manifest.grokBot).toEqual({ materialize: 'full' });
+    });
+
+    it('marketplace update preserves mode, metadata and arguments and refuses host workflow drift (0132 R7/R9)', async () => {
+        const { sand } = botEnv();
+        const pluginRoot = createPlugin(tempDir);
+        writeFileSync(join(pluginRoot, 'plugin.json'), JSON.stringify({ name: 'demo', version: '1.0.0' }));
+        const market = join(tempDir, 'marketplace.json');
+        writeFileSync(market, JSON.stringify({ name: 'local', plugins: [{ name: 'demo', source: './plugins/demo' }] }));
+        const source = join(pluginRoot, 'skills/a.md');
+        for (const materialize of ['bridge', 'full'] as const) {
+            writeFileSync(
+                source,
+                '---\nname: a\ndescription: Skill a\ncustom: keep\ndisable-model-invocation: true\n---\nUse $ARGUMENTS.\n',
+            );
+            await executeInstall('demo', ['grok-bot'], {
+                marketplacePath: market,
+                global: true,
+                dryRun: false,
+                verbose: false,
+                prune: false,
+                materialize,
+            });
+            writeFileSync(source, `${readFileSync(source, 'utf-8')}Updated recipe.\n`);
+            expect(
+                await executeUpdate('demo', ['grok-bot'], { check: false, global: true, marketplacePath: market }),
+            ).toBe(0);
+            const handoffPath = join(sand, '.superskill/grok-bot/register/demo.json');
+            const handoff = JSON.parse(readFileSync(handoffPath, 'utf-8')) as BotRegisterHandoff;
+            expect(handoff.materialize).toBe(materialize);
+            expect(handoff.skills[0]?.frontmatter.custom).toBe('keep');
+            expect(handoff.skills[0]?.frontmatter['disable-model-invocation']).toBe(true);
+            expect(readFileSync(handoff.skills[0]?.recipePath ?? '', 'utf-8')).toContain('Use $ARGUMENTS.');
+            expect(stdout).toContain('register each listed skill id at most once');
+            const workflow = join(sand, 'workflows/demo-a/SKILL.md');
+            const original = readFileSync(workflow, 'utf-8');
+            const changed = `${original}\nHost annotation.\n`;
+            writeFileSync(workflow, changed);
+            writeFileSync(source, `${readFileSync(source, 'utf-8')}Next update.\n`);
+            await expect(
+                executeUpdate('demo', ['grok-bot'], { check: false, global: true, marketplacePath: market }),
+            ).rejects.toThrow(/locally modified/);
+            expect(readFileSync(workflow, 'utf-8')).toBe(changed);
+            writeFileSync(workflow, original);
+        }
     });
 
     it('rejects --no-global for grok-bot with a preflight error', async () => {
