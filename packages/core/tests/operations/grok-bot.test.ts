@@ -19,6 +19,7 @@ import {
     botBootstrapMessages,
     botCanonicalSkillDir,
     botRegisterHandoffPath,
+    bridgeWorkflowTreeAcceptable,
     buildBotRegisterHandoff,
     collectBotSkillEntries,
     emitGrokBotInstall,
@@ -391,66 +392,176 @@ describe('mode switch cleanup (R6)', () => {
 });
 
 describe('replace/prune conflict gate (R6)', () => {
-    it('detects changed host serialization in both modes before doctor, reinstall, mode switch or prune (0132 R9)', async () => {
-        for (const materialize of ['bridge', 'full'] as const) {
-            const res = resolveSandRoot({ sandData: join(tmp, materialize), homeDir: tmp, createMissing: true });
-            await emitGrokBotInstall({
+    it('full mode: host-rewritten SKILL.md is owned-drift and blocks reinstall/prune (0132 R9)', async () => {
+        const res = resolveSandRoot({ sandData: join(tmp, 'full'), homeDir: tmp, createMissing: true });
+        await emitGrokBotInstall({
+            entries: [entry('w1')],
+            resolution: res,
+            plugin: 'sp',
+            source: SOURCE,
+            materialize: 'full',
+            superskillVersion: '0.0.0-test',
+            nowIso: '2026-01-01T00:00:00Z',
+            prune: false,
+            pruneCandidates: [],
+        });
+        const workflow = join(res.workflowsDir, 'w1', 'SKILL.md');
+        const original = readFileSync(workflow, 'utf-8');
+        const markerPath = join(res.workflowsDir, 'w1', BOT_ORIGIN_MARKER);
+        const marker = readFileSync(markerPath, 'utf-8');
+        writeFileSync(workflow, original);
+        expect(inspectGrokBotTarget({ sandData: res.dataRoot, homeDir: tmp }).issues).toEqual([]);
+        const changed = `${original}\nHost annotation.\n`;
+        writeFileSync(workflow, changed);
+        expect(
+            inspectGrokBotTarget({ sandData: res.dataRoot, homeDir: tmp }).issues.some(
+                (issue) => issue.code === 'owned-drift',
+            ),
+        ).toBe(true);
+        for (const nextMode of ['bridge', 'full'] as const) {
+            for (const prune of [false, true]) {
+                expect(() =>
+                    planGrokBotInstall({
+                        entries: prune ? [] : [entry('w1')],
+                        resolution: res,
+                        plugin: 'sp',
+                        source: SOURCE,
+                        prune,
+                        materialize: nextMode,
+                    }),
+                ).toThrow(/locally modified/);
+            }
+        }
+        expect(readFileSync(workflow, 'utf-8')).toBe(changed);
+        expect(readFileSync(markerPath, 'utf-8')).toBe(marker);
+    });
+
+    it('bridge mode: host-rewritten pointer that keeps canonical: is not owned-drift (registry upsert)', async () => {
+        const res = resolveSandRoot({ sandData: join(tmp, 'bridge-host'), homeDir: tmp, createMissing: true });
+        await emitGrokBotInstall({
+            entries: [entry('w1')],
+            resolution: res,
+            plugin: 'sp',
+            source: SOURCE,
+            materialize: 'bridge',
+            superskillVersion: '0.0.0-test',
+            nowIso: '2026-01-01T00:00:00Z',
+            prune: false,
+            pruneCandidates: [],
+        });
+        const workflowDir = join(res.workflowsDir, 'w1');
+        const workflow = join(workflowDir, 'SKILL.md');
+        const original = readFileSync(workflow, 'utf-8');
+        expect(inspectGrokBotTarget({ sandData: res.dataRoot, homeDir: tmp }).issues).toEqual([]);
+        // Simulate Bot update_state rewrite: new body + absolute agents path, but same canonical: field.
+        const hostRewritten = [
+            '---',
+            'name: w1',
+            "description: 'Host-normalized description'",
+            'canonical: ../../.superskill/grok-bot/skills/w1/SKILL.md',
+            '---',
+            '',
+            'When this skill is invoked, read and follow the canonical skill file at:',
+            join(tmp, '.agents', 'skills', 'w1', 'SKILL.md'),
+            '',
+            'Pass any user arguments through unchanged.',
+            '',
+        ].join('\n');
+        writeFileSync(workflow, hostRewritten);
+        const report = inspectGrokBotTarget({ sandData: res.dataRoot, homeDir: tmp });
+        expect(report.issues.filter((issue) => issue.code === 'owned-drift')).toEqual([]);
+        const hostMarker = readOriginMarker(workflowDir, 'sp');
+        expect(hostMarker).not.toBeNull();
+        expect(
+            bridgeWorkflowTreeAcceptable(
+                hostMarker as NonNullable<typeof hostMarker>,
+                botCanonicalSkillDir(res.dataRoot, 'w1'),
+                workflowDir,
+            ),
+        ).toBe(true);
+        // Reinstall / prune must proceed so the next install can refresh the pointer.
+        expect(() =>
+            planGrokBotInstall({
                 entries: [entry('w1')],
                 resolution: res,
                 plugin: 'sp',
                 source: SOURCE,
-                materialize,
-                superskillVersion: '0.0.0-test',
-                nowIso: '2026-01-01T00:00:00Z',
                 prune: false,
-                pruneCandidates: [],
-            });
-            const workflow = join(res.workflowsDir, 'w1', 'SKILL.md');
-            const original = readFileSync(workflow, 'utf-8');
-            const markerPath = join(res.workflowsDir, 'w1', BOT_ORIGIN_MARKER);
-            const marker = readFileSync(markerPath, 'utf-8');
-            // Simulated preserving host serialization is byte-identical; no live registry is exercised.
-            writeFileSync(workflow, original);
-            expect(inspectGrokBotTarget({ sandData: res.dataRoot, homeDir: tmp }).issues).toEqual([]);
-            const changed = `${original}\nHost annotation.\n`;
-            writeFileSync(workflow, changed);
-            expect(
-                inspectGrokBotTarget({ sandData: res.dataRoot, homeDir: tmp }).issues.some(
-                    (issue) => issue.code === 'owned-drift',
-                ),
-            ).toBe(true);
-            for (const nextMode of ['bridge', 'full'] as const) {
-                for (const prune of [false, true]) {
-                    expect(() =>
-                        planGrokBotInstall({
-                            entries: prune ? [] : [entry('w1')],
-                            resolution: res,
-                            plugin: 'sp',
-                            source: SOURCE,
-                            prune,
-                            materialize: nextMode,
-                        }),
-                    ).toThrow(/locally modified/);
-                }
-            }
-            expect(readFileSync(workflow, 'utf-8')).toBe(changed);
-            expect(readFileSync(markerPath, 'utf-8')).toBe(marker);
-            if (materialize === 'bridge') {
-                const canonical = botCanonicalSkillDir(res.dataRoot, 'w1');
-                renameSync(canonical, `${canonical}-saved`);
-                expect(() =>
-                    planGrokBotInstall({
-                        entries: [],
-                        resolution: res,
-                        plugin: 'sp',
-                        source: SOURCE,
-                        prune: true,
-                        materialize,
-                    }),
-                ).toThrow(/missing or locally modified/);
-                expect(readFileSync(workflow, 'utf-8')).toBe(changed);
-            }
-        }
+                materialize: 'bridge',
+            }),
+        ).not.toThrow();
+        expect(() =>
+            planGrokBotInstall({
+                entries: [],
+                resolution: res,
+                plugin: 'sp',
+                source: SOURCE,
+                prune: true,
+                materialize: 'bridge',
+            }),
+        ).not.toThrow();
+        expect(readFileSync(workflow, 'utf-8')).toBe(hostRewritten);
+        expect(original).toContain('canonical:');
+    });
+
+    it('bridge mode: extra unowned workflow files still block replace/prune', async () => {
+        const res = resolveSandRoot({ sandData: join(tmp, 'bridge-extra'), homeDir: tmp, createMissing: true });
+        await emitGrokBotInstall({
+            entries: [entry('w1')],
+            resolution: res,
+            plugin: 'sp',
+            source: SOURCE,
+            materialize: 'bridge',
+            superskillVersion: '0.0.0-test',
+            nowIso: '2026-01-01T00:00:00Z',
+            prune: false,
+            pruneCandidates: [],
+        });
+        writeFileSync(join(res.workflowsDir, 'w1', 'notes.md'), 'mine\n');
+        expect(
+            inspectGrokBotTarget({ sandData: res.dataRoot, homeDir: tmp }).issues.some(
+                (issue) => issue.code === 'owned-drift',
+            ),
+        ).toBe(true);
+        expect(() =>
+            planGrokBotInstall({
+                entries: [entry('w1')],
+                resolution: res,
+                plugin: 'sp',
+                source: SOURCE,
+                prune: false,
+                materialize: 'bridge',
+            }),
+        ).toThrow(/locally modified|unowned/);
+    });
+
+    it('bridge mode: missing canonical still blocks prune after host pointer rewrite', async () => {
+        const res = resolveSandRoot({ sandData: join(tmp, 'bridge-missing'), homeDir: tmp, createMissing: true });
+        await emitGrokBotInstall({
+            entries: [entry('w1')],
+            resolution: res,
+            plugin: 'sp',
+            source: SOURCE,
+            materialize: 'bridge',
+            superskillVersion: '0.0.0-test',
+            nowIso: '2026-01-01T00:00:00Z',
+            prune: false,
+            pruneCandidates: [],
+        });
+        const workflow = join(res.workflowsDir, 'w1', 'SKILL.md');
+        writeFileSync(workflow, `${readFileSync(workflow, 'utf-8')}\nHost annotation.\n`);
+        const canonical = botCanonicalSkillDir(res.dataRoot, 'w1');
+        renameSync(canonical, `${canonical}-saved`);
+        expect(() =>
+            planGrokBotInstall({
+                entries: [],
+                resolution: res,
+                plugin: 'sp',
+                source: SOURCE,
+                prune: true,
+                materialize: 'bridge',
+            }),
+        ).toThrow(/missing or locally modified/);
     });
 
     it('refuses to replace a locally modified owned workflow', async () => {
@@ -770,6 +881,8 @@ describe('registration handoff (task 0130)', () => {
         );
         // Bridge body reads the distinct canonical recipe explicitly.
         expect(handoff.skills[0].body).toContain(handoff.skills[0].recipePath);
+        expect(handoff.skills[0].body).toMatch(/Shell/);
+        expect(handoff.skills[0].body).toMatch(/Do not rewrite the recipe onto ~\/\.agents\/skills/);
         expect(handoff.skills[0].frontmatter).toEqual({ name: 'w1', description: 'does things' });
         expect(handoff.skills[0].resources).toEqual({ 'ref.md': '# ref\n' });
         // Deterministic: identical batch → byte-identical handoff.
@@ -931,7 +1044,7 @@ describe('registration handoff (task 0130)', () => {
         const report = inspectGrokBotTarget({ sandData: root, homeDir: tmp });
         expect(report.slashRegistry.status).toBe('unknown');
         expect(report.slashRegistry.handoffDir).toBe(join(realpathSync(root), '.superskill', 'grok-bot', 'register'));
-        expect(report.slashRegistry.guidance.join(' ')).toMatch(/Plugins > Yours/);
+        expect(report.slashRegistry.guidance.join(' ')).toMatch(/owned-drift|canonical hashes/i);
         expect(report.available).toBe(true); // empty root is healthy; slashRegistry never affects availability
     });
 });

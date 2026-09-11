@@ -275,7 +275,7 @@ After live registration, keep the evidence tiers distinct:
 
 1. **Acknowledged writes** — the only thing `ok` proves.
 2. **Enablement** — still pending/unknown; the operator may need to enable
-   the skill/plugin per Bot (Settings > Plugins > Yours); this skill does not auto-enable other Bots.
+   the skill/plugin per Bot if the host UI requires per-Bot enablement; this skill does not auto-enable other Bots. Confirm `/` picker visibility by observation.
 3. **Picker visibility** — unverified from inside the Bot; ask
    the human to type `/` on **desktop** and confirm ids appear.  
 4. **Invocation** — observed only when a run actually executes the skill.

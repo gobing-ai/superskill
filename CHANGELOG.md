@@ -4,6 +4,13 @@ All notable changes to `@gobing-ai/superskill` are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Conventional Commits](https://www.conventionalcommits.org/).
 
+## [Unreleased]
+
+### Fixed
+
+- fix(grok-bot): treat host-rewritten bridge pointers as healthy when `canonical:` still targets the owned recipe (stops 113× owned-drift after Bot `update_state` register); still refuse canonical drift, full-mode edits, and unowned extras
+- fix(grok-bot): handoff/doctor/README copy — slash fill is NOT automatic, Shell fallback for `.superskill` Read denial, soft-pedal unverified Settings > Plugins path
+
 ## [0.3.24] - 2026-09-11
 
 ### Added

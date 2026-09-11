@@ -153,7 +153,7 @@ describe('grok-bot install (task 0128)', () => {
         expect(manifest.grokBot).toEqual({ materialize: 'full' });
     });
 
-    it('marketplace update preserves mode, metadata and arguments and refuses host workflow drift (0132 R7/R9)', async () => {
+    it('marketplace update preserves mode, metadata and arguments; full refuses host drift, bridge allows pointer rewrite (0132 R7/R9)', async () => {
         const { sand } = botEnv();
         const pluginRoot = createPlugin(tempDir);
         writeFileSync(join(pluginRoot, 'plugin.json'), JSON.stringify({ name: 'demo', version: '1.0.0' }));
@@ -189,11 +189,24 @@ describe('grok-bot install (task 0128)', () => {
             const changed = `${original}\nHost annotation.\n`;
             writeFileSync(workflow, changed);
             writeFileSync(source, `${readFileSync(source, 'utf-8')}Next update.\n`);
-            await expect(
-                executeUpdate('demo', ['grok-bot'], { check: false, global: true, marketplacePath: market }),
-            ).rejects.toThrow(/locally modified/);
-            expect(readFileSync(workflow, 'utf-8')).toBe(changed);
-            writeFileSync(workflow, original);
+            if (materialize === 'full') {
+                // Full mode stores the recipe in workflows/; host edits must block update.
+                await expect(
+                    executeUpdate('demo', ['grok-bot'], { check: false, global: true, marketplacePath: market }),
+                ).rejects.toThrow(/locally modified/);
+                expect(readFileSync(workflow, 'utf-8')).toBe(changed);
+                writeFileSync(workflow, original);
+            } else {
+                // Bridge pointer is disposable; host registry upserts rewrite it — update must proceed.
+                expect(
+                    await executeUpdate('demo', ['grok-bot'], {
+                        check: false,
+                        global: true,
+                        marketplacePath: market,
+                    }),
+                ).toBe(0);
+                expect(readFileSync(workflow, 'utf-8')).not.toBe(changed);
+            }
         }
     });
 
@@ -357,7 +370,7 @@ describe('grok-bot registration handoff (task 0130)', () => {
         expect(handoff.skills[0]?.body).not.toContain(join(sand, 'workflows'));
         expect(stdout).toContain(`handoff prepared at ${handoffPath}`);
         expect(stdout).toContain('NOT automatic');
-        expect(stdout).toContain('Plugins > Yours');
+        expect(stdout).toMatch(/does not fill chat|unverified until observed/);
         expect(stdout).not.toContain('registered at');
         // R4: reinstall regenerates byte-identical handoff (no timestamps inside).
         await executeInstall('demo', ['grok-bot'], {
