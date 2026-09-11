@@ -13,6 +13,9 @@ pre-commit:
 pre-push:
   commands:
     cog:
-      run: cog check
+      # Validate commits since the last release tag, not all history: bare
+      # `cog check` audits from the first commit, so any pre-tag non-conventional
+      # commit (e.g. an old merge commit) would block every release push.
+      run: cog check --from-latest-tag
     lint:
       run: bun run lint
