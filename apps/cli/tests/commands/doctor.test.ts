@@ -113,7 +113,9 @@ describe('doctor command (task 0128 / R6)', () => {
             expect(report.slashRegistry.handoffDir).toBe(
                 join(realpathSync(sand), '.superskill', 'grok-bot', 'register'),
             );
-            expect(report.slashRegistry.guidance.join(' ')).toContain('Plugins > Yours');
+            expect(report.slashRegistry.guidance.join(' ')).toMatch(
+                /slash-registry status stays unknown|canonical hashes/i,
+            );
             const human = await runDoctor(['--targets', 'grok-bot']);
             expect(human.code).toBe(0);
             expect(human.output).toContain('slash registry: unknown');

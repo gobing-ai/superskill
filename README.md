@@ -102,13 +102,16 @@ Sand `workflows/` directory (bridge by default: thin pointers to a private canon
 Slash form is `/plugin-skill-name`; commands/subagents install as skills/playbooks, hooks/MCP are
 not installed. Every install/update also prepares a deterministic registration handoff at
 `<sandRoot>/.superskill/grok-bot/register/<plugin>.json` (task 0130) — slash registration is
-NOT automatic: have the host agent consume the handoff with a verified host method, then enable
-the plugin per Bot under Settings > Plugins > Yours. First use with an empty slash picker: ask a
-Bot to read and follow `<sandRoot>/workflows/cc-grok-bot-register/SKILL.md` (bundled cc recovery
-skill, task 0132) with `--plugin <installed-plugin>` — or, when cc is absent, paste the validated
-handoff recovery prompt printed by install; bridge's hidden `.superskill`
-recipes may need the Bot's authorized Shell tool if Read denies them. Run `superskill doctor --targets grok-bot`
-for a filesystem health check (it reports slash-registry status as unknown with next steps).
+NOT automatic: filesystem install does not fill chat `/`. Have the host agent consume the handoff
+with a verified host method; picker visibility and enablement stay unverified until observed.
+First use with an empty slash picker: ask a Bot to read and follow
+`<sandRoot>/workflows/cc-grok-bot-register/SKILL.md` (bundled cc recovery skill, task 0132) with
+`--plugin <installed-plugin>` — or, when cc is absent, paste the validated handoff recovery prompt
+printed by install; bridge's hidden `.superskill` recipes may need the Bot's authorized Shell tool
+if Read denies them (do not rewrite recipes onto `~/.agents/skills`). Host registry upserts may
+rewrite bridge workflow pointers; that alone is not owned-drift when canonical hashes still match.
+Run `superskill doctor --targets grok-bot` for a filesystem health check (it reports slash-registry
+status as unknown with next steps).
 
 See [entity locations](docs/help/entity_locations.md) for the exact install directories per agent.
 
