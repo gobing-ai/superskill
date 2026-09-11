@@ -2,7 +2,7 @@
 doc: 00_ADR
 owns: WHY — which cross-cutting decision was made, and the one-line reason
 authority: authoritative
-version: 1.13.0
+version: 1.14.0
 owner: Robin Min
 updated_at: 2026-09-10
 read_before: any structural change; add a dated entry before diverging from a decision
@@ -568,6 +568,8 @@ Also recorded: `plugins/` and `magents/` became **published content** under this
 ADR, so their contents reach every consumer. The release checklist
 (`docs/help/release.md`) makes the publish-surface content review — personal
 data, repo-foreign content, credentials — an explicit pre-publish step.
+
+**Amendment (2026-09-10, task 0131).** The native Claude Code marketplace route (`claude plugin marketplace add gobing-ai/superskill` / `claude plugin install cc@superskill`) was verified end-to-end against the published bundled marketplace manifest. Proposed MCP gateway (`@gobing-ai/superskill-mcp`) is deferred with trigger conditions; CLI remains the cross-host conversion and placement mechanism. Detail: `docs/help/native_cc_marketplace_pilot.md`.
 
 ---
 

@@ -76,6 +76,9 @@ superskill install cc --targets codex,pi --prune
 | `antigravity-ide` | rulesync | `~/.gemini/config/skills/` |
 | `hermes` | superskill copy (via `opencode` surrogate) | `~/.hermes/skills/` |
 | `openclaw` | implicit (reads `~/.agents/skills/`) | Shared skills root — no dedicated dispatch |
+| `grok-bot` | native Sand workflow writer (opt-in) | `<sandRoot>/workflows/<plugin>-<name>/SKILL.md` (bridge / full) |
+
+*Note: `grok-bot` is an opt-in, install-only target (ADR-036), excluded from `--targets all`. See [entity locations](entity_locations.md) and the [Native cc Marketplace Pilot](native_cc_marketplace_pilot.md) for details.*
 
 ## How it's implemented
 

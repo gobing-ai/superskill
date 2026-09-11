@@ -55,6 +55,11 @@ export const TARGET_TO_RULESYNC: Partial<Record<Target, string>> = {
 };
 ```
 
+> **Amendment (ADR-033, ADR-034, ADR-036, Task 0131):**
+> 1. `TARGETS` expanded to 9 execution targets with `'grok'` (ADR-033/034).
+> 2. `INSTALL_TARGETS` adds the 10th target `'grok-bot'` (ADR-036), an opt-in, install-only target publishing flat skills to Grok Bot's Sand data root (`SAND_DATA`, default `$HOME/sand-data`).
+> 3. Discovery vs Placement boundary: Marketplaces discover the installer; writers place skills; host registration and per-Bot enablement remain host responsibilities. MCP gateway is deferred (Task 0131, `docs/help/native_cc_marketplace_pilot.md`).
+
 ### 1.4 Config schema (`superskill.jsonc`)
 
 ```typescript
@@ -165,6 +170,8 @@ Options:
   --dry-run             Preview what would be written without touching filesystem
   --verbose             Print each file copy and transformation step
 ```
+
+*Note: For the current comprehensive flag surface (`--marketplace <locator>`, `--materialize <mode>`, `--magent <name>`, etc.) and `superskill update`, see [`docs/04_DESIGN.md`](../04_DESIGN.md).*
 
 Examples:
 ```bash

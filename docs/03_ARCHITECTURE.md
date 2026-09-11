@@ -2,7 +2,7 @@
 doc: 03_ARCHITECTURE
 owns: HOW — module boundaries, data flow, runtime model, invariants
 authority: derived
-version: 2.14.0
+version: 2.15.0
 derived_from: [00_ADR, 01_PRD]
 owner: Robin Min
 updated_at: 2026-09-10
@@ -414,11 +414,12 @@ guidance when the field is absent. Receipt lives at
 
 ## CLI routing
 
-Commander registers seven root families. Exact signatures and flags are transcribed in [04_DESIGN.md](04_DESIGN.md).
+Commander registers nine root commands and families. Exact signatures and flags are transcribed in [04_DESIGN.md](04_DESIGN.md).
 
 | Family | Registered subcommands |
 | -------- | ------------------------ |
 | `install` | root command |
+| `update` | root command (pull-model staleness check/reconcile; ADR-035) |
 | `agent` | `scaffold`, `validate`, `evaluate`, `refine`, `evolve` |
 | `skill` | `add`, `list`, `remove`/`rm`, `update`, `scaffold`, `validate`, `evaluate`, `refine`, `evolve`, `package`, `migrate` |
 | `command` | `scaffold`, `validate`, `evaluate`, `refine`, `evolve` |
@@ -760,3 +761,4 @@ without concatenation ambiguity.
     parent (OS tempdir) holding its own `.rulesync/`, removed in `finally` after success and after
     thrown dependency/dispatch errors. Concurrent installs in the same working directory never
     share, delete, or read each other's staging, and no persistent cwd `.rulesync/` is produced.
+12. **Cross-host placement vs marketplace discovery boundary.** Marketplaces discover the installer; writers place skills; host registration and per-Bot enablement remain host responsibilities. Superskill CLI converts and places capabilities across target filesystems; native host marketplace discovery (`claude plugin marketplace add`) and installation are host-managed. Filesystem placement does not grant chat slash-menu visibility. An MCP gateway (`@gobing-ai/superskill-mcp`) is deferred until trigger conditions are met (ADR-034, task 0131; detail: `docs/help/native_cc_marketplace_pilot.md`).

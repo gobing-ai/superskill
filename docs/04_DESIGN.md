@@ -2,7 +2,7 @@
 doc: 04_DESIGN
 owns: SURFACE — concrete shapes: every CLI command, flag, config key, env var, table, DTO
 authority: derived
-version: 2.11.0
+version: 2.12.0
 derived_from: [00_ADR, 01_PRD, 02_ROADMAP]
 owner: Robin Min
 updated_at: 2026-09-10
@@ -15,6 +15,7 @@ sync: [T3]
 
 - Phase 1 — Distribution: [design-doc-phase1.md](design/design-doc-phase1.md) — `superskill install` and supporting commands.
 - Phase 2 — Authoring + quality: [design-doc-phase2.md](design/design-doc-phase2.md) — artifact-specific `superskill agent|skill|command|hook|magent` lifecycles.
+- Canonical landing & native marketplace pilot: [README.md](../README.md), [installation.md](help/installation.md), and [native_cc_marketplace_pilot.md](help/native_cc_marketplace_pilot.md).
 
 ## Internal post-install action contract (ADR-037; task 0130 — implemented)
 
