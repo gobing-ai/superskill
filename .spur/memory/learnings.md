@@ -330,3 +330,37 @@ Doc-evolve wrapup run 2026-09-10. Grouped by date, then task WBS. Raw notes, not
   historical scope records, not current-state claims.
 - **Do not write task/feature corpus in a doc-evolve wrapup.** Repairs stayed in 00/03/04 +
   docs/design/*; task files remain tool-owned (§3).
+### Drift Audit & Documentation Repair Summary
+
+Repaired drift across key architectural and design documentation following `docs/99_PROJECT_CONSTITUTION.md` §4–§7 for task `0131` (`Document and verify the native cc marketplace pilot`):
+
+1. [docs/00_ADR.md](file:///Users/robin/xprojects/superskill/docs/00_ADR.md#L569-L573): Added dated amendment to ADR-034 codifying the end-to-end verified native Claude Code marketplace pilot against the published bundled marketplace manifest, confirming CLI cross-host conversion/placement, and documenting trigger-gated MCP gateway deferral. Bumped frontmatter to `v1.14.0`.
+2. [docs/03_ARCHITECTURE.md](file:///Users/robin/xprojects/superskill/docs/03_ARCHITECTURE.md#L414-L429): Fixed CLI routing family count from 7 to 9 and added the `update` command row (ADR-035); added Invariant 12 codifying the cross-host placement vs native marketplace discovery boundary and MCP gateway deferral. Bumped frontmatter to `v2.15.0`.
+3. [docs/04_DESIGN.md](file:///Users/robin/xprojects/superskill/docs/04_DESIGN.md#L15-L18): Added canonical landing and pilot links to the Phase 1 install surface reference. Bumped frontmatter to `v2.12.0`.
+4. [docs/design/design-doc-phase1.md](file:///Users/robin/xprojects/superskill/docs/design/design-doc-phase1.md#L55-L65): Added amendment note to Section 1.3 documenting the target expansion to 9 execution targets (`grok`) and 10 install targets (`grok-bot`), the discovery vs placement invariant, and linked current flag surface.
+5. [.spur/context/learnings.md](file:///Users/robin/xprojects/superskill/.spur/context/learnings.md#L15-L18): Recorded task 0131 key learning per constitution §8.
+6. Artifact persisted to [wrapup-learnings.md](file:///Users/robin/xprojects/superskill/.spur/run/d732309e-6902-45a4-8251-5fec28ecef00-wrapup-learnings.md).
+
+# Working Learnings
+
+### 2026-09-10 — Task 0131: Document and verify the native cc marketplace pilot
+
+#### Conventions
+- **Canonical Landing Separation**: Unified the operator landing experience across `README.md` (designated universal landing entry point) and `docs/help/installation.md` (in-depth operational guide) to eliminate conflicting install instructions across docs.
+- **Architectural Division of Labor**: Codified the invariant that marketplaces discover the installer, writers place skills, and host registration plus per-Bot enablement remain host responsibilities.
+- **Three-Tier Lifecycle Discipline**: Structured multi-agent plugin adoption into three distinct tiers: (1) Filesystem Installation/Placement, (2) Host Registration, and (3) Per-Bot Enablement in settings.
+- **Trigger-Gated Scope**: Deferred the proposed `@gobing-ai/superskill-mcp` gateway server until explicit preconditions (connector-only catalogs, remote/managed hub execution without CLI, or operator demand for in-chat calls) are met.
+
+#### Errors Fixed
+- **Stale Discovery Claims Reconciled**: Updated `docs/superskill_discovery_channel_SPEC.md` from draft status to Phase 1 Complete (verified pilot) and marked Phase 2 (Gateway MCP) deferred.
+- **Omitted Target Documentation Restored**: Updated `docs/help/cmd_install.md` to document the opt-in `grok-bot` Sand workflow writer target in the supported targets table.
+- **Documentation Drift Across Key Docs**: Corrected root command count and added missing `update` command in `docs/03_ARCHITECTURE.md`, added Invariant 12 for the discovery vs placement boundary, updated `docs/04_DESIGN.md` with canonical landing and pilot links, amended ADR-034 in `docs/00_ADR.md`, and added amendment notes to `docs/design/design-doc-phase1.md`.
+
+#### Patterns
+- **Empirical Evidence Capture**: Documented exact command lines, host environment and version (`Claude Code CLI 2.1.267`, `Darwin arm64`), dates, and observed stdout/component counts (23 skills, 5 agents, 1 hook) in a reproducible evidence matrix.
+- **Idempotency & Reinstall Verification**: Validated update mechanisms using `superskill update cc --check` to verify upstream equivalence and documented controlled reinstall behavior when no upstream version bump was available.
+- **Honest Boundary Reporting**: Explicitly documented environment limitations, unsupported host APIs, missing credentials, and unavailable GUI/VPS checks in the host/surface matrix rather than claiming unverified behavior.
+
+#### Gotchas
+- **Filesystem Placement != Chat Visibility**: Writing skills or workflows to disk (such as `<sandRoot>/workflows/<id>/SKILL.md` or registration handoffs) does not guarantee slash-menu visibility in chat GUIs (like Grok Bot); chat availability requires distinct host ingestion and user enablement. Files on disk must never be cited as proof of chat GUI visibility.
+- **MCP Connector Misconception**: An MCP connector alone cannot install skill content without underlying filesystem placement writers or host-specific plugin installation support.
