@@ -2,13 +2,20 @@
 
 | Field | Value |
 |-------|--------|
-| Status | Draft for implementation |
-| Date | 2026-09-08 |
-| Package(s) | `@gobing-ai/superskill` (CLI/library) + proposed `@gobing-ai/superskill-mcp` (gateway) |
+| Status | Phase 1 Verified Pilot (Native CC Marketplace) · MCP Gateway Deferred (Task 0131) |
+| Date | 2026-09-08 (Updated: 2026-09-10) |
+| Package(s) | `@gobing-ai/superskill` (CLI/library); proposed `@gobing-ai/superskill-mcp` deferred |
+| Pilot & Evidence | [`docs/help/native_cc_marketplace_pilot.md`](help/native_cc_marketplace_pilot.md) |
+| Canonical Landing | [`README.md`](../README.md) & [`docs/help/installation.md`](help/installation.md) |
 | Sibling spec | [`superskill_grok_bot_target_SPEC.md`](./superskill_grok_bot_target_SPEC.md) — content install target for Grok Bot `/` catalog (**separate**; do not merge) |
 | Product | `@gobing-ai/superskill` distributes Claude-style plugins (`cc`, `sp`, `kk`, …) across coding agents |
 
 ---
+
+> **Phase 1 Pilot Status (2026-09-10, Task 0131):**
+> 1. **Native Marketplace Route Verified**: The native Claude Code marketplace route (`.claude-plugin/marketplace.json`, `cc@superskill`) has been verified end-to-end (discovery, install, invocation, idempotent reinstall). See [`docs/help/native_cc_marketplace_pilot.md`](help/native_cc_marketplace_pilot.md).
+> 2. **Canonical Landing Reconciled**: Reconciled [`README.md`](../README.md) (universal entry) and [`docs/help/installation.md`](help/installation.md) (operational guide) into a unified landing path with zero conflicting install instructions.
+> 3. **MCP Gateway Deferred**: Proposed Phase 2 `@gobing-ai/superskill-mcp` gateway is **deferred** and is **not a prerequisite** for plugin distribution. Trigger conditions for activation: (a) host marketplace requiring connector-only catalog without plugin support, (b) remote/managed hub execution without local CLI, or (c) demonstrated operator demand for in-chat MCP installer calls.
 
 
 `superskill` already solves **content install**: the same (or degraded) skills/commands/subagents land in each host’s native skill surface via per-host writers. Discovery remains fragmented.
@@ -254,12 +261,12 @@ Rules:
 
 ## 14. Phases
 
-| Phase | Scope |
-|-------|--------|
-| **1 — Seam + landing** | Extract/stabilize shared library API; write universal landing doc; CLI already works |
-| **2 — Gateway MCP** | Ship `@gobing-ai/superskill-mcp` with v1 tools; parity tests CLI ↔ MCP |
-| **3 — Host listings** | Cursor/Grok Bot connector listing; Codex marketplace source; grok marketplace entry; disclaimers |
-| **4 — Polish** | Doctor richness; cheat-sheet/`open` UX; dry-run confirmations; versioning/compat matrix; optional SSE transport |
+| Phase | Scope | Status |
+|-------|-------|--------|
+| **1 — Seam + landing + pilot** | Universal landing doc (`README.md` + `installation.md`); native `cc` marketplace pilot verified (`docs/help/native_cc_marketplace_pilot.md`) | ✅ Complete (Task 0131) |
+| **2 — Gateway MCP** | Ship `@gobing-ai/superskill-mcp` with v1 tools; parity tests CLI ↔ MCP | 💤 Deferred (trigger-gated) |
+| **3 — Host listings** | Cursor/Grok Bot connector listing; Codex marketplace source; grok marketplace entry; disclaimers | ⏳ Planned |
+| **4 — Polish** | Doctor richness; cheat-sheet/`open` UX; dry-run confirmations; versioning/compat matrix; optional SSE transport | ⏳ Planned |
 
 ---
 
