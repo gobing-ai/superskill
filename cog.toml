@@ -1,0 +1,4 @@
+# GitHub merge-button commits ("Merge pull request #1 …") never satisfy
+# Conventional Commits; without this, `cog check` in the pre-push hook
+# fails after every PR merge and blocks release pushes.
+ignore_merge_commits = true
