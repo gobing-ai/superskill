@@ -26,7 +26,11 @@ copy at `<sandRoot>/.superskill/grok-bot/skills/<id>/` with an origin marker
 slash-registration handoff at `<sandRoot>/.superskill/grok-bot/register/<plugin>.json` (task 0130:
 preparation only — host registration is never claimed or performed). `--materialize full`
 writes the whole tree under `workflows/<id>/` instead. `superskill doctor --targets grok-bot`
-checks the layout read-only and reports the handoff directory with registration next steps.
+checks the layout read-only and reports the handoff directory with registration next steps. First
+use: with the cc recovery skill installed, ask a Bot to read and follow
+`<sandRoot>/workflows/cc-grok-bot-register/SKILL.md` (task 0132); otherwise ask it to read and
+follow the handoff file directly (bridges' hidden canonical recipes may require the Bot's Shell
+tool when Read denies `.superskill`).
 
 ## Entity locations — project-level (relative to workspace root)
 

@@ -55,6 +55,17 @@ handoff path and slash caveat without writing. Success messages report the hando
 **prepared**, never registered; `doctor` reports `slashRegistry.status: 'unknown'` with the handoff
 directory and next steps (verified host method, per-Bot enablement) without affecting exit semantics.
 
+The cc plugin ships the recovery skill `grok-bot-register` (installed id `cc-grok-bot-register`
+via the existing plugin-prefix mapper; task 0132 normalized the source directory so the installed
+ID is not double-prefixed). Its workflow recipe lives at
+`<dataRoot>/workflows/cc-grok-bot-register/SKILL.md` when the cc plugin is installed with skills
+selected. Install/update/preview then emit first-run **bootstrap** guidance: with the recovery
+skill present, the resolved recovery path is reported with the authorized-Shell note for bridge
+hidden-path Read denial; without it, a self-contained consume-this-handoff prompt plus an optional
+explicit `superskill install cc --targets grok-bot` instruction — no implicit cc install, no
+registry-side writes, and registration/evidence remains host-side (automatic CLI registration is
+unavailable: no documented, CLI-callable host mechanism exists as of 2026-09-11).
+
 ## Phase 1 install surface
 
 ```text

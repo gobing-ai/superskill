@@ -108,4 +108,29 @@ describe('createGrokBotRegisterAction (task 0130 handoff action)', () => {
             cleanup();
         }
     });
+
+    it('reports the resolved recovery-skill bootstrap when the selection includes cc-grok-bot-register (task 0132 R3)', async () => {
+        const { args, context, cleanup } = harness();
+        try {
+            const selfArgs: GrokBotRegisterActionArgs = {
+                ...args,
+                entries: [
+                    ...args.entries,
+                    {
+                        id: 'cc-grok-bot-register',
+                        description: 'Recovery skill',
+                        skillMd: '---\nname: cc-grok-bot-register\n---\nBody.',
+                        files: new Map<string, string>(),
+                    },
+                ],
+            };
+            const result = await createGrokBotRegisterAction(selfArgs).apply(context);
+            const text = result.messages.join(' ');
+            expect(text).toContain(join(args.dataRoot, 'workflows', 'cc-grok-bot-register', 'SKILL.md'));
+            expect(text).toContain('Shell tool');
+            expect(text).toContain(botRegisterHandoffPath(args.dataRoot, args.plugin));
+        } finally {
+            cleanup();
+        }
+    });
 });

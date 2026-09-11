@@ -409,6 +409,13 @@ receipt's recorded `grokBot.materialize` into Bot reinstalls and emits explicit 
 guidance when the field is absent. Receipt lives at
 `<sandRoot>/.superskill/manifests/grok-bot/<plugin>/` with optional `grokBot.materialize` in
 `InstallManifestV1`. `superskill doctor --targets grok-bot` is a read-only filesystem check.
+Post-0130/0132: the emission also writes the deterministic registration handoff
+(`<dataRoot>/.superskill/grok-bot/register/<plugin>.json`) inside the same transaction
+(`grok-bot/register-handoff` action, task 0130), and — task 0132 — the cc plugin's
+recovery skill (`grok-bot-register` → installed id `cc-grok-bot-register`) ships in the normal
+mapping/handoff, with bootstrap guidance emitted after commit (recovery recipe path when selected,
+self-contained handoff prompt otherwise; no automatic CLI host registration exists — the recovery
+skill consumes handoffs from inside a Bot conversation).
 
 **Output root (ADR-010).** rulesync writes to `<outputRoot>/<relativeDirPath>` and never resolves `~`. `runRulesync` sets `outputRoots: [os.homedir()]` for `--global`, `[process.cwd()]` otherwise; rulesync's `global` flag only swaps the relative subdir. Claude, OMP, Hermes, and Grok have no `ToolTarget` mapping: Claude/OMP/Grok use native host-plugin dispatch, Hermes copies opencode-generated skills to `~/.hermes/skills/`, and OMP also reads the shared `~/.agents/skills/` output natively (ADR-010 amendment 2026-06-23).
 

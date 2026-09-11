@@ -15,6 +15,7 @@ import {
     applyGrokBotDialect,
     BOT_ORIGIN_MARKER,
     BOT_SAND_DATA_ENV,
+    botBootstrapMessages,
     botCanonicalSkillDir,
     botRegisterHandoffPath,
     buildBotRegisterHandoff,
@@ -864,5 +865,44 @@ describe('registration handoff (task 0130)', () => {
         expect(report.slashRegistry.handoffDir).toBe(join(realpathSync(root), '.superskill', 'grok-bot', 'register'));
         expect(report.slashRegistry.guidance.join(' ')).toMatch(/Plugins > Yours/);
         expect(report.available).toBe(true); // empty root is healthy; slashRegistry never affects availability
+    });
+});
+
+describe('botBootstrapMessages (task 0132 R3/R10)', () => {
+    it('names the resolved recovery skill path when the recovery skill is in the committed selection', () => {
+        const root = join(tmp, 'root-self');
+        mkdirSync(root);
+        const lines = botBootstrapMessages({
+            dataRoot: root,
+            plugin: 'cc',
+            entries: [entry('cc-grok-bot-register'), entry('sp-dev-run')],
+        });
+        const text = lines.join(' ');
+        expect(text).toContain(join(realpathSync(root), 'workflows', 'cc-grok-bot-register', 'SKILL.md'));
+        expect(text).toMatch(/Shell tool/); // bridge .superskill Read denial → authorized Shell fallback
+        expect(text).not.toMatch(/install cc --targets/); // never suggests installing cc when it is present
+    });
+
+    it('gives a self-contained handoff prompt plus explicit cc instruction when recovery is absent', () => {
+        const root = join(tmp, 'root-other');
+        mkdirSync(root);
+        const lines = botBootstrapMessages({
+            dataRoot: root,
+            plugin: 'sp',
+            entries: [entry('sp-dev-run')],
+        });
+        const text = lines.join(' ');
+        expect(text).toContain(join(realpathSync(root), '.superskill', 'grok-bot', 'register', 'sp.json'));
+        expect(text).toMatch(/register each listed skill/);
+        expect(text).toMatch(/superskill install cc --targets grok-bot/); // optional explicit instruction
+        expect(text).not.toContain(join(root, 'workflows', 'cc-grok-bot-register', 'SKILL.md'));
+    });
+
+    it('bare agent-data fallback never silently selects a different root (existing resolver contract)', () => {
+        // Task 0132 R5 preserves resolveSandRoot semantics; assert the invalid-SAND_DATA
+        // error path instead of the legacy ~/.agents preference.
+        expect(() => resolveSandRoot({ sandData: join(tmp, 'definitely-gone'), homeDir: tmp })).toThrow(
+            /does not exist/,
+        );
     });
 });

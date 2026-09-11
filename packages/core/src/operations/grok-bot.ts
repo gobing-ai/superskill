@@ -400,6 +400,51 @@ export interface BotRegisterHandoff {
     skills: BotRegisterSkillRecord[];
 }
 
+/**
+ * Installed id of the shipped recovery skill (source dir
+ * `plugins/cc/skills/grok-bot-register/` → prefixed installed id `cc-grok-bot-register`).
+ * The installed ID is canonical across handoffs, workflows and recovery selection (task 0132).
+ */
+export const BOT_RECOVERY_SKILL_ID = 'cc-grok-bot-register';
+
+/** Path of the installed recovery skill recipe inside the Bot catalog. */
+export function botRecoveryWorkflowSkillPath(dataRoot: string): string {
+    return join(botRealpath(dataRoot), 'workflows', BOT_RECOVERY_SKILL_ID, 'SKILL.md');
+}
+
+/**
+ * First-run bootstrap guidance (task 0132 R3/R10): after commit, tell the operator how
+ * to get the handoffs consumed without a working slash picker. When the recovery skill
+ * is part of this install's committed selection, point at its resolved workflow recipe;
+ * otherwise give a self-contained consume-this-handoff prompt plus an optional explicit
+ * cc install instruction. Never claims registration success and never implicitly installs cc.
+ */
+export function botBootstrapMessages(args: {
+    dataRoot: string;
+    plugin: string;
+    entries: readonly BotSkillEntry[];
+}): string[] {
+    const handoffPath = botRegisterHandoffPath(args.dataRoot, args.plugin);
+    if (args.entries.some((entry) => entry.id === BOT_RECOVERY_SKILL_ID)) {
+        return [
+            `First use (empty slash picker is expected): ask any Grok Bot on this Sand root to`,
+            `read and follow ${botRecoveryWorkflowSkillPath(args.dataRoot)}`,
+            `— it consumes the handoffs and registers the listed skills (per-Bot enablement may still be needed).`,
+            `If the Bot's Read tool denies the hidden canonical file under .superskill (bridge installs),`,
+            `use the Bot's authorized Shell tool to read that exact path instead; there is no slash entry yet.`,
+        ];
+    }
+    return [
+        `First use (empty slash picker is expected): ask any Grok Bot on this Sand root to`,
+        `read and follow the registration handoff ${handoffPath}`,
+        `— ask it to register each listed skill id via the host skill write with the record's id, name,`,
+        `description, body and recipe (bridge recipes live under .superskill; use the Bot's authorized`,
+        `Shell tool if Read denies the hidden path).`,
+        `To consume handoffs with the bundled recovery skill instead, install the cc plugin explicitly:`,
+        `superskill install cc --targets grok-bot (no implicit dependency install happens here).`,
+    ];
+}
+
 /** Shared slash-registration caveat: handoff preparation ≠ registration. */
 export const BOT_SLASH_CAVEAT =
     'Slash registration is NOT automatic: have the host agent consume the handoff with a verified ' +
@@ -926,8 +971,10 @@ export interface GrokBotDoctorSlashRegistry {
 
 /** Doctor guidance lines for slash registration: why the CLI cannot verify it and how to register safely. */
 export const BOT_DOCTOR_SLASH_GUIDANCE = [
-    'Healthy on-disk files do not prove slash visibility; the CLI cannot verify host registration.',
+    'Healthy on-disk files do not prove slash visibility; the CLI cannot verify host registration, so slash-registry status stays unknown.',
     'Install/update prepares a handoff at <dataRoot>/.superskill/grok-bot/register/<plugin>.json — have the host agent consume it with a verified registration method (one attempt per id, never delete-and-recreate).',
+    'First use: ask any Grok Bot on this Sand root to read and follow <dataRoot>/workflows/cc-grok-bot-register/SKILL.md (when the bundled recovery skill is installed it consumes all handoffs); otherwise ask it to read and follow the handoff file directly.',
+    'Bridge recipes live under the hidden .superskill tree: if the Bot Read tool denies them, use the Bot authorized Shell tool to read the exact same path.',
     'After registration, enable the plugin per Bot under Grok Bot Settings > Plugins > Yours (private skills may also need per-Bot enablement).',
 ];
 

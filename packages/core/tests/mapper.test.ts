@@ -283,6 +283,25 @@ describe('mapPluginToRulesync', () => {
         expect(written.hooks.UserPromptSubmit).toBeUndefined();
     });
 
+    it('maps the real cc recovery skill to the installed id cc-grok-bot-register (task 0132)', () => {
+        // Regression for the double-prefix bug: the recovery skill's source directory was
+        // named cc-grok-bot-register, which the existing plugin-prefix convention mapped to
+        // cc-cc-grok-bot-register. R2 normalizes only that source name to grok-bot-register;
+        // this exercises the actual plugins/cc source, not a fixture.
+        const ccPluginDir = join(import.meta.dir, '..', '..', '..', 'plugins', 'cc');
+        const outDir = join(tmpDir, '.rulesync');
+        const result = mapPluginToRulesync(ccPluginDir, 'cc', outDir, { features: ['skills'] });
+        const mapped = existsSync(join(outDir, 'skills', 'cc-grok-bot-register', 'SKILL.md'));
+        expect(result.skills).toBeGreaterThan(0);
+        expect(mapped).toBe(true);
+        expect(existsSync(join(outDir, 'skills', 'cc-cc-grok-bot-register'))).toBe(false);
+        const frontmatter = parseFrontmatter(
+            readFileSync(join(outDir, 'skills', 'cc-grok-bot-register', 'SKILL.md'), 'utf-8'),
+        );
+        expect(frontmatter.data.name).toBe('cc-grok-bot-register');
+        expect(String(frontmatter.data.description ?? '').length).toBeGreaterThan(20);
+    });
+
     it('rejects plugin names that are not a single path segment', () => {
         tmpDir = mkdtempSync('superskill-mapper-');
         const outDir = join(tmpDir, '.rulesync');

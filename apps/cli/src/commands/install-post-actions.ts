@@ -17,6 +17,7 @@ import type {
 } from '@gobing-ai/superskill-core';
 import {
     BOT_SLASH_CAVEAT,
+    botBootstrapMessages,
     botRegisterHandoffPath,
     buildBotRegisterHandoff,
     serializeBotRegisterHandoff,
@@ -51,18 +52,36 @@ export function createGrokBotRegisterAction(args: GrokBotRegisterActionArgs): Po
         preview: (_context: PostInstallContext): PostInstallResult => {
             // Building validates content; the caller's guard writer enforces no writes.
             const handoff = buildBotRegisterHandoff(args);
+            const bootstrap = botBootstrapMessages({
+                dataRoot: args.dataRoot,
+                plugin: args.plugin,
+                entries: args.entries,
+            });
             return {
                 writtenFiles: [],
-                messages: [`handoff would be prepared at ${path()} (${summarize(handoff)})`, BOT_SLASH_CAVEAT],
+                messages: [
+                    `handoff would be prepared at ${path()} (${summarize(handoff)})`,
+                    BOT_SLASH_CAVEAT,
+                    ...bootstrap.map((line) => `bootstrap: ${line}`),
+                ],
             };
         },
         apply: async (_context: PostInstallContext): Promise<PostInstallResult> => {
             const handoff = buildBotRegisterHandoff(args);
             const handoffPath = path();
             await args.writeTransactional(handoffPath, serializeBotRegisterHandoff(handoff));
+            const bootstrap = botBootstrapMessages({
+                dataRoot: args.dataRoot,
+                plugin: args.plugin,
+                entries: args.entries,
+            });
             return {
                 writtenFiles: [handoffPath],
-                messages: [`handoff prepared at ${handoffPath} (${summarize(handoff)})`, BOT_SLASH_CAVEAT],
+                messages: [
+                    `handoff prepared at ${handoffPath} (${summarize(handoff)})`,
+                    BOT_SLASH_CAVEAT,
+                    ...bootstrap.map((line) => `bootstrap: ${line}`),
+                ],
             };
         },
     };
