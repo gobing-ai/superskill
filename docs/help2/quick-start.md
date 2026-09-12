@@ -6,8 +6,14 @@ minutes.
 ## 1. Install superskill
 
 ```bash
+# go with bun, suggested
+bun add -g @gobing-ai/superskill
+
+# or, run ad-hoc, no install:
+bunx @gobing-ai/superskill --help
+
+# or, go with npm
 npm i -g @gobing-ai/superskill
-# or: bun add -g @gobing-ai/superskill
 
 superskill --version
 ```

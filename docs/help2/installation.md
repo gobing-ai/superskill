@@ -12,18 +12,22 @@ source (contributors). Both land a `superskill` binary on your `PATH`.
 ## Option A — install the published package
 
 ```bash
-# via npm
-npm i -g @gobing-ai/superskill
-
-# or via bun
+# go with bun, suggested
 bun add -g @gobing-ai/superskill
+
+# or, run ad-hoc, no install:
+bunx @gobing-ai/superskill --help
+
+# or, go with npm
+npm i -g @gobing-ai/superskill
 
 which superskill   # → your npm global bin or ~/.bun/bin/superskill
 superskill --version
 ```
 
-The published package bundles the prebuilt CLI, the bundled `cc` plugin, the default templates, and
-the rubric YAMLs. No clone, no build step.
+No clone, no checkout, no extra flags. The published package bundles the prebuilt CLI, the
+bundled `cc` plugin, the `team-stark-children` main-agent config, the default templates, and the
+rubric YAMLs — the CLI locates them at runtime, so install works from any directory.
 
 Distribute content right away:
 
@@ -33,8 +37,21 @@ superskill install cc --magent team-stark-children # plus a main-agent config
 superskill install cc --dry-run --verbose          # preview first
 ```
 
-See [install](./install.md) for the full flag reference and the
-[bundled plugins](./bundled-plugins.md) page for what ships inside the package.
+You can also install straight from a marketplace without cloning:
+
+```bash
+# owner/repo shorthand → GitHub
+superskill install cc --magent team-stark-children --marketplace gobing-ai/spur
+# or, the full GitHub URL
+superskill install cc --magent team-stark-children --marketplace https://github.com/gobing-ai/spur
+# or, already-downloaded source code
+superskill install cc --magent team-stark-children --marketplace /path/to/spur
+```
+
+See [install](./install.md) for the full flag reference and marketplace locators, and the
+[bundled plugins](./bundled-plugins.md) page for what ships inside the package. For native Claude
+Code marketplace installation (`claude plugin install cc@superskill`), see the
+[native marketplace pilot](./native-marketplace-pilot.md).
 
 ## Option B — build from source
 
