@@ -1,10 +1,10 @@
 ---
 schema_version: 1
 name: Actionable plugin update rows and summary
-status: todo
+status: done
 template: feature-impl
 created_at: 2026-09-13T18:04:14.441Z
-updated_at: "2026-09-13T18:41:49.091Z"
+updated_at: "2026-09-13T22:00:48.328Z"
 feature_id: F8
 priority: P2
 tags:
@@ -23,16 +23,16 @@ The UX half of the feature for plugin rows, triggered by the observed `kk: stale
 
 ### Requirements
 
-- [ ] R1. Content drift at an unchanged version is named as such. When a stale marketplace row's installedVersion equals upstreamVersion, the row reads `<name>: stale: content changed, version <v> unchanged (<n> files changed: <a>, <b>, <c>)` instead of `<v> → <v>`; the drift wording triggers only on equal versions, and a version bump keeps the existing `<old> → <new>` form.
-- [ ] R2. Changed-path lists are capped in text. A stale row names at most 5 changed paths followed by `+N more` when longer; --check --json always lists every path (envelope rows carry the full changedPaths array).
-- [ ] R3. Partially stale targets are named. When a merged stale plugin row has staleTargets (0133 R2) covering fewer targets than installed, the row appends `[stale on: <targets>]`.
-- [ ] R4. Disagreeing version declarations are surfaced. resolveMarketplaceUpstream returns { ok: true, version, snapshot, versionMismatch? } | { ok: false, reason } in place of today's undefined-on-catch (~update.ts:338); when marketplace.json and plugin.json declare different versions, the compare keeps marketplace-first precedence and the row prints `note: marketplace.json declares <a>, plugin.json declares <b>`.
-- [ ] R5. Unavailable rows name the cause. The { ok: false, reason } path feeds UpdateRow.reason: missing locator directory, manifest/parse failure, and network/registry failures each produce a specific reason string; the bundled-unavailable and missing-locator rows get concrete reasons instead of empty locators. The 0133 formatter branch prints `(<locator>): <reason>`; exit code 2 semantics are unchanged.
-- [ ] R6. A legacy row names the reinstall command. Legacy plugin rows append ``run `superskill install <name>` to adopt``.
-- [ ] R7. The npm remedy is labeled. The bundled-channel line reads `To upgrade superskill and its bundled plugins, run: npm i -g @gobing-ai/superskill@latest`.
-- [ ] R8. Check output ends with a summary and the next command. After the Plugins:/Skills: groups, a final line counts every status present — `Summary: <s> stale, <c> up to date[, <u> not checked][, <l> legacy][, <x> unavailable]. Run: superskill update` — the `Run:` clause names bare `superskill update` only when at least one row is stale.
-- [ ] R9. Help documents the exit codes. superskill update --help states: 0 nothing stale, 1 stale under --check or apply failure, 2 an unavailable upstream; the --json flag help states it requires --check.
-- [ ] R10. Leave focused regression evidence. The 25 CLI update tests are extended (not rewritten) for: drift wording (kk-shaped fixture), 12-path cap with +7 more and full JSON list, [stale on: claude], version-mismatch note naming both versions, unavailable reason for a missing locator path, legacy remedy line, labeled npm line, summary footer, and --help exit-code text. bun run lint, bun run test, bun run build pass. docs/04_DESIGN.md update row wording and exit codes sync in the same commit.
+- [x] R1. Content drift at an unchanged version is named as such. When a stale marketplace row's installedVersion equals upstreamVersion, the row reads `<name>: stale: content changed, version <v> unchanged (<n> files changed: <a>, <b>, <c>)` instead of `<v> → <v>`; the drift wording triggers only on equal versions, and a version bump keeps the existing `<old> → <new>` form.
+- [x] R2. Changed-path lists are capped in text. A stale row names at most 5 changed paths followed by `+N more` when longer; --check --json always lists every path (envelope rows carry the full changedPaths array).
+- [x] R3. Partially stale targets are named. When a merged stale plugin row has staleTargets (0133 R2) covering fewer targets than installed, the row appends `[stale on: <targets>]`.
+- [x] R4. Disagreeing version declarations are surfaced. resolveMarketplaceUpstream returns { ok: true, version, snapshot, versionMismatch? } | { ok: false, reason } in place of today's undefined-on-catch (~update.ts:338); when marketplace.json and plugin.json declare different versions, the compare keeps marketplace-first precedence and the row prints `note: marketplace.json declares <a>, plugin.json declares <b>`.
+- [x] R5. Unavailable rows name the cause. The { ok: false, reason } path feeds UpdateRow.reason: missing locator directory, manifest/parse failure, and network/registry failures each produce a specific reason string; the bundled-unavailable and missing-locator rows get concrete reasons instead of empty locators. The 0133 formatter branch prints `(<locator>): <reason>`; exit code 2 semantics are unchanged.
+- [x] R6. A legacy row names the reinstall command. Legacy plugin rows append ``run `superskill install <name>` to adopt``.
+- [x] R7. The npm remedy is labeled. The bundled-channel line reads `To upgrade superskill and its bundled plugins, run: npm i -g @gobing-ai/superskill@latest`.
+- [x] R8. Check output ends with a summary and the next command. After the Plugins:/Skills: groups, a final line counts every status present — `Summary: <s> stale, <c> up to date[, <u> not checked][, <l> legacy][, <x> unavailable]. Run: superskill update` — the `Run:` clause names bare `superskill update` only when at least one row is stale.
+- [x] R9. Help documents the exit codes. superskill update --help states: 0 nothing stale, 1 stale under --check or apply failure, 2 an unavailable upstream; the --json flag help states it requires --check.
+- [x] R10. Leave focused regression evidence. The 25 CLI update tests are extended (not rewritten) for: drift wording (kk-shaped fixture), 12-path cap with +7 more and full JSON list, [stale on: claude], version-mismatch note naming both versions, unavailable reason for a missing locator path, legacy remedy line, labeled npm line, summary footer, and --help exit-code text. bun run lint, bun run test, bun run build pass. docs/04_DESIGN.md update row wording and exit codes sync in the same commit.
 
 ### Acceptance Criteria
 
@@ -102,18 +102,115 @@ Design D4 wording set. resolveMarketplaceUpstream's catch-all becomes a typed fa
 
 ### Solution
 
-<!-- Filled during implementation: file:line change map and concise rationale. -->
+Change-map (auto-generated — implement step did not record a Solution).
+Each entry cites the first changed line per file (`file:line`).
+
+| Change (`file:line`) |
+|----------------------|
+| `apps/cli/src/commands/update.ts:105` |
+| `apps/cli/src/commands/update.ts:18` |
+| `apps/cli/src/commands/update.ts:205` |
+| `apps/cli/src/commands/update.ts:228` |
+| `apps/cli/src/commands/update.ts:236` |
+| `apps/cli/src/commands/update.ts:250` |
+| `apps/cli/src/commands/update.ts:261` |
+| `apps/cli/src/commands/update.ts:269` |
+| `apps/cli/src/commands/update.ts:281` |
+| `apps/cli/src/commands/update.ts:30` |
+| `apps/cli/src/commands/update.ts:333` |
+| `apps/cli/src/commands/update.ts:345` |
+| `apps/cli/src/commands/update.ts:429` |
+| `apps/cli/src/commands/update.ts:466` |
+| `apps/cli/src/commands/update.ts:471` |
+| `apps/cli/src/commands/update.ts:476` |
+| `apps/cli/src/commands/update.ts:481` |
+| `apps/cli/src/commands/update.ts:485` |
+| `apps/cli/src/commands/update.ts:575` |
+| `apps/cli/src/commands/update.ts:589` |
+| `apps/cli/src/commands/update.ts:591` |
+| `apps/cli/src/commands/update.ts:595` |
+| `apps/cli/src/commands/update.ts:611` |
+| `apps/cli/src/commands/update.ts:617` |
+| `apps/cli/src/commands/update.ts:643` |
+| `apps/cli/src/commands/update.ts:663` |
+| `apps/cli/src/commands/update.ts:671` |
+| `apps/cli/src/commands/update.ts:678` |
+| `apps/cli/src/commands/update.ts:684` |
+| `apps/cli/src/commands/update.ts:693` |
+| `apps/cli/src/commands/update.ts:698` |
+| `apps/cli/src/commands/update.ts:80` |
+| `apps/cli/src/commands/update.ts:95` |
+| `apps/cli/tests/commands/update.test.ts:132` |
+| `apps/cli/tests/commands/update.test.ts:16` |
+| `apps/cli/tests/commands/update.test.ts:168` |
+| `apps/cli/tests/commands/update.test.ts:245` |
+| `apps/cli/tests/commands/update.test.ts:342` |
+| `apps/cli/tests/commands/update.test.ts:374` |
+| `apps/cli/tests/commands/update.test.ts:389` |
+| `apps/cli/tests/commands/update.test.ts:477` |
+| `apps/cli/tests/commands/update.test.ts:518` |
+| `apps/cli/tests/commands/update.test.ts:529` |
+| `apps/cli/tests/commands/update.test.ts:532` |
+| `apps/cli/tests/commands/update.test.ts:590` |
+| `apps/cli/tests/commands/update.test.ts:594` |
+| `apps/cli/tests/commands/update.test.ts:596` |
+| `apps/cli/tests/commands/update.test.ts:599` |
+| `apps/cli/tests/commands/update.test.ts:643` |
+| `apps/cli/tests/commands/update.test.ts:740` |
+| `apps/cli/tests/commands/update.test.ts:764` |
+| `apps/cli/tests/commands/update.test.ts:872` |
 
 ### Testing
 
-<!-- Filled during verification: commands run, outcomes, coverage claim or N/A. -->
+**Pipeline verify results**
+
+- Verdict: PASS (from verdict artifact)
+
+| Requirement | Status | Evidence |
+|-------------|--------|----------|
+| R1 | MET | update.ts:655-662 (equal versions → content changed, version <v> unchanged; bump keeps →) + update.test.ts:872-893 |
+| R2 | MET | update.ts:644 (MAX_TEXT_CHANGED_PATHS=5) + :704-708 (+N more; JSON envelope keeps full changedPaths) + update.test.ts:895-929 |
+| R3 | MET | update.ts:693-696 ([stale on: …]) + core update.ts:173-177 (staleTargets) + update.test.ts:931-953 |
+| R4 | MET | update.ts:616-625 (typed resolver, versionMismatch, marketplace-first precedence) + :647-653 (note wording) + update.test.ts:955-975 |
+| R5 | MET | update.ts:596-605 (typed {ok:false, reason} fail paths: locator path missing :603, manifest/parse :610-616, network :598-601) + :679-681 + update.test.ts:378-395 (exit 2),:158-166 |
+| R6 | MET | update.ts:671 (run superskill install <name> to adopt) + update.test.ts:210-218,:631-645 |
+| R7 | MET | update.ts:345 (To upgrade superskill and its bundled plugins, run: npm i -g @gobing-ai/superskill@latest) + update.test.ts:458-481 |
+| R8 | MET | update.ts:449-466 (formatUpdateSummary, spec-order counts) + :335 (text-mode-only footer, skipped when empty) + update.test.ts:977-1002 |
+| R9 | MET | update.ts:95 (--json help: requires --check) + :105-108 (Exit codes: 0/1/2 after-help) + update.test.ts:133-142 |
+| R10 | MET | update.test.ts:47 pass (37→47, extended not rewritten); drift/12-path cap/[stale on: claude]/mismatch note/unavailable reason/legacy remedy/npm label/summary footer/help exit codes all covered; .spur/run/0136-test-gate.log (2351 pass/0 fail) + .spur/run/0136-build.log (exit 0); docs/04_DESIGN.md:113-121 synced |
+
+| Acceptance Criteria | Status | Evidence Type | Evidence |
+|---------------------|--------|---------------|----------|
+| R8 — Content drift at an unchanged version is named as such | MET | test | update.test.ts:872-893 (drift wording asserted, 0.0.1 → 0.0.1 absent; exit 1) |
+| R9 — Disagreeing plugin version declarations are surfaced | MET | test | update.test.ts:955-975 (note names both versions; precedence unchanged) |
+| R10 — Check output ends with a summary and the next command | MET | test | update.test.ts:977-1002 (ends Summary: 1 stale, 1 up to date. Run: superskill update) |
+| R11 — Long changed-path lists are capped in text output | MET | test | update.test.ts:895-929 (text +7 more, f3 absent; JSON changedPaths length 12) |
+| R12 — Partially stale targets are named | MET | test | update.test.ts:931-953 (one merged row, [stale on: claude] asserted) |
+| R14 — The bundled-channel npm remedy is labeled | MET | test | update.test.ts:458-481 (exact npm label in mutating run) |
+| R15 — A legacy install row names the reinstall command | MET | test | update.test.ts:210-218 + :631-645; update.ts:671 |
+| R17 — Update help documents the exit codes | MET | test | update.test.ts:133-142 (exit-code line via outputHelp; requires --check in helpInformation) |
+| R21 — An unavailable plugin row names the cause | MET | test | update.test.ts:378-395 (unavailable reason + exit 2) and :158-166; update.ts:603 |
+- Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review
 
-<!-- Filled during review: P1-P4 findings, residual risk, and final disposition. -->
+<!-- spur:record-review -->
+
+**SECU findings** (pipeline verify step — verdict: PASS)
+
+| Priority | Dimension | Location | Finding |
+|----------|-----------|----------|----------|
+| P4 | spur task check | — | task check passed |
+| P4 | evidence-rule-pass | — | All behavior-bearing AC rows have executable evidence or are explicitly non-behavioral. |
+| P4 | proof-input-digest | — | sha256:448e0810a5d8a0161b76d483e264ccb8ac74e67e09d5ea6e1926a20c60f1c311 |
 
 ### References
 
 <!-- Links to the parent feature, design docs, related tasks, or external references. -->
 
 ### History
+
+- 2026-09-13T21:27:12.559Z todo → wip (system)
+- 2026-09-13T22:00:47.066Z wip → testing (system)
+- 2026-09-13T22:00:48.328Z testing → done (system)
+

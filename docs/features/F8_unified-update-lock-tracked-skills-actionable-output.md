@@ -6,7 +6,7 @@ status: active
 priority: P2
 tags: []
 created_at: "2026-09-13T17:34:31.464Z"
-updated_at: "2026-09-13T21:26:28.602Z"
+updated_at: "2026-09-13T22:00:46.110Z"
 ---
 
 # F8: Unified update: lock-tracked skills + actionable output
@@ -272,6 +272,63 @@ Feature: Unified update: lock-tracked skills + actionable output
     Given a locked skill whose source cannot be hashed
     When `superskill update --check` evaluates it
     Then the row is unavailable with a reason, never current, and the exit code is 2
+
+
+  <!-- Task 0136 refinement scenarios (DD-09 subset rule): task-level ACs verified by
+       spur task verdict 0136 (runall-f8-48d9), certified PASS 2026-09-13. -->
+  @refinement-0136
+  Scenario: R8 — Content drift at an unchanged version is named as such
+    Given a stale marketplace plugin whose installed version equals its upstream version
+    When the operator runs `superskill update --check`
+    Then the row names the content changed with the version unchanged and never prints `<v> → <v>`
+
+  @refinement-0136
+  Scenario: R9 — Disagreeing plugin version declarations are surfaced
+    Given marketplace.json and plugin.json declare different versions for a plugin
+    When the operator runs `superskill update --check`
+    Then the row prints a note naming both declared versions and marketplace-first precedence is preserved
+
+  @refinement-0136
+  Scenario: R10 — Check output ends with a summary and the next command
+    Given at least one stale row and one current row
+    When the operator runs `superskill update --check`
+    Then the output ends with a summary line counting each present status and naming `superskill update`
+
+  @refinement-0136
+  Scenario: R11 — Long changed-path lists are capped in text output
+    Given a stale plugin with 12 changed upstream files
+    When the operator runs `superskill update --check`
+    Then the text row names at most 5 paths followed by `+7 more`, and `--check --json` lists all 12
+
+  @refinement-0136
+  Scenario: R12 — Partially stale targets are named
+    Given a merged stale plugin row whose staleness covers fewer targets than installed
+    When the operator reads the row
+    Then it appends `[stale on: <targets>]`
+
+  @refinement-0136
+  Scenario: R14 — The bundled-channel npm remedy is labeled
+    Given superskill was installed from the bundled channel with a stale bundled plugin
+    When the operator runs `superskill update`
+    Then the output labels the npm upgrade remedy exactly
+
+  @refinement-0136
+  Scenario: R15 — A legacy install row names the reinstall command
+    Given a legacy plugin install row
+    When the operator runs `superskill update --check`
+    Then the row appends the `superskill install <name>` adopt command
+
+  @refinement-0136
+  Scenario: R17 — Update help documents the exit codes
+    Given `superskill update --help`
+    When the help text renders
+    Then it states exit codes 0 (nothing stale), 1 (stale under --check or apply failure), 2 (unavailable upstream) and that --json requires --check
+
+  @refinement-0136
+  Scenario: R21 — An unavailable plugin row names the cause
+    Given a plugin whose upstream cannot be resolved (missing locator, unreadable manifest, or network failure)
+    When `superskill update --check` evaluates it
+    Then the row is unavailable with a specific reason string and the exit code is 2
 
 ## Tasks
 

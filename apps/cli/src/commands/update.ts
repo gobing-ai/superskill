@@ -15,6 +15,7 @@ import {
     listRegularFilesUnder,
     listResolvablePlugins,
     mergePluginUpdateRows,
+    type ResolvedPlugin,
     readGlobalLock,
     readInstallManifest,
     readLocalLock,
@@ -27,7 +28,6 @@ import {
     TARGETS,
     type Target,
     type UpdateRow,
-    type UpdateRowStatus,
     updateSkills,
 } from '@gobing-ai/superskill-core';
 import { NodeProcessExecutor, type ProcessExecutor } from '@gobing-ai/ts-runtime';
@@ -77,7 +77,7 @@ export interface UpdateJsonEnvelope {
     scope: 'global' | 'project';
     check: true;
     rows: UpdateRow[];
-    summary: { stale: number; current: number; unchecked: number; legacy: number; unavailable: number };
+    summary: UpdateSummaryCounts;
     exitCode: 0 | 1 | 2;
 }
 
@@ -92,7 +92,7 @@ export function registerUpdate(program: Command): void {
         )
         .argument('[name]', 'Plugin or skill name to check or update (default: all known candidates)')
         .option('--check', 'Report stale plugins and skills without writing files', false)
-        .option('--json', 'With --check, emit one JSON result envelope instead of text rows', false)
+        .option('--json', 'Emit one JSON result envelope instead of text rows (requires --check)', false)
         .option('--targets <list>', 'Comma-separated target agents; plugins only (default: all configured)')
         .option(
             '--marketplace <locator>',
@@ -101,6 +101,10 @@ export function registerUpdate(program: Command): void {
         .option(
             '--no-global',
             'Scan project-level manifests and the project skill lock instead of user-level global directories',
+        )
+        .addHelpText(
+            'after',
+            '\nExit codes: 0 nothing stale, 1 stale under --check or an apply failure, 2 an unavailable upstream.',
         )
         .action(async (name: string | undefined, options) => {
             try {
@@ -198,7 +202,7 @@ export async function executeUpdate(
         if (matchesSkill) skillNamesArg = [name];
     }
     const rows: UpdateRow[] = [];
-    const marketplaceWork = new Map<string, Promise<MarketplaceUpstream | undefined>>();
+    const marketplaceWork = new Map<string, Promise<MarketplaceUpstream>>();
     const marketplaceActions = new Map<string, MarketplaceInstallAction>();
     let bundledLatest: string | undefined;
     let bundledStale = false;
@@ -221,7 +225,7 @@ export async function executeUpdate(
                     const comparison = compareBundledVersion(candidate, manifest.upstreamVersion, bundledLatest);
                     rows.push({ ...comparison, target: manifest.target });
                     if (comparison.status === 'stale') bundledStale = true;
-                } catch {
+                } catch (err) {
                     rows.push({
                         kind: 'plugin',
                         name: candidate,
@@ -229,6 +233,8 @@ export async function executeUpdate(
                         channel: 'bundled',
                         target: manifest.target,
                         locator: NPM_PACKAGE,
+                        reason:
+                            err instanceof Error && err.message.length > 0 ? err.message : 'npm registry lookup failed',
                     });
                 }
                 continue;
@@ -241,7 +247,7 @@ export async function executeUpdate(
                     status: 'unavailable',
                     channel: 'marketplace',
                     target: manifest.target,
-                    locator: '',
+                    reason: 'no marketplace locator recorded in the install manifest',
                 });
                 continue;
             }
@@ -252,7 +258,7 @@ export async function executeUpdate(
                 marketplaceWork.set(cacheKey, pending);
             }
             const upstream = await pending;
-            if (!upstream) {
+            if (!upstream.ok) {
                 rows.push({
                     kind: 'plugin',
                     name: candidate,
@@ -260,6 +266,7 @@ export async function executeUpdate(
                     channel: 'marketplace',
                     target: manifest.target,
                     locator,
+                    reason: upstream.reason,
                 });
                 continue;
             }
@@ -271,7 +278,11 @@ export async function executeUpdate(
                 upstream.snapshot,
                 locator,
             );
-            rows.push({ ...comparison, target: manifest.target });
+            rows.push({
+                ...comparison,
+                target: manifest.target,
+                ...(upstream.versionMismatch !== undefined ? { versionMismatch: upstream.versionMismatch } : {}),
+            });
             if (comparison.status === 'stale' && (isTarget(manifest.target) || manifest.target === 'grok-bot')) {
                 const actionKey = JSON.stringify([candidate, locator]);
                 const action = marketplaceActions.get(actionKey) ?? {
@@ -319,6 +330,9 @@ export async function executeUpdate(
         echo(JSON.stringify(buildUpdateEnvelope(options, allRows, exitCode), null, 2));
     } else {
         printGroupedRows(allRows);
+        // R8: check output ends with per-status counts and the one next command; an empty
+        // candidate set has no groups and no statuses to count.
+        if (options.check && allRows.length > 0) echo(formatUpdateSummary(allRows));
     }
 
     if (skillLockError !== undefined) {
@@ -328,7 +342,7 @@ export async function executeUpdate(
 
     let skillApplyFailed = false;
     if (!options.check) {
-        if (bundledStale) echo(NPM_UPGRADE);
+        if (bundledStale) echo(`To upgrade superskill and its bundled plugins, run: ${NPM_UPGRADE}`);
         for (const action of marketplaceActions.values()) {
             const locator = options.marketplacePath ?? action.locator;
             const pluginRootOnly = options.marketplacePath === undefined && isPluginRootOnlyLocator(locator);
@@ -412,32 +426,69 @@ function printGroupedRows(rows: readonly UpdateRow[]): void {
     }
 }
 
+/** Per-status counts over a row set; shared by the text footer and the `--json` envelope summary. */
+export interface UpdateSummaryCounts {
+    stale: number;
+    current: number;
+    unchecked: number;
+    legacy: number;
+    unavailable: number;
+}
+
+/** Count rows per status — the single source for both summary surfaces (R8). */
+export function summarizeUpdateRows(rows: readonly UpdateRow[]): UpdateSummaryCounts {
+    const counts: UpdateSummaryCounts = { stale: 0, current: 0, unchecked: 0, legacy: 0, unavailable: 0 };
+    for (const row of rows) counts[row.status] += 1;
+    return counts;
+}
+
+/**
+ * Text summary footer (R8): counts every status present and, when at least one row is
+ * stale, names the one next command — bare `superskill update`.
+ */
+export function formatUpdateSummary(rows: readonly UpdateRow[]): string {
+    const counts = summarizeUpdateRows(rows);
+    const parts: string[] = [];
+    if (counts.stale > 0) parts.push(`${counts.stale} stale`);
+    if (counts.current > 0) parts.push(`${counts.current} up to date`);
+    if (counts.unchecked > 0) parts.push(`${counts.unchecked} not checked`);
+    if (counts.legacy > 0) parts.push(`${counts.legacy} legacy`);
+    if (counts.unavailable > 0) parts.push(`${counts.unavailable} unavailable`);
+    const run = counts.stale > 0 ? ' Run: superskill update' : '';
+    return `Summary: ${parts.join(', ')}.${run}`;
+}
+
 /** Build the R4 `--check --json` envelope. */
 function buildUpdateEnvelope(
     options: UpdateOptions,
     rows: readonly UpdateRow[],
     exitCode: 0 | 1 | 2,
 ): UpdateJsonEnvelope {
-    const count = (status: UpdateRowStatus): number => rows.filter((row) => row.status === status).length;
     return {
         scope: options.global ? 'global' : 'project',
         check: true,
         rows: [...rows],
-        summary: {
-            stale: count('stale'),
-            current: count('current'),
-            unchecked: count('unchecked'),
-            legacy: count('legacy'),
-            unavailable: count('unavailable'),
-        },
+        summary: summarizeUpdateRows(rows),
         exitCode,
     };
 }
 
-interface MarketplaceUpstream {
+/** Successful upstream resolution; `version` keeps marketplace-first precedence. */
+interface ResolvedMarketplaceUpstream {
+    ok: true;
     version: string;
     snapshot: ReturnType<typeof snapshotFiles>;
+    /** Set when marketplace.json and plugin.json declare different versions (R4). */
+    versionMismatch?: { marketplace: string; pluginJson: string };
 }
+
+/** Failed upstream resolution; `reason` surfaces on the unavailable row (R5). */
+interface FailedMarketplaceUpstream {
+    ok: false;
+    reason: string;
+}
+
+type MarketplaceUpstream = ResolvedMarketplaceUpstream | FailedMarketplaceUpstream;
 
 interface MarketplaceInstallAction {
     plugin: string;
@@ -521,29 +572,60 @@ function readCandidateManifests(
     return found;
 }
 
-async function resolveMarketplaceUpstream(plugin: string, locator: string): Promise<MarketplaceUpstream | undefined> {
+/**
+ * Resolve one marketplace locator to its current upstream snapshot (R4/R5). Failures are
+ * typed and carry a specific reason for the unavailable row: a missing locator directory,
+ * a manifest/parse failure, or a network/registry failure. The compare version keeps
+ * marketplace-first precedence; when the marketplace entry and plugin.json declare
+ * different versions, `versionMismatch` names both without changing which one wins.
+ */
+async function resolveMarketplaceUpstream(plugin: string, locator: string): Promise<MarketplaceUpstream> {
+    const fail = (reason: string): FailedMarketplaceUpstream => ({ ok: false, reason });
+    const cause = (err: unknown, fallback: string): string =>
+        err instanceof Error && err.message.length > 0 ? err.message : fallback;
     try {
         if (!isRemoteMarketplaceLocator(locator) && isPluginRootOnlyLocator(locator)) {
             const version = readPluginJsonVersion(locator);
-            if (!version) return undefined;
+            if (!version) return fail(`plugin.json at '${locator}' declares no version`);
             const files = listRegularFilesUnder(locator);
-            return { version, snapshot: snapshotFiles(locator, files) };
+            return { ok: true, version, snapshot: snapshotFiles(locator, files) };
         }
         let marketplacePath = locator;
         if (isRemoteMarketplaceLocator(locator)) {
-            const remote = await resolveRemoteMarketplace(locator);
-            marketplacePath = remote.root;
+            try {
+                const remote = await resolveRemoteMarketplace(locator);
+                marketplacePath = remote.root;
+            } catch (err) {
+                return fail(cause(err, 'marketplace fetch failed'));
+            }
+        } else if (!existsSync(resolve(locator))) {
+            // R21: a gone local locator directory is named as such on the row.
+            return fail('locator path missing');
         }
-        const resolved = resolvePlugin(marketplacePath, plugin);
-        if (!resolved) return undefined;
-        const version =
-            readMarketplacePluginVersion(resolved.marketplaceRoot, plugin) ??
-            readPluginJsonVersion(resolved.pluginRoot);
-        if (!version) return undefined;
+        let resolved: ResolvedPlugin | null;
+        try {
+            resolved = resolvePlugin(marketplacePath, plugin);
+        } catch (err) {
+            return fail(cause(err, 'marketplace manifest unreadable'));
+        }
+        if (!resolved) return fail(`plugin '${plugin}' not found in the marketplace manifest`);
+        const marketplaceVersion = readMarketplacePluginVersion(resolved.marketplaceRoot, plugin);
+        const pluginJsonVersion = readPluginJsonVersion(resolved.pluginRoot);
+        const version = marketplaceVersion ?? pluginJsonVersion;
+        if (!version) return fail(`no version declared for plugin '${plugin}'`);
         const files = listRegularFilesUnder(resolved.pluginRoot);
-        return { version, snapshot: snapshotFiles(resolved.pluginRoot, files) };
-    } catch {
-        return undefined;
+        return {
+            ok: true,
+            version,
+            snapshot: snapshotFiles(resolved.pluginRoot, files),
+            ...(marketplaceVersion !== undefined &&
+            pluginJsonVersion !== undefined &&
+            marketplaceVersion !== pluginJsonVersion
+                ? { versionMismatch: { marketplace: marketplaceVersion, pluginJson: pluginJsonVersion } }
+                : {}),
+        };
+    } catch (err) {
+        return fail(cause(err, 'upstream lookup failed'));
     }
 }
 
@@ -558,37 +640,66 @@ async function fetchNpmLatest(executor?: ProcessExecutor): Promise<string> {
     return version;
 }
 
+/** Text rows name at most this many changed paths; longer lists get `+N more` (R11). */
+const MAX_TEXT_CHANGED_PATHS = 5;
+
+/** `note: …` suffix naming both sides of a marketplace.json/plugin.json disagreement (R9). */
+function declarationNote(row: UpdateRow): string {
+    const mismatch = row.versionMismatch;
+    return mismatch !== undefined
+        ? ` (note: marketplace.json declares ${mismatch.marketplace}, plugin.json declares ${mismatch.pluginJson})`
+        : '';
+}
+
+/** Version delta for a marketplace stale row; equal versions are content drift (R8). */
+function staleDelta(row: UpdateRow): string {
+    if (row.installedVersion === undefined || row.upstreamVersion === undefined) return 'changed';
+    if (row.installedVersion === row.upstreamVersion)
+        return `content changed, version ${row.installedVersion} unchanged`;
+    return `${row.installedVersion} → ${row.upstreamVersion}`;
+}
+
 /**
- * Render one update row for text output. Unavailable rows append the row's reason
- * after the locator when one is set; without a reason the line is byte-identical
- * to the pre-UpdateRow formatter.
+ * Render one update row for text output. Equal installed/upstream versions on a stale row
+ * are named as content drift; a version bump keeps the `<old> → <new>` form. Text caps the
+ * changed-path list at {@link MAX_TEXT_CHANGED_PATHS} entries with `+N more` — the row and
+ * the `--json` envelope always carry every path. Merged rows with staleTargets append
+ * `[stale on: <targets>]`; unavailable rows append their cause after the locator.
  */
 export function formatUpdateRow(row: UpdateRow): string {
     if (row.status === 'legacy') {
-        return `${row.name}: installed before manifest support - reinstall to adopt`;
+        return `${row.name}: installed before manifest support - run \`superskill install ${row.name}\` to adopt`;
     }
     if (row.status === 'unavailable' || row.status === 'unchecked') {
         // Skill rows have no upstream locator; they name the status and reason directly.
         if (row.kind === 'skill') {
             return `${row.name}: ${row.status}: ${row.reason ?? 'unknown failure'}`;
         }
-        const unavailable = `${row.name}: upstream unavailable (${row.locator ?? ''})`;
-        return row.reason !== undefined ? `${unavailable}: ${row.reason}` : unavailable;
+        const head = row.locator
+            ? `${row.name}: upstream unavailable (${row.locator})`
+            : `${row.name}: upstream unavailable`;
+        return row.reason !== undefined ? `${head}: ${row.reason}` : head;
     }
     if (row.status === 'current') {
-        return row.installedVersion !== undefined
-            ? `${row.name}: ${row.installedVersion} up to date`
-            : `${row.name}: up to date`;
+        const head =
+            row.installedVersion !== undefined
+                ? `${row.name}: ${row.installedVersion} up to date`
+                : `${row.name}: up to date`;
+        return `${head}${declarationNote(row)}`;
     }
     if (row.channel === 'bundled') {
         return `${row.name}: stale: superskill <${row.upstreamVersion}> available (installed <${row.installedVersion}>)`;
     }
+    const staleTargets =
+        row.staleTargets !== undefined && row.staleTargets.length > 0
+            ? ` [stale on: ${row.staleTargets.join(', ')}]`
+            : '';
     const n = row.changedPaths?.length ?? 0;
-    const delta =
-        row.installedVersion && row.upstreamVersion ? `${row.installedVersion} → ${row.upstreamVersion}` : 'changed';
-    if (n === 0) return `${row.name}: stale: ${delta}`;
-    const paths = (row.changedPaths ?? []).join(', ');
-    return `${row.name}: stale: ${delta} (${n} file(s) changed: ${paths})`;
+    if (n === 0) return `${row.name}: stale: ${staleDelta(row)}${staleTargets}${declarationNote(row)}`;
+    const paths = row.changedPaths ?? [];
+    const shown = paths.slice(0, MAX_TEXT_CHANGED_PATHS);
+    const more = paths.length > shown.length ? ` +${paths.length - shown.length} more` : '';
+    return `${row.name}: stale: ${staleDelta(row)} (${n} files changed: ${shown.join(', ')}${more})${staleTargets}${declarationNote(row)}`;
 }
 
 const PLUGIN_ROOT_MARKERS = ['skills', 'commands', 'agents', 'hooks', 'hooks.json', 'plugin.json'];

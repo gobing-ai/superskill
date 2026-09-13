@@ -13,7 +13,13 @@ import {
 import type { ProcessExecutor, ProcessOptions } from '@gobing-ai/ts-runtime';
 import { Command } from 'commander';
 import * as installNs from '../../src/commands/install';
-import { executeUpdate, formatUpdateRow, registerUpdate, type UpdateJsonEnvelope } from '../../src/commands/update';
+import {
+    executeUpdate,
+    formatUpdateRow,
+    formatUpdateSummary,
+    registerUpdate,
+    type UpdateJsonEnvelope,
+} from '../../src/commands/update';
 
 const originalCwd = process.cwd();
 const originalHomeDir = process.env.HOME_DIR;
@@ -123,6 +129,22 @@ describe('registerUpdate', () => {
         expect(names).toContain('--no-global');
         expect(cmd?.helpInformation()).toContain('[name]');
     });
+
+    it('documents the 0/1/2 exit codes and the --check requirement for --json (R17)', () => {
+        const program = new Command();
+        registerUpdate(program);
+        const cmd = program.commands.find((c) => c.name() === 'update');
+        // Option descriptions render through helpInformation...
+        expect(cmd?.helpInformation()).toContain('requires --check');
+        // ...while addHelpText('after') only renders during outputHelp (Commander 14).
+        const stdout = spyOn(process.stdout, 'write').mockImplementation(() => true);
+        cmd?.outputHelp();
+        const afterHelp = stdout.mock.calls.map((c) => String(c[0])).join('');
+        stdout.mockRestore();
+        expect(afterHelp).toContain(
+            'Exit codes: 0 nothing stale, 1 stale under --check or an apply failure, 2 an unavailable upstream.',
+        );
+    });
 });
 
 describe('formatUpdateRow', () => {
@@ -143,6 +165,65 @@ describe('formatUpdateRow', () => {
         );
     });
 
+    it('renders a locator-less unavailable row without empty parens (R21)', () => {
+        expect(
+            formatUpdateRow({
+                kind: 'plugin',
+                name: 'kk',
+                status: 'unavailable',
+                reason: 'no marketplace locator recorded in the install manifest',
+            }),
+        ).toBe('kk: upstream unavailable: no marketplace locator recorded in the install manifest');
+    });
+
+    it('names content drift at unchanged versions and caps long path lists in text (R8/R11/R12)', () => {
+        expect(
+            formatUpdateRow({
+                kind: 'plugin',
+                name: 'kk',
+                status: 'stale',
+                channel: 'marketplace',
+                installedVersion: '0.0.1',
+                upstreamVersion: '0.0.1',
+                changedPaths: ['skills/a.md'],
+            }),
+        ).toBe('kk: stale: content changed, version 0.0.1 unchanged (1 files changed: skills/a.md)');
+        const twelve = Array.from({ length: 12 }, (_v, i) => `skills/f${i + 1}.md`).sort();
+        expect(
+            formatUpdateRow({
+                kind: 'plugin',
+                name: 'kk',
+                status: 'stale',
+                channel: 'marketplace',
+                installedVersion: '1.0.0',
+                upstreamVersion: '2.0.0',
+                changedPaths: twelve,
+                staleTargets: ['claude'],
+            }),
+        ).toBe(
+            'kk: stale: 1.0.0 → 2.0.0 ' +
+                '(12 files changed: skills/f1.md, skills/f10.md, skills/f11.md, skills/f12.md, skills/f2.md +7 more)' +
+                ' [stale on: claude]',
+        );
+    });
+
+    it('appends the declaration note to current rows and the remedy to legacy rows (R9/R15)', () => {
+        expect(
+            formatUpdateRow({
+                kind: 'plugin',
+                name: 'kk',
+                status: 'current',
+                channel: 'marketplace',
+                installedVersion: '0.0.1',
+                upstreamVersion: '0.0.1',
+                versionMismatch: { marketplace: '0.0.1', pluginJson: '0.1.0' },
+            }),
+        ).toBe('kk: 0.0.1 up to date (note: marketplace.json declares 0.0.1, plugin.json declares 0.1.0)');
+        expect(formatUpdateRow({ kind: 'plugin', name: 'kk', status: 'legacy' })).toBe(
+            'kk: installed before manifest support - run `superskill install kk` to adopt',
+        );
+    });
+
     it('renders skill unchecked and unavailable rows as name: status: reason (R1/R20)', () => {
         expect(
             formatUpdateRow({
@@ -158,6 +239,27 @@ describe('formatUpdateRow', () => {
         expect(formatUpdateRow({ kind: 'skill', name: 'last30days', status: 'unavailable' })).toBe(
             'last30days: unavailable: unknown failure',
         );
+    });
+});
+
+describe('formatUpdateSummary', () => {
+    it('counts every status present and names the next command only when something is stale (R8)', () => {
+        expect(
+            formatUpdateSummary([
+                { kind: 'plugin', name: 'kk', status: 'stale' },
+                { kind: 'plugin', name: 'sp', status: 'current' },
+            ]),
+        ).toBe('Summary: 1 stale, 1 up to date. Run: superskill update');
+        expect(formatUpdateSummary([{ kind: 'skill', name: 'last30days', status: 'current' }])).toBe(
+            'Summary: 1 up to date.',
+        );
+        expect(
+            formatUpdateSummary([
+                { kind: 'plugin', name: 'l', status: 'legacy' },
+                { kind: 'skill', name: 'u', status: 'unchecked' },
+                { kind: 'skill', name: 'x', status: 'unavailable' },
+            ]),
+        ).toBe('Summary: 1 not checked, 1 legacy, 1 unavailable.');
     });
 });
 
@@ -237,7 +339,7 @@ describe('executeUpdate', () => {
         const output = stdout.mock.calls.map((c) => String(c[0])).join('');
         stdout.mockRestore();
         expect(code).toBe(0);
-        expect(output).toContain('demo: installed before manifest support - reinstall to adopt');
+        expect(output).toContain('demo: installed before manifest support - run `superskill install demo` to adopt');
         expect(output).not.toContain('evil');
     });
 
@@ -269,7 +371,7 @@ describe('executeUpdate', () => {
         const output = stdout.mock.calls.map((c) => String(c[0])).join('');
         stdout.mockRestore();
         expect(code).toBe(0);
-        expect(output).toContain('demo: installed before manifest support - reinstall to adopt');
+        expect(output).toContain('demo: installed before manifest support - run `superskill install demo` to adopt');
         expect(output).not.toContain('evil');
     });
 
@@ -284,7 +386,7 @@ describe('executeUpdate', () => {
         const output = stdout.mock.calls.map((c) => String(c[0])).join('');
         stdout.mockRestore();
         expect(code).toBe(2);
-        expect(output).toContain('gone: upstream unavailable');
+        expect(output).toContain('gone: upstream unavailable (/no/such/marketplace): locator path missing');
         expect(output).toContain('fresh:');
     });
 
@@ -372,7 +474,9 @@ describe('executeUpdate', () => {
         const output = stdout.mock.calls.map((c) => String(c[0])).join('');
         stdout.mockRestore();
         expect(code).toBe(0);
-        expect(output).toContain('npm i -g @gobing-ai/superskill@latest');
+        expect(output).toContain(
+            'To upgrade superskill and its bundled plugins, run: npm i -g @gobing-ai/superskill@latest',
+        );
         expect(output).toContain('superskill <9.9.9> available');
     });
 
@@ -411,7 +515,7 @@ describe('executeUpdate', () => {
         const root = workspace();
         const pluginRoot = writePlugin(root, 'cc', '0.1.0', '# cc\n');
         writeManifest(root, 'cc', pluginRoot, { version: '0.1.0', channel: 'bundled' });
-        spyOn(process.stdout, 'write').mockImplementation(() => true);
+        const stdout = spyOn(process.stdout, 'write').mockImplementation(() => true);
         const code = await executeUpdate(
             'cc',
             ['codex'],
@@ -422,7 +526,10 @@ describe('executeUpdate', () => {
                 },
             },
         );
+        const output = stdout.mock.calls.map((c) => String(c[0])).join('');
+        stdout.mockRestore();
         expect(code).toBe(2);
+        expect(output).toContain('cc: upstream unavailable (@gobing-ai/superskill): offline');
     });
 
     it('uses processExecutor for npm view on bundled current', async () => {
@@ -480,13 +587,16 @@ describe('executeUpdate', () => {
         expect(root).toBeTruthy();
     });
 
-    it('treats a marketplace manifest with no locator as unavailable', async () => {
+    it('treats a marketplace manifest with no locator as unavailable and names the cause (R21)', async () => {
         const root = workspace();
         const pluginRoot = writePlugin(root, 'demo', '1.0.0', '# x\n');
         writeManifest(root, 'demo', pluginRoot, { version: '1.0.0' });
-        spyOn(process.stdout, 'write').mockImplementation(() => true);
+        const stdout = spyOn(process.stdout, 'write').mockImplementation(() => true);
         const code = await executeUpdate('demo', ['codex'], { check: true, global: false, outputRoot: root });
+        const output = stdout.mock.calls.map((c) => String(c[0])).join('');
+        stdout.mockRestore();
         expect(code).toBe(2);
+        expect(output).toContain('demo: upstream unavailable: no marketplace locator recorded in the install manifest');
     });
 
     it('treats empty npm view output as bundled unavailable', async () => {
@@ -530,7 +640,7 @@ describe('executeUpdate', () => {
         const output = stdout.mock.calls.map((c) => String(c[0])).join('');
         stdout.mockRestore();
         expect(code).toBe(0);
-        expect(output).toContain('cc: installed before manifest support - reinstall to adopt');
+        expect(output).toContain('cc: installed before manifest support - run `superskill install cc` to adopt');
     });
 
     it('does not report a false legacy row for a plugin manifested only on another target', async () => {
@@ -627,7 +737,9 @@ describe('executeUpdate', () => {
         const output = stdout.mock.calls.map((c) => String(c[0])).join('');
         stdout.mockRestore();
         expect(code).toBe(0);
-        expect(output).toContain('fromconfig: installed before manifest support - reinstall to adopt');
+        expect(output).toContain(
+            'fromconfig: installed before manifest support - run `superskill install fromconfig` to adopt',
+        );
     });
 
     it('lists packaged bundled plugins, not a CWD marketplace, when the plugin is omitted', async () => {
@@ -649,7 +761,9 @@ describe('executeUpdate', () => {
         const output = stdout.mock.calls.map((c) => String(c[0])).join('');
         stdout.mockRestore();
         expect(code).toBe(0);
-        expect(output).toContain('pkg-cc: installed before manifest support - reinstall to adopt');
+        expect(output).toContain(
+            'pkg-cc: installed before manifest support - run `superskill install pkg-cc` to adopt',
+        );
         expect(output).not.toContain('cwd-only');
     });
 
@@ -754,6 +868,140 @@ describe('executeUpdate', () => {
         } finally {
             delete process.env.SAND_DATA;
         }
+    });
+    it('names content drift at an unchanged version instead of 0.0.1 → 0.0.1 (R8)', async () => {
+        const root = workspace();
+        const pluginRoot = writePlugin(root, 'kk', '0.0.1', '# old\n');
+        const market = writeMarket(root, 'kk', '0.0.1');
+        writeManifest(root, 'kk', pluginRoot, { version: '0.0.1', locator: market });
+        // kk-shaped drift: upstream content changed while the declared version stayed 0.0.1.
+        writeFileSync(join(root, 'plugins', 'kk', 'skills', 'a.md'), '# changed upstream\n');
+        const stdout = spyOn(process.stdout, 'write').mockImplementation(() => true);
+
+        const code = await executeUpdate('kk', ['codex'], {
+            check: true,
+            global: false,
+            marketplacePath: market,
+            outputRoot: root,
+        });
+
+        const output = stdout.mock.calls.map((c) => String(c[0])).join('');
+        stdout.mockRestore();
+        expect(code).toBe(1);
+        expect(output).toContain('kk: stale: content changed, version 0.0.1 unchanged (1 files changed: skills/a.md)');
+        expect(output).not.toContain('0.0.1 → 0.0.1');
+    });
+
+    it('caps text changed paths at five with +N more while --json lists every path (R11)', async () => {
+        const root = workspace();
+        const pluginRoot = writePlugin(root, 'kk', '1.0.0', '# old\n');
+        const market = writeMarket(root, 'kk', '2.0.0');
+        writeManifest(root, 'kk', pluginRoot, { version: '1.0.0', locator: market });
+        for (let i = 1; i <= 12; i += 1) writeFileSync(join(root, 'plugins', 'kk', 'skills', `f${i}.md`), `#${i}\n`);
+        const stdout = spyOn(process.stdout, 'write').mockImplementation(() => true);
+
+        const code = await executeUpdate('kk', ['codex'], {
+            check: true,
+            global: false,
+            marketplacePath: market,
+            outputRoot: root,
+        });
+        const text = stdout.mock.calls.map((c) => String(c[0])).join('');
+        stdout.mockClear();
+
+        const jsonCode = await executeUpdate('kk', ['codex'], {
+            check: true,
+            global: false,
+            marketplacePath: market,
+            outputRoot: root,
+            json: true,
+        });
+        const envelope = JSON.parse(stdout.mock.calls.map((c) => String(c[0])).join('')) as UpdateJsonEnvelope;
+        stdout.mockRestore();
+
+        expect(code).toBe(1);
+        expect(text).toContain('kk: stale: 1.0.0 → 2.0.0 (12 files changed: ');
+        expect(text).toContain('+7 more)');
+        expect(text).not.toContain('skills/f3.md');
+        expect(jsonCode).toBe(1);
+        expect(envelope.rows[0]?.changedPaths).toHaveLength(12);
+        expect(envelope.rows[0]?.changedPaths).toContain('skills/f12.md');
+    });
+
+    it('names the stale target on a partially stale merged row (R12)', async () => {
+        const root = workspace();
+        writePlugin(root, 'kk', '2.0.0', '# new\n');
+        const market = writeMarket(root, 'kk', '2.0.0');
+        const oldRoot = join(root, 'old');
+        const oldPluginRoot = writePlugin(oldRoot, 'kk', '1.0.0', '# old\n');
+        writeManifest(root, 'kk', oldPluginRoot, { version: '1.0.0', locator: market, target: 'claude' });
+        writeManifest(root, 'kk', join(root, 'plugins', 'kk'), { version: '2.0.0', locator: market, target: 'codex' });
+        const stdout = spyOn(process.stdout, 'write').mockImplementation(() => true);
+
+        const code = await executeUpdate('kk', ['claude', 'codex'], {
+            check: true,
+            global: false,
+            marketplacePath: market,
+            outputRoot: root,
+        });
+
+        const output = stdout.mock.calls.map((c) => String(c[0])).join('');
+        stdout.mockRestore();
+        expect(code).toBe(1);
+        expect(output.match(/kk: stale:/g)).toHaveLength(1);
+        expect(output).toContain(' [stale on: claude]');
+    });
+
+    it('notes disagreeing marketplace.json and plugin.json version declarations (R9)', async () => {
+        const root = workspace();
+        const pluginRoot = writePlugin(root, 'kk', '0.1.0', '# kk\n');
+        const market = writeMarket(root, 'kk', '0.0.1');
+        writeManifest(root, 'kk', pluginRoot, { version: '0.0.1', locator: market });
+        const stdout = spyOn(process.stdout, 'write').mockImplementation(() => true);
+
+        const code = await executeUpdate('kk', ['codex'], {
+            check: true,
+            global: false,
+            marketplacePath: market,
+            outputRoot: root,
+        });
+
+        const output = stdout.mock.calls.map((c) => String(c[0])).join('');
+        stdout.mockRestore();
+        // Marketplace-first precedence is unchanged: the compare still sees 0.0.1 == recorded 0.0.1.
+        expect(code).toBe(0);
+        expect(output).toContain('kk: 0.0.1 up to date');
+        expect(output).toContain('(note: marketplace.json declares 0.0.1, plugin.json declares 0.1.0)');
+    });
+
+    it('ends check output with a summary counting rows and the next command (R10)', async () => {
+        const root = workspace();
+        const kkMarketRoot = join(root, 'marketplaces', 'kk');
+        writePlugin(kkMarketRoot, 'kk', '2.0.0', '# new\n');
+        const market = writeMarket(kkMarketRoot, 'kk', '2.0.0');
+        const oldRoot = join(root, 'old');
+        writePlugin(oldRoot, 'kk', '1.0.0', '# old\n');
+        writeManifest(root, 'kk', join(oldRoot, 'plugins', 'kk'), {
+            version: '1.0.0',
+            locator: market,
+        });
+        const spMarketRoot = join(root, 'marketplaces', 'sp');
+        const spRoot = writePlugin(spMarketRoot, 'sp', '1.0.0', '# sp\n');
+        const spMarket = writeMarket(spMarketRoot, 'sp', '1.0.0');
+        writeManifest(root, 'sp', spRoot, { version: '1.0.0', locator: spMarket });
+        const stdout = spyOn(process.stdout, 'write').mockImplementation(() => true);
+
+        const code = await executeUpdate(
+            undefined,
+            ['codex'],
+            { check: true, global: false, outputRoot: root },
+            { listBundledPlugins: () => [] },
+        );
+
+        const output = stdout.mock.calls.map((c) => String(c[0])).join('');
+        stdout.mockRestore();
+        expect(code).toBe(1);
+        expect(output.trimEnd().endsWith('Summary: 1 stale, 1 up to date. Run: superskill update')).toBe(true);
     });
 });
 
