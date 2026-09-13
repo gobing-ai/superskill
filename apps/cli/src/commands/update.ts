@@ -2,23 +2,33 @@ import { existsSync, readdirSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
 import {
+    aggregateUpdateExit,
     assertSafePathSegment,
     BOT_SAND_DATA_ENV,
-    buildUpdateCheckResult,
+    checkSkills,
     compareBundledVersion,
     compareMarketplaceManifest,
+    getGlobalLockPath,
+    getLocalLockPath,
     type InstallTarget,
     installManifestPath,
     listRegularFilesUnder,
     listResolvablePlugins,
+    mergePluginUpdateRows,
+    readGlobalLock,
     readInstallManifest,
+    readLocalLock,
     resolvePlugin,
     resolveSandRoot,
     type SandRootResolution,
+    type SkillCheckRow,
+    sanitizeName,
     snapshotFiles,
     TARGETS,
     type Target,
     type UpdateRow,
+    type UpdateRowStatus,
+    updateSkills,
 } from '@gobing-ai/superskill-core';
 import { NodeProcessExecutor, type ProcessExecutor } from '@gobing-ai/ts-runtime';
 import { echo, echoError } from '@gobing-ai/ts-utils';
@@ -43,6 +53,8 @@ export interface UpdateOptions {
     global: boolean;
     marketplacePath?: string;
     outputRoot?: string;
+    /** With `--check`, emit one JSON envelope instead of grouped text rows (R4). */
+    json?: boolean;
 }
 
 /** Injectable seams for tests. */
@@ -52,6 +64,21 @@ export interface UpdateDependencies {
     npmLatest?: () => Promise<string>;
     /** Override bundled marketplace name listing (tests inject a frozen set). */
     listBundledPlugins?: () => string[];
+    /** Read-only skill rows for the scope lock (tests inject fixture results). */
+    checkSkills?: typeof checkSkills;
+    /** Apply path for stale skill rows (tests inject). */
+    updateSkills?: typeof updateSkills;
+    /** Fetch implementation threaded into checkSkills/updateSkills (tests inject failures). */
+    fetchFn?: typeof fetch;
+}
+
+/** `--check --json` envelope (R4); `exitCode` mirrors the process exit code so scripts read one value. */
+export interface UpdateJsonEnvelope {
+    scope: 'global' | 'project';
+    check: true;
+    rows: UpdateRow[];
+    summary: { stale: number; current: number; unchecked: number; legacy: number; unavailable: number };
+    exitCode: 0 | 1 | 2;
 }
 
 /**
@@ -60,16 +87,22 @@ export interface UpdateDependencies {
 export function registerUpdate(program: Command): void {
     program
         .command('update')
-        .description('Check installed plugins for upstream updates, or re-install stale marketplace plugins')
-        .argument('[plugin]', 'Plugin name to check or update (default: all known candidates)')
-        .option('--check', 'Report stale plugins without writing files', false)
-        .option('--targets <list>', 'Comma-separated target agents (default: all configured)')
+        .description(
+            'Check installed plugins and lock-tracked skills for updates, or re-install stale marketplace plugins and skills',
+        )
+        .argument('[name]', 'Plugin or skill name to check or update (default: all known candidates)')
+        .option('--check', 'Report stale plugins and skills without writing files', false)
+        .option('--json', 'With --check, emit one JSON result envelope instead of text rows', false)
+        .option('--targets <list>', 'Comma-separated target agents; plugins only (default: all configured)')
         .option(
             '--marketplace <locator>',
-            'Override recorded marketplace locator (path, GitHub URL, or owner/repo shorthand)',
+            'Override recorded marketplace locator; plugins only (path, GitHub URL, or owner/repo shorthand)',
         )
-        .option('--no-global', 'Scan project-level manifests instead of user-level global directories')
-        .action(async (plugin: string | undefined, options) => {
+        .option(
+            '--no-global',
+            'Scan project-level manifests and the project skill lock instead of user-level global directories',
+        )
+        .action(async (name: string | undefined, options) => {
             try {
                 const config = loadConfig();
                 const resolved = resolveInstallTargets(options.targets, config.targets);
@@ -79,10 +112,11 @@ export function registerUpdate(program: Command): void {
                     );
                 }
                 const targets = resolved.targets;
-                const code = await executeUpdate(plugin, targets, {
+                const code = await executeUpdate(name, targets, {
                     check: options.check === true,
                     global: options.global !== false,
                     marketplacePath: options.marketplace as string | undefined,
+                    json: options.json === true,
                 });
                 process.exit(code);
             } catch (err) {
@@ -93,19 +127,27 @@ export function registerUpdate(program: Command): void {
 }
 
 /**
- * Discover candidates, compare against upstream, print one row per plugin, and
- * return the aggregate exit code. `--check` never writes. Mutating mode re-installs
- * stale marketplace plugins via {@link executeInstall} and prints the npm upgrade
- * command once for stale bundled plugins.
+ * Discover plugin candidates, aggregate lock-tracked skill rows for the same scope, print
+ * rows grouped by kind, and return the aggregate exit code. `--check` never writes. Mutating
+ * mode re-installs stale marketplace plugins via {@link executeInstall}, applies stale skills
+ * via `updateSkills(precheck)`, and prints the npm upgrade command once for stale bundled plugins.
  */
 export async function executeUpdate(
-    plugin: string | undefined,
+    name: string | undefined,
     targets: readonly InstallTarget[],
     options: UpdateOptions,
     dependencies: UpdateDependencies = {},
 ): Promise<number> {
-    if (plugin !== undefined) assertSafePathSegment(plugin, 'plugin name');
+    // R4: the apply path writes progress to stdout, so --json is only valid with --check.
+    if (options.json && !options.check) {
+        throw new Error('superskill update --json requires --check (the apply path writes progress to stdout)');
+    }
+    if (name !== undefined) assertSafePathSegment(name, 'name');
     const scopeRoot = options.outputRoot ?? (options.global ? resolveHomeDir() : process.cwd());
+    const homeDir = resolveHomeDir();
+    // Skills mirror the manifest scope: project scope reads ./skills-lock.json, global scope
+    // reads ~/.agents/.skill-lock.json (resolved through the homeDir seam).
+    const skillCwd = options.outputRoot ?? process.cwd();
     const config = loadConfig();
     // grok-bot receipts live under the Sand data root (ADR-036), not the normal scope root.
     const botRequested = targets.includes('grok-bot');
@@ -116,18 +158,45 @@ export async function executeUpdate(
         );
     }
     const execTargets = targets.filter((t): t is Target => t !== 'grok-bot');
-    const candidates = [
+    const listBundled = dependencies.listBundledPlugins ?? listBundledMarketplacePlugins;
+    const knownPlugins = [
         ...new Set([
             ...collectCandidates(
                 scopeRoot,
-                plugin,
                 config.plugins.map((entry) => entry.name),
                 execTargets,
-                dependencies.listBundledPlugins ?? listBundledMarketplacePlugins,
+                listBundled,
             ),
-            ...(botRoot !== null ? collectCandidates(botRoot.dataRoot, plugin, [], ['grok-bot'], () => []) : []),
+            ...(botRoot !== null ? collectCandidates(botRoot.dataRoot, [], ['grok-bot'], () => []) : []),
         ]),
     ].sort(utf8Sort);
+    const candidates = name !== undefined ? knownPlugins.filter((candidate) => candidate === name) : knownPlugins;
+
+    // R2: plugins and skills share one namespace per scope — an explicit name must match
+    // exactly one kind, and one matching neither is an error naming the value and the scopes.
+    let skillNamesArg: string[] | undefined;
+    let skillsActive = true;
+    if (name !== undefined) {
+        const scopeLock = options.global ? await readGlobalLock(process.env, homeDir) : await readLocalLock(skillCwd);
+        const matchesSkill = sanitizeName(name) in scopeLock.skills;
+        const matchesPlugin = knownPlugins.includes(name);
+        const scopeLabel = options.global ? 'global' : 'project';
+        if (matchesSkill && matchesPlugin) {
+            throw new Error(
+                `'${name}' matches both a plugin and a lock-tracked skill in the ${scopeLabel} scope; ` +
+                    'plugins and skills share one namespace',
+            );
+        }
+        if (!matchesSkill && !matchesPlugin) {
+            const lockPath = options.global ? getGlobalLockPath(process.env, homeDir) : getLocalLockPath(skillCwd);
+            throw new Error(
+                `no plugin or skill named '${name}' in the ${scopeLabel} scope ` +
+                    `(manifests: ${join(resolve(scopeRoot), '.superskill', 'manifests')}; skills lock: ${lockPath})`,
+            );
+        }
+        skillsActive = matchesSkill;
+        if (matchesSkill) skillNamesArg = [name];
+    }
     const rows: UpdateRow[] = [];
     const marketplaceWork = new Map<string, Promise<MarketplaceUpstream | undefined>>();
     const marketplaceActions = new Map<string, MarketplaceInstallAction>();
@@ -222,9 +291,42 @@ export async function executeUpdate(
         }
     }
 
-    const { results, exitCode } = buildUpdateCheckResult(rows, options.check);
-    for (const row of results) echo(formatUpdateRow(row));
+    // R1: aggregate lock-tracked skill rows from the ADR-028 lock for the same scope after
+    // the plugin rows; unchecked rows survive as-is and stay exit-neutral (R5).
+    let skillCheckRows: SkillCheckRow[] = [];
+    let skillRows: UpdateRow[] = [];
+    let skillLockError: string | undefined;
+    if (skillsActive) {
+        const checkImpl = dependencies.checkSkills ?? checkSkills;
+        const check = await checkImpl(skillNamesArg, {
+            global: options.global,
+            cwd: skillCwd,
+            homeDir,
+            env: process.env,
+            ...(dependencies.fetchFn ? { fetchFn: dependencies.fetchFn } : {}),
+        });
+        skillCheckRows = check.rows;
+        skillRows = check.rows.map(toSkillUpdateRow);
+        if (!check.success && check.rows.length === 0) skillLockError = check.error ?? 'Failed to check skills';
+    }
 
+    const pluginResults = mergePluginUpdateRows(rows);
+    const allRows = [...pluginResults, ...skillRows];
+    // R5: one 0/1/2 contract across kinds — unavailable anywhere → 2, --check stale → 1.
+    const exitCode = skillLockError !== undefined ? 2 : aggregateUpdateExit(allRows, options.check);
+
+    if (options.json) {
+        echo(JSON.stringify(buildUpdateEnvelope(options, allRows, exitCode), null, 2));
+    } else {
+        printGroupedRows(allRows);
+    }
+
+    if (skillLockError !== undefined) {
+        echoError(skillLockError);
+        return 2;
+    }
+
+    let skillApplyFailed = false;
     if (!options.check) {
         if (bundledStale) echo(NPM_UPGRADE);
         for (const action of marketplaceActions.values()) {
@@ -256,9 +358,80 @@ export async function executeUpdate(
                 materialize,
             });
         }
+
+        // R3: apply stale skills with this run's check rows as precheck — hashes are computed
+        // once; unchecked/unavailable rows are never reinstalled and keep their listed reasons.
+        const staleCheckRows = skillCheckRows.filter((row) => row.status === 'stale');
+        if (staleCheckRows.length > 0) {
+            const updateImpl = dependencies.updateSkills ?? updateSkills;
+            const apply = await updateImpl(
+                staleCheckRows.map((row) => row.name),
+                {
+                    global: options.global,
+                    cwd: skillCwd,
+                    homeDir,
+                    env: process.env,
+                    precheck: staleCheckRows,
+                    ...(dependencies.fetchFn ? { fetchFn: dependencies.fetchFn } : {}),
+                },
+            );
+            for (const item of apply.updated) {
+                if (item.updated) echo(`${item.name}: updated`);
+                else if (item.status === 'current') echo(`${item.name}: up to date`);
+                else echoError(`${item.name}: ${item.reason ?? 'update failed'}`);
+            }
+            // R3: a failed skill reinstall contributes to exit 1, as plugin failures do.
+            skillApplyFailed = apply.updated.some((item) => item.status === 'failed' || item.status === 'unavailable');
+        }
     }
 
-    return exitCode;
+    return !options.check && skillApplyFailed && exitCode !== 2 ? 1 : exitCode;
+}
+
+/** Map one checkSkills row onto the unified row model (R1). */
+function toSkillUpdateRow(row: SkillCheckRow): UpdateRow {
+    return {
+        kind: 'skill',
+        name: row.name,
+        status: row.status,
+        ...(row.reason !== undefined ? { reason: row.reason } : {}),
+    };
+}
+
+/** Text rows grouped by kind: `Plugins:` first, then `Skills:` (R1). */
+function printGroupedRows(rows: readonly UpdateRow[]): void {
+    const plugins = rows.filter((row) => row.kind === 'plugin');
+    const skills = rows.filter((row) => row.kind === 'skill');
+    if (plugins.length > 0) {
+        echo('Plugins:');
+        for (const row of plugins) echo(formatUpdateRow(row));
+    }
+    if (skills.length > 0) {
+        echo('Skills:');
+        for (const row of skills) echo(formatUpdateRow(row));
+    }
+}
+
+/** Build the R4 `--check --json` envelope. */
+function buildUpdateEnvelope(
+    options: UpdateOptions,
+    rows: readonly UpdateRow[],
+    exitCode: 0 | 1 | 2,
+): UpdateJsonEnvelope {
+    const count = (status: UpdateRowStatus): number => rows.filter((row) => row.status === status).length;
+    return {
+        scope: options.global ? 'global' : 'project',
+        check: true,
+        rows: [...rows],
+        summary: {
+            stale: count('stale'),
+            current: count('current'),
+            unchecked: count('unchecked'),
+            legacy: count('legacy'),
+            unavailable: count('unavailable'),
+        },
+        exitCode,
+    };
 }
 
 interface MarketplaceUpstream {
@@ -285,13 +458,11 @@ function tryResolveSandRoot(): SandRootResolution | null {
 
 function collectCandidates(
     scopeRoot: string,
-    plugin: string | undefined,
     configured: string[],
     targets: readonly InstallTarget[],
     listBundled: () => string[],
 ): string[] {
     const names = new Set<string>();
-    if (plugin) names.add(plugin);
     for (const name of configured) {
         try {
             assertSafePathSegment(name, 'plugin name');
@@ -302,7 +473,6 @@ function collectCandidates(
     }
     for (const name of listManifestPlugins(scopeRoot, targets)) names.add(name);
     for (const name of listBundled()) names.add(name);
-    if (plugin) return [...names].filter((name) => name === plugin).sort(utf8Sort);
     return [...names].sort(utf8Sort);
 }
 
@@ -397,7 +567,11 @@ export function formatUpdateRow(row: UpdateRow): string {
     if (row.status === 'legacy') {
         return `${row.name}: installed before manifest support - reinstall to adopt`;
     }
-    if (row.status === 'unavailable') {
+    if (row.status === 'unavailable' || row.status === 'unchecked') {
+        // Skill rows have no upstream locator; they name the status and reason directly.
+        if (row.kind === 'skill') {
+            return `${row.name}: ${row.status}: ${row.reason ?? 'unknown failure'}`;
+        }
         const unavailable = `${row.name}: upstream unavailable (${row.locator ?? ''})`;
         return row.reason !== undefined ? `${unavailable}: ${row.reason}` : unavailable;
     }

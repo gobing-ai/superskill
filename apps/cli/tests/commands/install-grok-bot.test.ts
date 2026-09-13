@@ -303,11 +303,15 @@ describe('grok-bot install (task 0128)', () => {
         process.env.HOME_DIR = home;
         delete process.env.SAND_DATA;
         const stderrSpy = spyOn(process.stderr, 'write').mockImplementation(() => true);
+        // Task 0135 R2: an unknown explicit name is a usage error, so pass no name; an empty
+        // bundled list keeps the scan offline (no npm lookups for real bundled plugins).
         const code = await executeUpdate(
-            'nothing-installed',
+            undefined,
             ['grok-bot'],
             { check: false, global: true, outputRoot: tempDir },
-            {},
+            {
+                listBundledPlugins: () => [],
+            },
         );
         expect(code).toBe(0);
         const errOut = stderrSpy.mock.calls.map((call) => String(call[0])).join('');

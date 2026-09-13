@@ -3,7 +3,7 @@ import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { addSkills, cleanAndCreateDir } from '@gobing-ai/superskill-core';
+import { addSkills, cleanAndCreateDir, writeGlobalLock } from '@gobing-ai/superskill-core';
 import { Command } from 'commander';
 import {
     handleSkillAdd,
@@ -323,6 +323,36 @@ describe('skill-verbs.ts - skill update --check and honest summary (F8 task 0134
             );
             expect(exitCode).toBe(2);
             expect(output).toContain('missing-skill: unavailable: Not found in lock file');
+        });
+    });
+
+    it('handleSkillUpdate --check exits 0 for unchecked rows (unsupported source type, task 0135 R5)', async () => {
+        await withIsolatedHome(async (testHome) => {
+            const now = new Date().toISOString();
+            await writeGlobalLock(
+                {
+                    version: 3,
+                    skills: {
+                        'git-skill': {
+                            source: 'https://gitlab.com/acme/repo.git',
+                            sourceType: 'gitlab',
+                            sourceUrl: 'https://gitlab.com/acme/repo.git',
+                            ref: 'release',
+                            skillPath: 'skills/wanted/SKILL.md',
+                            skillFolderHash: 'stored-hash',
+                            installedAt: now,
+                            updatedAt: now,
+                        },
+                    },
+                },
+                {},
+                testHome,
+            );
+            const { output, exitCode } = await captureOutput(() =>
+                handleSkillUpdate([], { global: true, check: true, homeDir: testHome }),
+            );
+            expect(exitCode).toBe(0);
+            expect(output).toContain('git-skill: unchecked:');
         });
     });
 

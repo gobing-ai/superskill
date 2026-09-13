@@ -78,7 +78,7 @@ visibility and invocation are distinct evidence states.
 superskill install <plugin> [--marketplace <locator>] [--targets <list>] [--no-global] [--materialize <mode>]
     [--magent <name>] [--marketplace-source <directory|github>] [--dry-run] [--verbose]
 
-superskill update [plugin] [--check] [--targets <list>] [--marketplace <locator>] [--no-global]
+superskill update [name] [--check] [--json] [--targets <list>] [--marketplace <locator>] [--no-global]
 ```
 
 | Input | Shape and precedence |
@@ -100,9 +100,11 @@ superskill update [plugin] [--check] [--targets <list>] [--marketplace <locator>
 
 | Input | Shape |
 | --- | --- |
-| `[plugin]` | Optional bare segment. Omitted → all known candidates (plugin-keyed manifests, configured plugins, bundled marketplace names). Explicit plugin is always a candidate |
+| `[name]` | Optional bare segment matching a plugin or a lock-tracked skill. Omitted → all known candidates (plugin-keyed manifests, configured plugins, bundled marketplace names) plus every skill in the scope lock. An explicit name must match exactly one kind — plugins and skills share one namespace, so a match on both or neither is a usage error naming the value and the scopes searched (task 0135 R2) |
 | `--check` | Report only; never writes manifests or dest files. Exit 1 if any stale row and no unavailable row |
-| `--targets` / `--no-global` / `--marketplace` | Same semantics as install. `--marketplace` overrides the recorded locator |
+| `--json` | With `--check` only: stdout is exactly one JSON envelope `{ scope, check, rows: UpdateRow[], summary, exitCode }` whose `exitCode` mirrors the process exit code; the cause of a failed lock read goes to stderr. Without `--check` it exits 1 as a usage error (the apply path writes progress to stdout) (task 0135 R4) |
+| `--targets` / `--marketplace` | Same semantics as install; **plugins only** — skill rows ignore both. `--marketplace` overrides the recorded locator |
+| `--no-global` | Selects the project scope for **both kinds**: project manifests plus `./skills-lock.json` (default reads user-level manifests plus `~/.agents/.skill-lock.json`) (task 0135 R4) |
 
 Manifest path: `<scopeRoot>/.superskill/manifests/<target>/<plugin>/.superskill-manifest.json` (`scopeRoot` = `outputRoot`, else `$HOME` global / cwd project). Schema v1 records plugin, target, channel (`bundled` \| `marketplace`), `upstreamVersion`, optional locator/tree SHA, `installedAt`, `superskillVersion`, and two snapshots (`installed` + `upstream`) of per-file SHA-256 maps plus ADR-031 `canonicalHash`.
 
@@ -112,12 +114,13 @@ Manifest path: `<scopeRoot>/.superskill/manifests/<target>/<plugin>/.superskill-
 | `stale: …` | Version or hash differs; one row per plugin (current upstream, no history) | `--check` → 1 |
 | `installed before manifest support - reinstall to adopt` | Known candidate, missing/corrupt/unsupported manifest | 0 (guidance) |
 | `upstream unavailable (<locator>)`, `(<locator>): <reason>` when the row carries one | Locator or npm lookup failed; other rows still print | 2 (wins over 1) |
+| `<skill>: stale: changed` (byte-identical with plugin stale rows) / `<skill>: unavailable: <reason>` / `<skill>: unchecked: <reason>` | Skill rows (task 0135 R1/R20) print under a `Skills:` group after `Plugins:`; unchecked stays exit-neutral; text drops the skill stale reason (the row and `--json` keep it) | same 0/1/2 contract |
 
 Rows share the unified `UpdateRow` model (`packages/core/src/operations/update.ts`, task 0133): `kind` (`plugin` \| `skill`), `name`, `status` (`stale` \| `current` \| `unchecked` \| `legacy` \| `unavailable`), plus optional `channel`, `target`, `installedVersion`/`upstreamVersion`, `changedPaths`, `staleTargets` (contributing stale targets on a merged stale row), `versionMismatch` (`marketplace` vs `pluginJson`), `locator`, and `reason`.
 
-Bare `update` re-runs `executeInstall` for stale **marketplace** plugins (0123 refreshes the manifest) and prints `npm i -g @gobing-ai/superskill@latest` once for stale **bundled** plugins. `--check` is read-only.
+Bare `update` re-runs `executeInstall` for stale **marketplace** plugins (0123 refreshes the manifest), prints `npm i -g @gobing-ai/superskill@latest` once for stale **bundled** plugins, and then applies stale skills via `updateSkills(precheck)` built from this run's `checkSkills` rows (hashes computed once, no second fetch; a failed skill reinstall exits 1) (task 0135 R3). `--check` is read-only.
 
-Skills: `checkSkills` (skills-ecosystem, task 0134) produces read-only skill rows (`stale` \| `current` \| `unchecked` \| `unavailable`) from the skills locks; a source with no read-only hash (`git`/`gitlab`/`well-known`) is `unchecked`, never `current`, and `updateSkills(precheck)` consumes those rows without recomputing them or reclassifying unchecked/unavailable rows as up to date.
+Skills: `checkSkills` (skills-ecosystem, task 0134) produces read-only skill rows (`stale` \| `current` \| `unchecked` \| `unavailable`) from the skills locks; a source with no read-only hash (`git`/`gitlab`/`well-known`) is `unchecked`, never `current`, and `updateSkills(precheck)` consumes those rows without recomputing them or reclassifying unchecked/unavailable rows as up to date. Task 0135 maps those rows 1:1 onto `kind: 'skill'` update rows for the same scope: one exit contract across kinds (unavailable → 2, `--check` stale → 1, unchecked exit-neutral), and `UpdatedSkillItem.status` (`updated` \| `current` \| `unchecked` \| `unavailable` \| `failed`) drives renderers and aggregation — only `failed`/`unavailable` rows count as failures in `updateSkills` errors (unchecked rows are never named as failures).
 
 Feature selection filters canonical mapper output. Native Claude/OMP/Grok installation rejects a
 partial feature set because those host installers operate on the full plugin package.
@@ -296,7 +299,7 @@ Ports of vercel-labs/skills (MIT) for `npx skills` interop (feature B, tasks 009
 | `discovery.ts` | `discoverSkills`, `parseSkillMd`, `filterSkills`, `getSkillDisplayName`, `AGENT_PROJECT_SKILL_DIRS`, `SKIP_DIRS`, `isSubpathSafe` (re-export) | SKILL.md scan: searchPath, priority dirs (root, `skills/`, `.curated`/`.experimental`/`.system`, 26 agent dirs), catalog one-extra-level layout, depth-5 recursive fallback skipping `node_modules`/`.git`/`dist`/`build`/`__pycache__`; `metadata.internal` hidden unless **`INSTALL_INTERNAL_SKILLS=1`**; subpath safety enforced |
 | `installer.ts` | `FilesystemTransaction`, `installSkillCanonical`, `sanitizeName`, `isPathSafe`, `pathsOverlap`, `getCanonicalSkillsDir`, `createSymlink`, `copyDir`, `writeBlobSkill` | Canonical copy to `<cwd\|~>/.agents/skills/<sanitizeName(name)>`; same-parent reversible replacement/removal; relative symlinks (win32 `junction`) with copy fallback; source-copy rejection of symlinks/special files; `isPathSafe` on every checked write target; `pathsOverlap` refusal (never install onto/inside the source) |
 | `emit.ts` | `emitSkillForTargets`, `removeSkillFromTargets`, `resolveSkillsToRemove`, `EmitOptions` | Three-tier per-target emission: direct (canonical only), symlink from the agent's native skills dir, translated copy re-driving the install pipeline's primitives (`translateSlashCommands` → `rewriteSkillReferences` with the skill name as plugin prefix). Removal sweeps all tiers; lock-key-wins name resolution via `lockKeys` (exact key returned for lock removal). `EmitOptions.name` overrides the canonical dir name; optional `transaction` retains reversible mutations for the calling operation |
-| `operations.ts` | `addSkills`, `listSkills`, `removeSkills`, `updateSkills` + option/result envelopes | Domain operations behind the CLI verbs. Add/update resolve exclusively through `parseSource`; `ParsedSource` controls blob/clone URL, ref, subpath, filter, and source type. Add/remove preflight lock versions, stage every canonical/target mutation in one `FilesystemTransaction`, write the scope lock once, then commit or roll back. Global local sources persist absolute paths. `listSkills`: scoped lock + canonical on-disk scan for BOTH scopes (unlocked dirs surface as `source: 'disk-scan'`). Update's source-hash pre-check keeps unchanged skills a true no-op; undecidable sources reinstall (never a false no-op) |
+| `operations.ts` | `addSkills`, `listSkills`, `removeSkills`, `updateSkills`, `checkSkills` + option/result envelopes | Domain operations behind the CLI verbs. Add/update resolve exclusively through `parseSource`; `ParsedSource` controls blob/clone URL, ref, subpath, filter, and source type. Add/remove preflight lock versions, stage every canonical/target mutation in one `FilesystemTransaction`, write the scope lock once, then commit or roll back. Global local sources persist absolute paths. `listSkills`: scoped lock + canonical on-disk scan for BOTH scopes (unlocked dirs surface as `source: 'disk-scan'`). Update's source-hash pre-check keeps unchanged skills a true no-op; undecidable sources reinstall (never a false no-op) |
 
 **CLI verbs (task 0102).** Registered under the existing `skill` group (`apps/cli/src/commands/skill.ts`); `superskill install` is untouched. Non-interactive by design (AI-first); `-y` accepted for vendor-parity scripts; `--json` emits the operation's result envelope. Handlers accept an injected `homeDir` (test seam, not a CLI flag).
 
@@ -305,7 +308,7 @@ Ports of vercel-labs/skills (MIT) for `npx skills` interop (feature B, tasks 009
 | `superskill skill add <source>` | `-s, --skill <name...>`, `-a, --agent <targets...>`, `-g, --global`, `--copy`, `-y, --yes`, `--list`, `--dry-run`, `--json` | Install from a local path or parsed GitHub/GitLab/git source (`@skill`, `#ref`, and subpaths honored). Project scope default; `-g` for user-level. `--list` discovers without installing; `--dry-run` previews with zero writes (no canonical copy, no lock) |
 | `superskill skill list` | `-g, --global`, `--json` | Scoped lock entries + on-disk scan of the scope's canonical dir |
 | `superskill skill remove <names...>` (alias `rm`) | `-g, --global`, `-y, --yes`, `--json` | Sweeps canonical + all target tiers, removes the scoped lock entry (lock-key-wins name resolution) |
-| `superskill skill update [names...]` | `-g, --global`, `-y, --yes`, `--json` | Hash-based: no-op when the source hash equals the stored hash; reinstall + re-emit all tiers when changed. No names = every skill in the scope's lock |
+| `superskill skill update [names...]` | `-g, --global`, `-y, --yes`, `--json`, `--check` (task 0134) | Read-only with `--check` (exit 0 current/unchecked, 1 stale, 2 unavailable); otherwise hash-based: no-op when the source hash equals the stored hash; reinstall + re-emit all tiers when changed. No names = every skill in the scope's lock |
 
 **Local lock — `./skills-lock.json` (v1, `LOCAL_LOCK_VERSION = 1`).** Sorted keys, timestamp-free. Entry: `source`, `sourceType`, `computedHash` (SHA-256 over sorted, unsigned-64-bit-length-framed relative path/content pairs from the CANONICAL skill folder), optional `sourceUrl`, `ref`, `skillPath`, `subagents`.
 

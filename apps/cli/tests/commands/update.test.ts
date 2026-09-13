@@ -1,8 +1,10 @@
-import { afterEach, describe, expect, it, mock, spyOn } from 'bun:test';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { afterEach, beforeEach, describe, expect, it, mock, spyOn } from 'bun:test';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
+    addSkills,
+    checkSkills,
     type InstallTarget,
     listRegularFilesUnder,
     snapshotFiles,
@@ -11,11 +13,13 @@ import {
 import type { ProcessExecutor, ProcessOptions } from '@gobing-ai/ts-runtime';
 import { Command } from 'commander';
 import * as installNs from '../../src/commands/install';
-import { executeUpdate, formatUpdateRow, registerUpdate } from '../../src/commands/update';
+import { executeUpdate, formatUpdateRow, registerUpdate, type UpdateJsonEnvelope } from '../../src/commands/update';
 
 const originalCwd = process.cwd();
 const originalHomeDir = process.env.HOME_DIR;
+const originalXdgStateHome = process.env.XDG_STATE_HOME;
 let tempDir: string | undefined;
+let testHome: string | undefined;
 
 function workspace(): string {
     tempDir = mkdtempSync(join(tmpdir(), 'superskill-update-test-'));
@@ -27,12 +31,36 @@ afterEach(() => {
     mock.restore();
     if (originalHomeDir === undefined) delete process.env.HOME_DIR;
     else process.env.HOME_DIR = originalHomeDir;
+    if (originalXdgStateHome === undefined) delete process.env.XDG_STATE_HOME;
+    else process.env.XDG_STATE_HOME = originalXdgStateHome;
     process.chdir(originalCwd);
     if (tempDir) {
         rmSync(tempDir, { recursive: true, force: true });
         tempDir = undefined;
     }
+    if (testHome) {
+        rmSync(testHome, { recursive: true, force: true });
+        testHome = undefined;
+    }
 });
+
+/** Skill SKILL.md fixture; the frontmatter name drives the sanitized lock key. */
+function skillMd(name: string): string {
+    return `---\nname: ${name}\ndescription: fixture skill\n---\n# ${name}`;
+}
+
+/** Install one skill into the global (HOME_DIR) scope via the real addSkills path. */
+async function installGlobalSkillFrom(sourceDir: string): Promise<void> {
+    const res = await addSkills(sourceDir, { global: true, homeDir: process.env.HOME_DIR });
+    if (!res.success) throw new Error(res.error ?? 'addSkills failed');
+}
+
+/** Seed a global lock whose skill rows have no hashable local source (fetch-only shapes). */
+function writeGlobalSkillsLock(skills: Record<string, unknown>): void {
+    const home = process.env.HOME_DIR as string;
+    mkdirSync(join(home, '.agents'), { recursive: true });
+    writeFileSync(join(home, '.agents', '.skill-lock.json'), JSON.stringify({ version: 3, skills }));
+}
 
 function writePlugin(root: string, name: string, version: string, body: string): string {
     const pluginRoot = join(root, 'plugins', name);
@@ -82,16 +110,18 @@ function writeManifest(
 }
 
 describe('registerUpdate', () => {
-    it('registers update with check, targets, marketplace, and no-global options', () => {
+    it('registers update with name, check, json, targets, marketplace, and no-global options (R2/R4)', () => {
         const program = new Command();
         registerUpdate(program);
         const cmd = program.commands.find((c) => c.name() === 'update');
         expect(cmd).toBeDefined();
         const names = cmd?.options.map((o) => o.long) ?? [];
         expect(names).toContain('--check');
+        expect(names).toContain('--json');
         expect(names).toContain('--targets');
         expect(names).toContain('--marketplace');
         expect(names).toContain('--no-global');
+        expect(cmd?.helpInformation()).toContain('[name]');
     });
 });
 
@@ -110,6 +140,23 @@ describe('formatUpdateRow', () => {
     it('keeps the unavailable line byte-identical when no reason is set (R1)', () => {
         expect(formatUpdateRow({ kind: 'plugin', name: 'kk', status: 'unavailable', locator: '/tmp/gone' })).toBe(
             'kk: upstream unavailable (/tmp/gone)',
+        );
+    });
+
+    it('renders skill unchecked and unavailable rows as name: status: reason (R1/R20)', () => {
+        expect(
+            formatUpdateRow({
+                kind: 'skill',
+                name: 'git-skill',
+                status: 'unchecked',
+                reason: "Source type 'gitlab' has no read-only hash",
+            }),
+        ).toBe("git-skill: unchecked: Source type 'gitlab' has no read-only hash");
+        expect(
+            formatUpdateRow({ kind: 'skill', name: 'last30days', status: 'unavailable', reason: 'network down' }),
+        ).toBe('last30days: unavailable: network down');
+        expect(formatUpdateRow({ kind: 'skill', name: 'last30days', status: 'unavailable' })).toBe(
+            'last30days: unavailable: unknown failure',
         );
     });
 });
@@ -168,14 +215,16 @@ describe('executeUpdate', () => {
         expect(output).toContain('demo: 1.0.0 up to date');
     });
 
-    it('treats a missing manifest for an explicit plugin as legacy guidance', async () => {
+    it('errors when an explicit name matches neither a plugin nor a lock-tracked skill (R2)', async () => {
         const root = workspace();
-        const stdout = spyOn(process.stdout, 'write').mockImplementation(() => true);
-        const code = await executeUpdate('ghost', ['codex'], { check: true, global: false, outputRoot: root });
-        const output = stdout.mock.calls.map((c) => String(c[0])).join('');
-        stdout.mockRestore();
-        expect(code).toBe(0);
-        expect(output).toContain('installed before manifest support - reinstall to adopt');
+        // Task 0135: bare names are no longer silently reinterpreted as legacy plugin guidance —
+        // an unknown name is a usage error naming the value and the scopes it searched.
+        await expect(
+            executeUpdate('ghost', ['codex'], { check: true, global: false, outputRoot: root }),
+        ).rejects.toThrow("no plugin or skill named 'ghost' in the project scope");
+        await expect(
+            executeUpdate('ghost', ['codex'], { check: true, global: false, outputRoot: root }),
+        ).rejects.toThrow('skills-lock.json');
     });
 
     it('treats corrupt JSON as legacy without trusting identity fields', async () => {
@@ -411,7 +460,7 @@ describe('executeUpdate', () => {
         );
     });
 
-    it('exits through process.exit from the registered command', async () => {
+    it('exits 1 for an unknown name through process.exit from the registered command (R2)', async () => {
         const root = workspace();
         const exits: number[] = [];
         spyOn(process, 'exit').mockImplementation(((code?: number) => {
@@ -425,7 +474,9 @@ describe('executeUpdate', () => {
         await expect(
             program.parseAsync(['node', 'superskill', 'update', 'ghost', '--check', '--no-global']),
         ).rejects.toThrow('exit');
-        expect(exits[0]).toBe(0);
+        // Task 0135: 'ghost' matches nothing, so the R2 usage error exits 1 (previously a
+        // legacy-guidance row exited 0).
+        expect(exits[0]).toBe(1);
         expect(root).toBeTruthy();
     });
 
@@ -703,5 +754,265 @@ describe('executeUpdate', () => {
         } finally {
             delete process.env.SAND_DATA;
         }
+    });
+});
+
+describe('executeUpdate - lock-tracked skills (F8 task 0135)', () => {
+    beforeEach(() => {
+        // Skill locks resolve through HOME_DIR/XDG_STATE_HOME; give every test a private home
+        // so a bare update can never read or write the real user lock.
+        testHome = mkdtempSync(join(tmpdir(), 'superskill-update-home-'));
+        process.env.HOME_DIR = testHome;
+        delete process.env.XDG_STATE_HOME;
+    });
+
+    function drain(stdout: { mock: { calls: unknown[][] } }): string {
+        return stdout.mock.calls.map((c) => String(c[0])).join('');
+    }
+
+    async function seedGlobalSkill(name: string, mutate = false): Promise<void> {
+        const src = join(testHome as string, `${name}-src`);
+        mkdirSync(src, { recursive: true });
+        writeFileSync(join(src, 'SKILL.md'), skillMd(name));
+        await installGlobalSkillFrom(src);
+        if (mutate) writeFileSync(join(src, 'SKILL.md'), `${skillMd(name)}\n- v2 line\n`);
+    }
+
+    it('aggregates a stale lock-tracked skill under Skills: and exits 1 in --check without writing (R1)', async () => {
+        workspace();
+        await seedGlobalSkill('last30days', true);
+        const lockPath = join(testHome as string, '.agents', '.skill-lock.json');
+        const canonicalPath = join(testHome as string, '.agents', 'skills', 'last30days', 'SKILL.md');
+        const lockBefore = readFileSync(lockPath, 'utf-8');
+        const canonicalBefore = readFileSync(canonicalPath, 'utf-8');
+        const stdout = spyOn(process.stdout, 'write').mockImplementation(() => true);
+
+        const code = await executeUpdate(
+            undefined,
+            ['codex'],
+            { check: true, global: true },
+            {
+                listBundledPlugins: () => [],
+            },
+        );
+
+        const output = drain(stdout);
+        stdout.mockRestore();
+        expect(code).toBe(1);
+        expect(output).toContain('Skills:');
+        // Shared formatter keeps stale rows byte-identical across kinds; the row reason
+        // ('Upstream hash differs') is still carried in the JSON envelope rows.
+        expect(output).toContain('last30days: stale: changed');
+        expect(readFileSync(lockPath, 'utf-8')).toBe(lockBefore);
+        expect(readFileSync(canonicalPath, 'utf-8')).toBe(canonicalBefore);
+    });
+
+    it('reports a current lock-tracked skill up to date and prints Plugins: before Skills: (R2)', async () => {
+        workspace();
+        const home = testHome as string;
+        await seedGlobalSkill('last30days');
+        const pluginRoot = writePlugin(home, 'demo', '1.0.0', '# demo\n');
+        const market = writeMarket(home, 'demo', '1.0.0');
+        writeManifest(home, 'demo', pluginRoot, { version: '1.0.0', locator: market });
+        const stdout = spyOn(process.stdout, 'write').mockImplementation(() => true);
+
+        const code = await executeUpdate(
+            undefined,
+            ['codex'],
+            { check: true, global: true, marketplacePath: market },
+            {
+                listBundledPlugins: () => [],
+            },
+        );
+
+        const output = drain(stdout);
+        stdout.mockRestore();
+        expect(code).toBe(0);
+        expect(output.indexOf('Plugins:')).toBeLessThan(output.indexOf('Skills:'));
+        expect(output).toContain('demo: 1.0.0 up to date');
+        expect(output).toContain('last30days: up to date');
+    });
+
+    it('applies a stale lock-tracked skill in mutating mode and exits 0 once current (R3)', async () => {
+        workspace();
+        const home = testHome as string;
+        await seedGlobalSkill('last30days', true);
+        const stdout = spyOn(process.stdout, 'write').mockImplementation(() => true);
+        const stderr = spyOn(process.stderr, 'write').mockImplementation(() => true);
+
+        const checkCode = await executeUpdate(
+            undefined,
+            ['codex'],
+            { check: true, global: true },
+            {
+                listBundledPlugins: () => [],
+            },
+        );
+        expect(checkCode).toBe(1);
+
+        const mutCode = await executeUpdate(
+            undefined,
+            ['codex'],
+            { check: false, global: true },
+            {
+                listBundledPlugins: () => [],
+            },
+        );
+
+        const output = drain(stdout);
+        stdout.mockRestore();
+        stderr.mockRestore();
+        expect(mutCode).toBe(0);
+        expect(output).toContain('last30days: updated');
+        const check = await checkSkills(undefined, { global: true, homeDir: home, env: process.env });
+        expect(check.rows[0]?.status).toBe('current');
+    });
+
+    it('reads the project skill lock under --no-global and ignores the global lock (R4)', async () => {
+        const root = workspace();
+        const demoSrc = join(root, 'demo-skill-src');
+        mkdirSync(demoSrc, { recursive: true });
+        writeFileSync(join(demoSrc, 'SKILL.md'), skillMd('demo-skill'));
+        const projectAdd = await addSkills(demoSrc, { cwd: root });
+        expect(projectAdd.success).toBe(true);
+        await seedGlobalSkill('last30days');
+        const stdout = spyOn(process.stdout, 'write').mockImplementation(() => true);
+
+        const code = await executeUpdate(
+            undefined,
+            ['codex'],
+            { check: true, global: false },
+            {
+                listBundledPlugins: () => [],
+            },
+        );
+
+        const output = drain(stdout);
+        stdout.mockRestore();
+        expect(code).toBe(0);
+        expect(output).toContain('demo-skill: up to date');
+        expect(output).not.toContain('last30days');
+    });
+
+    it('emits exactly one JSON envelope for --check --json and rejects bare --json (R4)', async () => {
+        workspace();
+        await seedGlobalSkill('last30days', true);
+        const stdout = spyOn(process.stdout, 'write').mockImplementation(() => true);
+
+        const code = await executeUpdate(
+            undefined,
+            ['codex'],
+            { check: true, global: true, json: true },
+            {
+                listBundledPlugins: () => [],
+            },
+        );
+
+        const output = drain(stdout);
+        stdout.mockRestore();
+        const envelope = JSON.parse(output) as UpdateJsonEnvelope;
+        expect(code).toBe(1);
+        expect(envelope.scope).toBe('global');
+        expect(envelope.check).toBe(true);
+        expect(envelope.rows).toEqual([
+            { kind: 'skill', name: 'last30days', status: 'stale', reason: 'Upstream hash differs' },
+        ]);
+        expect(envelope.summary).toEqual({ stale: 1, current: 0, unchecked: 0, legacy: 0, unavailable: 0 });
+        expect(envelope.exitCode).toBe(1);
+
+        await expect(executeUpdate(undefined, ['codex'], { check: false, global: true, json: true })).rejects.toThrow(
+            '--json requires --check',
+        );
+    });
+
+    it('filters skills and plugins by the [name] argument across the shared namespace (R5)', async () => {
+        workspace();
+        const home = testHome as string;
+        await seedGlobalSkill('last30days', true);
+        await seedGlobalSkill('gpt-image-2-style-library');
+        const pluginRoot = writePlugin(home, 'kk', '2.0.0', '# kk\n');
+        const market = writeMarket(home, 'kk', '2.0.0');
+        writeManifest(home, 'kk', pluginRoot, { version: '2.0.0', locator: market });
+        const stdout = spyOn(process.stdout, 'write').mockImplementation(() => true);
+
+        const skillCode = await executeUpdate(
+            'last30days',
+            ['codex'],
+            { check: true, global: true },
+            {
+                listBundledPlugins: () => [],
+            },
+        );
+        const skillOutput = drain(stdout);
+        stdout.mockClear();
+
+        const pluginCode = await executeUpdate(
+            'kk',
+            ['codex'],
+            { check: true, global: true, marketplacePath: market },
+            {
+                listBundledPlugins: () => [],
+            },
+        );
+        const pluginOutput = drain(stdout);
+        stdout.mockRestore();
+
+        expect(skillCode).toBe(1);
+        expect(skillOutput).toContain('last30days: stale: changed');
+        expect(skillOutput).not.toContain('gpt-image-2-style-library');
+        expect(skillOutput).not.toContain('kk:');
+        expect(pluginCode).toBe(0);
+        expect(pluginOutput).toContain('kk: 2.0.0 up to date');
+        expect(pluginOutput).not.toContain('Skills:');
+        expect(pluginOutput).not.toContain('last30days');
+    });
+
+    it('errors when a name matches both a plugin and a lock-tracked skill (R2 shared namespace)', async () => {
+        workspace();
+        const home = testHome as string;
+        await seedGlobalSkill('demo');
+        const pluginRoot = writePlugin(home, 'demo', '1.0.0', '# demo\n');
+        const market = writeMarket(home, 'demo', '1.0.0');
+        writeManifest(home, 'demo', pluginRoot, { version: '1.0.0', locator: market });
+
+        await expect(
+            executeUpdate('demo', ['codex'], { check: true, global: true }, { listBundledPlugins: () => [] }),
+        ).rejects.toThrow('share one namespace');
+    });
+
+    it('reports a lock entry with an unhashable remote source as unavailable and exits 2 (R20)', async () => {
+        workspace();
+        const now = new Date().toISOString();
+        writeGlobalSkillsLock({
+            last30days: {
+                source: 'owner/repo',
+                sourceType: 'github',
+                sourceUrl: 'https://github.com/owner/repo',
+                skillFolderHash: 'stored-hash',
+                installedAt: now,
+                updatedAt: now,
+            },
+        });
+        const stdout = spyOn(process.stdout, 'write').mockImplementation(() => true);
+        const stderr = spyOn(process.stderr, 'write').mockImplementation(() => true);
+
+        const code = await executeUpdate(
+            undefined,
+            ['codex'],
+            { check: true, global: true },
+            {
+                listBundledPlugins: () => [],
+                fetchFn: (async () => {
+                    throw new Error('network down');
+                }) as unknown as typeof fetch,
+            },
+        );
+
+        const output = drain(stdout);
+        stdout.mockRestore();
+        stderr.mockRestore();
+        expect(code).toBe(2);
+        expect(output).toContain('Skills:');
+        expect(output).toContain('last30days: unavailable: Failed to fetch source tree');
     });
 });

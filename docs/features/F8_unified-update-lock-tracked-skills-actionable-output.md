@@ -6,7 +6,7 @@ status: active
 priority: P2
 tags: []
 created_at: "2026-09-13T17:34:31.464Z"
-updated_at: "2026-09-13T20:27:00.234Z"
+updated_at: "2026-09-13T21:26:28.602Z"
 ---
 
 # F8: Unified update: lock-tracked skills + actionable output
@@ -233,6 +233,45 @@ Feature: Unified update: lock-tracked skills + actionable output
     Given a lock with a stale and a current local-source skill
     When `checkSkills` runs without names
     Then both rows report their statuses and hashes, the lock file and skill directories are byte-identical, and no clone occurs
+
+
+  <!-- Task 0135 refinement scenarios (DD-09 subset rule): task-level ACs verified by
+       spur task verdict 0135 (runall-f8-48d9), certified PASS 2026-09-13. -->
+  @refinement-0135
+  Scenario: R1 — Update check reports a stale lock-tracked skill without writing
+    Given the global skill lock records a stale lock-tracked skill
+    When the operator runs `superskill update --check`
+    Then the output lists the skill as stale under a `Skills:` group, the exit code is 1, and the lock and skill directories are unchanged
+
+  @refinement-0135
+  Scenario: R2 — Update check reports a current lock-tracked skill as up to date
+    Given a locked skill whose hash equals its source hash
+    When the operator runs `superskill update --check`
+    Then the output reports the skill as up to date, plugin rows precede skill rows, and the exit code is 0
+
+  @refinement-0135
+  Scenario: R3 — Update applies a stale lock-tracked skill and records the new hash
+    Given the lock records a stale lock-tracked skill
+    When the operator runs `superskill update`
+    Then the skill is reinstalled from its locked source, a follow-up check reports it current, and the exit code is 0
+
+  @refinement-0135
+  Scenario: R4 — Project-scope update reads the project skill lock
+    Given the project defines its own skills lock
+    When the operator runs `superskill update --check --no-global`
+    Then the output reflects the project lock only and the exit code is 0
+
+  @refinement-0135
+  Scenario: R5 — Update with a skill name checks only that skill
+    Given multiple locked skills and plugins
+    When the operator runs `superskill update <skill-name> --check`
+    Then only that skill is listed and no other skill or plugin rows appear
+
+  @refinement-0135
+  Scenario: R20 — An unhashable skill source is unavailable, never current
+    Given a locked skill whose source cannot be hashed
+    When `superskill update --check` evaluates it
+    Then the row is unavailable with a reason, never current, and the exit code is 2
 
 ## Tasks
 

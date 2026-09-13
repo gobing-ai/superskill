@@ -830,4 +830,50 @@ describe('operations.ts - checkSkills read-only check (F8 task 0134)', () => {
 
         await rm(testHome, { recursive: true, force: true });
     });
+
+    it('buckets updated rows by status and aggregates only failed rows into the error (F8 task 0135)', async () => {
+        const testHome = await makeHome('ops-status-buckets-');
+        const a = join(testHome, 'st-a');
+        await makeSource(a, skillMd('St A'));
+        const b = join(testHome, 'st-b');
+        await makeSource(b, skillMd('St B'));
+        expect((await addSkills(a, { global: true, homeDir: testHome, env: {} })).success).toBe(true);
+        expect((await addSkills(b, { global: true, homeDir: testHome, env: {} })).success).toBe(true);
+
+        // Mixed precheck: one unchecked row (exit-neutral) + one unavailable row (a real failure).
+        const precheck: SkillCheckRow[] = [
+            {
+                name: 'st-a',
+                source: a,
+                sourceType: 'local',
+                status: 'unchecked',
+                installedHash: 'h',
+                reason: "Source type 'gitlab' has no read-only hash",
+            },
+            {
+                name: 'st-b',
+                source: b,
+                sourceType: 'local',
+                status: 'unavailable',
+                installedHash: 'h',
+                reason: 'fetch failed: network down',
+            },
+        ];
+        const res = await updateSkills(['st-a', 'st-b'], {
+            global: true,
+            homeDir: testHome,
+            env: {},
+            precheck,
+        });
+        expect(res.success).toBe(false);
+        const byName = new Map(res.updated.map((item) => [item.name, item]));
+        expect(byName.get('st-a')?.status).toBe('unchecked');
+        expect(byName.get('st-a')?.updated).toBe(false);
+        expect(byName.get('st-b')?.status).toBe('unavailable');
+        // The error names only the row that actually failed — never the unchecked one.
+        expect(res.error).toContain('st-b');
+        expect(res.error).not.toContain('st-a');
+
+        await rm(testHome, { recursive: true, force: true });
+    });
 });

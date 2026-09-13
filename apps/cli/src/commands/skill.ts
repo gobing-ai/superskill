@@ -430,12 +430,14 @@ export async function handleSkillUpdate(
             return 1;
         }
 
-        // R5: the header counts only changed skills; unchanged and skipped rows never inflate it.
-        const updatedCount = res.updated.filter((item) => item.updated).length;
-        const currentCount = res.updated.filter((item) => !item.updated && item.reason === 'Already up to date').length;
+        // Task 0135: bucket rows from the structured status — unchecked/unavailable rows must
+        // never render as "Up to date" or inflate the changed count.
+        const updatedCount = res.updated.filter((item) => item.status === 'updated').length;
+        const currentCount = res.updated.filter((item) => item.status === 'current').length;
         echo(`Updated ${updatedCount} skill(s), ${currentCount} up to date:`);
         for (const item of res.updated) {
-            const status = item.updated ? 'Updated' : 'Up to date';
+            const status =
+                item.status === 'updated' ? 'Updated' : item.status === 'current' ? 'Up to date' : item.status;
             echo(`  - ${item.name}: ${status} (${item.reason})`);
         }
         return undefined;

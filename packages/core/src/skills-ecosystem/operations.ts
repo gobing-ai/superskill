@@ -576,10 +576,15 @@ export interface UpdateSkillsOptions {
     precheck?: readonly SkillCheckRow[];
 }
 
+/** Structured outcome bucket for one update row; renderers and exit aggregation read this, never the display `reason`. */
+export type UpdatedSkillStatus = 'updated' | 'current' | 'unchecked' | 'unavailable' | 'failed';
+
 /** Item representing update outcome for an installed skill. */
 export interface UpdatedSkillItem {
     name: string;
     updated: boolean;
+    /** Outcome bucket; only `failed` and `unavailable` count as failures (task 0135). */
+    status: UpdatedSkillStatus;
     oldHash?: string;
     newHash?: string;
     reason?: string;
@@ -634,13 +639,11 @@ export async function updateSkills(names?: string[], options: UpdateSkillsOption
     }
 
     const results: UpdatedSkillItem[] = [];
-    let hadFailure = false;
 
     for (const name of skillNames) {
         const sourceInfo = lock.skills[name];
         if (!sourceInfo) {
-            results.push({ name, updated: false, reason: 'Not found in lock file' });
-            hadFailure = true;
+            results.push({ name, updated: false, status: 'failed', reason: 'Not found in lock file' });
             continue;
         }
 
@@ -653,6 +656,7 @@ export async function updateSkills(names?: string[], options: UpdateSkillsOption
                 results.push({
                     name,
                     updated: false,
+                    status: 'current',
                     oldHash: precheckRow.installedHash,
                     newHash: precheckRow.installedHash,
                     reason: 'Already up to date',
@@ -662,9 +666,9 @@ export async function updateSkills(names?: string[], options: UpdateSkillsOption
             results.push({
                 name,
                 updated: false,
+                status: precheckRow.status,
                 reason: precheckRow.reason ?? `Skill check reported ${precheckRow.status}`,
             });
-            if (precheckRow.status === 'unavailable') hadFailure = true;
             continue;
         }
 
@@ -679,7 +683,14 @@ export async function updateSkills(names?: string[], options: UpdateSkillsOption
             fetchFn: options.fetchFn,
         });
         if ('hash' in sourceHash && sourceHash.hash === oldHash) {
-            results.push({ name, updated: false, oldHash, newHash: oldHash, reason: 'Already up to date' });
+            results.push({
+                name,
+                updated: false,
+                status: 'current',
+                oldHash,
+                newHash: oldHash,
+                reason: 'Already up to date',
+            });
             continue;
         }
 
@@ -698,15 +709,18 @@ export async function updateSkills(names?: string[], options: UpdateSkillsOption
         );
 
         if (!addRes.success || !addRes.installed || addRes.installed.length === 0) {
-            results.push({ name, updated: false, reason: addRes.error || 'Failed to update from source' });
-            hadFailure = true;
+            results.push({
+                name,
+                updated: false,
+                status: 'failed',
+                reason: addRes.error || 'Failed to update from source',
+            });
             continue;
         }
 
         const installedPath = addRes.installed?.[0]?.canonicalPath;
         if (!installedPath) {
-            results.push({ name, updated: false, reason: 'Failed to find installed path' });
-            hadFailure = true;
+            results.push({ name, updated: false, status: 'failed', reason: 'Failed to find installed path' });
             continue;
         }
 
@@ -716,19 +730,22 @@ export async function updateSkills(names?: string[], options: UpdateSkillsOption
         results.push({
             name,
             updated,
+            status: updated ? 'updated' : 'current',
             oldHash,
             newHash,
             reason: updated ? 'Updated to new version' : 'Already up to date',
         });
     }
 
+    // Task 0135: only rows that actually failed (`failed`/`unavailable`) aggregate into the
+    // error; unchecked rows are exit-neutral and are never named as failures.
+    const failedRows = results.filter((item) => item.status === 'failed' || item.status === 'unavailable');
     return {
-        success: !hadFailure,
+        success: failedRows.length === 0,
         updated: results,
-        ...(hadFailure
+        ...(failedRows.length > 0
             ? {
-                  error: `Failed to update ${results
-                      .filter((item) => !item.updated && item.reason !== 'Already up to date')
+                  error: `Failed to update ${failedRows.length} skill(s): ${failedRows
                       .map((item) => `${item.name}: ${item.reason ?? 'unknown failure'}`)
                       .join('; ')}`,
               }
