@@ -629,6 +629,10 @@ plugin's `marketplace.json` entry and `plugin.json` declare different versions
 their cause. `--json` is check-only, because install writes progress to stdout.
 Status for this amendment: Accepted (design).
 
+**Erratum (2026-09-13):** bare `update` reinstalls stale rows only — plugins filtered to stale
+plus skills whose precheck row is stale; unchecked (e.g. git/well-known sources) and unavailable
+rows are reported, never reinstalled.
+
 **Detail:** see `docs/design/skill-update-notification.md` (surface + schema +
 diff algorithm); `docs/04_DESIGN.md` updates land in the same commit as the
 verb (T3).

@@ -83,9 +83,15 @@ superskill skill evaluate hello --save   # persists to ~/.superskill/evaluations
 
 ## Stay current
 
-- `superskill update --check` — reports stale installed plugins without writing files.
-- `superskill update [plugin]` — re-installs stale marketplace plugins.
-- `superskill skill update` — refreshes installed skills from their source repositories.
+- `superskill update --check` — reports stale installed plugins and lock-tracked skills without
+  writing files; rows print under `Plugins:` and `Skills:` headings. Exit codes: `0` nothing
+  stale, `1` stale under `--check` or an apply failure, `2` an unavailable upstream.
+- `superskill update --check --json` — emits one JSON envelope (`rows`, `summary`, `exitCode`)
+  for scripts; `--json` requires `--check`.
+- `superskill update [name]` — re-installs stale marketplace plugins and applies stale
+  lock-tracked skills in place.
+- `superskill skill update --check` — the skill-scoped read-only variant (exit `0`
+  current/unchecked, `1` stale, `2` unavailable).
 
 See the [release process](./release.md) for how versions are gated before they reach npm.
 

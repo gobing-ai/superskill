@@ -6,7 +6,7 @@ status: active
 priority: P2
 tags: []
 created_at: "2026-09-13T17:34:31.464Z"
-updated_at: "2026-09-13T22:31:35.263Z"
+updated_at: "2026-09-13T23:06:38.564Z"
 ---
 
 # F8: Unified update: lock-tracked skills + actionable output
@@ -344,6 +344,15 @@ Feature: Unified update: lock-tracked skills + actionable output
     Given any mix of stale, current, and unavailable rows
     When the operator runs `superskill update --check --json`
     Then stdout is exactly one JSON document whose rows carry kind, name, and status, with no progress, remedy, or summary lines, and the exit code equals the text-mode exit code
+
+
+  <!-- Task 0138 refinement scenario (DD-09 subset rule): task-level AC verified by
+       spur task verdict 0138 (runall-f8-48d9), certified PASS 2026-09-13. -->
+  @refinement-0138
+  Scenario: R19 — Update surface docs describe skill coverage
+    Given the feature's update and skill verb changes are merged
+    When a reader opens docs/00_ADR.md, docs/04_DESIGN.md, and docs/help2/installation.md
+    Then ADR-035 carries a dated amendment (with erratum) covering lock-tracked skills, and the 04 update surface and help2 "Stay current" section describe skill rows, --json, and skill update --check with the shipped 0/1/2 exit contract
 
 ## Tasks
 
