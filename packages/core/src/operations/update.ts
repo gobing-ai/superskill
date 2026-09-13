@@ -1,22 +1,31 @@
 import type { InstallSnapshot } from './install-manifest';
 
-/** Outcome of one plugin's update comparison. */
-export type PluginUpdateStatus = 'stale' | 'current' | 'legacy' | 'unavailable';
+/** Outcome of one row's update comparison across plugin and skill kinds. */
+export type UpdateRowStatus = 'stale' | 'current' | 'unchecked' | 'legacy' | 'unavailable';
 
-/** One deterministic row in an update check or mutating run. */
-export interface PluginUpdateResult {
-    plugin: string;
-    status: PluginUpdateStatus;
+/** One deterministic row in an update check or mutating run, keyed by `kind` + `name`. */
+export interface UpdateRow {
+    kind: 'plugin' | 'skill';
+    name: string;
+    status: UpdateRowStatus;
     channel?: 'bundled' | 'marketplace';
+    /** Per-target identity on rows built before {@link mergePluginUpdateRows}. */
+    target?: string;
     installedVersion?: string;
     upstreamVersion?: string;
     changedPaths?: string[];
+    /** Contributing stale target names on a merged 'stale' row; set only by {@link mergePluginUpdateRows}. */
+    staleTargets?: string[];
+    /** Declared-version conflict between the marketplace entry and plugin.json. */
+    versionMismatch?: { marketplace: string; pluginJson: string };
     locator?: string;
+    /** Upstream lookup failure cause; appended after the locator for 'unavailable' rows. */
+    reason?: string;
 }
 
 /** Aggregated comparison for a candidate set. */
 export interface UpdateCheckResult {
-    results: PluginUpdateResult[];
+    results: UpdateRow[];
     exitCode: 0 | 1 | 2;
 }
 
@@ -55,11 +64,12 @@ export function compareMarketplaceManifest(
     currentVersion: string,
     currentUpstream: InstallSnapshot,
     locator?: string,
-): PluginUpdateResult {
+): UpdateRow {
     const changedPaths = diffChangedPaths(recordedUpstream.files, currentUpstream.files);
     if (recordedVersion !== currentVersion || recordedUpstream.canonicalHash !== currentUpstream.canonicalHash) {
         return {
-            plugin,
+            kind: 'plugin',
+            name: plugin,
             status: 'stale',
             channel: 'marketplace',
             installedVersion: recordedVersion,
@@ -69,7 +79,8 @@ export function compareMarketplaceManifest(
         };
     }
     return {
-        plugin,
+        kind: 'plugin',
+        name: plugin,
         status: 'current',
         channel: 'marketplace',
         installedVersion: recordedVersion,
@@ -85,14 +96,11 @@ export function compareMarketplaceManifest(
  * @param recordedVersion Version stored at install (`cliVersion`).
  * @param latestVersion Result of `npm view @gobing-ai/superskill version`.
  */
-export function compareBundledVersion(
-    plugin: string,
-    recordedVersion: string,
-    latestVersion: string,
-): PluginUpdateResult {
+export function compareBundledVersion(plugin: string, recordedVersion: string, latestVersion: string): UpdateRow {
     if (recordedVersion !== latestVersion) {
         return {
-            plugin,
+            kind: 'plugin',
+            name: plugin,
             status: 'stale',
             channel: 'bundled',
             installedVersion: recordedVersion,
@@ -100,7 +108,8 @@ export function compareBundledVersion(
         };
     }
     return {
-        plugin,
+        kind: 'plugin',
+        name: plugin,
         status: 'current',
         channel: 'bundled',
         installedVersion: recordedVersion,
@@ -109,30 +118,41 @@ export function compareBundledVersion(
 }
 
 /**
- * Collapse per-target rows into one row per plugin. Rank is stale > unavailable >
- * current > legacy so a mixed-channel plugin still re-installs. {@link buildUpdateCheckResult}
- * computes the exit code from the unmerged rows so a sibling unavailable still yields 2.
+ * Collapse per-target rows into one row per name. Rank is stale > unavailable >
+ * current > legacy so a mixed-channel plugin still re-installs. When the merged
+ * status is 'stale', staleTargets carries the contributing stale target names.
+ * {@link buildUpdateCheckResult} computes the exit code from the unmerged rows so
+ * a sibling unavailable still yields 2.
  *
- * @param rows Rows that may repeat a plugin across targets.
+ * @param rows Rows that may repeat a name across targets.
  */
-export function mergePluginUpdateRows(rows: readonly PluginUpdateResult[]): PluginUpdateResult[] {
-    const rank: Record<PluginUpdateStatus, number> = {
+export function mergePluginUpdateRows(rows: readonly UpdateRow[]): UpdateRow[] {
+    const rank: Record<UpdateRowStatus, number> = {
         stale: 3,
         unavailable: 2,
         current: 1,
         legacy: 0,
+        // No producer emits 'unchecked' yet (0133 adds the member only); rank it
+        // below every decided outcome so a future unchecked row never wins a merge.
+        unchecked: -1,
     };
-    const byPlugin = new Map<string, PluginUpdateResult>();
+    const byName = new Map<string, UpdateRow>();
+    const staleTargets = new Map<string, string[]>();
     for (const row of rows) {
-        const existing = byPlugin.get(row.plugin);
+        if (row.status === 'stale' && row.target !== undefined) {
+            const seen = staleTargets.get(row.name) ?? [];
+            if (!seen.includes(row.target)) seen.push(row.target);
+            staleTargets.set(row.name, seen);
+        }
+        const existing = byName.get(row.name);
         if (!existing) {
-            byPlugin.set(row.plugin, {
+            byName.set(row.name, {
                 ...row,
                 changedPaths: row.changedPaths ? [...row.changedPaths] : undefined,
             });
             continue;
         }
-        const next: PluginUpdateResult = rank[row.status] >= rank[existing.status] ? { ...row } : { ...existing };
+        const next: UpdateRow = rank[row.status] >= rank[existing.status] ? { ...row } : { ...existing };
         const paths = new Set([...(existing.changedPaths ?? []), ...(row.changedPaths ?? [])]);
         if (paths.size > 0) {
             next.changedPaths = [...paths].sort((a, b) =>
@@ -145,11 +165,16 @@ export function mergePluginUpdateRows(rows: readonly PluginUpdateResult[]): Plug
             next.locator = row.locator ?? existing.locator;
             next.channel = row.channel ?? existing.channel;
         }
-        byPlugin.set(row.plugin, next);
+        byName.set(row.name, next);
     }
-    return [...byPlugin.values()].sort((a, b) =>
-        Buffer.compare(Buffer.from(a.plugin, 'utf-8'), Buffer.from(b.plugin, 'utf-8')),
-    );
+    return [...byName.values()]
+        .sort((a, b) => Buffer.compare(Buffer.from(a.name, 'utf-8'), Buffer.from(b.name, 'utf-8')))
+        .map((row) => {
+            const targets = staleTargets.get(row.name);
+            return row.status === 'stale' && targets !== undefined && targets.length > 0
+                ? { ...row, staleTargets: targets }
+                : row;
+        });
 }
 
 /**
@@ -159,7 +184,7 @@ export function mergePluginUpdateRows(rows: readonly PluginUpdateResult[]): Plug
  * @param results Merged per-plugin rows.
  * @param checkMode When false, stale rows do not force exit 1 (mutating mode exits 0 after action).
  */
-export function aggregateUpdateExit(results: readonly PluginUpdateResult[], checkMode: boolean): 0 | 1 | 2 {
+export function aggregateUpdateExit(results: readonly UpdateRow[], checkMode: boolean): 0 | 1 | 2 {
     if (results.some((row) => row.status === 'unavailable')) return 2;
     if (checkMode && results.some((row) => row.status === 'stale')) return 1;
     return 0;
@@ -171,7 +196,7 @@ export function aggregateUpdateExit(results: readonly PluginUpdateResult[], chec
  * @param results Merged per-plugin rows.
  * @param checkMode Whether `--check` is active.
  */
-export function buildUpdateCheckResult(results: readonly PluginUpdateResult[], checkMode: boolean): UpdateCheckResult {
+export function buildUpdateCheckResult(results: readonly UpdateRow[], checkMode: boolean): UpdateCheckResult {
     const merged = mergePluginUpdateRows(results);
     return { results: merged, exitCode: aggregateUpdateExit(results, checkMode) };
 }

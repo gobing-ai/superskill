@@ -11,7 +11,6 @@ import {
     installManifestPath,
     listRegularFilesUnder,
     listResolvablePlugins,
-    type PluginUpdateResult,
     readInstallManifest,
     resolvePlugin,
     resolveSandRoot,
@@ -19,6 +18,7 @@ import {
     snapshotFiles,
     TARGETS,
     type Target,
+    type UpdateRow,
 } from '@gobing-ai/superskill-core';
 import { NodeProcessExecutor, type ProcessExecutor } from '@gobing-ai/ts-runtime';
 import { echo, echoError } from '@gobing-ai/ts-utils';
@@ -128,7 +128,7 @@ export async function executeUpdate(
             ...(botRoot !== null ? collectCandidates(botRoot.dataRoot, plugin, [], ['grok-bot'], () => []) : []),
         ]),
     ].sort(utf8Sort);
-    const rows: PluginUpdateResult[] = [];
+    const rows: UpdateRow[] = [];
     const marketplaceWork = new Map<string, Promise<MarketplaceUpstream | undefined>>();
     const marketplaceActions = new Map<string, MarketplaceInstallAction>();
     let bundledLatest: string | undefined;
@@ -142,7 +142,7 @@ export async function executeUpdate(
             ...(botRoot !== null ? readCandidateManifests(botRoot.dataRoot, candidate, ['grok-bot']) : []),
         ];
         if (manifests.length === 0) {
-            rows.push({ plugin: candidate, status: 'legacy' });
+            rows.push({ kind: 'plugin', name: candidate, status: 'legacy' });
             continue;
         }
         for (const manifest of manifests) {
@@ -150,13 +150,15 @@ export async function executeUpdate(
                 try {
                     bundledLatest ??= await npmLatest();
                     const comparison = compareBundledVersion(candidate, manifest.upstreamVersion, bundledLatest);
-                    rows.push(comparison);
+                    rows.push({ ...comparison, target: manifest.target });
                     if (comparison.status === 'stale') bundledStale = true;
                 } catch {
                     rows.push({
-                        plugin: candidate,
+                        kind: 'plugin',
+                        name: candidate,
                         status: 'unavailable',
                         channel: 'bundled',
+                        target: manifest.target,
                         locator: NPM_PACKAGE,
                     });
                 }
@@ -164,7 +166,14 @@ export async function executeUpdate(
             }
             const locator = options.marketplacePath ?? manifest.marketplaceLocator;
             if (!locator) {
-                rows.push({ plugin: candidate, status: 'unavailable', channel: 'marketplace', locator: '' });
+                rows.push({
+                    kind: 'plugin',
+                    name: candidate,
+                    status: 'unavailable',
+                    channel: 'marketplace',
+                    target: manifest.target,
+                    locator: '',
+                });
                 continue;
             }
             const cacheKey = `${locator}::${candidate}`;
@@ -175,7 +184,14 @@ export async function executeUpdate(
             }
             const upstream = await pending;
             if (!upstream) {
-                rows.push({ plugin: candidate, status: 'unavailable', channel: 'marketplace', locator });
+                rows.push({
+                    kind: 'plugin',
+                    name: candidate,
+                    status: 'unavailable',
+                    channel: 'marketplace',
+                    target: manifest.target,
+                    locator,
+                });
                 continue;
             }
             const comparison = compareMarketplaceManifest(
@@ -186,7 +202,7 @@ export async function executeUpdate(
                 upstream.snapshot,
                 locator,
             );
-            rows.push(comparison);
+            rows.push({ ...comparison, target: manifest.target });
             if (comparison.status === 'stale' && (isTarget(manifest.target) || manifest.target === 'grok-bot')) {
                 const actionKey = JSON.stringify([candidate, locator]);
                 const action = marketplaceActions.get(actionKey) ?? {
@@ -372,27 +388,33 @@ async function fetchNpmLatest(executor?: ProcessExecutor): Promise<string> {
     return version;
 }
 
-function formatUpdateRow(row: PluginUpdateResult): string {
+/**
+ * Render one update row for text output. Unavailable rows append the row's reason
+ * after the locator when one is set; without a reason the line is byte-identical
+ * to the pre-UpdateRow formatter.
+ */
+export function formatUpdateRow(row: UpdateRow): string {
     if (row.status === 'legacy') {
-        return `${row.plugin}: installed before manifest support - reinstall to adopt`;
+        return `${row.name}: installed before manifest support - reinstall to adopt`;
     }
     if (row.status === 'unavailable') {
-        return `${row.plugin}: upstream unavailable (${row.locator ?? ''})`;
+        const unavailable = `${row.name}: upstream unavailable (${row.locator ?? ''})`;
+        return row.reason !== undefined ? `${unavailable}: ${row.reason}` : unavailable;
     }
     if (row.status === 'current') {
         return row.installedVersion !== undefined
-            ? `${row.plugin}: ${row.installedVersion} up to date`
-            : `${row.plugin}: up to date`;
+            ? `${row.name}: ${row.installedVersion} up to date`
+            : `${row.name}: up to date`;
     }
     if (row.channel === 'bundled') {
-        return `${row.plugin}: stale: superskill <${row.upstreamVersion}> available (installed <${row.installedVersion}>)`;
+        return `${row.name}: stale: superskill <${row.upstreamVersion}> available (installed <${row.installedVersion}>)`;
     }
     const n = row.changedPaths?.length ?? 0;
     const delta =
         row.installedVersion && row.upstreamVersion ? `${row.installedVersion} → ${row.upstreamVersion}` : 'changed';
-    if (n === 0) return `${row.plugin}: stale: ${delta}`;
+    if (n === 0) return `${row.name}: stale: ${delta}`;
     const paths = (row.changedPaths ?? []).join(', ');
-    return `${row.plugin}: stale: ${delta} (${n} file(s) changed: ${paths})`;
+    return `${row.name}: stale: ${delta} (${n} file(s) changed: ${paths})`;
 }
 
 const PLUGIN_ROOT_MARKERS = ['skills', 'commands', 'agents', 'hooks', 'hooks.json', 'plugin.json'];

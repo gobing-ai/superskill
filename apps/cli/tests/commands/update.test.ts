@@ -11,7 +11,7 @@ import {
 import type { ProcessExecutor, ProcessOptions } from '@gobing-ai/ts-runtime';
 import { Command } from 'commander';
 import * as installNs from '../../src/commands/install';
-import { executeUpdate, registerUpdate } from '../../src/commands/update';
+import { executeUpdate, formatUpdateRow, registerUpdate } from '../../src/commands/update';
 
 const originalCwd = process.cwd();
 const originalHomeDir = process.env.HOME_DIR;
@@ -92,6 +92,25 @@ describe('registerUpdate', () => {
         expect(names).toContain('--targets');
         expect(names).toContain('--marketplace');
         expect(names).toContain('--no-global');
+    });
+});
+
+describe('formatUpdateRow', () => {
+    it('prints the reason after the locator for an unavailable row that carries one (R4)', () => {
+        const line = formatUpdateRow({
+            kind: 'plugin',
+            name: 'kk',
+            status: 'unavailable',
+            locator: '/tmp/gone-marketplace',
+            reason: 'locator path missing',
+        });
+        expect(line).toContain('(/tmp/gone-marketplace): locator path missing');
+    });
+
+    it('keeps the unavailable line byte-identical when no reason is set (R1)', () => {
+        expect(formatUpdateRow({ kind: 'plugin', name: 'kk', status: 'unavailable', locator: '/tmp/gone' })).toBe(
+            'kk: upstream unavailable (/tmp/gone)',
+        );
     });
 });
 
@@ -593,6 +612,29 @@ describe('executeUpdate', () => {
         const code = await executeUpdate('demo', ['codex'], { check: true, global: true, marketplacePath: market });
         delete process.env.HOME_DIR;
         expect(code).toBe(0);
+    });
+
+    it('merges a stale plugin across two targets into one unchanged text row (R2)', async () => {
+        const root = workspace();
+        writePlugin(root, 'demo', '2.0.0', '# new\n');
+        const market = writeMarket(root, 'demo', '2.0.0');
+        const oldRoot = join(root, 'old');
+        writePlugin(oldRoot, 'demo', '1.0.0', '# old\n');
+        const oldPluginRoot = join(oldRoot, 'plugins', 'demo');
+        writeManifest(root, 'demo', oldPluginRoot, { version: '1.0.0', locator: market, target: 'codex' });
+        writeManifest(root, 'demo', oldPluginRoot, { version: '1.0.0', locator: market, target: 'claude' });
+        const stdout = spyOn(process.stdout, 'write').mockImplementation(() => true);
+        const code = await executeUpdate('demo', ['codex', 'claude'], {
+            check: true,
+            global: false,
+            marketplacePath: market,
+            outputRoot: root,
+        });
+        const output = stdout.mock.calls.map((c) => String(c[0])).join('');
+        stdout.mockRestore();
+        expect(code).toBe(1);
+        expect(output.match(/demo: stale:/g)).toHaveLength(1);
+        expect(output).toContain('1.0.0 → 2.0.0');
     });
 
     it('threads the recorded grok-bot materialize mode into a marketplace reinstall (R7)', async () => {

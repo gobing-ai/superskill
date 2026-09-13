@@ -2,10 +2,10 @@
 doc: 04_DESIGN
 owns: SURFACE — concrete shapes: every CLI command, flag, config key, env var, table, DTO
 authority: derived
-version: 2.13.0
+version: 2.14.0
 derived_from: [00_ADR, 01_PRD, 02_ROADMAP]
 owner: Robin Min
-updated_at: 2026-09-10
+updated_at: 2026-09-13
 read_before: changing a command, flag, env var, or schema
 edit_rules: 99 §6.5
 sync: [T3]
@@ -111,7 +111,9 @@ Manifest path: `<scopeRoot>/.superskill/manifests/<target>/<plugin>/.superskill-
 | `up to date` | Version and (marketplace) upstream hash match | 0 if all current/legacy |
 | `stale: …` | Version or hash differs; one row per plugin (current upstream, no history) | `--check` → 1 |
 | `installed before manifest support - reinstall to adopt` | Known candidate, missing/corrupt/unsupported manifest | 0 (guidance) |
-| `upstream unavailable (<locator>)` | Locator or npm lookup failed; other rows still print | 2 (wins over 1) |
+| `upstream unavailable (<locator>)`, `(<locator>): <reason>` when the row carries one | Locator or npm lookup failed; other rows still print | 2 (wins over 1) |
+
+Rows share the unified `UpdateRow` model (`packages/core/src/operations/update.ts`, task 0133): `kind` (`plugin` \| `skill`), `name`, `status` (`stale` \| `current` \| `unchecked` \| `legacy` \| `unavailable`), plus optional `channel`, `target`, `installedVersion`/`upstreamVersion`, `changedPaths`, `staleTargets` (contributing stale targets on a merged stale row), `versionMismatch` (`marketplace` vs `pluginJson`), `locator`, and `reason`.
 
 Bare `update` re-runs `executeInstall` for stale **marketplace** plugins (0123 refreshes the manifest) and prints `npm i -g @gobing-ai/superskill@latest` once for stale **bundled** plugins. `--check` is read-only.
 

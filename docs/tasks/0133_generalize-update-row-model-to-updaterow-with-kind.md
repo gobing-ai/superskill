@@ -1,10 +1,10 @@
 ---
 schema_version: 1
 name: Generalize update row model to UpdateRow with kind
-status: todo
+status: done
 template: feature-impl
 created_at: 2026-09-13T18:04:14.436Z
-updated_at: "2026-09-13T18:41:47.785Z"
+updated_at: "2026-09-13T19:45:01.926Z"
 feature_id: F8
 priority: P2
 tags:
@@ -21,10 +21,10 @@ Prefactor that unblocks every other F8 task: rename PluginUpdateStatus/PluginUpd
 
 ### Requirements
 
-- [ ] R1. Rename the update row types to the unified model. In packages/core/src/operations/update.ts, replace PluginUpdateStatus with UpdateRowStatus ('stale' | 'current' | 'unchecked' | 'legacy' | 'unavailable') and PluginUpdateResult with UpdateRow { kind: 'plugin' | 'skill'; name: string; status; channel?; target?; installedVersion?; upstreamVersion?; changedPaths?; staleTargets?: string[]; versionMismatch?: { marketplace: string; pluginJson: string }; locator?; reason?: string }. Old names are deleted, not aliased (design D3). All plugin row construction sites set kind: 'plugin'; text output stays byte-identical to today except that an unavailable row whose reason is set prints the reason in place of the placeholder (asserted by R4; today the placeholder is printed unconditionally).
-- [ ] R2. Carry pre-merge target identity so partial staleness is nameable later. Plugin rows built before mergePluginUpdateRows keep their per-target target field; mergePluginUpdateRows gains (only) the staleTargets derivation: when merged status is 'stale', staleTargets is the list of contributing stale target names, and merged rows otherwise keep rank and ordering semantics (stale 3 > unavailable 2 > current 1 > legacy 0) exactly as today. No text output may consume staleTargets in this task.
-- [ ] R3. Retarget all consumers and tests to the new names. Update packages/core/src/operations/update.ts, apps/cli/src/commands/update.ts, packages/core/tests/operations/update.test.ts, and apps/cli/tests/commands/update.test.ts to the UpdateRow vocabulary. No assertions change except R4's. docs/04_DESIGN.md's update section is adjusted in the same commit to reference the UpdateRow shape (same-commit surface sync).
-- [ ] R4. Leave focused regression evidence. bun run lint, bun run test, and bun run build pass. One new or adjusted test asserts: an unavailable plugin row with reason set prints `(<locator>): <reason>`, and a stale merged row carries staleTargets while its text output is unchanged from today. All other existing update tests pass unmodified except the rename.
+- [x] R1. Rename the update row types to the unified model. In packages/core/src/operations/update.ts, replace PluginUpdateStatus with UpdateRowStatus ('stale' | 'current' | 'unchecked' | 'legacy' | 'unavailable') and PluginUpdateResult with UpdateRow { kind: 'plugin' | 'skill'; name: string; status; channel?; target?; installedVersion?; upstreamVersion?; changedPaths?; staleTargets?: string[]; versionMismatch?: { marketplace: string; pluginJson: string }; locator?; reason?: string }. Old names are deleted, not aliased (design D3). All plugin row construction sites set kind: 'plugin'; text output stays byte-identical to today except that an unavailable row whose reason is set prints the reason in place of the placeholder (asserted by R4; today the placeholder is printed unconditionally).
+- [x] R2. Carry pre-merge target identity so partial staleness is nameable later. Plugin rows built before mergePluginUpdateRows keep their per-target target field; mergePluginUpdateRows gains (only) the staleTargets derivation: when merged status is 'stale', staleTargets is the list of contributing stale target names, and merged rows otherwise keep rank and ordering semantics (stale 3 > unavailable 2 > current 1 > legacy 0) exactly as today. No text output may consume staleTargets in this task.
+- [x] R3. Retarget all consumers and tests to the new names. Update packages/core/src/operations/update.ts, apps/cli/src/commands/update.ts, packages/core/tests/operations/update.test.ts, and apps/cli/tests/commands/update.test.ts to the UpdateRow vocabulary. No assertions change except R4's. docs/04_DESIGN.md's update section is adjusted in the same commit to reference the UpdateRow shape (same-commit surface sync).
+- [x] R4. Leave focused regression evidence. bun run lint, bun run test, and bun run build pass. One new or adjusted test asserts: an unavailable plugin row with reason set prints `(<locator>): <reason>`, and a stale merged row carries staleTargets while its text output is unchanged from today. All other existing update tests pass unmodified except the rename.
 
 ### Acceptance Criteria
 
@@ -70,18 +70,105 @@ Design D3 (row model), D6 (fields only, no new consumers yet). Rename is a pure 
 
 ### Solution
 
-<!-- Filled during implementation: file:line change map and concise rationale. -->
+Change-map (auto-generated — implement step did not record a Solution).
+Each entry cites the first changed line per file (`file:line`).
+
+| Change (`file:line`) |
+|----------------------|
+| `apps/cli/src/commands/update.ts:13` |
+| `apps/cli/src/commands/update.ts:131` |
+| `apps/cli/src/commands/update.ts:145` |
+| `apps/cli/src/commands/update.ts:153` |
+| `apps/cli/src/commands/update.ts:157` |
+| `apps/cli/src/commands/update.ts:161` |
+| `apps/cli/src/commands/update.ts:169` |
+| `apps/cli/src/commands/update.ts:187` |
+| `apps/cli/src/commands/update.ts:205` |
+| `apps/cli/src/commands/update.ts:21` |
+| `apps/cli/src/commands/update.ts:391` |
+| `apps/cli/src/commands/update.ts:398` |
+| `apps/cli/src/commands/update.ts:401` |
+| `apps/cli/src/commands/update.ts:406` |
+| `apps/cli/src/commands/update.ts:410` |
+| `apps/cli/src/commands/update.ts:415` |
+| `apps/cli/src/commands/update.ts:417` |
+| `apps/cli/tests/commands/update.test.ts:14` |
+| `apps/cli/tests/commands/update.test.ts:617` |
+| `apps/cli/tests/commands/update.test.ts:98` |
+| `packages/core/src/operations/update.ts:102` |
+| `packages/core/src/operations/update.ts:111` |
+| `packages/core/src/operations/update.ts:12` |
+| `packages/core/src/operations/update.ts:121` |
+| `packages/core/src/operations/update.ts:127` |
+| `packages/core/src/operations/update.ts:129` |
+| `packages/core/src/operations/update.ts:135` |
+| `packages/core/src/operations/update.ts:139` |
+| `packages/core/src/operations/update.ts:142` |
+| `packages/core/src/operations/update.ts:149` |
+| `packages/core/src/operations/update.ts:155` |
+| `packages/core/src/operations/update.ts:168` |
+| `packages/core/src/operations/update.ts:17` |
+| `packages/core/src/operations/update.ts:170` |
+| `packages/core/src/operations/update.ts:187` |
+| `packages/core/src/operations/update.ts:199` |
+| `packages/core/src/operations/update.ts:22` |
+| `packages/core/src/operations/update.ts:28` |
+| `packages/core/src/operations/update.ts:3` |
+| `packages/core/src/operations/update.ts:6` |
+| `packages/core/src/operations/update.ts:67` |
+| `packages/core/src/operations/update.ts:71` |
+| `packages/core/src/operations/update.ts:82` |
+| `packages/core/src/operations/update.ts:99` |
+| `packages/core/tests/operations/update.test.ts:100` |
+| `packages/core/tests/operations/update.test.ts:122` |
+| `packages/core/tests/operations/update.test.ts:128` |
+| `packages/core/tests/operations/update.test.ts:133` |
+| `packages/core/tests/operations/update.test.ts:139` |
+| `packages/core/tests/operations/update.test.ts:64` |
+| `packages/core/tests/operations/update.test.ts:69` |
+| `packages/core/tests/operations/update.test.ts:78` |
+| `packages/core/tests/operations/update.test.ts:85` |
 
 ### Testing
 
-<!-- Filled during verification: commands run, outcomes, coverage claim or N/A. -->
+**Pipeline verify results**
+
+- Verdict: PASS (from verdict artifact)
+
+| Requirement | Status | Evidence |
+|-------------|--------|----------|
+| R1 | MET | packages/core/src/operations/update.ts:4 (UpdateRowStatus union incl. 'unchecked'), :7-25 (UpdateRow full spec shape); old names deleted, zero hits in src/tests; kind:'plugin' at update.ts:71,81,103,108 + apps/cli/src/commands/update.ts:159,173,185,200; byte-identical no-reason output update.test.ts:110-113; lint green .spur/run/0133-test-gate.log |
+| R2 | MET | target preserved pre-merge (update.ts:13-14; CLI target: manifest.target at :167,185,200,204); staleTargets derivation update.ts:133-147,178-183; rank 3/2/1/0 at update.ts:130-137; formatUpdateRow (:383-405) never reads staleTargets |
+| R3 | MET | Four named files retargeted; zero old identifiers (grep); docs/04_DESIGN.md:114,116 synced; both suites 2319 pass / 0 fail .spur/run/0133-test-gate.log |
+| R4 | MET | lint: .spur/run/0133-test-gate.log; test: 2319/0 in same log; build: .spur/run/0133-build.log exit 0 (851 modules); reason print update.test.ts:99-108; staleTargets core :87-105 + unchanged text CLI :617-639 |
+
+| Acceptance Criteria | Status | Evidence Type | Evidence |
+|---------------------|--------|---------------|----------|
+| R1 — The unified update row model replaces plugin rows | MET | test | grep zero hits src/tests; kind:'plugin' at update.ts:71,81,103,108 + CLI :159,173,185,200; lint green .spur/run/0133-test-gate.log |
+| R2 — Merged stale rows expose their stale targets | MET | test | packages/core/tests/operations/update.test.ts:87-105; rank table update.ts:130-137 |
+| R3 — Consumers and tests compile against the new names | MET | test | .spur/run/0133-test-gate.log 2319 pass / 0 fail; grep no old names |
+| R4 — An unavailable row with a reason prints it | MET | test | apps/cli/tests/commands/update.test.ts:99-108 exact AC row; formatter branch apps/cli/src/commands/update.ts:390-392 |
+- Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review
 
-<!-- Filled during review: P1-P4 findings, residual risk, and final disposition. -->
+<!-- spur:record-review -->
+
+**SECU findings** (pipeline verify step — verdict: PASS)
+
+| Priority | Dimension | Location | Finding |
+|----------|-----------|----------|----------|
+| P4 | spur task check | — | task check passed |
+| P4 | evidence-rule-pass | — | All behavior-bearing AC rows have executable evidence or are explicitly non-behavioral. |
+| P4 | proof-input-digest | — | sha256:3a037e615aa69737f9438b43641cad2fc19100fb0d9343cd8fdff034697b8a1b |
 
 ### References
 
 <!-- Links to the parent feature, design docs, related tasks, or external references. -->
 
 ### History
+
+- 2026-09-13T19:17:39.509Z todo → wip (system)
+- 2026-09-13T19:42:45.290Z wip → testing (system)
+- 2026-09-13T19:45:01.926Z testing → done (system)
+

@@ -61,12 +61,12 @@ describe('update comparison', () => {
 
     it('merges per-target rows into one plugin row preferring stale over current', () => {
         const merged = mergePluginUpdateRows([
-            { plugin: 'beta', status: 'current' },
-            { plugin: 'alpha', status: 'current', changedPaths: [] },
-            { plugin: 'alpha', status: 'stale', changedPaths: ['b.md'], upstreamVersion: '2' },
-            { plugin: 'alpha', status: 'stale', changedPaths: ['a.md'] },
+            { kind: 'plugin', name: 'beta', status: 'current' },
+            { kind: 'plugin', name: 'alpha', status: 'current', changedPaths: [] },
+            { kind: 'plugin', name: 'alpha', status: 'stale', changedPaths: ['b.md'], upstreamVersion: '2' },
+            { kind: 'plugin', name: 'alpha', status: 'stale', changedPaths: ['a.md'] },
         ]);
-        expect(merged.map((row) => row.plugin)).toEqual(['alpha', 'beta']);
+        expect(merged.map((row) => row.name)).toEqual(['alpha', 'beta']);
         expect(merged[0]?.status).toBe('stale');
         expect(merged[0]?.changedPaths).toEqual(['a.md', 'b.md']);
         expect(merged[0]?.upstreamVersion).toBe('2');
@@ -75,13 +75,15 @@ describe('update comparison', () => {
     it('keeps a stale sibling when a bundled lookup is unavailable, and still exits 2', () => {
         const rows = [
             {
-                plugin: 'cc',
+                kind: 'plugin' as const,
+                name: 'cc',
                 status: 'unavailable' as const,
                 channel: 'bundled' as const,
                 locator: '@gobing-ai/superskill',
             },
             {
-                plugin: 'cc',
+                kind: 'plugin' as const,
+                name: 'cc',
                 status: 'stale' as const,
                 channel: 'marketplace' as const,
                 changedPaths: ['skills/a.md'],
@@ -95,27 +97,45 @@ describe('update comparison', () => {
         expect(buildUpdateCheckResult(rows, true).exitCode).toBe(2);
     });
 
+    it('derives staleTargets from contributing stale targets when only some targets are stale (R2)', () => {
+        const merged = mergePluginUpdateRows([
+            { kind: 'plugin', name: 'alpha', status: 'stale', target: 'claude', upstreamVersion: '2' },
+            { kind: 'plugin', name: 'alpha', status: 'current', target: 'codex' },
+        ]);
+        expect(merged).toHaveLength(1);
+        expect(merged[0]?.status).toBe('stale');
+        expect(merged[0]?.staleTargets).toEqual(['claude']);
+        // Rows that never went stale carry no target list; stale rows without a
+        // per-target identity cannot name one.
+        expect(
+            mergePluginUpdateRows([{ kind: 'plugin', name: 'a', status: 'current', target: 'codex' }])[0]?.staleTargets,
+        ).toBeUndefined();
+        expect(
+            mergePluginUpdateRows([{ kind: 'plugin', name: 'a', status: 'stale' }])[0]?.staleTargets,
+        ).toBeUndefined();
+    });
+
     it('selects exit 2 over stale 1, and 0 when only legacy/current rows exist', () => {
         expect(
             aggregateUpdateExit(
                 [
-                    { plugin: 'a', status: 'stale' },
-                    { plugin: 'b', status: 'unavailable' },
+                    { kind: 'plugin', name: 'a', status: 'stale' },
+                    { kind: 'plugin', name: 'b', status: 'unavailable' },
                 ],
                 true,
             ),
         ).toBe(2);
-        expect(aggregateUpdateExit([{ plugin: 'a', status: 'stale' }], true)).toBe(1);
-        expect(aggregateUpdateExit([{ plugin: 'a', status: 'stale' }], false)).toBe(0);
+        expect(aggregateUpdateExit([{ kind: 'plugin', name: 'a', status: 'stale' }], true)).toBe(1);
+        expect(aggregateUpdateExit([{ kind: 'plugin', name: 'a', status: 'stale' }], false)).toBe(0);
         expect(
             aggregateUpdateExit(
                 [
-                    { plugin: 'a', status: 'legacy' },
-                    { plugin: 'b', status: 'current' },
+                    { kind: 'plugin', name: 'a', status: 'legacy' },
+                    { kind: 'plugin', name: 'b', status: 'current' },
                 ],
                 true,
             ),
         ).toBe(0);
-        expect(buildUpdateCheckResult([{ plugin: 'z', status: 'stale' }], true).exitCode).toBe(1);
+        expect(buildUpdateCheckResult([{ kind: 'plugin', name: 'z', status: 'stale' }], true).exitCode).toBe(1);
     });
 });
