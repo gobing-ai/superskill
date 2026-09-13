@@ -612,6 +612,23 @@ and schema v1 gains a backward-compatible optional `grokBot: { materialize:
 'bridge' | 'full' }` field emitted only for Bot; existing targets and legacy
 receipts without the field remain readable.
 
+**Amendment (2026-09-13, F8) — lock-tracked skills and actionable output.**
+`superskill update` also reports on and updates skills installed with
+`superskill skill add`. It reads them from the ADR-028 locks: `~/.agents/.skill-lock.json`
+by default, `./skills-lock.json` with `--no-global`. The locks remain the only
+record for those skills, and no install manifest is written for them. A skill is
+compared by its lock hash against a read-only source hash (`checkSkills`, taken
+from `updateSkills`' no-op pre-check). Skill rows share the stale / current /
+unavailable vocabulary and the 0/1/2 exit contract. They also add an exit-neutral
+`unchecked` status for source types with no read-only hash (git, gitlab,
+well-known), so those users do not get a permanent exit 2. Bare `update`
+reinstalls stale and unchecked skills through `updateSkills`. Marketplace rows
+name content drift at an unchanged version as such, and they note when a
+plugin's `marketplace.json` entry and `plugin.json` declare different versions
+(the compare version keeps marketplace-first precedence). Unavailable rows carry
+their cause. `--json` is check-only, because install writes progress to stdout.
+Status for this amendment: Accepted (design).
+
 **Detail:** see `docs/design/skill-update-notification.md` (surface + schema +
 diff algorithm); `docs/04_DESIGN.md` updates land in the same commit as the
 verb (T3).

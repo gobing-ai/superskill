@@ -189,7 +189,7 @@ apps/cli/src/                     # ── CLI app (@gobing-ai/superskill) ─�
 │   ├── script-path.ts            # staged plugin entrypoint resolver
 │   ├── script-run.ts             # registered plugin script dispatcher
 │   ├── skill.ts                  # superskill skill subcommands
-│   └── update.ts                 # superskill update check / re-install (ADR-035)
+│   └── update.ts                 # superskill update: plugin manifests + lock-tracked skills (ADR-035)
 │
 ├── operations/                   # ── CLI adapters and store-backed workflows ──
 │   ├── evaluate.ts               # App-owned scoring workflow: CLI envelope output + store persistence
@@ -745,6 +745,14 @@ regular files are opened with `O_NOFOLLOW`.
 Canonical and blob-snapshot hashes share the ADR-031 encoding: sorted path/content pairs, each
 field prefixed by its unsigned 64-bit byte length. This preserves deterministic SHA-256 identity
 without concatenation ambiguity.
+
+`checkSkills` is the read-only half of update (ADR-035 amendment 2026-09-13). It hashes each
+lock entry's resolved source without installing and returns one row per skill. A source type with
+no read-only hash gets an `unchecked` row. A failed fetch, or a skill missing from its source,
+gets an `unavailable` row that carries its reason. `updateSkills` consumes those rows and
+reinstalls every row that is not `current`, so an undecidable source never becomes a false no-op.
+`apps/cli/src/commands/update.ts` is the only other consumer: it maps skill rows into the ADR-035
+result alongside plugin-manifest rows and never writes a lock directly.
 
 ## Invariants
 

@@ -104,3 +104,100 @@ Unit (bun:test, following install test seams): manifest write on install; diff s
 ## Explicitly deferred
 
 Release feed publishing (`updates.json`), in-agent banner hook, auto-update, transform-aware diffing.
+
+## Unified update: lock-tracked skills + actionable output (2026-09-13)
+
+Feature F8 · ADR-035 amendment 2026-09-13. Authoritative flag/row/envelope shapes land in
+`docs/04_DESIGN.md` with the code.
+
+### Problem
+
+- `update` reads only install manifests, configured plugins and bundled names. Skills installed
+  with `superskill skill add` are invisible to it. They live only in the ADR-028 locks, and the
+  only verb for them is `skill update`, which always writes.
+- Output defects observed on 0.3.26:
+  - `kk: stale: 0.0.1 → 0.0.1`: content drift shown as a version arrow.
+  - No summary and no next command.
+  - An unbounded changed-path list.
+  - Apply mode that reinstalls silently.
+  - No `--json`.
+  - `skill update` prints "Updated 2 skill(s)" on a run that changed nothing.
+  - Legacy and unavailable rows that give no cause or remedy.
+
+### Skill check seam
+
+- `checkSkills(names?, options)` resolves each lock entry through `resolveLockedSource` and hashes
+  the source without installing:
+  - A local source is hashed from discovery using the copy exclusion sets.
+  - A GitHub source uses the blob snapshot hash.
+- Row statuses:
+  - `current`: the source hash equals the lock hash.
+  - `stale`: the hashes differ.
+  - `unavailable` (reason required): the fetch failed, the skill is missing from its source, or
+    the name is not in the lock.
+  - `unchecked`: `git`, `gitlab` and `well-known` sources, which have no read-only hash. The row
+    never affects the exit code.
+- `updateSkills` consumes these rows through an optional `precheck` and reinstalls every row that
+  is not `current`, so the existing "undecidable is never a false no-op" contract still holds.
+
+### One row model
+
+`PluginUpdateResult` becomes `UpdateRow`:
+
+```ts
+interface UpdateRow {
+  kind: 'plugin' | 'skill';
+  name: string;
+  status: 'stale' | 'current' | 'unchecked' | 'legacy' | 'unavailable';
+  channel?: 'bundled' | 'marketplace';
+  target?: string;                    // pre-merge plugin rows only
+  installedVersion?: string;
+  upstreamVersion?: string;
+  changedPaths?: string[];
+  staleTargets?: string[];            // merged plugin row stale on some targets only
+  versionMismatch?: { marketplace: string; pluginJson: string };
+  locator?: string;
+  reason?: string;                    // unavailable / unchecked cause
+}
+```
+
+- Merging is by `kind:name`.
+- The exit code is still computed from unmerged rows; `unchecked` and `legacy` are exit-neutral.
+- Marketplace upstream resolution returns a failure reason instead of `undefined`. When both
+  `marketplace.json` and `plugin.json` declare a version and they differ, it also returns both.
+
+### Surface
+
+```text
+superskill update [name] [--check] [--json] [--targets <list>] [--marketplace <locator>] [--no-global]
+superskill skill update [names...] [--check] [--json] [-g] [-y]
+```
+
+- `[name]` matches a lock skill and/or a plugin candidate. A name found only in the lock
+  produces no plugin row.
+- The lock follows the manifest scope: global by default reads `~/.agents/.skill-lock.json`;
+  `--no-global` reads `./skills-lock.json`.
+- `--targets` and `--marketplace` apply to plugin rows only.
+- Text output groups rows under `Plugins:` and `Skills:`:
+  - Content drift at an unchanged version: `stale: content changed, version X unchanged`.
+  - A version bump keeps its arrow.
+  - At most 5 paths are listed, then `+N more`.
+  - A plugin stale on only some targets gets `[stale on: …]`.
+  - A version-declaration mismatch gets a `note:` line.
+  - A legacy row names `superskill install <name>`.
+  - An unavailable row names `(<locator>): <reason>`.
+  - The summary line counts rows by status. In check mode it also names the one next command.
+- Apply mode prints `Updating <name>…` and a result line per item, then `Updated N of M.`
+  A per-item failure is caught and the run continues, with exit 1. The bundled-channel npm
+  command is labeled as upgrading superskill and its bundled plugins.
+- `--check --json` prints a single document:
+  `{ scope, check, rows, summary, exitCode }`, with `changedPaths` untruncated.
+  Using `--json` without `--check` is a usage error, because `executeInstall` writes install
+  progress to stdout.
+
+### Test plan
+
+Unit tests in `bun:test` use the existing `update.test.ts` seams (injected `executeInstall`,
+`npmLatest`, `outputRoot`) plus lock fixtures under `outputRoot`. `checkSkills` is tested with an
+injected `fetchFn`, covering current, stale, unavailable and unchecked rows. R1–R21 map to these
+seams.
