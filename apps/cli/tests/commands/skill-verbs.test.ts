@@ -1,10 +1,17 @@
 import { describe, expect, it } from 'bun:test';
-import { existsSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { addSkills, cleanAndCreateDir } from '@gobing-ai/superskill-core';
-import { handleSkillAdd, handleSkillList, handleSkillRemove, handleSkillUpdate } from '../../src/commands/skill';
+import { Command } from 'commander';
+import {
+    handleSkillAdd,
+    handleSkillList,
+    handleSkillRemove,
+    handleSkillUpdate,
+    registerSkill,
+} from '../../src/commands/skill';
 
 /**
  * Env vars that redirect agent config/lock dirs. Cleared inside withIsolatedHome so a test
@@ -242,5 +249,123 @@ describe('skill-verbs.ts - CLI command handlers for skill add/list/remove/update
             expect(rmOut.output).toContain('Removed 1 skill(s):');
             expect(existsSync(join(testHome, '.agents/skills/txt-src'))).toBe(false);
         });
+    });
+});
+
+describe('skill-verbs.ts - skill update --check and honest summary (F8 task 0134)', () => {
+    it('handleSkillUpdate --check reports stale, exits 1, and writes nothing', async () => {
+        await withIsolatedHome(async (testHome) => {
+            const sourceDir = join(testHome, 'chk-src');
+            await cleanAndCreateDir(sourceDir);
+            writeFileSync(join(sourceDir, 'SKILL.md'), skillMd('Chk Src'));
+            await addSkills(sourceDir, { global: true, homeDir: testHome });
+
+            writeFileSync(join(sourceDir, 'SKILL.md'), `${skillMd('Chk Src')}\nv2\n`);
+            const lockPath = join(testHome, '.agents/.skill-lock.json');
+            const lockBefore = readFileSync(lockPath, 'utf-8');
+            const canonicalBefore = readFileSync(join(testHome, '.agents/skills/chk-src/SKILL.md'), 'utf-8');
+
+            const { output, exitCode } = await captureOutput(() =>
+                handleSkillUpdate(['chk-src'], { global: true, check: true, homeDir: testHome }),
+            );
+
+            expect(exitCode).toBe(1);
+            expect(output).toContain('chk-src: Stale (Upstream hash differs)');
+            // Read-only proof: lock file and skill directory are byte-identical.
+            expect(readFileSync(lockPath, 'utf-8')).toBe(lockBefore);
+            expect(readFileSync(join(testHome, '.agents/skills/chk-src/SKILL.md'), 'utf-8')).toBe(canonicalBefore);
+        });
+    });
+
+    it('handleSkillUpdate --check reports up to date and exits 0', async () => {
+        await withIsolatedHome(async (testHome) => {
+            const sourceDir = join(testHome, 'cur-src');
+            await cleanAndCreateDir(sourceDir);
+            writeFileSync(join(sourceDir, 'SKILL.md'), skillMd('Cur Src'));
+            await addSkills(sourceDir, { global: true, homeDir: testHome });
+
+            const { output, exitCode } = await captureOutput(() =>
+                handleSkillUpdate(['cur-src'], { global: true, check: true, homeDir: testHome }),
+            );
+
+            expect(exitCode).toBe(0);
+            expect(output).toContain('cur-src: Up to date (Already up to date)');
+        });
+    });
+
+    it('handleSkillUpdate --check --json emits rows and summary', async () => {
+        await withIsolatedHome(async (testHome) => {
+            const sourceDir = join(testHome, 'json-src');
+            await cleanAndCreateDir(sourceDir);
+            writeFileSync(join(sourceDir, 'SKILL.md'), skillMd('Json Src'));
+            await addSkills(sourceDir, { global: true, homeDir: testHome });
+            writeFileSync(join(sourceDir, 'SKILL.md'), `${skillMd('Json Src')}\nv2\n`);
+
+            const { output, exitCode } = await captureOutput(() =>
+                handleSkillUpdate(['json-src'], { global: true, check: true, json: true, homeDir: testHome }),
+            );
+
+            const payload = JSON.parse(output) as {
+                rows: Array<{ name: string; status: string }>;
+                summary: Record<string, number>;
+            };
+            expect(payload.rows[0]?.name).toBe('json-src');
+            expect(payload.rows[0]?.status).toBe('stale');
+            expect(payload.summary).toEqual({ total: 1, stale: 1, current: 0, unchecked: 0, unavailable: 0 });
+            expect(exitCode).toBe(1);
+        });
+    });
+
+    it('handleSkillUpdate --check exits 2 for unavailable rows', async () => {
+        await withIsolatedHome(async (testHome) => {
+            const { output, exitCode } = await captureOutput(() =>
+                handleSkillUpdate(['missing-skill'], { global: true, check: true, homeDir: testHome }),
+            );
+            expect(exitCode).toBe(2);
+            expect(output).toContain('missing-skill: unavailable: Not found in lock file');
+        });
+    });
+
+    it('handleSkillUpdate text header counts only changed skills', async () => {
+        await withIsolatedHome(async (testHome) => {
+            const a = join(testHome, 'cnt-a');
+            await cleanAndCreateDir(a);
+            writeFileSync(join(a, 'SKILL.md'), skillMd('Cnt A'));
+            const b = join(testHome, 'cnt-b');
+            await cleanAndCreateDir(b);
+            writeFileSync(join(b, 'SKILL.md'), skillMd('Cnt B'));
+            await addSkills(a, { global: true, homeDir: testHome });
+            await addSkills(b, { global: true, homeDir: testHome });
+
+            const noop = await captureOutput(() => handleSkillUpdate([], { global: true, homeDir: testHome }));
+            expect(noop.exitCode).toBe(0);
+            expect(noop.output).toContain('Updated 0 skill(s), 2 up to date:');
+            expect(noop.output).not.toContain('Updated 2 skill(s)');
+
+            writeFileSync(join(a, 'SKILL.md'), `${skillMd('Cnt A')}\nv2\n`);
+            const changed = await captureOutput(() => handleSkillUpdate([], { global: true, homeDir: testHome }));
+            expect(changed.output).toContain('Updated 1 skill(s), 1 up to date:');
+            expect(changed.output).toContain('cnt-a: Updated');
+            expect(changed.output).toContain('cnt-b: Up to date');
+        });
+    });
+
+    it('skill add/remove/update help renders the --yes default exactly once; update registers --check', () => {
+        const program = new Command();
+        registerSkill(program);
+        const skillCmd = program.commands.find((cmd) => cmd.name() === 'skill');
+        expect(skillCmd).toBeDefined();
+        for (const verbName of ['add', 'remove', 'update']) {
+            const verb = skillCmd?.commands.find((cmd) => cmd.name() === verbName);
+            expect(verb).toBeDefined();
+            const yesLine = verb
+                ?.helpInformation()
+                .split('\n')
+                .find((line) => line.includes('--yes'));
+            expect(yesLine).toBeDefined();
+            expect(yesLine?.match(/\(default: true\)/g)).toHaveLength(1);
+        }
+        const update = skillCmd?.commands.find((cmd) => cmd.name() === 'update');
+        expect(update?.options.map((option) => option.long)).toContain('--check');
     });
 });

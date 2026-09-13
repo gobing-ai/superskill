@@ -117,6 +117,8 @@ Rows share the unified `UpdateRow` model (`packages/core/src/operations/update.t
 
 Bare `update` re-runs `executeInstall` for stale **marketplace** plugins (0123 refreshes the manifest) and prints `npm i -g @gobing-ai/superskill@latest` once for stale **bundled** plugins. `--check` is read-only.
 
+Skills: `checkSkills` (skills-ecosystem, task 0134) produces read-only skill rows (`stale` \| `current` \| `unchecked` \| `unavailable`) from the skills locks; a source with no read-only hash (`git`/`gitlab`/`well-known`) is `unchecked`, never `current`, and `updateSkills(precheck)` consumes those rows without recomputing them or reclassifying unchecked/unavailable rows as up to date.
+
 Feature selection filters canonical mapper output. Native Claude/OMP/Grok installation rejects a
 partial feature set because those host installers operate on the full plugin package.
 Pi and Codex additionally receive native agent files at install time: Pi agents
@@ -173,6 +175,7 @@ Bot receipt without the field skips the Bot reinstall and prints explicit reinst
 | `superskill doctor` | `--targets grok-bot` (only supported value; read-only), `--json` — exit 0 healthy/creatable, 1 broken/unavailable, 2 usage (ADR-036, task 0128) |
 | `skill package <name>` | `-o, --output <dir>`, `--include-companions` |
 | `skill migrate <sources...>` | `--refine`, `--ingest <file>`, `-t, --target <agent>`, `--margin <n>` |
+| `skill update [names...]` | `-g, --global`, `-y, --yes`, `--json`, `--check` (read-only; exit 0 current/unchanged, 1 stale, 2 unavailable) |
 | `hook emit <name>` | `-t, --target <agent>`, `--global`, `--dry-run` |
 | `hook run <plugin> <hook-id>` | `--profile <block\|deny>` |
 | `magent evaluate <nameOrPath>` | `--target <agent>`, `--json`, `--save`, `--rubric <file>`, `--ingest <file>`, `--base-path <dir>` |

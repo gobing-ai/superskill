@@ -6,7 +6,14 @@ import { join } from 'node:path';
 import type { cloneRepo } from '../../src/skills-ecosystem/fetch';
 import { cleanAndCreateDir } from '../../src/skills-ecosystem/installer';
 import { getGlobalLockPath, readGlobalLock, writeGlobalLock } from '../../src/skills-ecosystem/locks';
-import { addSkills, listSkills, removeSkills, updateSkills } from '../../src/skills-ecosystem/operations';
+import {
+    addSkills,
+    checkSkills,
+    listSkills,
+    removeSkills,
+    type SkillCheckRow,
+    updateSkills,
+} from '../../src/skills-ecosystem/operations';
 
 /** Minimal valid skill fixture: discovery requires frontmatter name + description. */
 function skillMd(name: string, heading?: string): string {
@@ -617,5 +624,210 @@ describe('operations.ts - Skill ecosystem domain operations (add, list, remove, 
         } finally {
             await rm(testHome, { recursive: true, force: true });
         }
+    });
+});
+
+describe('operations.ts - checkSkills read-only check (F8 task 0134)', () => {
+    it('reports stale and current local-source skills without writing (project lock)', async () => {
+        const projectDir = await makeHome('ops-check-');
+        const staleSrc = join(projectDir, 'stale-src');
+        await makeSource(staleSrc, skillMd('Stale Src', 'Stale v1'));
+        const currentSrc = join(projectDir, 'current-src');
+        await makeSource(currentSrc, skillMd('Current Src', 'Current v1'));
+        expect((await addSkills(staleSrc, { cwd: projectDir })).success).toBe(true);
+        expect((await addSkills(currentSrc, { cwd: projectDir })).success).toBe(true);
+
+        writeFileSync(join(staleSrc, 'SKILL.md'), skillMd('Stale Src', 'Stale v2'));
+
+        const lockPath = join(projectDir, 'skills-lock.json');
+        const lockBefore = readFileSync(lockPath, 'utf-8');
+        const canonicalBefore = readFileSync(join(projectDir, '.agents/skills/stale-src/SKILL.md'), 'utf-8');
+
+        const res = await checkSkills(undefined, { cwd: projectDir });
+
+        expect(res.success).toBe(true);
+        expect(res.error).toBeUndefined();
+        const stale = res.rows.find((row) => row.name === 'stale-src');
+        const current = res.rows.find((row) => row.name === 'current-src');
+        expect(stale?.status).toBe('stale');
+        expect(stale?.sourceType).toBe('local');
+        expect(stale?.upstreamHash).not.toBe(stale?.installedHash);
+        expect(stale?.reason).toBe('Upstream hash differs');
+        expect(current?.status).toBe('current');
+        expect(current?.upstreamHash).toBe(current?.installedHash);
+        expect(current?.reason).toBe('Already up to date');
+        // Read-only proof: lock file and skill directories are byte-identical.
+        expect(readFileSync(lockPath, 'utf-8')).toBe(lockBefore);
+        expect(readFileSync(join(projectDir, '.agents/skills/stale-src/SKILL.md'), 'utf-8')).toBe(canonicalBefore);
+
+        await rm(projectDir, { recursive: true, force: true });
+    });
+
+    it('checks only requested names and fails on an unknown name', async () => {
+        const projectDir = await makeHome('ops-check-names-');
+        const src = join(projectDir, 'known-src');
+        await makeSource(src, skillMd('Known Src'));
+        expect((await addSkills(src, { cwd: projectDir })).success).toBe(true);
+
+        const scoped = await checkSkills(['known-src'], { cwd: projectDir });
+        expect(scoped.success).toBe(true);
+        expect(scoped.rows.map((row) => row.name)).toEqual(['known-src']);
+
+        const unknown = await checkSkills(['ghost-skill'], { cwd: projectDir });
+        expect(unknown.success).toBe(false);
+        expect(unknown.error).toContain('ghost-skill');
+        expect(unknown.rows[0]?.status).toBe('unavailable');
+        expect(unknown.rows[0]?.reason).toBe('Not found in lock file');
+
+        await rm(projectDir, { recursive: true, force: true });
+    });
+
+    it('reports an unsupported source type as unchecked without cloning', async () => {
+        const testHome = await makeHome('ops-check-unsupported-');
+        const now = new Date().toISOString();
+        await writeGlobalLock(
+            {
+                version: 3,
+                skills: {
+                    'git-skill': {
+                        source: 'https://gitlab.com/acme/repo.git',
+                        sourceType: 'gitlab',
+                        sourceUrl: 'https://gitlab.com/acme/repo.git',
+                        ref: 'release',
+                        skillPath: 'skills/wanted/SKILL.md',
+                        skillFolderHash: 'stored-hash',
+                        installedAt: now,
+                        updatedAt: now,
+                    },
+                },
+            },
+            {},
+            testHome,
+        );
+        let clones = 0;
+        const cloneRepoFn = (async () => {
+            clones += 1;
+            return testHome;
+        }) as unknown as typeof cloneRepo;
+
+        const res = await checkSkills(undefined, { global: true, homeDir: testHome, env: {}, cloneRepoFn });
+
+        expect(res.success).toBe(true);
+        expect(res.rows[0]?.status).toBe('unchecked');
+        expect(res.rows[0]?.reason).toContain('gitlab');
+        expect(res.rows[0]?.installedHash).toBe('stored-hash');
+        expect(res.rows[0]?.upstreamHash).toBeUndefined();
+        expect(clones).toBe(0);
+
+        await rm(testHome, { recursive: true, force: true });
+    });
+
+    it('reports a fetch failure as unavailable and never current', async () => {
+        const testHome = await makeHome('ops-check-unavailable-');
+        const fetchFn = mockGitHubFetch(
+            [{ path: 'SKILL.md', contents: '# Remote body' }],
+            'skills/remote-skill/SKILL.md',
+            '---\nname: Remote Skill\ndescription: remote\n---\n# Remote body',
+        );
+        expect((await addSkills('owner/repo', { global: true, homeDir: testHome, env: {}, fetchFn })).success).toBe(
+            true,
+        );
+        const failing = (async () => {
+            throw new Error('network down');
+        }) as unknown as typeof fetch;
+
+        const res = await checkSkills(undefined, { global: true, homeDir: testHome, fetchFn: failing });
+
+        expect(res.success).toBe(false);
+        const row = res.rows.find((item) => item.name === 'remote-skill');
+        // fetchRepoTree collapses the thrown fetch failure into a null tree, so the reason is
+        // the honest fetch-or-empty message rather than a "not found in source" lookup miss.
+        expect(row?.status).toBe('unavailable');
+        expect(row?.reason).toContain('Failed to fetch source tree');
+        expect(res.error).toContain('remote-skill');
+
+        await rm(testHome, { recursive: true, force: true });
+    });
+
+    it('updateSkills honors precheck rows without recomputing or reclassifying', async () => {
+        const testHome = await makeHome('ops-precheck-');
+        const sourceDir = join(testHome, 'pc-src');
+        await makeSource(sourceDir, skillMd('Pc Src', 'Pc v1'));
+        expect((await addSkills(sourceDir, { global: true, homeDir: testHome, env: {} })).success).toBe(true);
+
+        const check = await checkSkills(undefined, { global: true, homeDir: testHome, env: {} });
+        expect(check.rows[0]?.status).toBe('current');
+
+        // A precheck-driven no-op skips the reinstall: a drifted canonical copy stays untouched.
+        const driftMarker = join(testHome, '.agents/skills/pc-src/DRIFT.md');
+        writeFileSync(driftMarker, 'local drift');
+        const noop = await updateSkills(['pc-src'], {
+            global: true,
+            homeDir: testHome,
+            env: {},
+            precheck: check.rows,
+        });
+        expect(noop.success).toBe(true);
+        expect(noop.updated[0]?.updated).toBe(false);
+        expect(noop.updated[0]?.reason).toBe('Already up to date');
+        expect(existsSync(driftMarker)).toBe(true);
+
+        writeFileSync(join(sourceDir, 'SKILL.md'), skillMd('Pc Src', 'Pc v2'));
+        const staleCheck = await checkSkills(['pc-src'], { global: true, homeDir: testHome, env: {} });
+        expect(staleCheck.rows[0]?.status).toBe('stale');
+        const reinstalled = await updateSkills(['pc-src'], {
+            global: true,
+            homeDir: testHome,
+            env: {},
+            precheck: staleCheck.rows,
+        });
+        expect(reinstalled.success).toBe(true);
+        expect(reinstalled.updated[0]?.updated).toBe(true);
+        expect(readFileSync(join(testHome, '.agents/skills/pc-src/SKILL.md'), 'utf-8')).toContain('Pc v2');
+
+        const uncheckedRows: SkillCheckRow[] = [
+            {
+                name: 'pc-src',
+                source: 'https://gitlab.com/acme/repo.git',
+                sourceType: 'gitlab',
+                status: 'unchecked',
+                installedHash: 'h',
+                reason: "Source type 'gitlab' has no read-only hash",
+            },
+        ];
+        const unchecked = await updateSkills(['pc-src'], {
+            global: true,
+            homeDir: testHome,
+            env: {},
+            precheck: uncheckedRows,
+        });
+        expect(unchecked.success).toBe(true);
+        expect(unchecked.updated[0]?.updated).toBe(false);
+        expect(unchecked.updated[0]?.reason).toContain('gitlab');
+
+        const unavailableRows: SkillCheckRow[] = [
+            {
+                name: 'pc-src',
+                source: sourceDir,
+                sourceType: 'local',
+                status: 'unavailable',
+                installedHash: 'h',
+                reason: 'fetch failed: network down',
+            },
+        ];
+        const lockBefore = readFileSync(getGlobalLockPath({}, testHome), 'utf-8');
+        const unavailable = await updateSkills(['pc-src'], {
+            global: true,
+            homeDir: testHome,
+            env: {},
+            precheck: unavailableRows,
+        });
+        expect(unavailable.success).toBe(false);
+        expect(unavailable.updated[0]?.updated).toBe(false);
+        expect(unavailable.updated[0]?.reason).toBe('fetch failed: network down');
+        expect(unavailable.error).toContain('pc-src');
+        expect(readFileSync(getGlobalLockPath({}, testHome), 'utf-8')).toBe(lockBefore);
+
+        await rm(testHome, { recursive: true, force: true });
     });
 });

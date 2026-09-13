@@ -572,6 +572,8 @@ export interface UpdateSkillsOptions {
     fetchFn?: typeof fetch;
     env?: Record<string, string | undefined>;
     cloneRepoFn?: typeof cloneRepo;
+    /** Caller-supplied checkSkills rows; covered names skip the local hash recomputation. */
+    precheck?: readonly SkillCheckRow[];
 }
 
 /** Item representing update outcome for an installed skill. */
@@ -587,6 +589,24 @@ export interface UpdatedSkillItem {
 export interface UpdateSkillsResult {
     success: boolean;
     updated: UpdatedSkillItem[];
+    error?: string;
+}
+
+/** One read-only comparison row for a lock-tracked skill (task 0134). */
+export interface SkillCheckRow {
+    name: string;
+    source: string;
+    sourceType: ParsedSource['type'];
+    status: 'stale' | 'current' | 'unchecked' | 'unavailable';
+    installedHash: string;
+    upstreamHash?: string;
+    reason?: string;
+}
+
+/** Result envelope returned by checkSkills operation. */
+export interface CheckSkillsResult {
+    success: boolean;
+    rows: SkillCheckRow[];
     error?: string;
 }
 
@@ -624,17 +644,41 @@ export async function updateSkills(names?: string[], options: UpdateSkillsOption
             continue;
         }
 
+        // R3: a caller-provided precheck replaces the local hash comparison for its rows, so a
+        // checkSkills pass is not recomputed here. An unchecked/unavailable row is reported as
+        // not updated with its reason and is never reclassified as up to date.
+        const precheckRow = options.precheck?.find((row) => row.name === name);
+        if (precheckRow && precheckRow.status !== 'stale') {
+            if (precheckRow.status === 'current') {
+                results.push({
+                    name,
+                    updated: false,
+                    oldHash: precheckRow.installedHash,
+                    newHash: precheckRow.installedHash,
+                    reason: 'Already up to date',
+                });
+                continue;
+            }
+            results.push({
+                name,
+                updated: false,
+                reason: precheckRow.reason ?? `Skill check reported ${precheckRow.status}`,
+            });
+            if (precheckRow.status === 'unavailable') hadFailure = true;
+            continue;
+        }
+
         const source = sourceInfo.source;
         const oldHash = 'skillFolderHash' in sourceInfo ? sourceInfo.skillFolderHash : sourceInfo.computedHash;
         const resolvedSource = resolveLockedSource(sourceInfo, name, cwd, global);
 
         // No-op contract: when the source content hash still equals the stored hash, skip the
-        // reinstall + re-emit entirely. Any hashing failure falls through to a full reinstall,
-        // so an undecidable source never produces a false no-op.
+        // reinstall + re-emit entirely. Unsupported or failed hashing falls through to a full
+        // reinstall, so an undecidable source never produces a false no-op.
         const sourceHash = await computeSourceSkillHash(resolvedSource.parsed, name, {
             fetchFn: options.fetchFn,
         });
-        if (sourceHash !== undefined && sourceHash === oldHash) {
+        if ('hash' in sourceHash && sourceHash.hash === oldHash) {
             results.push({ name, updated: false, oldHash, newHash: oldHash, reason: 'Already up to date' });
             continue;
         }
@@ -693,15 +737,111 @@ export async function updateSkills(names?: string[], options: UpdateSkillsOption
 }
 
 /**
+ * Read-only update check for lock-tracked skills: compare each lock entry's stored hash
+ * against a freshly computed upstream hash using the same lock/scope resolution as
+ * {@link updateSkills} (global `~/.agents/.skill-lock.json` by default, `./skills-lock.json`
+ * when `global:false`; the caller owns the ADR-035 scope mapping). Names undefined (or empty)
+ * check every skill in that lock; an unknown name yields an 'unavailable' row and a failing
+ * envelope. Writes nothing — locks, skill directories, and caches are only read.
+ */
+export async function checkSkills(names?: string[], options: UpdateSkillsOptions = {}): Promise<CheckSkillsResult> {
+    const global = options.global ?? false;
+    const cwd = options.cwd || process.cwd();
+    const env = options.env ?? process.env;
+
+    const lock = global ? await readGlobalLock(env, options.homeDir) : await readLocalLock(cwd);
+    if (lock.warning) {
+        return { success: false, rows: [], error: lockVersionError(lock.warning) };
+    }
+
+    const skillNames: string[] = [];
+    if (names && names.length > 0) {
+        const lockKeys = Object.keys(lock.skills);
+        for (const name of names) {
+            skillNames.push(resolveSkillsToRemove([name], lockKeys, lockKeys)[0] ?? sanitizeName(name));
+        }
+    } else {
+        skillNames.push(...Object.keys(lock.skills));
+    }
+
+    const rows: SkillCheckRow[] = [];
+    for (const name of skillNames) {
+        const sourceInfo = lock.skills[name];
+        if (!sourceInfo) {
+            rows.push({
+                name,
+                source: '',
+                sourceType: 'local',
+                status: 'unavailable',
+                installedHash: '',
+                reason: 'Not found in lock file',
+            });
+            continue;
+        }
+
+        const installedHash = 'skillFolderHash' in sourceInfo ? sourceInfo.skillFolderHash : sourceInfo.computedHash;
+        const resolvedSource = resolveLockedSource(sourceInfo, name, cwd, global);
+        const base = {
+            name,
+            source: sourceInfo.source,
+            sourceType: resolvedSource.parsed.type,
+            installedHash,
+        };
+        const sourceHash = await computeSourceSkillHash(resolvedSource.parsed, name, {
+            fetchFn: options.fetchFn,
+        });
+
+        if ('hash' in sourceHash) {
+            const current = sourceHash.hash === installedHash;
+            rows.push({
+                ...base,
+                status: current ? 'current' : 'stale',
+                upstreamHash: sourceHash.hash,
+                reason: current ? 'Already up to date' : 'Upstream hash differs',
+            });
+        } else if ('unsupported' in sourceHash) {
+            rows.push({
+                ...base,
+                status: 'unchecked',
+                reason: `Source type '${sourceHash.unsupported}' has no read-only hash`,
+            });
+        } else {
+            rows.push({ ...base, status: 'unavailable', reason: sourceHash.error });
+        }
+    }
+
+    const failures = rows.filter((row) => row.status === 'unavailable');
+    return {
+        success: failures.length === 0,
+        rows,
+        ...(failures.length > 0
+            ? {
+                  error: `Failed to check ${failures.length} skill(s): ${failures
+                      .map((row) => `${row.name}: ${row.reason ?? 'unknown failure'}`)
+                      .join('; ')}`,
+              }
+            : {}),
+    };
+}
+
+/**
+ * Explicit three-way outcome of hashing a skill's upstream source without installing: a
+ * computed hash, a source type with no read-only hash, or a fetch/parse failure.
+ */
+type SourceSkillHashOutcome = { hash: string } | { unsupported: ParsedSource['type'] } | { error: string };
+
+/**
  * Best-effort content hash of a skill's current source, comparable to the hash stored at
- * install time. Returns undefined when the source cannot be hashed without installing — the
- * caller then falls back to a full reinstall (never a false no-op).
+ * install time. The outcome is explicit (task 0134): `{ hash }` when the upstream hash was
+ * computed, `{ unsupported }` for source types with no read-only hash (git, gitlab,
+ * well-known), and `{ error }` for fetch/clone/parse failures — a caller must never treat
+ * the latter two as "already up to date".
  */
 async function computeSourceSkillHash(
     parsed: ParsedSource,
     skillName: string,
     opts: { fetchFn?: typeof fetch },
-): Promise<string | undefined> {
+): Promise<SourceSkillHashOutcome> {
     if (parsed.type === 'local') {
         try {
             const discovered = await discoverSkills(parsed.localPath ?? parsed.url, parsed.subpath, {
@@ -709,26 +849,29 @@ async function computeSourceSkillHash(
             });
             const match = discovered.find((s) => sanitizeName(s.name) === sanitizeName(skillName));
             if (!match) {
-                return undefined;
+                return { error: `Skill '${skillName}' not found in source` };
             }
             // Hash with copyDir's exclusion sets so the source hash is comparable to the
             // canonical-copy hash recorded by addSkills.
-            return await computeCanonicalSkillFolderHash(match.path, {
-                excludeFiles: EXCLUDE_FILES,
-                excludeDirs: EXCLUDE_DIRS,
-            });
-        } catch {
-            return undefined;
+            return {
+                hash: await computeCanonicalSkillFolderHash(match.path, {
+                    excludeFiles: EXCLUDE_FILES,
+                    excludeDirs: EXCLUDE_DIRS,
+                }),
+            };
+        } catch (error) {
+            return { error: error instanceof Error ? error.message : String(error) };
         }
     }
 
+    if (parsed.type !== 'github') {
+        return { unsupported: parsed.type };
+    }
+
     try {
-        if (parsed.type !== 'github') {
-            return undefined;
-        }
         const ownerRepo = getOwnerRepo(parsed);
         if (!ownerRepo) {
-            return undefined;
+            return { error: `Cannot resolve owner/repo from source '${parsed.url}'` };
         }
         const blobRes = await tryBlobInstall(ownerRepo, {
             fetchFn: opts.fetchFn,
@@ -737,9 +880,17 @@ async function computeSourceSkillHash(
             ref: parsed.ref,
             skillFilter: parsed.skillFilter ?? skillName,
         });
-        const match = blobRes?.skills.find((s) => sanitizeName(s.name) === sanitizeName(skillName));
-        return match?.snapshotHash;
-    } catch {
-        return undefined;
+        // tryBlobInstall collapses "tree fetch failed" and "no skills in tree" into null, so the
+        // null case stays honest about both instead of claiming the skill is missing.
+        if (!blobRes) {
+            return { error: `Failed to fetch source tree for '${ownerRepo}' or no skills found` };
+        }
+        const match = blobRes.skills.find((s) => sanitizeName(s.name) === sanitizeName(skillName));
+        if (!match) {
+            return { error: `Skill '${skillName}' not found in source` };
+        }
+        return { hash: match.snapshotHash };
+    } catch (error) {
+        return { error: error instanceof Error ? error.message : String(error) };
     }
 }

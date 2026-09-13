@@ -6,7 +6,7 @@ status: active
 priority: P2
 tags: []
 created_at: "2026-09-13T17:34:31.464Z"
-updated_at: "2026-09-13T19:44:46.759Z"
+updated_at: "2026-09-13T20:27:00.234Z"
 ---
 
 # F8: Unified update: lock-tracked skills + actionable output
@@ -200,6 +200,39 @@ Feature: Unified update: lock-tracked skills + actionable output
     Given an UpdateRow { kind: 'plugin', name: 'kk', status: 'unavailable', locator: '/tmp/gone-marketplace', reason: 'locator path missing' }
     When the text formatter renders it
     Then the row contains '(/tmp/gone-marketplace): locator path missing'
+
+
+  <!-- Task 0134 refinement scenarios (DD-09 subset rule): task-level ACs verified by
+       spur task verdict 0134 (runall-f8-48d9), certified PASS 2026-09-13. -->
+  @refinement-0134
+  Scenario: R6 — Skill update check reports staleness without writing
+    Given the project skill lock records a stale `demo-skill`
+    When the operator runs `superskill skill update --check`
+    Then the output lists `demo-skill` as stale, the exit code is 1, and the lock file is unchanged
+
+  @refinement-0134
+  Scenario: R7 — Skill update summary counts only skills that changed
+    Given the project skill lock records two skills whose hashes equal their source hashes
+    When the operator runs `superskill skill update`
+    Then the output reports 0 skills updated and 2 up to date, and never reports "Updated 2 skill(s)"
+
+  @refinement-0134
+  Scenario: R18 — Skill update help shows the --yes default once
+    Given the `superskill skill add|remove|update` help output
+    When the `--yes` flag line is rendered
+    Then `(default: true)` appears exactly once and no description duplicates it
+
+  @refinement-0134
+  Scenario: R20 — An unhashable skill source is unavailable, never current (core half)
+    Given a locked skill whose source type cannot be hashed (unsupported type or fetch failure)
+    When `checkSkills` evaluates it
+    Then the row is `unavailable` (or `unchecked` for unsupported types) with a reason, never `current`, and success is false
+
+  @refinement-0134
+  Scenario: R1 — checkSkills is read-only and scoped (core half of update coverage)
+    Given a lock with a stale and a current local-source skill
+    When `checkSkills` runs without names
+    Then both rows report their statuses and hashes, the lock file and skill directories are byte-identical, and no clone occurs
 
 ## Tasks
 

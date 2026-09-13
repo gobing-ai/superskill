@@ -1,4 +1,12 @@
-import { addSkills, listSkills, removeSkills, type Target, updateSkills } from '@gobing-ai/superskill-core';
+import {
+    addSkills,
+    checkSkills,
+    listSkills,
+    removeSkills,
+    type SkillCheckRow,
+    type Target,
+    updateSkills,
+} from '@gobing-ai/superskill-core';
 import { echo, echoError } from '@gobing-ai/ts-utils';
 import type { Command } from 'commander';
 import { evaluate, formatEvaluationReport } from '../operations/evaluate';
@@ -355,12 +363,59 @@ export async function handleSkillRemove(
     });
 }
 
+/** One text row for a skill check; unchecked/unavailable print as `status: reason`. */
+function skillCheckLine(row: SkillCheckRow): string {
+    if (row.status === 'unchecked' || row.status === 'unavailable') {
+        return `  - ${row.name}: ${row.status}: ${row.reason ?? 'unknown failure'}`;
+    }
+    const label = row.status === 'stale' ? 'Stale' : 'Up to date';
+    return row.reason !== undefined ? `  - ${row.name}: ${label} (${row.reason})` : `  - ${row.name}: ${label}`;
+}
+
+/** Aggregate counts behind the skill check JSON summary. */
+function summarizeSkillCheck(rows: readonly SkillCheckRow[]): {
+    total: number;
+    stale: number;
+    current: number;
+    unchecked: number;
+    unavailable: number;
+} {
+    return {
+        total: rows.length,
+        stale: rows.filter((row) => row.status === 'stale').length,
+        current: rows.filter((row) => row.status === 'current').length,
+        unchecked: rows.filter((row) => row.status === 'unchecked').length,
+        unavailable: rows.filter((row) => row.status === 'unavailable').length,
+    };
+}
+
 /** Run skill update as a CLI action. */
 export async function handleSkillUpdate(
     names: string[],
-    opts: { global?: boolean; yes?: boolean; json?: boolean; homeDir?: string },
+    opts: { global?: boolean; yes?: boolean; json?: boolean; homeDir?: string; check?: boolean },
 ): Promise<void> {
     await runOperation(async () => {
+        if (opts.check) {
+            const check = await checkSkills(names.length > 0 ? names : undefined, {
+                global: opts.global,
+                homeDir: opts.homeDir,
+            });
+            if (opts.json) {
+                echo(JSON.stringify({ rows: check.rows, summary: summarizeSkillCheck(check.rows) }, null, 2));
+            } else {
+                for (const row of check.rows) {
+                    echo(skillCheckLine(row));
+                }
+            }
+            if (!check.success && check.rows.length === 0) {
+                echoError(check.error ?? 'Failed to check skills');
+                return 2;
+            }
+            // ADR-035 exit contract: 2 unavailable, else 1 stale under --check, else 0.
+            if (check.rows.some((row) => row.status === 'unavailable')) return 2;
+            return check.rows.some((row) => row.status === 'stale') ? 1 : 0;
+        }
+
         const res = await updateSkills(names.length > 0 ? names : undefined, {
             global: opts.global,
             homeDir: opts.homeDir,
@@ -375,7 +430,10 @@ export async function handleSkillUpdate(
             return 1;
         }
 
-        echo(`Updated ${res.updated.length} skill(s):`);
+        // R5: the header counts only changed skills; unchanged and skipped rows never inflate it.
+        const updatedCount = res.updated.filter((item) => item.updated).length;
+        const currentCount = res.updated.filter((item) => !item.updated && item.reason === 'Already up to date').length;
+        echo(`Updated ${updatedCount} skill(s), ${currentCount} up to date:`);
         for (const item of res.updated) {
             const status = item.updated ? 'Updated' : 'Up to date';
             echo(`  - ${item.name}: ${status} (${item.reason})`);
@@ -394,7 +452,7 @@ export function registerSkill(program: Command): void {
         .option('-a, --agent <targets...>', 'Target agent(s) to emit to (comma-separated or multiple)')
         .option('-g, --global', 'Install to user-level global directory instead of project-level')
         .option('--copy', 'Force copy mode instead of relative symlinking')
-        .option('-y, --yes', 'Non-interactive auto-confirm (default: true)', true)
+        .option('-y, --yes', 'Non-interactive auto-confirm', true)
         .option('--list', 'List discovered skills without installing')
         .option('--dry-run', 'Preview installation without writing files')
         .option('--json', 'Output structured JSON envelope')
@@ -410,15 +468,16 @@ export function registerSkill(program: Command): void {
         .alias('rm')
         .description('Remove installed skill(s) across all targets and lock files')
         .option('-g, --global', 'Remove from user-level global directories')
-        .option('-y, --yes', 'Non-interactive auto-confirm (default: true)', true)
+        .option('-y, --yes', 'Non-interactive auto-confirm', true)
         .option('--json', 'Output structured JSON envelope')
         .action(handleSkillRemove);
 
     cmd.command('update [names...]')
         .description('Update installed skill(s) from their source repositories')
         .option('-g, --global', 'Update user-level global skills')
-        .option('-y, --yes', 'Non-interactive auto-confirm (default: true)', true)
+        .option('-y, --yes', 'Non-interactive auto-confirm', true)
         .option('--json', 'Output structured JSON envelope')
+        .option('--check', 'Report stale skills without writing files', false)
         .action(handleSkillUpdate);
 
     addScaffoldOptions(cmd.command('scaffold <name>').description('Create a new skill from template'), true).action(

@@ -1,10 +1,10 @@
 ---
 schema_version: 1
 name: Skill update check and honest summary
-status: todo
+status: done
 template: feature-impl
 created_at: 2026-09-13T18:04:14.439Z
-updated_at: "2026-09-13T18:41:48.249Z"
+updated_at: "2026-09-13T20:27:19.785Z"
 feature_id: F8
 priority: P2
 tags:
@@ -22,13 +22,13 @@ Core seam for everything skill-related in F8. Today updateSkills (packages/core/
 
 ### Requirements
 
-- [ ] R1. Export a read-only skill check operation from packages/core/src/skills-ecosystem/operations.ts. checkSkills(names?: string[], options?: UpdateSkillsOptions): Promise<CheckSkillsResult> where CheckSkillsResult { success: boolean; rows: SkillCheckRow[]; error?: string } and SkillCheckRow { name: string; source: string; sourceType: ParsedSource['type']; status: 'stale' | 'current' | 'unchecked' | 'unavailable'; installedHash: string; upstreamHash?: string; reason?: string }. It reads the same lock/scope resolution updateSkills uses (global ~/.agents/.skill-lock.json by default; ./skills-lock.json when global:false — the caller owns the ADR-035 scope mapping), names undefined means every skill in that lock, an unknown name yields success:false with an error naming it, and it performs no writes to locks, skill directories, or caches.
-- [ ] R2. Make the source-hash outcome three-way. computeSourceSkillHash gains a distinct-outcome wrapper (or returns a tagged result): { hash } for a computed upstream hash, { unsupported: type } for source types with no read-only hash (git, gitlab, well-known), and { error: reason } for fetch/clone/parse failures. checkSkills maps these to stale (hashes differ), current (equal), unchecked (unsupported, reason names the source type), unavailable (error, reason carries the failure). A skill whose upstream cannot be hashed is never reported current.
-- [ ] R3. updateSkills reuses the pre-check. updateSkills gains precheck?: readonly SkillCheckRow[]; when provided it skips its own hash recomputation for covered names and never reclassifies an unchecked/unavailable row as up to date — such rows are reported as not updated with their reason. Without precheck, updateSkills behaves exactly as today (existing skill-verbs and operations tests pass unmodified).
-- [ ] R4. skill update --check is read-only. apps/cli/src/commands/skill.ts handleSkillUpdate gains check?: boolean: in check mode it calls checkSkills only, prints the same per-skill lines the update path would print for stale/current plus `unchecked: <reason>` / `unavailable: <reason>` rows, sets exit code 1 when any row is stale (0 otherwise; 2 on unavailable per the ADR-035 contract), and writes nothing. --check with --json emits { rows, summary } shaped consistently with the text output.
-- [ ] R5. The skill update header counts only changed skills. The text header becomes `Updated <u> skill(s), <c> up to date:` where u counts reinstalled skills and c counts skills verified current; unchecked/unavailable rows are listed with their reasons and counted in neither bucket. The current lie — header `Updated 2 skill(s)` when nothing changed — is removed.
-- [ ] R6. The -y/--yes help shows its default once. On skill add/remove/update, the option help is 'Non-interactive auto-confirm' with the default rendered exactly once by Commander (remove the hand-appended '(default: true)' from the description string).
-- [ ] R7. Leave focused regression evidence. New core tests cover checkSkills across local-source skills (stale/current), an unsupported source type (unchecked), and a fetch failure (unavailable) using the existing fetchFn/cloneRepoFn/homeDir seams; skill-verbs tests cover --check read-only behavior and exit codes, the new header, and the help text. bun run lint, bun run test, bun run build pass. docs/04_DESIGN.md's skill verb row gains --check in the same commit.
+- [x] R1. Export a read-only skill check operation from packages/core/src/skills-ecosystem/operations.ts. checkSkills(names?: string[], options?: UpdateSkillsOptions): Promise<CheckSkillsResult> where CheckSkillsResult { success: boolean; rows: SkillCheckRow[]; error?: string } and SkillCheckRow { name: string; source: string; sourceType: ParsedSource['type']; status: 'stale' | 'current' | 'unchecked' | 'unavailable'; installedHash: string; upstreamHash?: string; reason?: string }. It reads the same lock/scope resolution updateSkills uses (global ~/.agents/.skill-lock.json by default; ./skills-lock.json when global:false — the caller owns the ADR-035 scope mapping), names undefined means every skill in that lock, an unknown name yields success:false with an error naming it, and it performs no writes to locks, skill directories, or caches.
+- [x] R2. Make the source-hash outcome three-way. computeSourceSkillHash gains a distinct-outcome wrapper (or returns a tagged result): { hash } for a computed upstream hash, { unsupported: type } for source types with no read-only hash (git, gitlab, well-known), and { error: reason } for fetch/clone/parse failures. checkSkills maps these to stale (hashes differ), current (equal), unchecked (unsupported, reason names the source type), unavailable (error, reason carries the failure). A skill whose upstream cannot be hashed is never reported current.
+- [x] R3. updateSkills reuses the pre-check. updateSkills gains precheck?: readonly SkillCheckRow[]; when provided it skips its own hash recomputation for covered names and never reclassifies an unchecked/unavailable row as up to date — such rows are reported as not updated with their reason. Without precheck, updateSkills behaves exactly as today (existing skill-verbs and operations tests pass unmodified).
+- [x] R4. skill update --check is read-only. apps/cli/src/commands/skill.ts handleSkillUpdate gains check?: boolean: in check mode it calls checkSkills only, prints the same per-skill lines the update path would print for stale/current plus `unchecked: <reason>` / `unavailable: <reason>` rows, sets exit code 1 when any row is stale (0 otherwise; 2 on unavailable per the ADR-035 contract), and writes nothing. --check with --json emits { rows, summary } shaped consistently with the text output.
+- [x] R5. The skill update header counts only changed skills. The text header becomes `Updated <u> skill(s), <c> up to date:` where u counts reinstalled skills and c counts skills verified current; unchecked/unavailable rows are listed with their reasons and counted in neither bucket. The current lie — header `Updated 2 skill(s)` when nothing changed — is removed.
+- [x] R6. The -y/--yes help shows its default once. On skill add/remove/update, the option help is 'Non-interactive auto-confirm' with the default rendered exactly once by Commander (remove the hand-appended '(default: true)' from the description string).
+- [x] R7. Leave focused regression evidence. New core tests cover checkSkills across local-source skills (stale/current), an unsupported source type (unchecked), and a fetch failure (unavailable) using the existing fetchFn/cloneRepoFn/homeDir seams; skill-verbs tests cover --check read-only behavior and exit codes, the new header, and the help text. bun run lint, bun run test, bun run build pass. docs/04_DESIGN.md's skill verb row gains --check in the same commit.
 
 ### Acceptance Criteria
 
@@ -78,18 +78,84 @@ Design D1 (locks stay SSOT, read via checkSkills) and D2 (unchecked is exit-neut
 
 ### Solution
 
-<!-- Filled during implementation: file:line change map and concise rationale. -->
+Change-map (auto-generated — implement step did not record a Solution).
+Each entry cites the first changed line per file (`file:line`).
+
+| Change (`file:line`) |
+|----------------------|
+| `apps/cli/src/commands/skill.ts:1` |
+| `apps/cli/src/commands/skill.ts:366` |
+| `apps/cli/src/commands/skill.ts:395` |
+| `apps/cli/src/commands/skill.ts:398` |
+| `apps/cli/src/commands/skill.ts:433` |
+| `apps/cli/src/commands/skill.ts:455` |
+| `apps/cli/src/commands/skill.ts:471` |
+| `apps/cli/src/commands/skill.ts:478` |
+| `apps/cli/src/commands/skill.ts:480` |
+| `apps/cli/tests/commands/skill-verbs.test.ts:2` |
+| `apps/cli/tests/commands/skill-verbs.test.ts:254` |
+| `apps/cli/tests/commands/skill-verbs.test.ts:7` |
+| `packages/core/src/skills-ecosystem/operations.ts:575` |
+| `packages/core/src/skills-ecosystem/operations.ts:595` |
+| `packages/core/src/skills-ecosystem/operations.ts:647` |
+| `packages/core/src/skills-ecosystem/operations.ts:676` |
+| `packages/core/src/skills-ecosystem/operations.ts:681` |
+| `packages/core/src/skills-ecosystem/operations.ts:739` |
+| `packages/core/src/skills-ecosystem/operations.ts:835` |
+| `packages/core/src/skills-ecosystem/operations.ts:844` |
+| `packages/core/src/skills-ecosystem/operations.ts:852` |
+| `packages/core/src/skills-ecosystem/operations.ts:856` |
+| `packages/core/src/skills-ecosystem/operations.ts:867` |
+| `packages/core/src/skills-ecosystem/operations.ts:871` |
+| `packages/core/src/skills-ecosystem/operations.ts:874` |
+| `packages/core/src/skills-ecosystem/operations.ts:883` |
+| `packages/core/tests/skills-ecosystem/operations.test.ts:629` |
+| `packages/core/tests/skills-ecosystem/operations.test.ts:9` |
 
 ### Testing
 
-<!-- Filled during verification: commands run, outcomes, coverage claim or N/A. -->
+**Pipeline verify results**
+
+- Verdict: PASS (from verdict artifact)
+
+| Requirement | Status | Evidence |
+|-------------|--------|----------|
+| R1 | MET | packages/core/src/skills-ecosystem/operations.ts:747 (export, signature), :596-611 (SkillCheckRow/CheckSkillsResult), :748-763 (same lock/scope resolution, names→all lock keys), :769-777 + :812-819 (unknown name → success:false naming it); no writes proven by byte-identical lock/canonical in operations.test.ts:654-664 |
+| R2 | MET | operations.ts:831 (three-way outcome union), :866-869 (git/gitlab/well-known → unsupported), :797-810 (stale/current/unchecked/unavailable mapping); never-current structural guarantee + tests operations.test.ts:685-750 |
+| R3 | MET | operations.ts:576 (precheck option), :647-669 (non-stale rows skip recompute, unchecked/unavailable never reclassified); operations.test.ts:752-838 (drift-marker no-op, stale reinstall, unchecked/unavailable preserved, lock unchanged); 2330 pass / 0 fail .spur/run/0134-test-gate.log |
+| R4 | MET | apps/cli/src/commands/skill.ts:480 (--check flag), :398-417 (exit 1 stale / 0 else / 2 unavailable), :366-373 (unchecked/unavailable lines), :404 (--json {rows, summary}); read-only + exit-code tests skill-verbs.test.ts:256-327 |
+| R5 | MET | skill.ts:434-436 (header counts only updated / 'Already up to date'); skill-verbs.test.ts:329-353 asserts Updated 0 skill(s), 2 up to date: and not.toContain('Updated 2 skill(s)') |
+| R6 | MET | skill.ts:455,471,478 ('Non-interactive auto-confirm' + Commander default true, no hand-appended (default: true)); skill-verbs.test.ts:355-371 exactly one (default: true) per add/remove/update help line |
+| R7 | MET | operations.test.ts:630-838 + skill-verbs.test.ts:255-371; docs/04_DESIGN.md:178,:120 same commit; .spur/run/0134-test-gate.log (lint+typecheck+2330/0+pre/post rules, digest match) and .spur/run/0134-build.log (exit 0) |
+
+| Acceptance Criteria | Status | Evidence Type | Evidence |
+|---------------------|--------|---------------|----------|
+| R6 — Skill update check reports staleness without writing | MET | test | apps/cli/tests/commands/skill-verbs.test.ts:256-278 (stale listed, exit 1, lock + canonical byte-identical); project-lock half operations.test.ts:631-664 |
+| R7 — Skill update summary counts only skills that changed | MET | test | apps/cli/tests/commands/skill-verbs.test.ts:329-353 |
+| R18 — Skill update help shows the --yes default once | MET | test | apps/cli/tests/commands/skill-verbs.test.ts:355-371 (regex match count 1 per verb) |
+| R20 — An unhashable skill source is unavailable, never current (core half) | MET | test | packages/core/tests/skills-ecosystem/operations.test.ts:725-750 (failing fetchFn → unavailable, success:false) + :788-830 (precheck consumption, lock byte-identical) |
+| R1 — checkSkills is read-only and scoped (core half of update coverage) | MET | test | packages/core/tests/skills-ecosystem/operations.test.ts:631-664 (statuses/hashes asserted, lock + skill dir byte-identical) |
+- Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review
 
-<!-- Filled during review: P1-P4 findings, residual risk, and final disposition. -->
+<!-- spur:record-review -->
+
+**SECU findings** (pipeline verify step — verdict: PASS)
+
+| Priority | Dimension | Location | Finding |
+|----------|-----------|----------|----------|
+| P4 | spur task check | — | task check passed |
+| P4 | evidence-rule-pass | — | All behavior-bearing AC rows have executable evidence or are explicitly non-behavioral. |
+| P4 | proof-input-digest | — | sha256:9e50ba95283629e696f05898fc44c84e5436b22a737437209c19603a35925b85 |
 
 ### References
 
 <!-- Links to the parent feature, design docs, related tasks, or external references. -->
 
 ### History
+
+- 2026-09-13T19:47:10.066Z todo → wip (system)
+- 2026-09-13T20:27:18.694Z wip → testing (system)
+- 2026-09-13T20:27:19.785Z testing → done (system)
+
