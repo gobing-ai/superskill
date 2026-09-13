@@ -1,10 +1,10 @@
 ---
 schema_version: 1
 name: Update apply progress lines and JSON envelope
-status: todo
+status: done
 template: feature-impl
 created_at: 2026-09-13T18:04:14.442Z
-updated_at: "2026-09-13T18:41:49.508Z"
+updated_at: "2026-09-13T22:31:37.241Z"
 feature_id: F8
 priority: P2
 tags:
@@ -23,9 +23,9 @@ Closing UX gap: applying updates is silent until done. Adds per-item progress an
 
 ### Requirements
 
-- [ ] R1. Apply mode reports per-item progress. Before each plugin reinstall and each skill reinstall, the CLI prints `Updating <name>…`; after all items, a final line `Updated <n> of <m>.` counts successes against attempted items (stale plugins + stale skills). Failed items are named on the final line or their own line, and the existing failure exit code 1 is preserved.
-- [ ] R2. The progress lines never corrupt JSON mode. In --check --json mode no progress or human lines are emitted (stdout stays the single envelope from 0134 R4); the npm remedy line is excluded from JSON stdout as well. A test asserts stdout parses as one JSON document with no other writes.
-- [ ] R3. Leave focused regression evidence. CLI tests cover: two stale items produce two progress lines and `Updated 2 of 2.`; a mixed plugin+skill apply reports both kinds; the JSON-mode stdout purity assertion. bun run lint, bun run test, bun run build pass. docs/04_DESIGN.md update surface notes the apply output lines in the same commit.
+- [x] R1. Apply mode reports per-item progress. Before each plugin reinstall and each skill reinstall, the CLI prints `Updating <name>…`; after all items, a final line `Updated <n> of <m>.` counts successes against attempted items (stale plugins + stale skills). Failed items are named on the final line or their own line, and the existing failure exit code 1 is preserved.
+- [x] R2. The progress lines never corrupt JSON mode. In --check --json mode no progress or human lines are emitted (stdout stays the single envelope from 0134 R4); the npm remedy line is excluded from JSON stdout as well. A test asserts stdout parses as one JSON document with no other writes.
+- [x] R3. Leave focused regression evidence. CLI tests cover: two stale items produce two progress lines and `Updated 2 of 2.`; a mixed plugin+skill apply reports both kinds; the JSON-mode stdout purity assertion. bun run lint, bun run test, bun run build pass. docs/04_DESIGN.md update surface notes the apply output lines in the same commit.
 
 ### Acceptance Criteria
 
@@ -61,18 +61,57 @@ Progress lines are plain echo() writes bracketing each existing installImpl/upda
 
 ### Solution
 
-<!-- Filled during implementation: file:line change map and concise rationale. -->
+Change-map (auto-generated — implement step did not record a Solution).
+Each entry cites the first changed line per file (`file:line`).
+
+| Change (`file:line`) |
+|----------------------|
+| `apps/cli/src/commands/update.ts:137` |
+| `apps/cli/src/commands/update.ts:347` |
+| `apps/cli/src/commands/update.ts:370` |
+| `apps/cli/src/commands/update.ts:383` |
+| `apps/cli/src/commands/update.ts:390` |
+| `apps/cli/src/commands/update.ts:405` |
+| `apps/cli/src/commands/update.ts:417` |
+| `apps/cli/tests/commands/update.test.ts:1267` |
 
 ### Testing
 
-<!-- Filled during verification: commands run, outcomes, coverage claim or N/A. -->
+**Pipeline verify results**
+
+- Verdict: PASS (from verdict artifact)
+
+| Requirement | Status | Evidence |
+|-------------|--------|----------|
+| R1 | MET | update.ts:371,390,418 (progress + final count), :411 (failed skill named own line), :421,:127-128 (exit 1 preserved); tests update.test.ts:1300,1330,1354 |
+| R2 | MET | update.ts:330-332 (single envelope write), :345-346 (progress/remedy/count guarded behind !options.check); purity test update.test.ts:1392 (JSON.parse of full stdout, no Updating/Updated/npm remedy, empty stderr) |
+| R3 | MET | tests update.test.ts:1300,1354,1392; .spur/run/0137-test-gate.log (lint clean, 2355 pass/0 fail, 33 pre + 3 post rules, digest = 0137-proofdigest.txt); .spur/run/0137-build.log (exit 0); docs/04_DESIGN.md:121 |
+
+| Acceptance Criteria | Status | Evidence Type | Evidence |
+|---------------------|--------|---------------|----------|
+| R13 — Applying updates reports progress and a final result | MET | test | update.test.ts:1300-1328 — exactly one Updating kk… and one Updating last30days…, output ends Updated 2 of 2. |
+| R16 — Update emits a machine-readable result with --json | MET | test | update.test.ts:1392-1446 — stdout parses as one JSON document; kk and last30days rows each carry kind/name/status; text-mode rerun asserts textCode === code |
+- Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review
 
-<!-- Filled during review: P1-P4 findings, residual risk, and final disposition. -->
+<!-- spur:record-review -->
+
+**SECU findings** (pipeline verify step — verdict: PASS)
+
+| Priority | Dimension | Location | Finding |
+|----------|-----------|----------|----------|
+| P4 | spur task check | — | task check passed |
+| P4 | evidence-rule-pass | — | All behavior-bearing AC rows have executable evidence or are explicitly non-behavioral. |
+| P4 | proof-input-digest | — | sha256:3f08e71497216089f74669d18a0f87ddeac9dfc30f5dff3210c803c77eb00136 |
 
 ### References
 
 <!-- Links to the parent feature, design docs, related tasks, or external references. -->
 
 ### History
+
+- 2026-09-13T22:01:10.605Z todo → wip (system)
+- 2026-09-13T22:31:36.153Z wip → testing (system)
+- 2026-09-13T22:31:37.241Z testing → done (system)
+

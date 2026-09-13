@@ -6,7 +6,7 @@ status: active
 priority: P2
 tags: []
 created_at: "2026-09-13T17:34:31.464Z"
-updated_at: "2026-09-13T22:00:46.110Z"
+updated_at: "2026-09-13T22:31:35.263Z"
 ---
 
 # F8: Unified update: lock-tracked skills + actionable output
@@ -329,6 +329,21 @@ Feature: Unified update: lock-tracked skills + actionable output
     Given a plugin whose upstream cannot be resolved (missing locator, unreadable manifest, or network failure)
     When `superskill update --check` evaluates it
     Then the row is unavailable with a specific reason string and the exit code is 2
+
+
+  <!-- Task 0137 refinement scenarios (DD-09 subset rule): task-level ACs verified by
+       spur task verdict 0137 (runall-f8-48d9), certified PASS 2026-09-13. -->
+  @refinement-0137
+  Scenario: R13 — Applying updates reports progress and a final result
+    Given one or more stale plugins and stale skills
+    When the operator runs `superskill update`
+    Then stdout prints one `Updating <name>…` line per attempted item and a final `Updated <n> of <m>.` line, failed items are named, and the failure exit code stays 1
+
+  @refinement-0137
+  Scenario: R16 — Update emits a machine-readable result with --json
+    Given any mix of stale, current, and unavailable rows
+    When the operator runs `superskill update --check --json`
+    Then stdout is exactly one JSON document whose rows carry kind, name, and status, with no progress, remedy, or summary lines, and the exit code equals the text-mode exit code
 
 ## Tasks
 

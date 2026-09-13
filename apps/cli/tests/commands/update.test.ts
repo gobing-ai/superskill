@@ -1264,3 +1264,182 @@ describe('executeUpdate - lock-tracked skills (F8 task 0135)', () => {
         expect(output).toContain('last30days: unavailable: Failed to fetch source tree');
     });
 });
+
+describe('executeUpdate - apply progress lines and JSON envelope (F8 task 0137)', () => {
+    beforeEach(() => {
+        // Skill locks resolve through HOME_DIR/XDG_STATE_HOME; give every test a private home
+        // so a bare update can never read or write the real user lock.
+        testHome = mkdtempSync(join(tmpdir(), 'superskill-update-home-'));
+        process.env.HOME_DIR = testHome;
+        delete process.env.XDG_STATE_HOME;
+    });
+
+    function drain(stdout: { mock: { calls: unknown[][] } }): string {
+        return stdout.mock.calls.map((c) => String(c[0])).join('');
+    }
+
+    async function seedGlobalSkill(name: string, mutate = false): Promise<void> {
+        const src = join(testHome as string, `${name}-src`);
+        mkdirSync(src, { recursive: true });
+        writeFileSync(join(src, 'SKILL.md'), skillMd(name));
+        await installGlobalSkillFrom(src);
+        if (mutate) writeFileSync(join(src, 'SKILL.md'), `${skillMd(name)}\n- v2 line\n`);
+    }
+
+    /** Seed a stale global marketplace plugin `kk` (manifest 1.0.0, upstream 2.0.0); returns the locator. */
+    function seedStaleGlobalPlugin(): string {
+        const home = testHome as string;
+        writePlugin(home, 'kk', '2.0.0', '# kk new\n');
+        const market = writeMarket(home, 'kk', '2.0.0');
+        const oldRoot = join(home, 'old');
+        writePlugin(oldRoot, 'kk', '1.0.0', '# kk old\n');
+        writeManifest(home, 'kk', join(oldRoot, 'plugins', 'kk'), { version: '1.0.0', locator: market });
+        return market;
+    }
+
+    it('prints one progress line per stale item and ends with `Updated 2 of 2.` (R13)', async () => {
+        const market = seedStaleGlobalPlugin();
+        await seedGlobalSkill('last30days', true);
+        const stdout = spyOn(process.stdout, 'write').mockImplementation(() => true);
+        const stderr = spyOn(process.stderr, 'write').mockImplementation(() => true);
+
+        const installs: string[] = [];
+        const code = await executeUpdate(
+            undefined,
+            ['codex'],
+            { check: false, global: true, marketplacePath: market },
+            {
+                listBundledPlugins: () => [],
+                executeInstall: async (name) => {
+                    installs.push(name);
+                },
+            },
+        );
+
+        const output = drain(stdout);
+        stdout.mockRestore();
+        stderr.mockRestore();
+        expect(code).toBe(0);
+        expect(installs).toEqual(['kk']);
+        expect(output.match(/Updating kk…/g)).toHaveLength(1);
+        expect(output.match(/Updating last30days…/g)).toHaveLength(1);
+        expect(output).toContain('last30days: updated');
+        expect(output.trimEnd().endsWith('Updated 2 of 2.')).toBe(true);
+    });
+
+    it('prints the progress line before a thrown plugin reinstall failure and keeps exit 1 (R13)', async () => {
+        const market = seedStaleGlobalPlugin();
+        const stdout = spyOn(process.stdout, 'write').mockImplementation(() => true);
+
+        await expect(
+            executeUpdate(
+                undefined,
+                ['codex'],
+                { check: false, global: true, marketplacePath: market },
+                {
+                    listBundledPlugins: () => [],
+                    executeInstall: async () => {
+                        throw new Error('install exploded');
+                    },
+                },
+            ),
+        ).rejects.toThrow('install exploded');
+
+        const output = drain(stdout);
+        stdout.mockRestore();
+        expect(output).toContain('Updating kk…');
+        expect(output).not.toContain('Updated ');
+    });
+
+    it('reports both kinds in a mixed apply, names the failed skill, and keeps exit 1 (R13)', async () => {
+        const market = seedStaleGlobalPlugin();
+        await seedGlobalSkill('last30days', true);
+        const stdout = spyOn(process.stdout, 'write').mockImplementation(() => true);
+        const stderr = spyOn(process.stderr, 'write').mockImplementation(() => true);
+
+        const code = await executeUpdate(
+            undefined,
+            ['codex'],
+            { check: false, global: true, marketplacePath: market },
+            {
+                listBundledPlugins: () => [],
+                executeInstall: async () => {},
+                updateSkills: async (names) => ({
+                    success: false,
+                    updated: (names ?? []).map((name) => ({
+                        name,
+                        updated: false,
+                        status: 'failed' as const,
+                        reason: 'network down',
+                    })),
+                }),
+            },
+        );
+
+        const output = drain(stdout);
+        const stderrOutput = drain(stderr);
+        stdout.mockRestore();
+        stderr.mockRestore();
+        expect(code).toBe(1);
+        // Both kinds attempted and reported: one progress line each, the plugin install
+        // succeeded, the failed skill is named on its own line.
+        expect(output).toContain('Updating kk…');
+        expect(output).toContain('Updating last30days…');
+        expect(stderrOutput).toContain('last30days: network down');
+        expect(output.trimEnd().endsWith('Updated 1 of 2.')).toBe(true);
+    });
+
+    it('keeps --check --json stdout a single envelope with no progress or remedy lines (R16)', async () => {
+        const home = testHome as string;
+        const market = seedStaleGlobalPlugin();
+        // A stale bundled plugin prints the npm remedy line in apply mode — it must never
+        // leak into the JSON envelope.
+        const ccRoot = writePlugin(home, 'cc', '0.1.0', '# cc\n');
+        writeManifest(home, 'cc', ccRoot, { version: '0.1.0', channel: 'bundled' });
+        await seedGlobalSkill('last30days', true);
+        const stdout = spyOn(process.stdout, 'write').mockImplementation(() => true);
+        const stderr = spyOn(process.stderr, 'write').mockImplementation(() => true);
+
+        const code = await executeUpdate(
+            undefined,
+            ['codex'],
+            { check: true, global: true, json: true, marketplacePath: market },
+            {
+                listBundledPlugins: () => [],
+                npmLatest: async () => '9.9.9',
+            },
+        );
+
+        const output = drain(stdout);
+        const stderrOutput = drain(stderr);
+        stdout.mockRestore();
+        stderr.mockRestore();
+
+        // Parses as exactly one JSON document; any progress/remedy write would break this.
+        const envelope = JSON.parse(output) as UpdateJsonEnvelope;
+        expect(code).toBe(1);
+        expect(envelope.exitCode).toBe(1);
+        expect(envelope.summary).toEqual({ stale: 3, current: 0, unchecked: 0, legacy: 0, unavailable: 0 });
+        const rowByName = new Map(envelope.rows.map((row) => [row.name, row]));
+        expect(rowByName.get('kk')).toMatchObject({ kind: 'plugin', name: 'kk', status: 'stale' });
+        expect(rowByName.get('last30days')).toMatchObject({ kind: 'skill', name: 'last30days', status: 'stale' });
+        expect(output).not.toContain('Updating ');
+        expect(output).not.toContain('Updated ');
+        expect(output).not.toContain('npm i -g @gobing-ai/superskill');
+        expect(stderrOutput).toBe('');
+
+        // The JSON exit code equals the text-mode exit code for the same stale set.
+        const textStdout = spyOn(process.stdout, 'write').mockImplementation(() => true);
+        const textCode = await executeUpdate(
+            undefined,
+            ['codex'],
+            { check: true, global: true, marketplacePath: market },
+            {
+                listBundledPlugins: () => [],
+                npmLatest: async () => '9.9.9',
+            },
+        );
+        textStdout.mockRestore();
+        expect(textCode).toBe(code);
+    });
+});

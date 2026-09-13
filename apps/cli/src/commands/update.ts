@@ -134,7 +134,8 @@ export function registerUpdate(program: Command): void {
  * Discover plugin candidates, aggregate lock-tracked skill rows for the same scope, print
  * rows grouped by kind, and return the aggregate exit code. `--check` never writes. Mutating
  * mode re-installs stale marketplace plugins via {@link executeInstall}, applies stale skills
- * via `updateSkills(precheck)`, and prints the npm upgrade command once for stale bundled plugins.
+ * via `updateSkills(precheck)`, and prints the npm upgrade command once for stale bundled
+ * plugins; every applied item prints `Updating <name>…` and the run ends `Updated <n> of <m>.`
  */
 export async function executeUpdate(
     name: string | undefined,
@@ -343,6 +344,10 @@ export async function executeUpdate(
     let skillApplyFailed = false;
     if (!options.check) {
         if (bundledStale) echo(`To upgrade superskill and its bundled plugins, run: ${NPM_UPGRADE}`);
+        // R13: one `Updating <name>…` line per attempted item, then a final count of
+        // successes over attempted items (stale plugins + stale skills).
+        let updatedCount = 0;
+        let attemptedCount = 0;
         for (const action of marketplaceActions.values()) {
             const locator = options.marketplacePath ?? action.locator;
             const pluginRootOnly = options.marketplacePath === undefined && isPluginRootOnlyLocator(locator);
@@ -362,6 +367,10 @@ export async function executeUpdate(
                 }
             }
             if (targets.length === 0) continue;
+            attemptedCount += 1;
+            echo(`Updating ${action.plugin}…`);
+            // R13: a thrown reinstall failure keeps the existing propagation — it aborts the
+            // run, is named on its own line by the command handler, and still exits 1.
             await installImpl(action.plugin, targets, {
                 marketplacePath: pluginRootOnly ? undefined : locator,
                 pluginPath: pluginRootOnly ? locator : undefined,
@@ -371,12 +380,15 @@ export async function executeUpdate(
                 outputRoot: options.outputRoot,
                 materialize,
             });
+            updatedCount += 1;
         }
 
         // R3: apply stale skills with this run's check rows as precheck — hashes are computed
         // once; unchecked/unavailable rows are never reinstalled and keep their listed reasons.
         const staleCheckRows = skillCheckRows.filter((row) => row.status === 'stale');
         if (staleCheckRows.length > 0) {
+            for (const row of staleCheckRows) echo(`Updating ${row.name}…`);
+            attemptedCount += staleCheckRows.length;
             const updateImpl = dependencies.updateSkills ?? updateSkills;
             const apply = await updateImpl(
                 staleCheckRows.map((row) => row.name),
@@ -390,13 +402,20 @@ export async function executeUpdate(
                 },
             );
             for (const item of apply.updated) {
-                if (item.updated) echo(`${item.name}: updated`);
-                else if (item.status === 'current') echo(`${item.name}: up to date`);
-                else echoError(`${item.name}: ${item.reason ?? 'update failed'}`);
+                if (item.updated) {
+                    updatedCount += 1;
+                    echo(`${item.name}: updated`);
+                } else if (item.status === 'current') {
+                    echo(`${item.name}: up to date`);
+                } else {
+                    echoError(`${item.name}: ${item.reason ?? 'update failed'}`);
+                }
             }
             // R3: a failed skill reinstall contributes to exit 1, as plugin failures do.
             skillApplyFailed = apply.updated.some((item) => item.status === 'failed' || item.status === 'unavailable');
         }
+        // R13: the apply run ends with the result count; nothing attempted prints no count.
+        if (attemptedCount > 0) echo(`Updated ${updatedCount} of ${attemptedCount}.`);
     }
 
     return !options.check && skillApplyFailed && exitCode !== 2 ? 1 : exitCode;
