@@ -2,11 +2,11 @@
 schema_version: 1
 id: "F8"
 name: "Unified update: lock-tracked skills + actionable output"
-status: active
+status: done
 priority: P2
 tags: []
 created_at: "2026-09-13T17:34:31.464Z"
-updated_at: "2026-09-13T23:06:38.564Z"
+updated_at: "2026-09-13T23:16:01.854Z"
 ---
 
 # F8: Unified update: lock-tracked skills + actionable output
@@ -175,196 +175,18 @@ Feature: Unified update: lock-tracked skills + actionable output
 ```
 
 
-  <!-- Task 0133 refinement scenarios (DD-09 subset rule): task-level ACs verified by
-       spur task verdict 0133 (runall-f8-48d9), certified PASS 2026-09-13. -->
-  @refinement-0133
-  Scenario: R1 — The unified update row model replaces plugin rows
-    Given the update command loads its row model from packages/core/src/operations/update.ts
-    When any update row is constructed
-    Then it uses UpdateRowStatus and UpdateRow with kind set, and no PluginUpdateStatus or PluginUpdateResult identifier remains in source or tests
-
-  @refinement-0133
-  Scenario: R2 — Merged stale rows expose their stale targets
-    Given plugin `kk` is stale on target `claude` and current on target `codex`
-    When mergePluginUpdateRows merges the rows
-    Then the merged row is stale, carries staleTargets `["claude"]`, and rank and ordering semantics are unchanged
-
-  @refinement-0133
-  Scenario: R3 — Consumers and tests compile against the new names
-    Given the update command and both update test suites are retargeted to the UpdateRow vocabulary
-    When the lint, test, and build gates run
-    Then all pass with no renamed-name leftovers and no snapshot or assertion drift beyond the R4 reason-printing case
-
-  @refinement-0133
-  Scenario: R4 — An unavailable row with a reason prints it
-    Given an UpdateRow { kind: 'plugin', name: 'kk', status: 'unavailable', locator: '/tmp/gone-marketplace', reason: 'locator path missing' }
-    When the text formatter renders it
-    Then the row contains '(/tmp/gone-marketplace): locator path missing'
-
-
-  <!-- Task 0134 refinement scenarios (DD-09 subset rule): task-level ACs verified by
-       spur task verdict 0134 (runall-f8-48d9), certified PASS 2026-09-13. -->
-  @refinement-0134
-  Scenario: R6 — Skill update check reports staleness without writing
-    Given the project skill lock records a stale `demo-skill`
-    When the operator runs `superskill skill update --check`
-    Then the output lists `demo-skill` as stale, the exit code is 1, and the lock file is unchanged
-
-  @refinement-0134
-  Scenario: R7 — Skill update summary counts only skills that changed
-    Given the project skill lock records two skills whose hashes equal their source hashes
-    When the operator runs `superskill skill update`
-    Then the output reports 0 skills updated and 2 up to date, and never reports "Updated 2 skill(s)"
-
-  @refinement-0134
-  Scenario: R18 — Skill update help shows the --yes default once
-    Given the `superskill skill add|remove|update` help output
-    When the `--yes` flag line is rendered
-    Then `(default: true)` appears exactly once and no description duplicates it
-
-  @refinement-0134
-  Scenario: R20 — An unhashable skill source is unavailable, never current (core half)
-    Given a locked skill whose source type cannot be hashed (unsupported type or fetch failure)
-    When `checkSkills` evaluates it
-    Then the row is `unavailable` (or `unchecked` for unsupported types) with a reason, never `current`, and success is false
-
-  @refinement-0134
-  Scenario: R1 — checkSkills is read-only and scoped (core half of update coverage)
-    Given a lock with a stale and a current local-source skill
-    When `checkSkills` runs without names
-    Then both rows report their statuses and hashes, the lock file and skill directories are byte-identical, and no clone occurs
-
-
-  <!-- Task 0135 refinement scenarios (DD-09 subset rule): task-level ACs verified by
-       spur task verdict 0135 (runall-f8-48d9), certified PASS 2026-09-13. -->
-  @refinement-0135
-  Scenario: R1 — Update check reports a stale lock-tracked skill without writing
-    Given the global skill lock records a stale lock-tracked skill
-    When the operator runs `superskill update --check`
-    Then the output lists the skill as stale under a `Skills:` group, the exit code is 1, and the lock and skill directories are unchanged
-
-  @refinement-0135
-  Scenario: R2 — Update check reports a current lock-tracked skill as up to date
-    Given a locked skill whose hash equals its source hash
-    When the operator runs `superskill update --check`
-    Then the output reports the skill as up to date, plugin rows precede skill rows, and the exit code is 0
-
-  @refinement-0135
-  Scenario: R3 — Update applies a stale lock-tracked skill and records the new hash
-    Given the lock records a stale lock-tracked skill
-    When the operator runs `superskill update`
-    Then the skill is reinstalled from its locked source, a follow-up check reports it current, and the exit code is 0
-
-  @refinement-0135
-  Scenario: R4 — Project-scope update reads the project skill lock
-    Given the project defines its own skills lock
-    When the operator runs `superskill update --check --no-global`
-    Then the output reflects the project lock only and the exit code is 0
-
-  @refinement-0135
-  Scenario: R5 — Update with a skill name checks only that skill
-    Given multiple locked skills and plugins
-    When the operator runs `superskill update <skill-name> --check`
-    Then only that skill is listed and no other skill or plugin rows appear
-
-  @refinement-0135
-  Scenario: R20 — An unhashable skill source is unavailable, never current
-    Given a locked skill whose source cannot be hashed
-    When `superskill update --check` evaluates it
-    Then the row is unavailable with a reason, never current, and the exit code is 2
-
-
-  <!-- Task 0136 refinement scenarios (DD-09 subset rule): task-level ACs verified by
-       spur task verdict 0136 (runall-f8-48d9), certified PASS 2026-09-13. -->
-  @refinement-0136
-  Scenario: R8 — Content drift at an unchanged version is named as such
-    Given a stale marketplace plugin whose installed version equals its upstream version
-    When the operator runs `superskill update --check`
-    Then the row names the content changed with the version unchanged and never prints `<v> → <v>`
-
-  @refinement-0136
-  Scenario: R9 — Disagreeing plugin version declarations are surfaced
-    Given marketplace.json and plugin.json declare different versions for a plugin
-    When the operator runs `superskill update --check`
-    Then the row prints a note naming both declared versions and marketplace-first precedence is preserved
-
-  @refinement-0136
-  Scenario: R10 — Check output ends with a summary and the next command
-    Given at least one stale row and one current row
-    When the operator runs `superskill update --check`
-    Then the output ends with a summary line counting each present status and naming `superskill update`
-
-  @refinement-0136
-  Scenario: R11 — Long changed-path lists are capped in text output
-    Given a stale plugin with 12 changed upstream files
-    When the operator runs `superskill update --check`
-    Then the text row names at most 5 paths followed by `+7 more`, and `--check --json` lists all 12
-
-  @refinement-0136
-  Scenario: R12 — Partially stale targets are named
-    Given a merged stale plugin row whose staleness covers fewer targets than installed
-    When the operator reads the row
-    Then it appends `[stale on: <targets>]`
-
-  @refinement-0136
-  Scenario: R14 — The bundled-channel npm remedy is labeled
-    Given superskill was installed from the bundled channel with a stale bundled plugin
-    When the operator runs `superskill update`
-    Then the output labels the npm upgrade remedy exactly
-
-  @refinement-0136
-  Scenario: R15 — A legacy install row names the reinstall command
-    Given a legacy plugin install row
-    When the operator runs `superskill update --check`
-    Then the row appends the `superskill install <name>` adopt command
-
-  @refinement-0136
-  Scenario: R17 — Update help documents the exit codes
-    Given `superskill update --help`
-    When the help text renders
-    Then it states exit codes 0 (nothing stale), 1 (stale under --check or apply failure), 2 (unavailable upstream) and that --json requires --check
-
-  @refinement-0136
-  Scenario: R21 — An unavailable plugin row names the cause
-    Given a plugin whose upstream cannot be resolved (missing locator, unreadable manifest, or network failure)
-    When `superskill update --check` evaluates it
-    Then the row is unavailable with a specific reason string and the exit code is 2
-
-
-  <!-- Task 0137 refinement scenarios (DD-09 subset rule): task-level ACs verified by
-       spur task verdict 0137 (runall-f8-48d9), certified PASS 2026-09-13. -->
-  @refinement-0137
-  Scenario: R13 — Applying updates reports progress and a final result
-    Given one or more stale plugins and stale skills
-    When the operator runs `superskill update`
-    Then stdout prints one `Updating <name>…` line per attempted item and a final `Updated <n> of <m>.` line, failed items are named, and the failure exit code stays 1
-
-  @refinement-0137
-  Scenario: R16 — Update emits a machine-readable result with --json
-    Given any mix of stale, current, and unavailable rows
-    When the operator runs `superskill update --check --json`
-    Then stdout is exactly one JSON document whose rows carry kind, name, and status, with no progress, remedy, or summary lines, and the exit code equals the text-mode exit code
-
-
-  <!-- Task 0138 refinement scenario (DD-09 subset rule): task-level AC verified by
-       spur task verdict 0138 (runall-f8-48d9), certified PASS 2026-09-13. -->
-  @refinement-0138
-  Scenario: R19 — Update surface docs describe skill coverage
-    Given the feature's update and skill verb changes are merged
-    When a reader opens docs/00_ADR.md, docs/04_DESIGN.md, and docs/help2/installation.md
-    Then ADR-035 carries a dated amendment (with erratum) covering lock-tracked skills, and the 04 update surface and help2 "Stay current" section describe skill rows, --json, and skill update --check with the shipped 0/1/2 exit contract
 
 ## Tasks
 
 <!-- AUTO-GENERATED by spur feature refresh -->
 | WBS | Task | Status |
 | --- | ---- | ------ |
-| 0133 | Generalize update row model to UpdateRow with kind | testing |
-| 0134 | Skill update check and honest summary | todo |
-| 0135 | Update covers lock-tracked skills | todo |
-| 0136 | Actionable plugin update rows and summary | todo |
-| 0137 | Update apply progress lines and JSON envelope | todo |
-| 0138 | Stay-current docs describe skill coverage | todo |
+| 0133 | Generalize update row model to UpdateRow with kind | done |
+| 0134 | Skill update check and honest summary | done |
+| 0135 | Update covers lock-tracked skills | done |
+| 0136 | Actionable plugin update rows and summary | done |
+| 0137 | Update apply progress lines and JSON envelope | done |
+| 0138 | Stay-current docs describe skill coverage | done |
 <!-- END AUTO-GENERATED -->
 
 ## Notes
@@ -372,4 +194,8 @@ Feature: Unified update: lock-tracked skills + actionable output
 ## History
 
 - 2026-09-13T19:43:05.515Z backlog → active (system)
+
+
+- 2026-09-13T23:14:39.988Z active → verifying (system)
+- 2026-09-13T23:16:01.854Z verifying → done (system)
 
