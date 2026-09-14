@@ -370,3 +370,58 @@ Repaired drift across key architectural and design documentation following `docs
 - 2026-09-14 — A task whose implementation already landed on the base ref before its status advanced cannot pass the pipeline's implement stage: `agent.run … requireDiff` fails the empty-implement gate on "zero non-corpus file changes", and the recovery hint points back at the same failing stage. Route it through verification instead (`/sp:dev-verify <wbs>` → `task record` → `done`) rather than re-running the full pipeline.
 - 2026-09-14 — A live-install E2E is never environment-neutral: `omp` resolves its plugin registry outside `$HOME` and writes `<realHome>/.omp/plugins/installed_plugins.json` even under an isolated `HOME` (revert that entry after the run), and a `--no-global` install run with cwd inside the repo writes `.codex/`, `.hermes/` and `.superskill/manifests/` into the tree, dirtying it and failing its own lint gate — always run the install from a scratch project directory.
 
+**Verification / confidence**
+
+| Claim | Confidence | Evidence |
+| --- | --- | --- |
+| T3 does not fire (no command/flag/config/env/schema added by 0141) | **HIGH** | `git show 96251ef -- apps/cli/src/commands/install.ts` filtered for `.option(` / `.command(` / `process.env.` → zero matches, this session |
+| `03:256` paragraph now matches the code (Stage-A-miss trigger, full prefix anchor, lexicographic tail, diagnose-never-adopt) | **HIGH** | Read `apps/cli/src/commands/install.ts:1299-1434` directly this session — `resolveOmpInstall`, `listOmpCacheTreeHits` (`sort()` + `.at(-1)`), `describeEmptyOmpResolution` |
+| No ADR entry needed | **HIGH** | Read `docs/00_ADR.md:576-624`; ADR-035 + its 2026-09-13 (0140) exception are unchanged by this fix, including the both-empty failure clause |
+| T5 does not fire | **HIGH** | `docs/02_ROADMAP.md:26` already `[x]` |
+| Frontmatter contracts `00`–`05` match §4.1 | **HIGH** | `head -14` on each doc vs `docs/99_PROJECT_CONSTITUTION.md:78-87`, compared this session |
+| `04_DESIGN` needs no edit | **MEDIUM** | Judgment call: the new diagnostic is output behavior, and §6.5 rule 3 counts behavioral notes as shapes — but 04 documents no install-provenance failure output today, so nothing there is contradicted. Verified by `rg -i 'provenance\|did not resolve\|receipt' docs/04_DESIGN.md` |
+| omp 18.1.19 host behavior (no registry written; home resolved independently of `$HOME`) | **MEDIUM** | Not re-verified here — carried from task 0141's recorded E2E evidence (`docs/tasks/0141_*.md` §Testing, AC5) |
+| Gate state (`lint`/`test`/`build`/`spur-check` green) | **MEDIUM** | Task 0141 AC4 receipt, not re-run this session; my change is docs-only (`git diff --stat` → 1 file, 3 insertions) |
+
+# Working learnings — wrapup batch
+
+## 2026-09-14
+
+### 0141 — Fix omp provenance receipts (omp 18.1.19 writes no `installed_plugins.json`)
+
+**Errors fixed**
+
+- `Install provenance inventory did not resolve any installed files for plugin '<p>' target 'omp'` on a project-scope native install. Root cause was not the 0140 scope-path seam but a receipt-collection assumption: `resolveOmpInstallPath` treated `installed_plugins.json` as the only receipt source. That matched omp 16.4.2; omp 18.1.19 materializes the payload under `<root>/.omp/plugins/cache/plugins/<plugin>___<marketplace>___<version>` and writes no registry, so the pipeline got zero receipts and the frozen both-empty clause threw.
+- An empty resolution reported only the empty inventory, never the condition that produced it. Fixed by emitting one unconditional diagnostic line naming every consulted root before the frozen throw.
+
+**Patterns**
+
+- **Two-stage probe, old source primary.** Stage A (registry, byte-for-byte prior behaviour) wins whenever any root carries the `plugin@marketplace` key; Stage B (on-disk cache tree) runs only when Stage A misses in *every* root. Behaviour is preserved wherever it already worked, and the fallback is reachable only in the failing shape.
+- **Return a probe, not a path.** The internal resolver returns `{ installPath?, source, consulted: [{ root, registry, tree }] }` and the exported function is a thin `.installPath` wrapper. Per-root findings are what make the empty case self-explaining; a bare `string | undefined` cannot explain itself.
+- **Diagnose, never adopt.** When `os.homedir()` diverges from the resolved `HOME_DIR`, the real home is probed and named in output, but its receipts are never folded into the manifest — adopting them would land files outside both roots and break 0140's snapshot contract.
+- **Additive output before a frozen throw.** Error strings pinned by test regexes are a contract; new information goes in a preceding line, never in the message.
+
+**Gotchas**
+
+- Bun's `os.homedir()` ignores mid-process `process.env.HOME` mutation (it returns the startup value). Simulate a divergent real home with `spyOn(os, 'homedir')`, not by setting `HOME` in the test.
+- omp resolves its own home independently of `$HOME`: under an isolated `HOME`, the registry entry landed in the **real** `~/.omp/plugins/installed_plugins.json` while the payload landed in the isolated home's cache. Any isolated-HOME E2E on omp must verify and revert the real `~/.omp` afterwards.
+- Cache-tree version selection is **lexicographic, not semver** (`2.9.7` sorts above `2.10.0`). Deliberate and cheap; it is a known ceiling, so it belongs in the doc next to the selection rule rather than in a commit message.
+- Glob the full `<plugin>___<marketplace>___` prefix as an anchor and skip non-directory entries, or a sibling plugin's cache directory gets adopted as receipts.
+- A host CLI's on-disk layout is a version-bound fact. The only version note in `install.ts` dated to 16.4.2 and was two majors stale — record the verified host version next to any assumption about where it writes.
+
+**Conventions confirmed**
+
+- Keep an exported signature stable when a test pins it (`resolveOmpInstallPath(marketplace, plugin, global)` survived as a wrapper over the new probe).
+- Assert CLI output by spying on `process.stdout.write` (repo convention — the CLI writes directly so output is testable without log-format coupling).
+- Pin the unchanged paths *first* (registry-present resolution, genuinely-absent tree → frozen error + no manifest), then add fallback cases. The regression floor is "both `install-manifest.test.ts` files pass unedited".
+
+**Doc routing (this wrapup)**
+
+- Receipt-collection mechanism is a `03_ARCHITECTURE` fact (HOW). The fix added no command, flag, config key, env var, or schema (`git show 96251ef -- apps/cli/src/commands/install.ts` matches no `.option(` / `.command(` / `process.env.`), so **T3 does not fire** — `04_DESIGN` and `AGENTS.md` surface blocks stay untouched.
+- **No ADR entry.** ADR-035's 2026-09-13 target-specific exception (task 0140) still holds verbatim — including "an inventory that is empty under both roots still fails the install". A bugfix that restores an existing contract does not justify T1.
+- `02_ROADMAP` line 26 (`[x] Install provenance manifest + superskill update`) is already done; a bugfix inside a shipped phase item is not a T5 event.
+- Precision beats brevity in `03` (§6.0 rule 7): the first-pass paragraph said Stage B fires "when the host writes no registry", but the code fires it on *any* Stage-A miss — absent, malformed, or key-less registry. Repaired in this pass, together with the prefix-anchor and lexicographic-sort qualifiers.
+
+**Corpus note (not written this run — corpus writes were out of scope)**
+
+- `docs/features/F_cli-surface.md`'s auto-generated task table still lists 0141 as `testing`; the feature refresh ran before the final `testing → done` transition. Re-run `spur feature refresh` after the last status change, not before it.

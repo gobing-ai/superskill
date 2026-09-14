@@ -2,7 +2,7 @@
 doc: 03_ARCHITECTURE
 owns: HOW — module boundaries, data flow, runtime model, invariants
 authority: derived
-version: 2.17.0
+version: 2.18.0
 derived_from: [00_ADR, 01_PRD]
 owner: Robin Min
 updated_at: 2026-09-14
@@ -252,6 +252,8 @@ plugins/<name>/                  .rulesync/             ~/.agents/skills/
 ```
 
 `outputRoots = global ? [os.homedir()] : [process.cwd()]` (ADR-010). For rulesync-supported targets, writes are done by `generate()`. Claude, OMP, and Grok use their native host-plugin installers; Hermes receives the explicit copy fallback. OMP skills also read the shared `.agents/skills/` output natively.
+
+**OMP native plugin receipt resolution.** OMP installs Claude Code marketplace plugins into its native cache tree. Receipt discovery for provenance manifests follows a two-stage probe across ordered candidate roots (`[process.cwd(), resolveHomeDir()]` for project scope, `[resolveHomeDir()]` for global scope; task 0141): Stage A checks `installed_plugins.json` (keyed `plugin@marketplace`, scope-preferred entry) and wins whenever any root carries the key; Stage B runs only when Stage A misses in every root — no registry, or none carrying the key (omp 18.1.19 writes the payload without the registry) — and resolves the on-disk cache tree (`<root>/.omp/plugins/cache/plugins/<plugin>___<marketplace>___*`, first root with a hit, greatest tail by lexicographic sort, not semver). The `<plugin>___<marketplace>___` prefix is a full anchor, so another plugin's or marketplace's cache directory is never adopted. If both stages miss, one unconditional diagnostic line names every consulted root with what was found there, and — when `os.homedir()` diverges from the resolved `HOME_DIR` and receipts exist under it — reports that omp resolved its home independently of `$HOME`; foreign-root receipts are named for diagnosis and never adopted into the manifest (0140's snapshot contract is unchanged, and a both-empty inventory still fails the install).
 
 The install action loads `superskill.jsonc` before resolving the plugin. Explicit
 `--marketplace`/`--targets` values win over configured defaults; a configured plugin path is used
