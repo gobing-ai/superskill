@@ -9,7 +9,7 @@
     ├── [done] **E1**: Wayfinder: restructure feature tree into 5 module areas ([E1_wayfinder-restructure-feature-tree-into-5-module-areas.md](./E1_wayfinder-restructure-feature-tree-into-5-module-areas.md))
     ├── [done] **E2**: Tests + verification ([E2_tests-verification.md](./E2_tests-verification.md))
     └── [done] **E3**: Phase 2 tests ([E3_phase-2-tests.md](./E3_phase-2-tests.md))
-[backlog] **F**: CLI Surface ([F_cli-surface.md](./F_cli-surface.md))
+[active] **F**: CLI Surface ([F_cli-surface.md](./F_cli-surface.md))
     ├── [cancelled] **F1**: superskill install command + marketplace registration ([F1_install-command.md](./F1_install-command.md))
     ├── [done] **F2**: Skills ecosystem compatibility (npx skills add interop) ([F2_skills-ecosystem-compatibility-npx-skills-add-interop.md](./F2_skills-ecosystem-compatibility-npx-skills-add-interop.md))
     ├── [done] **F3**: superskill install command + marketplace registration ([F3_superskill-install-command-marketplace-registration.md](./F3_superskill-install-command-marketplace-registration.md))
