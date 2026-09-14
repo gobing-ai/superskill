@@ -96,6 +96,11 @@ redaction:
 # commit keeps them in lockstep (they previously drifted to 0.3.1 vs marketplace 0.3.27).
 builder:
   bump-ver:
+    tagVersionSeparator: "-v"
+    publishWorkflow: publish.yml
+    releaseCommitType: chore
+    releaseCommitScope: release
+    ghRunListLimit: 5
     versionCarriers:
       - type: plugin-manifest
         paths: [.cursor-plugin/plugin.json, .codex-plugin/plugin.json]
