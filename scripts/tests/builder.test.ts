@@ -1,17 +1,14 @@
 import { afterAll, afterEach, beforeEach, describe, expect, it, mock, spyOn } from 'bun:test';
-import { existsSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import {
     bumpMarketplaceManifests,
-    bumpPackageVersion,
-    bumpVersion,
     checkCitations,
     checkDimensionDrift,
     checkSkillCitations,
     computeTag,
     countRubricDimensions,
     diskRubricCount,
-    dropTags,
     type FileResolver,
     findMarketplaceVersionDrift,
     findUnpublishableSpecifiers,
@@ -25,43 +22,6 @@ import {
 } from '../builder';
 
 const ROOT = resolve(import.meta.dir, '..', '..');
-
-function captureFile(path: string): { path: string; existed: boolean; content: string } {
-    return {
-        path,
-        existed: existsSync(path),
-        content: existsSync(path) ? readFileSync(path, 'utf-8') : '',
-    };
-}
-
-function restoreFiles(files: Array<{ path: string; existed: boolean; content: string }>) {
-    for (const file of files) {
-        if (file.existed) {
-            writeFileSync(file.path, file.content);
-        } else {
-            rmSync(file.path, { force: true });
-        }
-    }
-}
-
-function commandText(strings: TemplateStringsArray, values: unknown[]): string {
-    let command = strings[0] ?? '';
-    for (const [index, value] of values.entries()) {
-        command += String(value);
-        command += strings[index + 1] ?? '';
-    }
-    return command;
-}
-
-function spyShell() {
-    const calls: string[] = [];
-    const nothrow = mock(() => Promise.resolve());
-    const shell = (strings: TemplateStringsArray, ...values: unknown[]) => {
-        calls.push(commandText(strings, values));
-        return { nothrow } as never;
-    };
-    return { calls, nothrow, shell: shell as never };
-}
 
 (function installProcessExitGuard() {
     const origExit = process.exit;
@@ -394,143 +354,141 @@ describe('bumpMarketplaceManifests', () => {
     });
 });
 
-describe('bumpPackageVersion', () => {
-    const original = `${JSON.stringify({ name: '@gobing-ai/superskill', version: '0.1.8' }, null, 4)}\n`;
-
-    it('returns the updated JSON with new version and old version', () => {
-        const { updated, oldVer } = bumpPackageVersion(original, '0.2.0');
-        expect(oldVer).toBe('0.1.8');
-        const parsed = JSON.parse(updated);
-        expect(parsed.version).toBe('0.2.0');
-    });
-
-    it('preserves other fields in the package.json', () => {
-        const withExtra = `${JSON.stringify({ name: 'test', version: '1.0.0', description: 'hello' }, null, 4)}\n`;
-        const { updated } = bumpPackageVersion(withExtra, '2.0.0');
-        const parsed = JSON.parse(updated);
-        expect(parsed.description).toBe('hello');
-        expect(parsed.name).toBe('test');
-    });
-});
-
-describe('release helpers', () => {
-    const manifestPaths = [
-        resolve(ROOT, 'apps/cli/package.json'),
-        resolve(ROOT, '.claude-plugin/marketplace.json'),
-        resolve(ROOT, 'plugins/cc/plugin.json'),
-    ];
-
-    it('bumpVersion updates manifests, creates commit/tag, and prints push instructions', async () => {
-        const snapshots = manifestPaths.map(captureFile);
-        const { calls, shell } = spyShell();
-        const logs: string[] = [];
-        spyOn(console, 'log').mockImplementation((message?: unknown) => {
-            logs.push(String(message ?? ''));
-        });
-
-        try {
-            await bumpVersion('0.9.9-test.1', false, shell);
-
-            expect(JSON.parse(readFileSync(manifestPaths[0], 'utf-8')).version).toBe('0.9.9-test.1');
-            expect(JSON.parse(readFileSync(manifestPaths[1], 'utf-8')).plugins[0].version).toBe('0.9.9-test.1');
-            expect(JSON.parse(readFileSync(manifestPaths[2], 'utf-8')).version).toBe('0.9.9-test.1');
-            expect(calls.some((call) => call.includes('@gobing-ai/superskill-v0.9.9-test.1'))).toBeTrue();
-            expect(calls.some((call) => call.startsWith('git add '))).toBeTrue();
-            expect(calls.some((call) => call.startsWith('git commit -m chore: release'))).toBeTrue();
-            expect(calls.some((call) => call.startsWith('git tag -a @gobing-ai/superskill-v0.9.9-test.1'))).toBeTrue();
-            expect(calls.some((call) => call.startsWith('git push '))).toBeFalse();
-            expect(logs.join('\n')).toContain('To push now:');
-        } finally {
-            restoreFiles(snapshots);
-        }
-    });
-
-    it('bumpVersion pushes commit and tag when requested', async () => {
-        const snapshots = manifestPaths.map(captureFile);
-        const { calls, shell } = spyShell();
-        spyOn(console, 'log').mockImplementation(() => {});
-
-        try {
-            await bumpVersion('0.9.9-test.2', true, shell);
-            expect(calls).toContain('git push origin main');
-            expect(calls).toContain('git push origin @gobing-ai/superskill-v0.9.9-test.2');
-        } finally {
-            restoreFiles(snapshots);
-        }
-    });
-
-    it('warns when a plugin.json is missing (cover continue branch)', async () => {
-        const snapshots = manifestPaths.map(captureFile);
-        const { shell } = spyShell();
-        const warns: string[] = [];
-        spyOn(console, 'log').mockImplementation(() => {});
-        spyOn(console, 'warn').mockImplementation((message?: unknown) => {
-            warns.push(String(message ?? ''));
-        });
-
-        // Temporarily hide the plugin.json so existsSync returns false
-        const pluginJsonPath = manifestPaths[2];
-        const backupPath = `${pluginJsonPath}.bak`;
-        renameSync(pluginJsonPath, backupPath);
-
-        try {
-            await bumpVersion('0.9.9-test.3', false, shell);
-            expect(warns.some((w) => w.includes('plugin.json not found'))).toBeTrue();
-        } finally {
-            // Restore plugin.json before restoreFiles (which expects it to exist)
-            if (existsSync(backupPath)) renameSync(backupPath, pluginJsonPath);
-            restoreFiles(snapshots);
-        }
-    });
-
-    it('dropTags deletes local and optional remote tags without throwing on missing tags', async () => {
-        const { calls, nothrow, shell } = spyShell();
-        spyOn(console, 'log').mockImplementation(() => {});
-
-        await dropTags('0.9.9-test.3', false, shell);
-        await dropTags('0.9.9-test.4', true, shell);
-
-        expect(calls).toEqual([
-            'git tag -d @gobing-ai/superskill-v0.9.9-test.3',
-            'git tag -d @gobing-ai/superskill-v0.9.9-test.4',
-            'git push origin :refs/tags/@gobing-ai/superskill-v0.9.9-test.4',
-        ]);
-        expect(nothrow).toHaveBeenCalledTimes(3);
-    });
-});
+// DISABLED 2026-09-13: bump-ver/drop-tags release flow is commented out in scripts/builder.ts.
+// Restore these suites together with the source (git history has the originals).
+// describe('bumpPackageVersion', () => {
+//     const original = `${JSON.stringify({ name: '@gobing-ai/superskill', version: '0.1.8' }, null, 4)}\n`;
+//
+//     it('returns the updated JSON with new version and old version', () => {
+//         const { updated, oldVer } = bumpPackageVersion(original, '0.2.0');
+//         expect(oldVer).toBe('0.1.8');
+//         const parsed = JSON.parse(updated);
+//         expect(parsed.version).toBe('0.2.0');
+//     });
+//
+//     it('preserves other fields in the package.json', () => {
+//         const withExtra = `${JSON.stringify({ name: 'test', version: '1.0.0', description: 'hello' }, null, 4)}\n`;
+//         const { updated } = bumpPackageVersion(withExtra, '2.0.0');
+//         const parsed = JSON.parse(updated);
+//         expect(parsed.description).toBe('hello');
+//         expect(parsed.name).toBe('test');
+//     });
+// });
+//
+// describe('release helpers', () => {
+//     const manifestPaths = [
+//         resolve(ROOT, 'apps/cli/package.json'),
+//         resolve(ROOT, '.claude-plugin/marketplace.json'),
+//         resolve(ROOT, 'plugins/cc/plugin.json'),
+//     ];
+//
+//     it('bumpVersion updates manifests, creates commit/tag, and prints push instructions', async () => {
+//         const snapshots = manifestPaths.map(captureFile);
+//         const { calls, shell } = spyShell();
+//         const logs: string[] = [];
+//         spyOn(console, 'log').mockImplementation((message?: unknown) => {
+//             logs.push(String(message ?? ''));
+//         });
+//
+//         try {
+//             await bumpVersion('0.9.9-test.1', false, shell);
+//
+//             expect(JSON.parse(readFileSync(manifestPaths[0], 'utf-8')).version).toBe('0.9.9-test.1');
+//             expect(JSON.parse(readFileSync(manifestPaths[1], 'utf-8')).plugins[0].version).toBe('0.9.9-test.1');
+//             expect(JSON.parse(readFileSync(manifestPaths[2], 'utf-8')).version).toBe('0.9.9-test.1');
+//             expect(calls.some((call) => call.includes('@gobing-ai/superskill-v0.9.9-test.1'))).toBeTrue();
+//             expect(calls.some((call) => call.startsWith('git add '))).toBeTrue();
+//             expect(calls.some((call) => call.startsWith('git commit -m chore: release'))).toBeTrue();
+//             expect(calls.some((call) => call.startsWith('git tag -a @gobing-ai/superskill-v0.9.9-test.1'))).toBeTrue();
+//             expect(calls.some((call) => call.startsWith('git push '))).toBeFalse();
+//             expect(logs.join('\n')).toContain('To push now:');
+//         } finally {
+//             restoreFiles(snapshots);
+//         }
+//     });
+//
+//     it('bumpVersion pushes commit and tag when requested', async () => {
+//         const snapshots = manifestPaths.map(captureFile);
+//         const { calls, shell } = spyShell();
+//         spyOn(console, 'log').mockImplementation(() => {});
+//
+//         try {
+//             await bumpVersion('0.9.9-test.2', true, shell);
+//             expect(calls).toContain('git push origin main');
+//             expect(calls).toContain('git push origin @gobing-ai/superskill-v0.9.9-test.2');
+//         } finally {
+//             restoreFiles(snapshots);
+//         }
+//     });
+//
+//     it('warns when a plugin.json is missing (cover continue branch)', async () => {
+//         const snapshots = manifestPaths.map(captureFile);
+//         const { shell } = spyShell();
+//         const warns: string[] = [];
+//         spyOn(console, 'log').mockImplementation(() => {});
+//         spyOn(console, 'warn').mockImplementation((message?: unknown) => {
+//             warns.push(String(message ?? ''));
+//         });
+//
+//         // Temporarily hide the plugin.json so existsSync returns false
+//         const pluginJsonPath = manifestPaths[2];
+//         const backupPath = `${pluginJsonPath}.bak`;
+//         renameSync(pluginJsonPath, backupPath);
+//
+//         try {
+//             await bumpVersion('0.9.9-test.3', false, shell);
+//             expect(warns.some((w) => w.includes('plugin.json not found'))).toBeTrue();
+//         } finally {
+//             // Restore plugin.json before restoreFiles (which expects it to exist)
+//             if (existsSync(backupPath)) renameSync(backupPath, pluginJsonPath);
+//             restoreFiles(snapshots);
+//         }
+//     });
+//
+//     it('dropTags deletes local and optional remote tags without throwing on missing tags', async () => {
+//         const { calls, nothrow, shell } = spyShell();
+//         spyOn(console, 'log').mockImplementation(() => {});
+//
+//         await dropTags('0.9.9-test.3', false, shell);
+//         await dropTags('0.9.9-test.4', true, shell);
+//
+//         expect(calls).toEqual([
+//             'git tag -d @gobing-ai/superskill-v0.9.9-test.3',
+//             'git tag -d @gobing-ai/superskill-v0.9.9-test.4',
+//             'git push origin :refs/tags/@gobing-ai/superskill-v0.9.9-test.4',
+//         ]);
+//         expect(nothrow).toHaveBeenCalledTimes(3);
+//     });
+// });
 
 describe('runBuilderCommand', () => {
     const originalArgv = process.argv;
-    const manifestPaths = [
-        resolve(ROOT, 'apps/cli/package.json'),
-        resolve(ROOT, '.claude-plugin/marketplace.json'),
-        resolve(ROOT, 'plugins/cc/plugin.json'),
-    ];
 
     afterEach(() => {
         process.argv = originalArgv;
     });
 
-    it('dispatches bump-version aliases with push', async () => {
-        const snapshots = manifestPaths.map(captureFile);
-        const { calls, shell } = spyShell();
-        spyOn(console, 'log').mockImplementation(() => {});
-        try {
-            await runBuilderCommand(['bump-version', '0.9.9-test.5', '--push'], shell);
-            expect(calls).toContain('git push origin main');
-        } finally {
-            restoreFiles(snapshots);
-        }
-    });
-
-    it('dispatches drop-tags remote mode', async () => {
-        const { calls, shell } = spyShell();
-        spyOn(console, 'log').mockImplementation(() => {});
-
-        await runBuilderCommand(['drop-tags', '0.9.9-test.6', '--remote'], shell);
-
-        expect(calls).toContain('git push origin :refs/tags/@gobing-ai/superskill-v0.9.9-test.6');
-    });
+    // DISABLED 2026-09-13: dispatch cases commented out in scripts/builder.ts — restore with source.
+    //     it('dispatches bump-version aliases with push', async () => {
+    //         const snapshots = manifestPaths.map(captureFile);
+    //         const { calls, shell } = spyShell();
+    //         spyOn(console, 'log').mockImplementation(() => {});
+    //         try {
+    //             await runBuilderCommand(['bump-version', '0.9.9-test.5', '--push'], shell);
+    //             expect(calls).toContain('git push origin main');
+    //         } finally {
+    //             restoreFiles(snapshots);
+    //         }
+    //     });
+    //
+    //     it('dispatches drop-tags remote mode', async () => {
+    //         const { calls, shell } = spyShell();
+    //         spyOn(console, 'log').mockImplementation(() => {});
+    //
+    //         await runBuilderCommand(['drop-tags', '0.9.9-test.6', '--remote'], shell);
+    //
+    //         expect(calls).toContain('git push origin :refs/tags/@gobing-ai/superskill-v0.9.9-test.6');
+    //     });
 
     it('dispatches postbuild', async () => {
         const tmp = '/tmp/superskill-main-postbuild-test.js';

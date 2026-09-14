@@ -17,8 +17,8 @@
     },
     "scripts": {
         "prepare": "[ -z \"$CI\" ] && lefthook install || true",
-        "bump-ver": "bun scripts/builder.ts bump-ver",
-        "drop-tags": "bun scripts/builder.ts drop-tags",
+        "bump-ver": "spur builder bump-ver",
+        "drop-tags": "spur builder drop-tags",
         "clean": "rm -rf dist",
         "build:scripts": "bun run apps/cli/src/index.ts script convert cc anti-hallucination/validate_response.ts",
         "build": "bun run clean && bun run build:scripts && bun run --filter '@gobing-ai/superskill' build",

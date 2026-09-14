@@ -4,10 +4,6 @@
  * Build/release helper for the superskill CLI.
  *
  * Usage:
- *   bun scripts/builder.ts bump-ver <version>            bump, commit, tag locally
- *   bun scripts/builder.ts bump-ver <version> --push     bump + push commit + tag
- *   bun scripts/builder.ts drop-tags <version>           delete local tag for version
- *   bun scripts/builder.ts drop-tags <version> --remote  delete local + remote tag
  *   bun scripts/builder.ts postbuild <outfile>           prepend bun shebang to a bundle
  *   bun scripts/builder.ts check-skill-citations [glob]  resolve skill citations + drift
  *   bun scripts/builder.ts check-publish-manifest [pkg]  fail on catalog:/workspace: deps
@@ -20,7 +16,8 @@ import { resolve } from 'node:path';
 import { $, Glob } from 'bun';
 
 const ROOT = resolve(import.meta.dirname, '..');
-const PKG_PATH = resolve(ROOT, 'apps/cli/package.json');
+// Wired to the disabled bump-ver/drop-tags cases below — drop the underscore when re-enabled.
+const _PKG_PATH = resolve(ROOT, 'apps/cli/package.json');
 const PKG_NAME = '@gobing-ai/superskill';
 type ShellRunner = typeof $;
 
@@ -78,79 +75,79 @@ export function bumpMarketplaceManifests(marketplaceText: string | null, ver: st
     return { marketplace: mpUpdated ? mpText : marketplaceText, paths };
 }
 
-/** Pure: given package.json text and a version, return the updated JSON string. */
-export function bumpPackageVersion(jsonText: string, ver: string): { updated: string; oldVer: string } {
-    const pkg = JSON.parse(jsonText) as { version: string };
-    const oldVer = pkg.version;
-    pkg.version = ver;
-    return { updated: `${JSON.stringify(pkg, null, 4)}\n`, oldVer };
-}
-export async function bumpVersion(ver: string, shouldPush: boolean, shell: ShellRunner = $) {
-    const err = validateVersion(ver);
-    if (err) fail(err);
+// /** Pure: given package.json text and a version, return the updated JSON string. */
+// export function bumpPackageVersion(jsonText: string, ver: string): { updated: string; oldVer: string } {
+//     const pkg = JSON.parse(jsonText) as { version: string };
+//     const oldVer = pkg.version;
+//     pkg.version = ver;
+//     return { updated: `${JSON.stringify(pkg, null, 4)}\n`, oldVer };
+// }
+// export async function bumpVersion(ver: string, shouldPush: boolean, shell: ShellRunner = $) {
+//     const err = validateVersion(ver);
+//     if (err) fail(err);
 
-    const pathsToAdd: string[] = [];
-    // 1. apps/cli/package.json
-    const { updated: pkgUpdated, oldVer } = bumpPackageVersion(readFileSync(PKG_PATH, 'utf-8'), ver);
-    writeFileSync(PKG_PATH, pkgUpdated);
-    pathsToAdd.push(PKG_PATH);
-    logger.info(`Bumped ${PKG_NAME}: ${oldVer} → ${ver}`);
+//     const pathsToAdd: string[] = [];
+//     // 1. apps/cli/package.json
+//     const { updated: pkgUpdated, oldVer } = bumpPackageVersion(readFileSync(PKG_PATH, 'utf-8'), ver);
+//     writeFileSync(PKG_PATH, pkgUpdated);
+//     pathsToAdd.push(PKG_PATH);
+//     logger.info(`Bumped ${PKG_NAME}: ${oldVer} → ${ver}`);
 
-    const marketplacePath = resolve(ROOT, '.claude-plugin/marketplace.json');
-    const mpText = existsSync(marketplacePath) ? readFileSync(marketplacePath, 'utf-8') : null;
-    const { marketplace: updated, paths: mpPaths } = bumpMarketplaceManifests(mpText, ver);
+//     const marketplacePath = resolve(ROOT, '.claude-plugin/marketplace.json');
+//     const mpText = existsSync(marketplacePath) ? readFileSync(marketplacePath, 'utf-8') : null;
+//     const { marketplace: updated, paths: mpPaths } = bumpMarketplaceManifests(mpText, ver);
 
-    if (updated !== null && updated !== mpText) {
-        writeFileSync(marketplacePath, updated);
-        pathsToAdd.push(marketplacePath);
-        logger.info(`Bumped marketplace plugins to ${ver}`);
-    }
+//     if (updated !== null && updated !== mpText) {
+//         writeFileSync(marketplacePath, updated);
+//         pathsToAdd.push(marketplacePath);
+//         logger.info(`Bumped marketplace plugins to ${ver}`);
+//     }
 
-    for (const rel of mpPaths) {
-        const pluginJsonPath = resolve(ROOT, rel);
-        if (existsSync(pluginJsonPath)) {
-            const pluginJson = JSON.parse(readFileSync(pluginJsonPath, 'utf-8'));
-            if (pluginJson.version !== ver) {
-                pluginJson.version = ver;
-                writeFileSync(pluginJsonPath, `${JSON.stringify(pluginJson, null, 4)}\n`);
-                pathsToAdd.push(pluginJsonPath);
-                logger.info(`Bumped ${rel} to ${ver}`);
-            }
-        } else {
-            logger.warn(`  ⚠ plugin.json not found at ${pluginJsonPath} — skipping`);
-        }
-    }
+//     for (const rel of mpPaths) {
+//         const pluginJsonPath = resolve(ROOT, rel);
+//         if (existsSync(pluginJsonPath)) {
+//             const pluginJson = JSON.parse(readFileSync(pluginJsonPath, 'utf-8'));
+//             if (pluginJson.version !== ver) {
+//                 pluginJson.version = ver;
+//                 writeFileSync(pluginJsonPath, `${JSON.stringify(pluginJson, null, 4)}\n`);
+//                 pathsToAdd.push(pluginJsonPath);
+//                 logger.info(`Bumped ${rel} to ${ver}`);
+//             }
+//         } else {
+//             logger.warn(`  ⚠ plugin.json not found at ${pluginJsonPath} — skipping`);
+//         }
+//     }
 
-    const tag = computeTag(ver);
+//     const tag = computeTag(ver);
 
-    await shell`git add ${pathsToAdd}`;
-    await shell`git commit -m ${`chore: release ${PKG_NAME} v${ver}`}`;
-    await shell`git tag -a ${tag} -m ${`${PKG_NAME} v${ver}`}`;
+//     await shell`git add ${pathsToAdd}`;
+//     await shell`git commit -m ${`chore: release ${PKG_NAME} v${ver}`}`;
+//     await shell`git tag -a ${tag} -m ${`${PKG_NAME} v${ver}`}`;
 
-    logger.info(`\nTag: ${tag}`);
+//     logger.info(`\nTag: ${tag}`);
 
-    if (shouldPush) {
-        logger.info('Pushing commit and tag…');
-        await shell`git push origin main`;
-        await shell`git push origin ${tag}`;
-        logger.info('Pushed main and tag. Publish workflow will trigger on the tag push.');
-        return;
-    }
+//     if (shouldPush) {
+//         logger.info('Pushing commit and tag…');
+//         await shell`git push origin main`;
+//         await shell`git push origin ${tag}`;
+//         logger.info('Pushed main and tag. Publish workflow will trigger on the tag push.');
+//         return;
+//     }
 
-    logger.info('Publish workflow will trigger on tag push. To push now:');
-    logger.info(`  git push origin main && git push origin ${tag}`);
-}
+//     logger.info('Publish workflow will trigger on tag push. To push now:');
+//     logger.info(`  git push origin main && git push origin ${tag}`);
+// }
 
-export async function dropTags(ver: string, isRemote: boolean, shell: ShellRunner = $) {
-    const tag = computeTag(ver);
-    logger.info(`Dropping local tag: ${tag}`);
-    await shell`git tag -d ${tag}`.nothrow();
+// export async function dropTags(ver: string, isRemote: boolean, shell: ShellRunner = $) {
+//     const tag = computeTag(ver);
+//     logger.info(`Dropping local tag: ${tag}`);
+//     await shell`git tag -d ${tag}`.nothrow();
 
-    if (isRemote) {
-        logger.info(`Dropping remote tag: ${tag}`);
-        await shell`git push origin :refs/tags/${tag}`.nothrow();
-    }
-}
+//     if (isRemote) {
+//         logger.info(`Dropping remote tag: ${tag}`);
+//         await shell`git push origin :refs/tags/${tag}`.nothrow();
+//     }
+// }
 
 // ── Skill citation-resolution guard ─────────────────────────────────────────────
 //
@@ -419,24 +416,24 @@ function isNonFlag(arg: string): boolean {
     return !arg.startsWith('--');
 }
 
-export async function runBuilderCommand(argv: string[], shell: ShellRunner = $) {
+export async function runBuilderCommand(argv: string[], _shell: ShellRunner = $) {
     const [command, ...args] = argv;
     const version = args.find(isNonFlag);
-    const shouldPush = args.includes('--push');
-    const isRemote = args.includes('--remote');
+    const _shouldPush = args.includes('--push');
+    const _isRemote = args.includes('--remote');
 
     switch (command) {
-        case 'bump-ver':
-        case 'bump-version': {
-            if (!version) fail('Usage: bun scripts/builder.ts bump-ver <version> [--push]');
-            await bumpVersion(version, shouldPush, shell);
-            break;
-        }
-        case 'drop-tags': {
-            if (!version) fail('Usage: bun scripts/builder.ts drop-tags <version> [--remote]');
-            await dropTags(version, isRemote, shell);
-            break;
-        }
+        // case 'bump-ver':
+        // case 'bump-version': {
+        //     if (!version) fail('Usage: bun scripts/builder.ts bump-ver <version> [--push]');
+        //     await bumpVersion(version, shouldPush, shell);
+        //     break;
+        // }
+        // case 'drop-tags': {
+        //     if (!version) fail('Usage: bun scripts/builder.ts drop-tags <version> [--remote]');
+        //     await dropTags(version, isRemote, shell);
+        //     break;
+        // }
         case 'postbuild': {
             if (!version) fail('Usage: bun scripts/builder.ts postbuild <outfile>');
             await postbuild(version);
