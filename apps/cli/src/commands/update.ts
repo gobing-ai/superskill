@@ -662,12 +662,18 @@ async function fetchNpmLatest(executor?: ProcessExecutor): Promise<string> {
 /** Text rows name at most this many changed paths; longer lists get `+N more` (R11). */
 const MAX_TEXT_CHANGED_PATHS = 5;
 
-/** `note: …` suffix naming both sides of a marketplace.json/plugin.json disagreement (R9). */
+/** `note: …` naming both sides of a marketplace.json/plugin.json disagreement (R9). */
 function declarationNote(row: UpdateRow): string {
     const mismatch = row.versionMismatch;
     return mismatch !== undefined
-        ? ` (note: marketplace.json declares ${mismatch.marketplace}, plugin.json declares ${mismatch.pluginJson})`
+        ? `note: marketplace.json declares ${mismatch.marketplace}, plugin.json declares ${mismatch.pluginJson}`
         : '';
+}
+
+/** Inline `(note: …)` form for single-line rows. */
+function inlineNote(row: UpdateRow): string {
+    const note = declarationNote(row);
+    return note === '' ? '' : ` (${note})`;
 }
 
 /** Version delta for a marketplace stale row; equal versions are content drift (R8). */
@@ -680,10 +686,12 @@ function staleDelta(row: UpdateRow): string {
 
 /**
  * Render one update row for text output. Equal installed/upstream versions on a stale row
- * are named as content drift; a version bump keeps the `<old> → <new>` form. Text caps the
- * changed-path list at {@link MAX_TEXT_CHANGED_PATHS} entries with `+N more` — the row and
- * the `--json` envelope always carry every path. Merged rows with staleTargets append
- * `[stale on: <targets>]`; unavailable rows append their cause after the locator.
+ * are named as content drift; a version bump keeps the `<old> → <new>` form. Multi-file
+ * drift keeps the head line short (`(<n> files changed)`) and renders the changed-path list
+ * (capped at {@link MAX_TEXT_CHANGED_PATHS} with `+N more`), stale targets, and the
+ * declaration note as indented continuation lines — the `--json` envelope always carries
+ * every path. Single-line rows (no changed paths) keep the inline `[stale on: …]` /
+ * `(note: …)` suffixes; unavailable rows name their cause after the locator.
  */
 export function formatUpdateRow(row: UpdateRow): string {
     if (row.status === 'legacy') {
@@ -704,7 +712,7 @@ export function formatUpdateRow(row: UpdateRow): string {
             row.installedVersion !== undefined
                 ? `${row.name}: ${row.installedVersion} up to date`
                 : `${row.name}: up to date`;
-        return `${head}${declarationNote(row)}`;
+        return `${head}${inlineNote(row)}`;
     }
     if (row.channel === 'bundled') {
         return `${row.name}: stale: superskill <${row.upstreamVersion}> available (installed <${row.installedVersion}>)`;
@@ -714,11 +722,18 @@ export function formatUpdateRow(row: UpdateRow): string {
             ? ` [stale on: ${row.staleTargets.join(', ')}]`
             : '';
     const n = row.changedPaths?.length ?? 0;
-    if (n === 0) return `${row.name}: stale: ${staleDelta(row)}${staleTargets}${declarationNote(row)}`;
+    if (n === 0) return `${row.name}: stale: ${staleDelta(row)}${staleTargets}${inlineNote(row)}`;
+    // Multi-file drift: head stays a short scannable row; details hang below as continuations.
+    const lines = [`${row.name}: stale: ${staleDelta(row)} (${n} files changed)`];
     const paths = row.changedPaths ?? [];
     const shown = paths.slice(0, MAX_TEXT_CHANGED_PATHS);
-    const more = paths.length > shown.length ? ` +${paths.length - shown.length} more` : '';
-    return `${row.name}: stale: ${staleDelta(row)} (${n} files changed: ${shown.join(', ')}${more})${staleTargets}${declarationNote(row)}`;
+    for (const path of shown) lines.push(`    ${path}`);
+    if (paths.length > shown.length) lines.push(`    +${paths.length - shown.length} more`);
+    if (row.staleTargets !== undefined && row.staleTargets.length > 0)
+        lines.push(`    stale on: ${row.staleTargets.join(', ')}`);
+    const note = declarationNote(row);
+    if (note !== '') lines.push(`    ${note}`);
+    return lines.join('\n');
 }
 
 const PLUGIN_ROOT_MARKERS = ['skills', 'commands', 'agents', 'hooks', 'hooks.json', 'plugin.json'];

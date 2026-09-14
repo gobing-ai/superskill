@@ -187,7 +187,7 @@ describe('formatUpdateRow', () => {
                 upstreamVersion: '0.0.1',
                 changedPaths: ['skills/a.md'],
             }),
-        ).toBe('kk: stale: content changed, version 0.0.1 unchanged (1 files changed: skills/a.md)');
+        ).toBe('kk: stale: content changed, version 0.0.1 unchanged (1 files changed)\n    skills/a.md');
         const twelve = Array.from({ length: 12 }, (_v, i) => `skills/f${i + 1}.md`).sort();
         expect(
             formatUpdateRow({
@@ -201,9 +201,9 @@ describe('formatUpdateRow', () => {
                 staleTargets: ['claude'],
             }),
         ).toBe(
-            'kk: stale: 1.0.0 → 2.0.0 ' +
-                '(12 files changed: skills/f1.md, skills/f10.md, skills/f11.md, skills/f12.md, skills/f2.md +7 more)' +
-                ' [stale on: claude]',
+            'kk: stale: 1.0.0 → 2.0.0 (12 files changed)\n' +
+                '    skills/f1.md\n    skills/f10.md\n    skills/f11.md\n    skills/f12.md\n    skills/f2.md\n' +
+                '    +7 more\n    stale on: claude',
         );
     });
 
@@ -888,7 +888,9 @@ describe('executeUpdate', () => {
         const output = stdout.mock.calls.map((c) => String(c[0])).join('');
         stdout.mockRestore();
         expect(code).toBe(1);
-        expect(output).toContain('kk: stale: content changed, version 0.0.1 unchanged (1 files changed: skills/a.md)');
+        expect(output).toContain(
+            'kk: stale: content changed, version 0.0.1 unchanged (1 files changed)\n    skills/a.md',
+        );
         expect(output).not.toContain('0.0.1 → 0.0.1');
     });
 
@@ -920,8 +922,8 @@ describe('executeUpdate', () => {
         stdout.mockRestore();
 
         expect(code).toBe(1);
-        expect(text).toContain('kk: stale: 1.0.0 → 2.0.0 (12 files changed: ');
-        expect(text).toContain('+7 more)');
+        expect(text).toContain('kk: stale: 1.0.0 → 2.0.0 (12 files changed)');
+        expect(text).toContain('+7 more');
         expect(text).not.toContain('skills/f3.md');
         expect(jsonCode).toBe(1);
         expect(envelope.rows[0]?.changedPaths).toHaveLength(12);
@@ -949,7 +951,8 @@ describe('executeUpdate', () => {
         stdout.mockRestore();
         expect(code).toBe(1);
         expect(output.match(/kk: stale:/g)).toHaveLength(1);
-        expect(output).toContain(' [stale on: claude]');
+        expect(output).toContain('stale on: claude');
+        expect(output).not.toContain(' [stale on:');
     });
 
     it('notes disagreeing marketplace.json and plugin.json version declarations (R9)', async () => {
