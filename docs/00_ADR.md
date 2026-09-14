@@ -623,6 +623,20 @@ receipt without the field keeps its existing meaning (keys relative to
 inventory is empty, and an inventory that is empty under both roots still fails
 the install (0123 R5 unchanged).
 
+**Membership-rule clarification (2026-09-14, task 0140 review).** Scope
+membership for provenance receipts is the canonical-descendant test
+(`realpathSync` on both sides, then `relative()`), not the earlier lexical
+`relative()` spelling check: a destination behind a symlinked ancestor resolves
+to its real path, and a receipt that only *spells* as inside the scope root
+does not count as in-scope. For non-native targets this narrows behavior — a
+project-scope install behind a symlinked ancestor can fail the inventory check
+where the lexical test wrote a manifest — and the narrowing is accepted: the
+canonical test is what makes a host-reported realpath agree with a symlinked
+`HOME_DIR`/`outputRoot` (0140 R3), and the home-rooted fallback covers the
+native targets where the case actually occurs. Revisit with a
+lexical-OR-canonical rule only if a real non-native install behind a symlinked
+ancestor surfaces.
+
 **Amendment (2026-09-13, F8) — lock-tracked skills and actionable output.**
 `superskill update` also reports on and updates skills installed with
 `superskill skill add`. It reads them from the ADR-028 locks: `~/.agents/.skill-lock.json`
