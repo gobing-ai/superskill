@@ -4,7 +4,7 @@ name: "Pin feature F CLI-surface invariants: every Commander-registered command 
 status: done
 template: feature-impl
 created_at: 2026-09-14T17:43:19.883Z
-updated_at: "2026-09-14T17:44:45.413Z"
+updated_at: "2026-09-14T18:07:19.886Z"
 feature_id: F
 
 ---

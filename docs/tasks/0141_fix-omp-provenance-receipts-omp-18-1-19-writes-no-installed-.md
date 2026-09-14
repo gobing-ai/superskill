@@ -4,7 +4,7 @@ name: Fix omp provenance receipts — omp 18.1.19 writes no installed_plugins.js
 status: done
 template: issue
 created_at: 2026-09-14T14:18:54.818Z
-updated_at: "2026-09-14T17:40:02.720Z"
+updated_at: "2026-09-14T18:07:19.207Z"
 feature_id: F
 
 ---

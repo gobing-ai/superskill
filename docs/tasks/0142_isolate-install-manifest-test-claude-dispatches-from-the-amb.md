@@ -4,7 +4,7 @@ name: Isolate install-manifest test claude dispatches from the ambient HOME (sui
 status: done
 template: issue
 created_at: 2026-09-14T17:32:40.143Z
-updated_at: "2026-09-14T17:49:55.016Z"
+updated_at: "2026-09-14T18:07:19.542Z"
 feature_id: F
 
 ---

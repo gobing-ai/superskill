@@ -4,7 +4,7 @@ name: Close claude-cache rmSync exposure in install.test.ts and install-prune.te
 status: done
 template: issue
 created_at: 2026-09-14T17:49:10.317Z
-updated_at: "2026-09-14T17:51:06.361Z"
+updated_at: "2026-09-14T18:07:20.221Z"
 feature_id: F
 
 ---
