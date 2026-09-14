@@ -29,7 +29,9 @@ import {
 import { cliVersion } from '../../src/version';
 
 const originalCwd = process.cwd();
+const savedHomeDir = process.env.HOME_DIR;
 let tempDir: string | undefined;
+let fileLevelHome: string | undefined;
 
 function createTempWorkspace(): string {
     tempDir = mkdtempSync(join(tmpdir(), 'superskill-install-test-'));
@@ -53,11 +55,25 @@ function createPlugin(root: string, pluginName = 'demo'): string {
     return pluginRoot;
 }
 
+// Task 0144: every case runs against a fresh file-level home — the non-dryRun claude dispatch
+// rmSyncs <home>/.claude/plugins/cache/<marketplace> (install.ts:754), and this file's
+// marketplace-metadata cases run it without their own HOME_DIR override.
+beforeEach(() => {
+    fileLevelHome = mkdtempSync(join(tmpdir(), 'superskill-install-test-home-'));
+    process.env.HOME_DIR = fileLevelHome;
+});
+
 afterEach(() => {
     process.chdir(originalCwd);
+    if (savedHomeDir === undefined) delete process.env.HOME_DIR;
+    else process.env.HOME_DIR = savedHomeDir;
     if (tempDir) {
         rmSync(tempDir, { recursive: true, force: true });
         tempDir = undefined;
+    }
+    if (fileLevelHome) {
+        rmSync(fileLevelHome, { recursive: true, force: true });
+        fileLevelHome = undefined;
     }
 });
 

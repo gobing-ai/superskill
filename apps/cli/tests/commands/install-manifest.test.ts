@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, mock, spyOn } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, it, mock, spyOn } from 'bun:test';
 import {
     existsSync,
     mkdirSync,
@@ -23,6 +23,7 @@ const originalCwd = process.cwd();
 const savedHomeDir = process.env.HOME_DIR;
 const savedFetch = globalThis.fetch;
 let tempDir: string | undefined;
+let fileLevelHome: string | undefined;
 
 function createTempWorkspace(): string {
     tempDir = mkdtempSync(join(tmpdir(), 'superskill-install-manifest-'));
@@ -84,6 +85,15 @@ function seedInstalledSkill(scopeRoot: string, plugin: string): string {
     return dest;
 }
 
+// Task 0142: every case runs against a fresh file-level home, so a claude dispatch without its
+// own HOME_DIR override can never reach the developer's real ~/.claude cache — install.ts's
+// non-dryRun claude dispatch rmSyncs <home>/.claude/plugins/cache/<marketplace>. Cases that set
+// HOME_DIR themselves overwrite this default for their own duration.
+beforeEach(() => {
+    fileLevelHome = mkdtempSync(join(tmpdir(), 'superskill-manifest-home-'));
+    process.env.HOME_DIR = fileLevelHome;
+});
+
 afterEach(() => {
     mock.restore();
     globalThis.fetch = savedFetch;
@@ -93,6 +103,10 @@ afterEach(() => {
     if (tempDir) {
         rmSync(tempDir, { recursive: true, force: true });
         tempDir = undefined;
+    }
+    if (fileLevelHome) {
+        rmSync(fileLevelHome, { recursive: true, force: true });
+        fileLevelHome = undefined;
     }
 });
 

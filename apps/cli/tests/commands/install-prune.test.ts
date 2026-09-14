@@ -5,7 +5,9 @@ import { join } from 'node:path';
 import { executeInstall } from '../../src/commands/install';
 
 const originalCwd = process.cwd();
+const savedHomeDir = process.env.HOME_DIR;
 let tempDir: string | undefined;
+let fileLevelHome: string | undefined;
 
 function createTempWorkspace(): string {
     tempDir = mkdtempSync(join(tmpdir(), 'superskill-prune-test-'));
@@ -59,12 +61,26 @@ function mockRulesyncThatWrites(destSkillsDir: (target: string) => string) {
 
 let stdoutSpy: ReturnType<typeof spyOn> | undefined;
 
+// Task 0144: every case runs against a fresh file-level home — the non-dryRun claude dispatch
+// rmSyncs <home>/.claude/plugins/cache/<marketplace> (install.ts:754), and this file's
+// native-dests case runs it without any HOME_DIR override.
+beforeEach(() => {
+    fileLevelHome = mkdtempSync(join(tmpdir(), 'superskill-prune-test-home-'));
+    process.env.HOME_DIR = fileLevelHome;
+});
+
 afterEach(() => {
     stdoutSpy?.mockRestore();
     process.chdir(originalCwd);
+    if (savedHomeDir === undefined) delete process.env.HOME_DIR;
+    else process.env.HOME_DIR = savedHomeDir;
     if (tempDir) {
         rmSync(tempDir, { recursive: true, force: true });
         tempDir = undefined;
+    }
+    if (fileLevelHome) {
+        rmSync(fileLevelHome, { recursive: true, force: true });
+        fileLevelHome = undefined;
     }
 });
 
