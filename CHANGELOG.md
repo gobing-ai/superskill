@@ -11,6 +11,33 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 - fix(grok-bot): treat host-rewritten bridge pointers as healthy when `canonical:` still targets the owned recipe (stops 113× owned-drift after Bot `update_state` register); still refuse canonical drift, full-mode edits, and unowned extras
 - fix(grok-bot): handoff/doctor/README copy — slash fill is NOT automatic, Shell fallback for `.superskill` Read denial, soft-pedal unverified Settings > Plugins path
 
+## [0.3.27] - 2026-09-13
+
+### Added
+
+- feat: add F8 unified update feature with 6-task decomposition (`2397e12`)
+- feat(update): generalize update row model to UpdateRow with kind (task 0133) (`fe72f05`)
+- feat(skills): add read-only checkSkills, precheck reuse, and honest skill update output (task 0134) (`1bc34a3`)
+- feat(update): cover lock-tracked skills in update check and apply (task 0135) (`8bfa382`)
+- feat(update): actionable plugin update rows and summary footer (task 0136) (`ec5ecdb`)
+- feat(update): apply progress lines and --json envelope purity (task 0137) (`b403e04`)
+
+### Fixed
+
+- fix: raise marketplace materialization cap 2048 → 4096 (`e80c5aa`)
+
+### Changed
+
+- docs(help): add new external docs/help2/ (`d54094c`)
+- docs(help): add new external docs/help2/ (`fe16c6d`)
+- docs(help): add new external docs/help2/ (`a7e2b3e`)
+- docs(update): stay-current help2 section and doc-set audit (task 0138) (`5045d43`)
+- docs(features): canonicalize F8 acceptance criteria and close feature (batch wrap) (`4465c18`)
+
+### Other
+
+- chore(config): update upstream packages in ts-libs (`db371f7`)
+
 ## [0.3.24] - 2026-09-11
 
 ### Added
