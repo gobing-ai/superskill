@@ -4,7 +4,7 @@ name: Fix omp provenance receipts — omp 18.1.19 writes no installed_plugins.js
 status: done
 template: issue
 created_at: 2026-09-14T14:18:54.818Z
-updated_at: "2026-09-14T16:00:00.376Z"
+updated_at: "2026-09-14T17:40:02.720Z"
 feature_id: F
 
 ---
@@ -129,18 +129,18 @@ All production changes land in `apps/cli/src/commands/install.ts`; omp receipt c
 
 | Requirement | Status | Evidence |
 |-------------|--------|----------|
-| R1 | MET | `apps/cli/src/commands/install.ts:1362-1394` (two-stage probe) + `:1341-1358` (cache-tree receipt source) + `:816-821` (self-explaining empty resolution); tests `apps/cli/tests/commands/install-manifest.test.ts:718` (home-rooted manifest from tree) and `:798` (failure names consulted roots); live E2E this run: exit 0, omp manifest `installedRoot: 'home'` with 372 files under omp 18.1.19 |
-| R2 | MET | Stage A registry read behaviour-identical `apps/cli/src/commands/install.ts:1315-1334`; Stage B fallback `:1341-1358` and `:1385-1392`; tests `apps/cli/tests/commands/install-manifest.test.ts:753` (registry primary, decoy tree ignored), `apps/cli/tests/commands/install-omp-helpers.test.ts:172,180,188,199,212,223,233` (absent registry, global scope, ordered roots, lexicographic tail, never-adopts, non-directory) |
-| R3 | MET | `apps/cli/src/commands/install.ts:1397-1421` names every consulted root and probes `os.homedir()` divergence diagnosis-only; tests `apps/cli/tests/commands/install-manifest.test.ts:831` (names real home, foreign receipts never adopted) and `apps/cli/tests/commands/install.integration.test.ts:572` (exactly one non-verbose diagnostic line) |
-| R4 | MET | Frozen error unchanged `apps/cli/src/commands/install.ts:2308`; claude/grok/codex/pi and global-omp paths untouched by the diff; neither-source test `apps/cli/tests/commands/install-manifest.test.ts:798` throws the frozen error and writes no manifest; full suite 2369 pass / 0 fail; `packages/core/tests/operations/install-manifest.test.ts` 13 pass unedited |
+| R1 | MET | Two-stage probe `apps/cli/src/commands/install.ts:1362-1388` with cache-tree receipt source `:1341-1353` and self-explaining empty resolution at the dispatch `:816-821` — all re-read this run. Tests `apps/cli/tests/commands/install-manifest.test.ts:732` (home-rooted manifest from tree only) and `:812` (failure names consulted roots) re-located and re-executed this run (87 pass / 0 fail across the three evidence files). Live E2E: recorded original-run command evidence. |
+| R2 | MET | Stage A registry read behaviour-identical `apps/cli/src/commands/install.ts:1315-1332` (re-read); Stage B prefix-anchored enumeration `:1341-1353` with first-root + lexicographic-tail selection `:1382-1386` (re-read). Registry-primary e2e `apps/cli/tests/commands/install-manifest.test.ts:767` re-executed this run; Stage B unit block `apps/cli/tests/commands/install-omp-helpers.test.ts:172-239` (file untouched since `96251ef`; case lines confirmed by grep at `:212` lexicographic tail, `:223` never-adopts, `:233` non-directory) re-executed this run. |
+| R3 | MET | `apps/cli/src/commands/install.ts:1397-1422` names every consulted root and probes `os.homedir()` divergence diagnosis-only (re-read); foreign-root receipts never adopted (message append only). Tests `apps/cli/tests/commands/install-manifest.test.ts:845` (names the real home, no manifest) and `apps/cli/tests/commands/install.integration.test.ts:572` (exactly one non-verbose diagnostic line) re-located and re-executed this run. |
+| R4 | MET | Frozen error unchanged `apps/cli/src/commands/install.ts:2306-2310` (re-read); claude/grok/codex/pi and global-omp paths untouched by the diff (`96251ef` scope re-read: install.ts + the three test files only). Neither-source case `apps/cli/tests/commands/install-manifest.test.ts:812` throws the frozen error and writes no manifest — passed this run. Core manifest suite 36 pass / 0 fail this session (unedited). |
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
 |---------------------|--------|---------------|----------|
-| **AC1 | MET | test | `apps/cli/tests/commands/install-manifest.test.ts:718-751` — stub writes only the omp cache tree, `executeInstall` with `global: false` writes a manifest with non-empty `installed.files` and `installedRoot === 'home'`; passed this run (53 pass / 0 fail across the two omp test files) |
-| **AC2 | MET | test | registry-present path unchanged `apps/cli/tests/commands/install-manifest.test.ts:753-796`; registry-absent path resolves on-disk `:718-751`; neither-source throws the frozen error and writes no manifest `:798-829`; all passed this run |
-| **AC3 | MET | test | `apps/cli/tests/commands/install-manifest.test.ts:831-881` — isolated `HOME_DIR`, receipts only under the divergent homedir → failure output names the real home and "independently of $HOME", no manifest written; passed this run |
-| **AC4 | MET | command | Fresh this session: `bun run lint` (biome 235 files + typecheck, 0 errors), `bun run test` 2369 pass / 0 fail across 113 files, `bun run build` exit 0, `bun run spur-check` (full tests + 3/3 post-check rules); no `.skip`/`.todo`/`.only` in touched test files; both install-manifest suites pass unedited (CLI additions-only diff, core file untouched) |
-| **AC5 | MET | command | E2E this run: isolated symlink-free HOME + scratch project, `dist/superskill install understand-anything --marketplace Egonex-AI/Understand-Anything --no-global` → exit 0 (`Installed 'understand-anything' to 9 target(s)`); omp manifest `installedRoot: 'home'`, 372 files, no `installed_plugins.json` anywhere (Stage B cache-tree receipts); real `~/.omp` verified unchanged (registry diff clean, newer-than-backup mtime scan empty) — nothing to revert |
+| AC1 (tree-only host outcome → home-rooted manifest) | MET | test | `apps/cli/tests/commands/install-manifest.test.ts:732-766` — stub writes only the omp cache tree, `executeInstall` with `global: false` writes a manifest with non-empty `installed.files` and `installedRoot === 'home'`; passed this run. |
+| AC2 (registry path unchanged; absent → tree; neither → frozen error) | MET | test | Registry-primary `:767-811` (decoy tree ignored), neither-source `:812-844` (frozen error, no manifest, consulted roots on stdout); all passed this run. |
+| AC3 (divergent-home diagnosis) | MET | test | `apps/cli/tests/commands/install-manifest.test.ts:845-895` — receipts only under the divergent homedir → output names the real home and "independently of $HOME", no manifest written; passed this run. |
+| AC4 (no regression) | MET | command | This run: 87 pass / 0 fail across the three evidence files; `bun run lint` clean (this session); `bun run build` exit 0 (this run); no `.skip`/`.todo`/`.only` in the touched files; both pre-existing install-manifest suites pass unedited (CLI additions-only, core untouched). |
+| AC5 (manual E2E, environment-dependent) | MET | command | Recorded original-run evidence: isolated symlink-free HOME + scratch project, `dist/superskill install understand-anything --marketplace Egonex-AI/Understand-Anything --no-global` → exit 0 (`Installed 'understand-anything' to 9 target(s)`); omp manifest `installedRoot: 'home'` with 372 files via Stage B cache-tree receipts; real `~/.omp` verified unchanged — not re-executed in this re-audit. |
 - Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review
@@ -152,6 +152,16 @@ All production changes land in `apps/cli/src/commands/install.ts`; omp receipt c
 | Priority | Dimension | Location | Finding |
 |----------|-----------|----------|----------|
 | P4 | spur task check | — | task check passed |
+| P4 | task-check | — | `spur task check 0141` → PASS (this run, after record). |
+| P4 | scope-creep | — | Commit `96251ef` scope re-read this run: `install.ts` + three test files + task file — every change maps to the Design's two mechanisms + tests; the named anti-patterns (adopting foreign-root receipts, touching the frozen error/`snapshotFiles`/schema/omp CLI invocation, globbing beyond the `<plugin>___<marketplace>___` prefix, `any`, new manifest fields) remain absent. |
+| P4 | design-conformance | — | 8/8 design claims DONE at the re-read anchors (probe shape, Stage A extraction, Stage B enumeration + selection, ordered deduped roots, unchanged exported signature, self-explaining empty resolution + divergence diagnosis, unconditional dispatch echo, frozen error). One documented deviation (Solution): AC3 simulates the divergent home with `spyOn(os, 'homedir')` because Bun ignores mid-process `process.env.HOME` mutations — test-side, mechanical, production logic untouched → CHANGED, PASS-acceptable. |
+| P4 | Priority | — | Location |
+| P4 | P4 | — | `apps/cli/src/commands/install.ts:1315-1332` |
+| P4 | P4 | — | `apps/cli/src/commands/install.ts:1382-1386` |
+| P4 | P4 | — | `apps/cli/src/commands/install.ts:1364-1369` |
+| P4 | P4 | — | `apps/cli/src/commands/install.ts:1397-1422` |
+| P4 | P4 | — | `apps/cli/src/commands/install.ts:1300-1434` |
+| P4 | P4 | — | — |
 | P4 | evidence-rule-pass | — | All behavior-bearing AC rows have executable evidence or are explicitly non-behavioral. |
 
 ### References

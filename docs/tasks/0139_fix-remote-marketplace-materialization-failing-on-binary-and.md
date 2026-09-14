@@ -4,7 +4,7 @@ name: Fix remote marketplace materialization failing on binary and oversized rep
 status: done
 template: issue
 created_at: 2026-09-14T01:08:36.536Z
-updated_at: "2026-09-14T14:12:54.413Z"
+updated_at: "2026-09-14T16:58:17.982Z"
 
 feature_id: G1
 ---
@@ -127,14 +127,16 @@ Root cause is the reuse of a text-decoding read helper for a byte-exact material
 
 | Requirement | Status | Evidence |
 |-------------|--------|----------|
-| R1 | MET | `packages/core/src/skills-ecosystem/fetch.ts:116` defines `MAX_MATERIALIZED_BLOB_BYTES = 64 * 1024 * 1024`; `:720` pre-checks the tree-declared `size` against it and `:734` writes with it — not `MAX_RAW_FILE_BYTES` (`:107`, still 2 MiB, now called only from the text paths at `:491`/`:557`/`:618`). Live E2E materialized a 10,453,855 B blob (5× the old cap) and completed. Weakest link: no automated test pins a blob between 2 MiB and 64 MiB; the closest automated half is `packages/core/tests/skills-ecosystem/fetch.test.ts:759` (declared exactly at cap is fetched and written). |
-| R2 | MET | Non-decoding streamed write at `packages/core/src/skills-ecosystem/fetch.ts:177-213` (no `response.text()`/`toString()` on this path; `:147`/`:168` belong to the unchanged `readBodyBounded`, reached only by text callers). `packages/core/tests/skills-ecosystem/fetch.test.ts:697` round-trips `89 50 4e 47 00 c3 28 ff fe 00 01` byte-for-byte; the live E2E hashed the materialized `.wasm` to `0bbf…9498` and the downstream claude-cache copy identically. The universal "every blob" claim holds by construction (single write path) plus one binary fixture and one live hash, not by enumerating all 515 blobs. |
-| R3 | MET | Pre-check `packages/core/src/skills-ecosystem/fetch.ts:719-724` throws `AcquisitionLimitError` before the fetch, message shape `blob <path> in <owner/repo> (<size> bytes) exceeds the <n>-byte read cap`; streamed overflow `:186-190` cancels the reader, ends the writer, removes the partial file (`:200-207`) and rethrows. Proven by `packages/core/tests/skills-ecosystem/fetch.test.ts:723` (zero raw fetches, empty dest dir) and `:790` (partial file absent); file-scoped run 42 pass / 0 fail. |
-| R4 | MET | Caps intact: `packages/core/src/skills-ecosystem/fetch.ts:102` (4096 files), `:107` (2 MiB), `:108` (16 MiB), `:109` (32 MiB). `readBodyBounded` (`:144-169`) is unmodified and its only callers remain `:491` (tree), `:557` (SKILL.md), `:618` (manifest); `materializeRepoSubdir` no longer calls it, and the sole production caller `apps/cli/src/commands/install.ts:328-339` is unchanged. Boundaries exercised at `packages/core/tests/skills-ecosystem/fetch.test.ts:900`, `:924`, `:945`, `:962`, `:991`, `:1017`. |
+| R1 | MET | Re-read this run: `packages/core/src/skills-ecosystem/fetch.ts:116` defines `MAX_MATERIALIZED_BLOB_BYTES = 64 * 1024 * 1024`; `:720-724` pre-checks the tree-declared `size` against it and `:734` writes with it — not `MAX_RAW_FILE_BYTES` (`:107`, still 2 MiB, called only from the text paths at `:491`/`:557`/`:618`, re-read this run). Live E2E (recorded, original run) materialized a 10,453,855 B blob and completed. |
+| R2 | MET | Non-decoding streamed write at `packages/core/src/skills-ecosystem/fetch.ts:177-213` re-read this run (chunk-counted `FileSink` write, no `response.text()`/`toString()` on the blob path). Binary round-trip test at `packages/core/tests/skills-ecosystem/fetch.test.ts:697` re-read and re-executed this run (42 pass / 0 fail). Live `.wasm` sha256 match is recorded original-run evidence. |
+| R3 | MET | Pre-check `packages/core/src/skills-ecosystem/fetch.ts:720-724` throws `AcquisitionLimitError` before the fetch with the frozen message shape; streamed overflow cancels the reader and removes the partial file (`:177-213` re-read this run). Tests `:723` (declared cap+1, zero raw fetches) and `:790` (undeclared streamed overflow, no partial file) re-read and re-executed this run. |
+| R4 | MET | Caps intact at `packages/core/src/skills-ecosystem/fetch.ts:102` (4096 files), `:106` (16 MiB tree), `:107` (2 MiB raw text), `:108` (32 MiB manifest) — re-read this run (prior citation's `:108`/`:109` sub-anchors for the 16/32 MiB caps drifted by one line; the constant block is unchanged). `readBodyBounded` (`:144`) unmodified; callers remain the three text paths. File test suite green this run. |
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
 |---------------------|--------|---------------|----------|
-| Scenario: Remote marketplace materialization survives binary and oversized assets | MET | test | Automated: `packages/core/tests/skills-ecosystem/fetch.test.ts:697`, `:723`, `:759`, `:790` — 42 pass / 0 fail for the file, including the 64 MiB cap boundary and partial-file removal on overflow. Command (host, this run): cold-cache global `HOME=<isolated> superskill install understand-anything --marketplace Egonex-AI/Understand-Anything` → exit 0, `Installed 'understand-anything' to 9 target(s).`; 515 blobs materialized, the 10,453,855 B GIF present, `.wasm` sha256 `0bbf7a0668f8f155addbcd8284880447dbe393b67b5eb09c7b042b02080d9498` equal to the AC2 expectation and to the downstream claude-cache copy → no `AcquisitionLimitError`. |
+| Scenario: Remote marketplace materialization survives binary and oversized assets | MET | test | `packages/core/tests/skills-ecosystem/fetch.test.ts:697`, `:723`, `:759`, `:790` — re-read and re-executed this run: 42 pass / 0 fail, including the 64 MiB cap boundary and partial-file removal. Live cold-materialize E2E (exit 0, no `AcquisitionLimitError`, 515 blobs) is recorded original-run command evidence, network-dependent, not re-executed in this re-audit. |
+| AC3 (boundary, automated) | MET | test | Same four cases — declared cap+1 rejected without fetching, exact cap fetched, streamed overflow removes partial; 42 pass / 0 fail this run. |
+| AC4 (no regression) | MET | command | This run: `bun run lint` → biome 235 files clean + both workspace typechecks exit 0; file suite 42 pass / 0 fail, no `.skip`/`.todo`/`.only`. |
 - Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review
