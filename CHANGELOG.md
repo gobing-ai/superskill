@@ -11,6 +11,35 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 - fix(grok-bot): treat host-rewritten bridge pointers as healthy when `canonical:` still targets the owned recipe (stops 113× owned-drift after Bot `update_state` register); still refuse canonical drift, full-mode edits, and unowned extras
 - fix(grok-bot): handoff/doctor/README copy — slash fill is NOT automatic, Shell fallback for `.superskill` Read denial, soft-pedal unverified Settings > Plugins path
 
+## [0.3.28] - 2026-09-14
+
+### Fixed
+
+- fix(cli): fall back to on-disk omp cache-tree receipts when registry manifest is absent (0141) (`96251ef`)
+- fix(install): resolve project-scope provenance for native targets under $HOME (`1abe66e`)
+- fix(install): fix installation issue with external github repo (`a1b163d`)
+
+### Changed
+
+- test(cli): isolate install claude dispatches from ambient home (`40d28af`)
+- test(cli): pin cli-surface invariants for commander and stdout (0143) (`7af0c49`)
+- docs(core): reword tryBlobInstall caveat for 0139 byte-exact streaming (`fda0d6e`)
+- docs(adr): clarify scope-membership rule for provenance receipts (0140) (`1a33a9d`)
+- docs: sync verification rows and mark feature F done (`6b7cf09`)
+- docs: sync 03_ARCHITECTURE for task 0141 omp receipt resolution (wrap) (`bc91290`)
+- docs(wrap): sync owning docs for the G1 batch (0139, 0140) (`a1b90a9`)
+- docs(corpus): record 0139 verification and close G1 (`6e5377b`)
+- docs(corpus): link G1 acceptance scenarios to tasks 0139/0140 (`6f51c71`)
+- docs(tasks): add new tasks (`304b12d`)
+- docs(tasks): update task status after refinement (`804daef`)
+- docs(tasks): update task status after verification (`ad54e36`)
+
+### Other
+
+- chore(spur): sync feature F status after task 0141 (`a1a6340`)
+- chore(config): declare bump-ver release knobs (values = defaults) alongside carriers (`2f31161`)
+- chore(config): declare .cursor-plugin/.codex-plugin as bump-ver plugin-manifest carriers (`889d307`)
+
 ## [0.3.27] - 2026-09-13
 
 ### Added
