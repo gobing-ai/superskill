@@ -90,6 +90,16 @@ rules:
 redaction:
   enabled: false
 
+# ── Release (spur builder bump-ver / drop-tags) ──
+# Per-platform plugin manifests are git-tracked mirrors of plugins/cc/plugin.json that
+# no marketplace entry covers — declared as plugin-manifest carriers so every release
+# commit keeps them in lockstep (they previously drifted to 0.3.1 vs marketplace 0.3.27).
+builder:
+  bump-ver:
+    versionCarriers:
+      - type: plugin-manifest
+        paths: [.cursor-plugin/plugin.json, .codex-plugin/plugin.json]
+
 # ── Planning (design §2.1 / §9) ──
 tasks:
   active: docs/tasks
