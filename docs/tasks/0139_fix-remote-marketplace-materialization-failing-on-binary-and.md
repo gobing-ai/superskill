@@ -1,10 +1,10 @@
 ---
 schema_version: 1
 name: Fix remote marketplace materialization failing on binary and oversized repository assets
-status: todo
+status: done
 template: issue
 created_at: 2026-09-14T01:08:36.536Z
-updated_at: "2026-09-14T05:18:15.994Z"
+updated_at: "2026-09-14T14:12:54.413Z"
 
 feature_id: G1
 ---
@@ -24,10 +24,10 @@ Remote `--marketplace` resolution (`resolveRemoteMarketplace`, `apps/cli/src/com
 
 ### Requirements
 
-- [ ] R1. Cold-resolving a GitHub `--marketplace` locator does not fail because a repository blob (text or binary) exceeds the 2 MiB `MAX_RAW_FILE_BYTES` text cap; materialization uses its own per-blob cap `MAX_MATERIALIZED_BLOB_BYTES` (64 MiB).
-- [ ] R2. Every materialized blob is byte-identical to upstream: blob bodies are streamed to disk and never decoded to text.
-- [ ] R3. The acquisition bound (task 0126 R9/F9) stays enforced per blob: a blob whose tree-declared `size` exceeds the cap is rejected with `AcquisitionLimitError` before its raw download; a blob with no declared size that streams past the cap is rejected with the same error class and its partially written file is removed.
-- [ ] R4. No behaviour change to the text paths: SKILL.md (`MAX_RAW_FILE_BYTES`), tree JSON (`MAX_TREE_JSON_BYTES`), and download manifest (`MAX_DOWNLOAD_JSON_BYTES`) keep their caps, `readBodyBounded`, and error shapes; `MAX_MATERIALIZED_FILES` (4096) is unchanged.
+- [x] R1. Cold-resolving a GitHub `--marketplace` locator does not fail because a repository blob (text or binary) exceeds the 2 MiB `MAX_RAW_FILE_BYTES` text cap; materialization uses its own per-blob cap `MAX_MATERIALIZED_BLOB_BYTES` (64 MiB).
+- [x] R2. Every materialized blob is byte-identical to upstream: blob bodies are streamed to disk and never decoded to text.
+- [x] R3. The acquisition bound (task 0126 R9/F9) stays enforced per blob: a blob whose tree-declared `size` exceeds the cap is rejected with `AcquisitionLimitError` before its raw download; a blob with no declared size that streams past the cap is rejected with the same error class and its partially written file is removed.
+- [x] R4. No behaviour change to the text paths: SKILL.md (`MAX_RAW_FILE_BYTES`), tree JSON (`MAX_TREE_JSON_BYTES`), and download manifest (`MAX_DOWNLOAD_JSON_BYTES`) keep their caps, `readBodyBounded`, and error shapes; `MAX_MATERIALIZED_FILES` (4096) is unchanged.
 
 **Out of scope / non-goals**
 
@@ -121,16 +121,37 @@ Root cause is the reuse of a text-decoding read helper for a byte-exact material
 
 ### Testing
 
-- `packages/core/tests/skills-ecosystem/fetch.test.ts` — four new cases: binary blob materialized byte-for-byte (JSON round-trip of the written file equals the source bytes); blob declared at cap+1 rejected from tree metadata with `rawFetches === 0` and an empty dest dir; blob declared exactly at cap fetched and written; blob with no declared size capped mid-stream with the partial file removed.
-- `bun test packages/core/tests/skills-ecosystem/fetch.test.ts` — 42 pass / 0 fail.
-- `bun run lint` (Biome + turbo typecheck) — clean. `bun run test` — 2351 pass / 0 fail. `bun run build` — succeeds.
-- End-to-end (isolated HOME, `~/.cache/ss-sandbox`): `superskill install understand-anything --marketplace Egonex-AI/Understand-Anything` → `Installed 'understand-anything' to 9 target(s).`; 515/515 blobs materialized; `.wasm` sha256 matches upstream (`0bbf…9498`); the Claude Code plugin cache copy matches the same hash.
+**Pipeline verify results**
+
+- Verdict: PASS (from verdict artifact)
+
+| Requirement | Status | Evidence |
+|-------------|--------|----------|
+| R1 | MET | `packages/core/src/skills-ecosystem/fetch.ts:116` defines `MAX_MATERIALIZED_BLOB_BYTES = 64 * 1024 * 1024`; `:720` pre-checks the tree-declared `size` against it and `:734` writes with it — not `MAX_RAW_FILE_BYTES` (`:107`, still 2 MiB, now called only from the text paths at `:491`/`:557`/`:618`). Live E2E materialized a 10,453,855 B blob (5× the old cap) and completed. Weakest link: no automated test pins a blob between 2 MiB and 64 MiB; the closest automated half is `packages/core/tests/skills-ecosystem/fetch.test.ts:759` (declared exactly at cap is fetched and written). |
+| R2 | MET | Non-decoding streamed write at `packages/core/src/skills-ecosystem/fetch.ts:177-213` (no `response.text()`/`toString()` on this path; `:147`/`:168` belong to the unchanged `readBodyBounded`, reached only by text callers). `packages/core/tests/skills-ecosystem/fetch.test.ts:697` round-trips `89 50 4e 47 00 c3 28 ff fe 00 01` byte-for-byte; the live E2E hashed the materialized `.wasm` to `0bbf…9498` and the downstream claude-cache copy identically. The universal "every blob" claim holds by construction (single write path) plus one binary fixture and one live hash, not by enumerating all 515 blobs. |
+| R3 | MET | Pre-check `packages/core/src/skills-ecosystem/fetch.ts:719-724` throws `AcquisitionLimitError` before the fetch, message shape `blob <path> in <owner/repo> (<size> bytes) exceeds the <n>-byte read cap`; streamed overflow `:186-190` cancels the reader, ends the writer, removes the partial file (`:200-207`) and rethrows. Proven by `packages/core/tests/skills-ecosystem/fetch.test.ts:723` (zero raw fetches, empty dest dir) and `:790` (partial file absent); file-scoped run 42 pass / 0 fail. |
+| R4 | MET | Caps intact: `packages/core/src/skills-ecosystem/fetch.ts:102` (4096 files), `:107` (2 MiB), `:108` (16 MiB), `:109` (32 MiB). `readBodyBounded` (`:144-169`) is unmodified and its only callers remain `:491` (tree), `:557` (SKILL.md), `:618` (manifest); `materializeRepoSubdir` no longer calls it, and the sole production caller `apps/cli/src/commands/install.ts:328-339` is unchanged. Boundaries exercised at `packages/core/tests/skills-ecosystem/fetch.test.ts:900`, `:924`, `:945`, `:962`, `:991`, `:1017`. |
+
+| Acceptance Criteria | Status | Evidence Type | Evidence |
+|---------------------|--------|---------------|----------|
+| Scenario: Remote marketplace materialization survives binary and oversized assets | MET | test | Automated: `packages/core/tests/skills-ecosystem/fetch.test.ts:697`, `:723`, `:759`, `:790` — 42 pass / 0 fail for the file, including the 64 MiB cap boundary and partial-file removal on overflow. Command (host, this run): cold-cache global `HOME=<isolated> superskill install understand-anything --marketplace Egonex-AI/Understand-Anything` → exit 0, `Installed 'understand-anything' to 9 target(s).`; 515 blobs materialized, the 10,453,855 B GIF present, `.wasm` sha256 `0bbf7a0668f8f155addbcd8284880447dbe393b67b5eb09c7b042b02080d9498` equal to the AC2 expectation and to the downstream claude-cache copy → no `AcquisitionLimitError`. |
+- Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review
 
-P1/P2: none.
+Verified by an independent read-only verifier pass (the `/sp:dev-verify` route — the implementation already landed in `a1b163d` before this task's status advanced, so the task needed verification and recording rather than implementation). The verify answer and verdict are at `.spur/run/0139-verify-answer.txt` and `.spur/run/0139-verdict.json` (verdict PASS, R1–R4 MET, feature scenario MET).
 
-Residual risk and out-of-scope finding (NOT fixed here, separate task filed): with a *project-scope* install (`--no-global`), targets whose host CLI materializes plugin content under `$HOME` (claude, grok, omp) fail provenance with `Install provenance inventory did not resolve any installed files for plugin '<p>' target '<t>'`. `writeInstallProvenance` (`apps/cli/src/commands/install.ts`) resolves `scopeRoot = resolve(outputRoot)` (= cwd for project scope) and drops any collected path whose `relative(scopeRoot, abs)` starts with `..`, which is every native-host cache path. Reproduced on a symlink-free HOME. A related masking case: native CLIs report realpath'd paths (`/private/tmp/...`), so a `/tmp`-based HOME can trip the same guard even at global scope. Global-scope installs are unaffected.
+| Priority | Dimension | Location | Finding |
+| --- | --- | --- | --- |
+| P1 | correctness | `packages/core/src/skills-ecosystem/fetch.ts:116`, `:177-213`, `:719-734` | None. The blob path streams to disk without decoding, the tree-declared size is pre-checked against the materialization cap, and a mid-stream overflow removes the partial file. |
+| P2 | documentation | `packages/core/src/skills-ecosystem/fetch.ts:673-676` | Stale comment: it still claims the materialization path reads blobs through `res.text()` and would UTF-8-mangle binary assets — false after this change. The remaining valid reasons for the `skill add` boundary are selective SKILL.md discovery, GitHub-only resolution and git-credential auth. Non-blocking follow-up; not patched here because the Design froze this task's file set. |
+| P2 | test coverage | `packages/core/tests/skills-ecosystem/fetch.test.ts:723`, `:759` | No automated case pins a blob whose size sits between the 2 MiB text cap and the 64 MiB materialization cap; the boundary is covered only at exactly-cap and cap+1. The live E2E covered the real 10,453,855-byte asset, so the gap is bounded. |
+
+Residual risk: the live E2E that carries AC1/AC2 is network- and environment-dependent (isolated HOME, cold marketplace cache, upstream repository content). It was reproduced in this run (exit 0, 9 targets, 515 blobs, `.wasm` sha256 equal to the AC expectation), but the scratch tree was deleted afterwards, so the numbers are recorded results rather than re-runnable artifacts. AC4's "pass unedited" clause is UNVERIFIED from a read-only pass (no git access to prove the pre-existing cap tests were untouched).
+
+Out-of-scope finding, now closed elsewhere: the project-scope provenance failure this task surfaced (`writeInstallProvenance` dropping every native-host cache path whose `relative(scopeRoot, abs)` starts with `..`, and the realpath masking case for a `/tmp`-based HOME) is fixed by task 0140 (`1abe66e`), which added the realpath-normalized scope test and the home-rooted snapshot fallback for `claude`/`omp`/`grok`.
+
+Checked: R1–R4 and the automated AC clauses against the code (`fetch.ts:102`, `:107-109`, `:116`, `:144-169`, `:177-213`, `:491`/`:557`/`:618`, `:719-734`, and the unchanged sole production caller `apps/cli/src/commands/install.ts:328-339`); the four blob tests' assertions at `packages/core/tests/skills-ecosystem/fetch.test.ts:697`, `:723`, `:759`, `:790`; the text-path cap tests at `:900`, `:924`, `:945`, `:962`, `:991`, `:1017`; and the live E2E output. Scope discipline confirmed: the Design's named anti-patterns (raising `MAX_RAW_FILE_BYTES`, decoding on the blob path, a cap flag/config, temp-dir+rename) are absent and no `apps/cli` change was required.
 
 ### References
 
@@ -141,3 +162,8 @@ Residual risk and out-of-scope finding (NOT fixed here, separate task filed): wi
 - Repro repository: https://github.com/Egonex-AI/Understand-Anything
 
 ### History
+
+- 2026-09-14T14:08:56.562Z todo → wip (system)
+- 2026-09-14T14:12:54.075Z wip → testing (system)
+- 2026-09-14T14:12:54.413Z testing → done (system)
+
