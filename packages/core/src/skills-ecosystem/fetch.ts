@@ -670,10 +670,10 @@ function computeSnapshotHash(files: SkillSnapshotFile[]): string {
  * `install` needs no parallel GitHub client (R3).
  *
  * Consumer boundary (task 0113 T2, "used by both `install` and, *where applicable*, `skill add`"):
- * `install` uses this helper; `skill add` deliberately does not. It materializes blobs through
- * `res.text()`, so it is text-only and GitHub-only — substituting it for {@link cloneRepo} in
- * `skill add` would UTF-8-mangle binary skill assets, drop non-GitHub git sources, and lose
- * git-credential auth for private repos. `skill add` therefore keeps {@link tryBlobInstall}
+ * `install` uses this helper; `skill add` deliberately does not. Since task 0139 it streams blobs
+ * byte-exact, but it stays GitHub-only, offers no selective SKILL.md discovery, and has no
+ * git-credential auth — substituting it for {@link cloneRepo} in `skill add` would drop non-GitHub
+ * git sources and private-repo auth. `skill add` therefore keeps {@link tryBlobInstall}
  * (selective SKILL.md discovery returning in-memory {@link BlobSkill}s) and {@link cloneRepo}
  * (full-fidelity fallback); both sit on the same shared auth/tree layer, which is what R3 requires.
  *
