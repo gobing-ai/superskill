@@ -1230,6 +1230,82 @@ describe('resolveRemoteMarketplace — cache + offline contract (R4/R9/AC6)', ()
         expect(resolution.pluginRoot).toBe(join(cacheRoot, 'plugins', 'cc'));
         expect(existsSync(join(resolution.pluginRoot, 'skills', 'a.md'))).toBe(true);
     });
+
+    // Regression (partial-tree poisoning): a cold-cache failure must not leave a cache root
+    // or staging dir behind — otherwise the warm-cache check accepts the partial tree forever.
+    it('leaves no cache root or staging leftovers when a cold-cache fetch fails', async () => {
+        const home = createTempWorkspace();
+        process.env.HOME_DIR = home;
+        const cacheParent = join(marketplaceCacheRoot(), 'gobing-ai', 'superskill');
+
+        await expect(
+            resolveRemoteMarketplace('gobing-ai/superskill', {
+                fetchFn: (async () => {
+                    throw new Error('offline');
+                }) as unknown as typeof fetch,
+            }),
+        ).rejects.toThrow(/gobing-ai\/superskill/);
+
+        expect(existsSync(join(cacheParent, 'HEAD'))).toBe(false);
+        const leftovers = existsSync(cacheParent)
+            ? readdirSync(cacheParent).filter((entry) => entry.startsWith('HEAD.tmp-'))
+            : [];
+        expect(leftovers).toEqual([]);
+    });
+
+    // Regression: the historical failure mode — the manifest blob lands, a plugin blob fails,
+    // and the partial tree used to poison the warm-cache check. A retry must see a cold cache.
+    it('a mid-materialization failure leaves no manifest behind for the warm-cache check', async () => {
+        const home = createTempWorkspace();
+        process.env.HOME_DIR = home;
+        const cacheRoot = join(marketplaceCacheRoot(), 'gobing-ai', 'superskill', 'HEAD');
+
+        const full = ccRepoFetch();
+        let failedOnce = false;
+        const flaky = (async (url: string) => {
+            if (!failedOnce && url.endsWith('/plugins/cc/plugin.json')) {
+                failedOnce = true;
+                return new Response('boom', { status: 500 });
+            }
+            return full(url);
+        }) as unknown as typeof fetch;
+
+        await expect(resolveRemoteMarketplace('gobing-ai/superskill', { fetchFn: flaky })).rejects.toThrow(
+            /gobing-ai\/superskill/,
+        );
+        // No manifest → the warm-cache check cannot accept the partial tree.
+        expect(existsSync(join(cacheRoot, '.claude-plugin', 'marketplace.json'))).toBe(false);
+        expect(existsSync(cacheRoot)).toBe(false);
+
+        // Retry materializes the full tree.
+        const retried = await resolveRemoteMarketplace('gobing-ai/superskill', { fetchFn: flaky });
+        expect(existsSync(join(retried.root, 'plugins', 'cc', 'skills', 'a.md'))).toBe(true);
+    });
+
+    // Regression (self-heal): caches poisoned before the staging fix still exist in the wild —
+    // manifest present, plugin dir missing. executeInstall must drop the partial cache,
+    // re-materialize once, and resolve the plugin instead of dying on 'Plugin root not found'.
+    it('executeInstall re-materializes a poisoned warm cache whose plugin dir is missing', async () => {
+        const home = createTempWorkspace();
+        process.env.HOME_DIR = home;
+        const cacheRoot = join(marketplaceCacheRoot(), 'gobing-ai', 'superskill', 'HEAD');
+        mkdirSync(join(cacheRoot, '.claude-plugin'), { recursive: true });
+        writeFileSync(
+            join(cacheRoot, '.claude-plugin', 'marketplace.json'),
+            JSON.stringify({ name: 'superskill', plugins: [{ name: 'cc', source: './plugins/cc' }] }),
+        );
+
+        const stdout = spyOn(process.stdout, 'write').mockImplementation(() => true);
+        await executeInstall(
+            'cc',
+            ['hermes'],
+            { global: false, dryRun: true, verbose: false, marketplacePath: 'gobing-ai/superskill' },
+            { fetchFn: ccRepoFetch() },
+        );
+        stdout.mockRestore();
+
+        expect(existsSync(join(cacheRoot, 'plugins', 'cc', 'skills', 'a.md'))).toBe(true);
+    });
 });
 
 describe('executeInstall - codex native agent dispatch (task 0111)', () => {

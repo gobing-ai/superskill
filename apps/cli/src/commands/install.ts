@@ -7,12 +7,13 @@ import {
     readdirSync,
     readFileSync,
     realpathSync,
+    renameSync,
     rmSync,
     statSync,
     writeFileSync,
 } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
-import { basename, isAbsolute, join, relative, resolve } from 'node:path';
+import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import {
     adaptMagentForTarget,
     adaptSubagentToCodex,
@@ -181,6 +182,8 @@ export interface InstallOptions {
 
 interface InstallDependencies {
     runRulesync?: typeof runRulesync;
+    /** Fetch impl for remote marketplace materialization. Mockable for tests. */
+    fetchFn?: typeof fetch;
     /** Spawn `claude plugin marketplace add` + `claude plugin install`. Mockable for tests. */
     runClaudeInstall?: (
         registration: MarketplaceRegistration,
@@ -324,14 +327,24 @@ export async function resolveRemoteMarketplace(
     }
 
     const token = await getGitHubToken();
+    // Stage into a sibling temp dir and rename into place only on success: a
+    // partial materialization (transient blob fetch failure, interrupted
+    // process) must never leave a cache root whose manifest exists but whose
+    // tree is incomplete — the warm-cache check above would accept it forever
+    // and every later install would fail on the missing plugin dir.
+    mkdirSync(dirname(cacheRoot), { recursive: true });
+    const stagingRoot = mkdtempSync(`${cacheRoot}.tmp-`);
     try {
-        const tree = await materializeRepoSubdir(`${parsed.owner}/${parsed.repo}`, parsed.subdir ?? '', cacheRoot, {
+        const tree = await materializeRepoSubdir(`${parsed.owner}/${parsed.repo}`, parsed.subdir ?? '', stagingRoot, {
             ref: parsed.ref === 'HEAD' ? undefined : parsed.ref,
             getToken: () => token,
             fetchFn: deps.fetchFn,
         });
+        rmSync(cacheRoot, { recursive: true, force: true });
+        renameSync(stagingRoot, cacheRoot);
         return { root: cacheRoot, resolvedRef: tree.sha };
     } catch (err) {
+        rmSync(stagingRoot, { recursive: true, force: true });
         throw new Error(
             `Failed to resolve marketplace '${locator}' from ${parsed.owner}/${parsed.repo}` +
                 `${parsed.ref !== 'HEAD' ? `@${parsed.ref}` : ''}` +
@@ -399,13 +412,37 @@ export async function executeInstall(
     const originalMarketplaceLocator = options.marketplacePath;
     let marketplacePath = options.marketplacePath;
     let resolvedRef: string | undefined;
+    let remoteCacheRoot: string | undefined;
     if (marketplacePath && isRemoteMarketplaceLocator(marketplacePath)) {
         if (options.verbose) echo(`Resolving remote marketplace '${marketplacePath}'...`);
-        const remote = await resolveRemoteMarketplace(marketplacePath);
+        const remote = await resolveRemoteMarketplace(marketplacePath, { fetchFn: dependencies.fetchFn });
         marketplacePath = remote.root;
+        remoteCacheRoot = remote.root;
         resolvedRef = remote.resolvedRef;
     }
-    const resolution = resolvePluginRoot(plugin, marketplacePath, options.pluginPath);
+    let resolution: PluginResolution;
+    try {
+        resolution = resolvePluginRoot(plugin, marketplacePath, options.pluginPath);
+    } catch (err) {
+        // Self-heal a poisoned remote cache: a historical failed cold fetch
+        // left a partial tree whose manifest survived the warm-cache check.
+        // Drop the cache, re-materialize once, and retry before giving up.
+        if (
+            !remoteCacheRoot ||
+            !originalMarketplaceLocator ||
+            !(err instanceof Error) ||
+            !err.message.startsWith('Plugin root not found')
+        ) {
+            throw err;
+        }
+        if (options.verbose)
+            echo(`Remote marketplace cache incomplete — re-materializing '${originalMarketplaceLocator}'...`);
+        rmSync(remoteCacheRoot, { recursive: true, force: true });
+        const remote = await resolveRemoteMarketplace(originalMarketplaceLocator, { fetchFn: dependencies.fetchFn });
+        marketplacePath = remote.root;
+        resolvedRef = remote.resolvedRef;
+        resolution = resolvePluginRoot(plugin, marketplacePath, options.pluginPath);
+    }
     if (originalMarketplaceLocator) {
         resolution.marketplaceLocator = originalMarketplaceLocator;
     }
