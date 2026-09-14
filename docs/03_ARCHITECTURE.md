@@ -2,10 +2,10 @@
 doc: 03_ARCHITECTURE
 owns: HOW — module boundaries, data flow, runtime model, invariants
 authority: derived
-version: 2.16.0
+version: 2.17.0
 derived_from: [00_ADR, 01_PRD]
 owner: Robin Min
-updated_at: 2026-09-10
+updated_at: 2026-09-14
 read_before: cross-module, seam, or schema work
 edit_rules: 99 §6.4
 sync: [T1]
@@ -353,6 +353,13 @@ a Claude Code marketplace manifest (ADR-011, extended by ADR-034). Resolution or
 `marketplaceRoot` is derived **per matched probe branch** (`dirname(manifest)`, raised one level
 only when that dirname is `.claude-plugin`) — the root-level `<X>/marketplace.json` branch resolves
 under `<X>`, not its parent (ADR-034).
+
+**Remote materialization bounds.** A remote locator's subtree materializes byte-exact and bounded
+(`packages/core/src/skills-ecosystem/fetch.ts`, task 0139): each blob streams to disk under
+`MAX_MATERIALIZED_BLOB_BYTES` (64 MiB) and is never decoded through the 2 MiB `MAX_RAW_FILE_BYTES`
+text cap, so binary assets land unmodified. A tree over `MAX_MATERIALIZED_FILES` (4096), or a blob
+over its cap, fails with `AcquisitionLimitError` — a tree-declared `size` is rejected before any
+download; an undeclared-size stream is rejected mid-write and its partial file removed.
 
 **Manifest shape** (verified against Claude Code docs + `cc-agents/.claude-plugin/marketplace.json`):
 

@@ -11,6 +11,16 @@ Sand-scoped receipt `<sandRoot>/.superskill/manifests/grok-bot/<plugin>/.supersk
 Existing targets and legacy receipts without the field remain readable. Authoritative shapes:
 `docs/04_DESIGN.md`; decision record: ADR-035 entry amendment.
 
+## Correction (2026-09-14)
+
+**installedRoot field (ADR-035 amendment 2026-09-13, task 0140).** The v1 manifest schema below
+gains a backward-compatible optional `installedRoot: 'home'` field, emitted only for the native host
+targets (`claude`, `omp`, `grok`) when a project-scope install resolves no in-scope file and falls
+back to the target's host tree under the user home; `installed.files` keys are then relative to the
+user home instead of `scopeRoot`, and an install empty under both roots still fails. Receipts
+without the field keep their existing meaning. Authoritative shapes: `docs/04_DESIGN.md`; decision
+record: ADR-035 entry amendment.
+
 ## Problem
 
 Installed superskill capabilities are anonymous copies: no version, no source, no hashes. A plugin author shipping several versions per day is invisible to every consumer. Feedback (zh): “有时候对一个 skill 一天连续更新好几个版本，没有更新提醒机制，别人很难知道你更新了。”
