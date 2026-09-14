@@ -4,7 +4,7 @@ name: Fix omp provenance receipts — omp 18.1.19 writes no installed_plugins.js
 status: todo
 template: issue
 created_at: 2026-09-14T14:18:54.818Z
-updated_at: "2026-09-14T14:19:49.232Z"
+updated_at: "2026-09-14T14:27:17.171Z"
 feature_id: F
 
 ---
@@ -27,7 +27,7 @@ Diagnosis (omp 18.1.19, `/Users/robin/.bun/bin/omp`):
 - omp does not honour `$HOME` for its registry location: under an isolated `HOME`, the registry entry that appeared during the run landed in the **real** user home (`~/.omp/plugins/installed_plugins.json`, key `understand-anything@understand-anything`, `installPath` pointing at the isolated-home cache), while `<isolatedHome>/.omp/` contained only `logs/`, `natives/`, `plugins/cache/` and `marketplaces.json`.
 - Net effect for a project-scope omp install: zero receipts, so task 0140's home-rooted snapshot has nothing to re-root and R4's both-empty clause correctly throws the frozen error. A global-scope omp install is also affected unless the registry exists, since receipts are the only snapshot input.
 
-`resolveOmpInstallPath` (`apps/cli/src/commands/install.ts:1297-1315`) therefore treats a registry file as the sole receipt source, an assumption its own docstring dates to "verified against omp 16.4.2" (`apps/cli/src/commands/install.ts:1288`).
+`resolveOmpInstallPath` (`apps/cli/src/commands/install.ts:1297-1315`) therefore treats a registry file as the sole receipt source, with no omp-version verification newer than 16.4.2 anywhere in the file (the only version note, the `--force` comment at `apps/cli/src/commands/install.ts:1288`, dates to 16.4.2).
 
 ### Requirements
 
@@ -56,7 +56,24 @@ Diagnosis (omp 18.1.19, `/Users/robin/.bun/bin/omp`):
 
 ### Design
 
-<!-- Fix approach and tradeoffs. Keep this short unless the issue changes architecture. -->
+All changes land in `apps/cli/src/commands/install.ts`; tests in `apps/cli/tests/commands/install-omp-helpers.test.ts` (unit) and `apps/cli/tests/commands/install-manifest.test.ts` (e2e via the existing `runOmpInstall` stub seam, pattern at `install.test.ts:473`).
+
+**1. Two-stage omp receipt resolution (R1, R2).** Rework the body of `resolveOmpInstallPath` (`install.ts:1301`) into a probe over an ordered, de-duplicated candidate-root list while keeping its exported signature `(marketplace, plugin, global): string | undefined` (pinned by `install-omp-helpers.test.ts`):
+
+- Resolution roots: project scope → `[process.cwd(), resolveHomeDir()]`; global → `[resolveHomeDir()]`.
+- Stage A (primary, unchanged): `installed_plugins.json` keyed `plugin@marketplace`, scope-preferred entry — today's behaviour wherever it already works.
+- Stage B (new fallback, only when Stage A misses in every root): enumerate `<root>/.omp/plugins/cache/plugins/` for directories matching `<plugin>___<marketplace>___*`; return the single match, or the lexicographically greatest version tail on multiple matches. Sound because the registry's own `installPath` points into this same cache tree (observed in the 0141 repro: `installPath` → `<home>/.omp/plugins/cache/plugins/...`), so `postInstallOmp` and `addReceiptFiles(target, listRegularFilesUnder(installPath))` at `install.ts:806-813` behave identically on either stage — no dispatch changes needed for the happy path.
+
+**2. Self-explaining empty resolution + home divergence (R1, R3).** The probe is an internal `resolveOmpInstall(marketplace, plugin, global)` returning `{ installPath?, source?: 'registry' | 'cache-tree', consulted: Array<{ root, registry: 'hit' | 'absent', tree: 'hit' | 'absent' }> }`; the exported function becomes a thin wrapper returning `.installPath`. When the omp dispatch (`install.ts:805-816`) gets no path, it emits one unconditional line naming each consulted root and what was found before the pipeline proceeds to the frozen finalize throw (`install.ts:2193-2195`, message unchanged — existing `/did not resolve any installed files …/` regex assertions keep passing). Divergence probe: when resolution is empty and `os.homedir()` ≠ `resolveHomeDir()`, also probe `os.homedir()` for diagnosis only and name it when a registry or tree exists there ("omp resolved its home independently of $HOME"). Tests control `os.homedir()` via `process.env.HOME`.
+
+**Anti-patterns / do-not:**
+
+- Do not import receipts from a divergent `os.homedir()` into the manifest — diagnose only; foreign-root receipts would land outside both the scope root and `resolveHomeDir()` and break 0140's snapshot contract.
+- Do not touch the frozen finalize error string, `snapshotFiles` / `validateSnapshot` / `toSlashRel`, the manifest schema, or the omp CLI invocation (all frozen by 0140 / task out-of-scope).
+- Stage B must glob only `<plugin>___<marketplace>___*` — never adopt another plugin's cache dir.
+- No `any`; no new manifest fields; the diagnostic line is additive output, not a schema or error-contract change.
+
+**Test intent:** AC1 = stub writes only `<home>/.omp/plugins/cache/plugins/demo___<marketplace>___1.0.0/plugin.json` with `HOME_DIR` = temp home and a separate `outputRoot` → manifest written, non-empty `installed.files`, `installedRoot === 'home'`. AC2 = registry-present path unchanged (existing helper cases stay green) + neither-registry-nor-tree still throws the frozen error and writes no manifest. AC3 = `HOME_DIR` = tempA, `HOME` = tempB, registry only under tempB → frozen error plus emitted output naming tempB (assert via `process.stdout.write` spy per repo convention). Regression floor: both `install-manifest.test.ts` files pass unedited.
 
 ### Plan
 
@@ -70,7 +87,7 @@ Verification intent: AC1-AC3 are the automated gate; AC5 is the environment-depe
 
 ### Root Cause
 
-`resolveOmpInstallPath` (`apps/cli/src/commands/install.ts:1297-1315`) treats `installed_plugins.json` as the only receipt source for the omp target. That assumption matches omp 16.4.2-era behaviour (the docstring at `:1288` records that verification) but not the installed 18.1.19, which materializes the plugin payload under `<root>/.omp/plugins/cache/plugins/` without writing that registry — and which resolves its own home independently of the `HOME` environment variable, so an isolated-home run can write the registry into the real user home instead.
+`resolveOmpInstallPath` (`apps/cli/src/commands/install.ts:1297-1315`) treats `installed_plugins.json` as the only receipt source for the omp target. That assumption matches omp 16.4.2-era behaviour (the file's only version-verification note, the `--force` comment at `:1288`, dates to 16.4.2) but not the installed 18.1.19, which materializes the plugin payload under `<root>/.omp/plugins/cache/plugins/` without writing that registry — and which resolves its own home independently of the `HOME` environment variable, so an isolated-home run can write the registry into the real user home instead.
 
 The provenance pipeline then receives zero receipts for omp. Since receipts are the only input to `snapshotFiles`, both inventories are empty, and 0140 R4's both-empty clause throws the frozen error. The failure is therefore not a scope-resolution defect (0140 fixed that seam): it is a receipt-collection assumption about a host CLI whose on-disk layout changed.
 
@@ -88,6 +105,9 @@ The provenance pipeline then receives zero receipts for omp. Since receipts are 
 
 ### References
 
-<!-- Links to failing logs, related issues, tasks, docs, or external references. -->
+- Task 0140 (done) — `docs/tasks/0140_fix-project-scope-provenance-inventory-for-native-targets-wh.md`: scope-path mechanism and the frozen both-empty error this task builds on.
+- Repro environment: omp 18.1.19 at `/Users/robin/.bun/bin/omp`; cache tree layout `<root>/.omp/plugins/cache/plugins/<plugin>___<marketplace>___<version>`; registry key `plugin@marketplace` in `installed_plugins.json`.
+- Code anchors: `apps/cli/src/commands/install.ts:1297-1315` (`resolveOmpInstallPath`), `:805-816` (omp dispatch), `:2193-2195` (frozen finalize error), `:2229-2231` (`resolveHomeDir`), `:753-754` (claude cache `rmSync`, carried separately).
+- Test seams: `apps/cli/tests/commands/install-omp-helpers.test.ts:106` (exported-signature pin), `apps/cli/tests/commands/install.test.ts:473` (`runOmpInstall` stub pattern), `apps/cli/tests/commands/install-manifest.test.ts:479` (home-rooted manifest pattern).
 
 ### History
