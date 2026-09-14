@@ -168,6 +168,75 @@ describe('resolveOmpInstallPath', () => {
     it('returns undefined when the global registry file is missing', () => {
         expect(resolveOmpInstallPath('superskill', 'demo', true)).toBeUndefined();
     });
+
+    it('falls back to the home cache tree when the registry is absent (omp 18.1.19, task 0141 R2)', () => {
+        if (!tempHome) throw new Error('tempHome not set');
+        const tree = join(tempHome, '.omp', 'plugins', 'cache', 'plugins', 'demo___superskill___1.0.0');
+        mkdirSync(tree, { recursive: true });
+        writeFileSync(join(tree, 'plugin.json'), '{"cache":true}');
+        expect(resolveOmpInstallPath('superskill', 'demo', false)).toBe(tree);
+    });
+
+    it('falls back to the home cache tree at global scope without a registry', () => {
+        if (!tempHome) throw new Error('tempHome not set');
+        const tree = join(tempHome, '.omp', 'plugins', 'cache', 'plugins', 'demo___superskill___1.0.0');
+        mkdirSync(tree, { recursive: true });
+        writeFileSync(join(tree, 'plugin.json'), '{"cache":true}');
+        expect(resolveOmpInstallPath('superskill', 'demo', true)).toBe(tree);
+    });
+
+    it('prefers the workspace cache tree over the home one at project scope (ordered roots)', () => {
+        if (!tempHome) throw new Error('tempHome not set');
+        const wsTree = join(process.cwd(), '.omp', 'plugins', 'cache', 'plugins', 'demo___superskill___2.0.0');
+        mkdirSync(wsTree, { recursive: true });
+        writeFileSync(join(wsTree, 'plugin.json'), '{"ws":true}');
+        const homeTree = join(tempHome, '.omp', 'plugins', 'cache', 'plugins', 'demo___superskill___1.0.0');
+        mkdirSync(homeTree, { recursive: true });
+        writeFileSync(join(homeTree, 'plugin.json'), '{"home":true}');
+        expect(resolveOmpInstallPath('superskill', 'demo', false)).toBe(wsTree);
+    });
+
+    it('prefers the registry installPath when both the registry and a cache tree exist (R2 primary)', () => {
+        if (!tempHome) throw new Error('tempHome not set');
+        const expected = join(tempHome, 'registry-cache', 'demo');
+        writeRegistry(join(tempHome, '.omp', 'plugins'), {
+            version: 1,
+            plugins: { 'demo@superskill': [{ scope: 'project', installPath: expected }] },
+        });
+        const tree = join(tempHome, '.omp', 'plugins', 'cache', 'plugins', 'demo___superskill___1.0.0');
+        mkdirSync(tree, { recursive: true });
+        writeFileSync(join(tree, 'plugin.json'), '{"cache":true}');
+        expect(resolveOmpInstallPath('superskill', 'demo', false)).toBe(expected);
+    });
+
+    it('returns the lexicographically greatest cache-tree version when several match', () => {
+        if (!tempHome) throw new Error('tempHome not set');
+        const cache = join(tempHome, '.omp', 'plugins', 'cache', 'plugins');
+        for (const dir of ['demo___superskill___1.0.0', 'demo___superskill___2.10.0', 'demo___superskill___2.9.7']) {
+            mkdirSync(join(cache, dir), { recursive: true });
+            writeFileSync(join(cache, dir, 'plugin.json'), '{"v":1}');
+        }
+        // Deliberately lexicographic (design §1 Stage B), not semver: '2.9.7' > '2.10.0'.
+        expect(resolveOmpInstallPath('superskill', 'demo', false)).toBe(join(cache, 'demo___superskill___2.9.7'));
+    });
+
+    it('never adopts another plugin or marketplace cache directory (task 0141 do-not)', () => {
+        if (!tempHome) throw new Error('tempHome not set');
+        const cache = join(tempHome, '.omp', 'plugins', 'cache', 'plugins');
+        for (const dir of ['other___superskill___1.0.0', 'demo___othermarket___1.0.0', 'demo___superskill']) {
+            mkdirSync(join(cache, dir), { recursive: true });
+            writeFileSync(join(cache, dir, 'plugin.json'), '{"v":1}');
+        }
+        expect(resolveOmpInstallPath('superskill', 'demo', false)).toBeUndefined();
+    });
+
+    it('ignores a non-directory cache entry carrying the right prefix', () => {
+        if (!tempHome) throw new Error('tempHome not set');
+        const cache = join(tempHome, '.omp', 'plugins', 'cache', 'plugins');
+        mkdirSync(cache, { recursive: true });
+        writeFileSync(join(cache, 'demo___superskill___1.0.0'), 'a file, not a directory');
+        expect(resolveOmpInstallPath('superskill', 'demo', false)).toBeUndefined();
+    });
 });
 
 // ── postInstallOmp ───────────────────────────────────────────────────────────

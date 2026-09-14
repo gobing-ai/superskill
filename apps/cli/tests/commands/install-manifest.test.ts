@@ -9,6 +9,7 @@ import {
     symlinkSync,
     writeFileSync,
 } from 'node:fs';
+import * as os from 'node:os';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { Target } from '@gobing-ai/superskill-core';
@@ -711,6 +712,169 @@ describe('executeInstall provenance manifest', () => {
             if (previousHomeDir === undefined) delete process.env.HOME_DIR;
             else process.env.HOME_DIR = previousHomeDir;
             rmSync(fakeHome, { recursive: true, force: true });
+        }
+    });
+
+    it('writes a home-rooted omp manifest from the cache tree when the host writes no registry (task 0141 R1/R2)', async () => {
+        const workspace = createTempWorkspace();
+        const ompHome = mkdtempSync(join(tmpdir(), 'superskill-omp-home-'));
+        process.env.HOME_DIR = ompHome;
+        createPlugin(workspace, 'demo', '1.0.0');
+        const marketplacePath = writeMarketplace(workspace, 'demo', '1.0.0');
+        // omp 18.1.19 materializes the payload under its cache tree and writes no
+        // installed_plugins.json — the stub mimics exactly that outcome.
+        const cacheTree = join(ompHome, '.omp', 'plugins', 'cache', 'plugins', 'demo___superskill___1.0.0');
+        mkdirSync(cacheTree, { recursive: true });
+        writeFileSync(join(cacheTree, 'plugin.json'), '{"cache":true}\n');
+        spyOn(process.stdout, 'write').mockImplementation(() => true);
+
+        try {
+            await executeInstall(
+                'demo',
+                ['omp'],
+                { marketplacePath, global: false, dryRun: false, verbose: false, outputRoot: workspace },
+                {
+                    runRulesync: async () => emptyRulesync(),
+                    runOmpInstall: async () => {},
+                },
+            );
+
+            const manifest = readInstallManifest(installManifestPath(workspace, 'omp', 'demo'));
+            expect(manifest.installedRoot).toBe('home');
+            expect(Object.keys(manifest.installed.files).length).toBeGreaterThan(0);
+            expect(manifest.installed.files['.omp/plugins/cache/plugins/demo___superskill___1.0.0/plugin.json']).toBe(
+                computeContentHash(readFileSync(join(cacheTree, 'plugin.json'))),
+            );
+        } finally {
+            rmSync(ompHome, { recursive: true, force: true });
+        }
+    });
+
+    it('still resolves omp receipts through the registry installPath when installed_plugins.json carries the key (task 0141 R2 unchanged)', async () => {
+        const workspace = createTempWorkspace();
+        const ompHome = mkdtempSync(join(tmpdir(), 'superskill-omp-reg-home-'));
+        process.env.HOME_DIR = ompHome;
+        createPlugin(workspace, 'demo', '1.0.0');
+        const marketplacePath = writeMarketplace(workspace, 'demo', '1.0.0');
+        const registryInstallPath = join(ompHome, 'registry-cache', 'demo');
+        mkdirSync(registryInstallPath, { recursive: true });
+        writeFileSync(join(registryInstallPath, 'plugin.json'), '{"registry":true}\n');
+        mkdirSync(join(ompHome, '.omp', 'plugins'), { recursive: true });
+        writeFileSync(
+            join(ompHome, '.omp', 'plugins', 'installed_plugins.json'),
+            JSON.stringify({
+                version: 1,
+                plugins: { 'demo@superskill': [{ scope: 'project', installPath: registryInstallPath }] },
+            }),
+        );
+        // A decoy cache tree must be ignored when the registry resolves (Stage A primary).
+        const decoyTree = join(ompHome, '.omp', 'plugins', 'cache', 'plugins', 'demo___superskill___1.0.0');
+        mkdirSync(decoyTree, { recursive: true });
+        writeFileSync(join(decoyTree, 'plugin.json'), '{"decoy":true}\n');
+        spyOn(process.stdout, 'write').mockImplementation(() => true);
+
+        try {
+            await executeInstall(
+                'demo',
+                ['omp'],
+                { marketplacePath, global: false, dryRun: false, verbose: false, outputRoot: workspace },
+                {
+                    runRulesync: async () => emptyRulesync(),
+                    runOmpInstall: async () => {},
+                },
+            );
+
+            const manifest = readInstallManifest(installManifestPath(workspace, 'omp', 'demo'));
+            expect(manifest.installedRoot).toBe('home');
+            expect(manifest.installed.files['registry-cache/demo/plugin.json']).toBe(
+                computeContentHash(readFileSync(join(registryInstallPath, 'plugin.json'))),
+            );
+            expect(Object.keys(manifest.installed.files).some((path) => path.includes('cache/plugins'))).toBe(false);
+        } finally {
+            rmSync(ompHome, { recursive: true, force: true });
+        }
+    });
+
+    it('throws the frozen error, writes no manifest, and names the consulted roots when omp leaves neither registry nor cache tree (task 0141 R1/R4)', async () => {
+        const workspace = createTempWorkspace();
+        const ompHome = mkdtempSync(join(tmpdir(), 'superskill-omp-empty-home-'));
+        process.env.HOME_DIR = ompHome;
+        createPlugin(workspace, 'demo');
+        const marketplacePath = writeMarketplace(workspace, 'demo');
+        const stdout = spyOn(process.stdout, 'write').mockImplementation(() => true);
+
+        try {
+            await expect(
+                executeInstall(
+                    'demo',
+                    ['omp'],
+                    { marketplacePath, global: false, dryRun: false, verbose: false, outputRoot: workspace },
+                    {
+                        runRulesync: async () => emptyRulesync(),
+                        runOmpInstall: async () => {},
+                    },
+                ),
+            ).rejects.toThrow(/did not resolve any installed files for plugin 'demo' target 'omp'/);
+
+            expect(existsSync(installManifestPath(workspace, 'omp', 'demo'))).toBe(false);
+            // R1: the emitted diagnosis names the actual condition — the consulted roots and
+            // their empty findings — rather than only the frozen empty-inventory error.
+            const output = stdout.mock.calls.map((call) => String(call[0])).join('');
+            expect(output).toContain('no install receipts resolved for');
+            expect(output).toContain(workspace);
+            expect(output).toContain(ompHome);
+        } finally {
+            rmSync(ompHome, { recursive: true, force: true });
+        }
+    });
+
+    it('names the real home in the diagnosis when omp resolves its home independently of $HOME (task 0141 R3)', async () => {
+        const workspace = createTempWorkspace();
+        const resolvedHome = mkdtempSync(join(tmpdir(), 'superskill-omp-homedir-'));
+        const realHome = mkdtempSync(join(tmpdir(), 'superskill-omp-realhome-'));
+        process.env.HOME_DIR = resolvedHome;
+        // Bun's os.homedir() ignores mid-process process.env.HOME mutations (probed), so the
+        // divergent real home is simulated with the module spy — same seam, Bun-compatible.
+        const homedirSpy = spyOn(os, 'homedir').mockImplementation(() => realHome);
+        createPlugin(workspace, 'demo', '1.0.0');
+        const marketplacePath = writeMarketplace(workspace, 'demo', '1.0.0');
+        // Receipts exist only under the divergent real home. They must be diagnosed, never adopted.
+        const realRegistryDir = join(realHome, '.omp', 'plugins');
+        const foreignInstallPath = join(realHome, 'foreign-cache', 'demo');
+        mkdirSync(foreignInstallPath, { recursive: true });
+        writeFileSync(join(foreignInstallPath, 'plugin.json'), '{"foreign":true}\n');
+        mkdirSync(realRegistryDir, { recursive: true });
+        writeFileSync(
+            join(realRegistryDir, 'installed_plugins.json'),
+            JSON.stringify({
+                version: 1,
+                plugins: { 'demo@superskill': [{ scope: 'project', installPath: foreignInstallPath }] },
+            }),
+        );
+        const stdout = spyOn(process.stdout, 'write').mockImplementation(() => true);
+
+        try {
+            await expect(
+                executeInstall(
+                    'demo',
+                    ['omp'],
+                    { marketplacePath, global: false, dryRun: false, verbose: false, outputRoot: workspace },
+                    {
+                        runRulesync: async () => emptyRulesync(),
+                        runOmpInstall: async () => {},
+                    },
+                ),
+            ).rejects.toThrow(/did not resolve any installed files for plugin 'demo' target 'omp'/);
+
+            const output = stdout.mock.calls.map((call) => String(call[0])).join('');
+            expect(output).toContain(realHome);
+            expect(output).toContain('independently of $HOME');
+            // Diagnose-only: the foreign-root receipts never enter a manifest.
+            expect(existsSync(installManifestPath(workspace, 'omp', 'demo'))).toBe(false);
+        } finally {
+            homedirSpy.mockRestore();
+            rmSync(resolvedHome, { recursive: true, force: true });
+            rmSync(realHome, { recursive: true, force: true });
         }
     });
 });

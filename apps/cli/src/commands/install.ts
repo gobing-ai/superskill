@@ -802,7 +802,8 @@ export async function executeInstall(
                 if (options.verbose) echo('OMP: registering marketplace and installing plugin...');
                 if (!options.dryRun) {
                     await runOmpInstallImpl(registration, marketplaceName, plugin, options.global);
-                    const installPath = resolveOmpInstallPath(marketplaceName, plugin, options.global);
+                    const probe = resolveOmpInstall(marketplaceName, plugin, options.global);
+                    const installPath = probe.installPath;
                     if (installPath) {
                         const hookResult = postInstallOmp(pluginRoot, installPath, outputDir, plugin, {
                             ...options,
@@ -811,8 +812,11 @@ export async function executeInstall(
                         addReceiptFiles(target, listRegularFilesUnder(installPath));
                         addReceiptFiles(target, hookResult.files);
                         if (options.verbose) echo(`  ${hookResult.message}`);
-                    } else if (options.verbose) {
-                        echo('  OMP install path not found in registry — skipping post-processing');
+                    } else {
+                        // Task 0141 R1/R3: an empty omp resolution explains itself — name every
+                        // consulted root and what the host wrote there before the frozen inventory
+                        // error fires in the provenance step below.
+                        echo(describeEmptyOmpResolution(marketplaceName, plugin, options.global, probe));
                     }
                 }
             }
@@ -1292,15 +1296,24 @@ export async function defaultRunOmpInstall(
     await runCheckedCommand(installArgs, 'omp plugin install', executor);
 }
 
+/** One consulted omp resolution root and what the host wrote there (task 0141 R1/R3). */
+interface OmpResolutionProbe {
+    /** Resolved plugin directory, when a resolution stage hit. */
+    installPath?: string;
+    /** Which stage produced `installPath`. */
+    source?: 'registry' | 'cache-tree';
+    /** Per-root findings in consultation order — drives the empty-resolution diagnosis. */
+    consulted: Array<{ root: string; registry: 'hit' | 'absent'; tree: 'hit' | 'absent' }>;
+}
+
 /**
- * Resolve the install path for a plugin from the OMP registry. Reads
- * `~/.omp/plugins/installed_plugins.json` (global) or
- * `.omp/plugins/installed_plugins.json` (project), keyed by `plugin@marketplace`.
- * Returns the first entry's `installPath`, or `undefined` when absent.
+ * Read one root's `installed_plugins.json` and return the scope-preferred
+ * `installPath` for `key`, or `undefined` when the registry is absent,
+ * malformed, or lacks the key. (Stage A of `resolveOmpInstall` — the
+ * omp 16.4.2-era receipt source, behaviour unchanged.)
  */
-export function resolveOmpInstallPath(marketplace: string, plugin: string, global: boolean): string | undefined {
-    const registryDir = global ? join(resolveHomeDir(), '.omp', 'plugins') : join(process.cwd(), '.omp', 'plugins');
-    const registryPath = join(registryDir, 'installed_plugins.json');
+function readOmpRegistryInstallPath(ompPluginsDir: string, key: string, global: boolean): string | undefined {
+    const registryPath = join(ompPluginsDir, 'installed_plugins.json');
     if (!existsSync(registryPath)) return undefined;
 
     let registry: OmpPluginsRegistry;
@@ -1311,12 +1324,113 @@ export function resolveOmpInstallPath(marketplace: string, plugin: string, globa
     }
 
     if (typeof registry.version !== 'number' || !registry.plugins) return undefined;
-    const key = `${plugin}@${marketplace}`;
     const entries = registry.plugins[key];
     if (!Array.isArray(entries) || entries.length === 0) return undefined;
     const preferredScope = global ? 'user' : 'project';
     const scoped = entries.find((e) => e.scope === preferredScope);
     return (scoped ?? entries[0])?.installPath;
+}
+
+/**
+ * Enumerate one root's omp plugin cache for `<plugin>___<marketplace>___*`
+ * directories — the payload layout the host writes even when it never writes
+ * the registry (omp 18.1.19, task 0141). Sorted so the lexicographically
+ * greatest version tail sorts last; never matches another plugin's or
+ * marketplace's cache directory.
+ */
+function listOmpCacheTreeHits(root: string, marketplace: string, plugin: string): string[] {
+    const cacheDir = join(root, '.omp', 'plugins', 'cache', 'plugins');
+    if (!existsSync(cacheDir)) return [];
+    const prefix = `${plugin}___${marketplace}___`;
+    const hits: string[] = [];
+    for (const entry of readdirSync(cacheDir)) {
+        if (!entry.startsWith(prefix)) continue;
+        const entryPath = join(cacheDir, entry);
+        if (!existsSync(entryPath) || !statSync(entryPath).isDirectory()) continue;
+        hits.push(entryPath);
+    }
+    return hits.sort();
+}
+
+/**
+ * Two-stage omp receipt resolution (task 0141 R1/R2). Stage A reads the
+ * `installed_plugins.json` registry — primary, so behaviour is unchanged
+ * wherever it already works. Stage B, only when Stage A misses in every
+ * root, resolves through the plugin cache tree the host actually wrote
+ * under the resolved root.
+ */
+function resolveOmpInstall(marketplace: string, plugin: string, global: boolean): OmpResolutionProbe {
+    const key = `${plugin}@${marketplace}`;
+    const roots = [...new Set(global ? [resolveHomeDir()] : [process.cwd(), resolveHomeDir()])];
+    const probed = roots.map((root) => ({
+        root,
+        registryPath: readOmpRegistryInstallPath(join(root, '.omp', 'plugins'), key, global),
+        treeHits: listOmpCacheTreeHits(root, marketplace, plugin),
+    }));
+    const consulted: OmpResolutionProbe['consulted'] = probed.map(({ root, registryPath, treeHits }) => ({
+        root,
+        registry: registryPath !== undefined ? 'hit' : 'absent',
+        tree: treeHits.length > 0 ? 'hit' : 'absent',
+    }));
+
+    // Stage A (primary): registry entry keyed `plugin@marketplace`, scope-preferred.
+    const registryHit = probed.find((p) => p.registryPath !== undefined);
+    if (registryHit?.registryPath !== undefined) {
+        return { installPath: registryHit.registryPath, source: 'registry', consulted };
+    }
+    // Stage B (fallback): the cache tree the host wrote without a registry.
+    const treeHit = probed.find((p) => p.treeHits.length > 0);
+    const best = treeHit?.treeHits.at(-1);
+    if (treeHit && best !== undefined) {
+        return { installPath: best, source: 'cache-tree', consulted };
+    }
+    return { consulted };
+}
+
+/**
+ * Build the diagnostic emitted when omp receipt resolution comes back empty
+ * (task 0141 R1/R3): one line naming every consulted root and what the host
+ * wrote there. When the process home diverges from the resolved `HOME_DIR`,
+ * the real home is probed too and named when receipts exist under it —
+ * diagnosis only; foreign-root receipts are never adopted into the manifest.
+ */
+function describeEmptyOmpResolution(
+    marketplace: string,
+    plugin: string,
+    global: boolean,
+    probe: OmpResolutionProbe,
+): string {
+    const findings = probe.consulted
+        .map(({ root, registry, tree }) => `${root} (registry ${registry}, plugin cache tree ${tree})`)
+        .join('; ');
+    let message = `OMP: no install receipts resolved for '${plugin}@${marketplace}' — ${findings}`;
+    const realHome = homedir();
+    if (realHome !== resolveHomeDir()) {
+        const realRegistry = readOmpRegistryInstallPath(
+            join(realHome, '.omp', 'plugins'),
+            `${plugin}@${marketplace}`,
+            global,
+        );
+        const realTree = listOmpCacheTreeHits(realHome, marketplace, plugin);
+        if (realRegistry !== undefined || realTree.length > 0) {
+            message +=
+                `; omp resolved its home independently of $HOME — receipts exist under ${realHome}` +
+                ' (diagnostic only, not adopted)';
+        }
+    }
+    return message;
+}
+
+/**
+ * Resolve the install path for an omp plugin (task 0141): prefer the OMP
+ * registry — `~/.omp/plugins/installed_plugins.json` (global) or
+ * `.omp/plugins/installed_plugins.json` (project), keyed by
+ * `plugin@marketplace` — then fall back to the plugin cache tree the host
+ * wrote under the resolved root. Returns `undefined` when neither source
+ * resolves.
+ */
+export function resolveOmpInstallPath(marketplace: string, plugin: string, global: boolean): string | undefined {
+    return resolveOmpInstall(marketplace, plugin, global).installPath;
 }
 
 /**

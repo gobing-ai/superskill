@@ -569,12 +569,14 @@ describe('executeInstall', () => {
         expect(output).toContain('Copying to Hermes');
     });
 
-    it('non-verbose install still surfaces hook-emit results for pi/hermes (omp is silent)', async () => {
+    it('non-verbose install still surfaces hook-emit results for pi/hermes (omp emits one diagnostic line)', async () => {
         // Companion test: when --verbose is off, the post-loop echo at install.ts is
         // the ONLY place hook results surface (gated on `!options.verbose`). Pi and hermes
         // each push to hookEmitResults and appear once via the post-loop echo.
-        // OMP is installed natively as of task 0073 — its messages are verbose-only, so
-        // in non-verbose mode it produces no output at all.
+        // OMP is installed natively as of task 0073 — its messages are verbose-only.
+        // Task 0141 R1/R3: an empty omp receipt resolution additionally emits ONE
+        // unconditional diagnostic line (verbose off included) naming the consulted
+        // root, so non-verbose omp output is exactly that single line.
         const { marketplacePath } = setupPluginDir();
         const fakeHome = join(tmpDir, 'fake-home-quiet');
         mkdirSync(fakeHome, { recursive: true });
@@ -615,9 +617,12 @@ describe('executeInstall', () => {
         const hermesLines = output.match(/^\s*hermes: .*$/gm) ?? [];
         expect(piLines).toHaveLength(1);
         expect(hermesLines).toHaveLength(1);
-        // OMP produces no output in non-verbose mode (all its messages are verbose-only).
+        // Task 0141: the empty receipt resolution emits exactly ONE unconditional
+        // diagnostic line in non-verbose mode (the verbose-only registration line is
+        // still suppressed), naming the consulted root and what the host wrote there.
         const ompLines = output.match(/^\s*[Oo][Mm][Pp]: .*$/gm) ?? [];
-        expect(ompLines).toHaveLength(0);
+        expect(ompLines).toHaveLength(1);
+        expect(ompLines[0]).toContain('no install receipts resolved for');
         // And the per-target verbose copy-marker is NOT present (verbose is off).
         expect(output).not.toContain('Copying to Hermes');
     });

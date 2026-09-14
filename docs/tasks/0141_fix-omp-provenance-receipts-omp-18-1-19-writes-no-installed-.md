@@ -1,10 +1,10 @@
 ---
 schema_version: 1
 name: Fix omp provenance receipts — omp 18.1.19 writes no installed_plugins.json for a project-scope install
-status: todo
+status: done
 template: issue
 created_at: 2026-09-14T14:18:54.818Z
-updated_at: "2026-09-14T14:27:17.171Z"
+updated_at: "2026-09-14T16:00:00.376Z"
 feature_id: F
 
 ---
@@ -31,10 +31,10 @@ Diagnosis (omp 18.1.19, `/Users/robin/.bun/bin/omp`):
 
 ### Requirements
 
-- [ ] R1. A project-scope (`--no-global`) omp install of a native plugin writes a project manifest with a non-empty `installed` snapshot for the omp version present in this environment (18.1.19), instead of throwing `Install provenance inventory did not resolve any installed files …`. Where no receipt can be derived at all, the failure names the actual condition (host wrote no registry / nothing on disk under the resolved root) rather than only reporting an empty inventory.
-- [ ] R2. omp receipt discovery no longer depends solely on `installed_plugins.json`: when that registry is absent, or present without the `plugin@marketplace` key, the receipts are derived from the plugin tree the host actually wrote under the resolved root (`<root>/.omp/plugins/cache/plugins/<plugin>___<marketplace>___<version>`). The registry stays the primary source when it has the key, so today's behaviour is preserved wherever it already works.
-- [ ] R3. Home resolution for omp reflects where the host CLI actually wrote. If omp resolves its own home independently of `$HOME` (observed: an isolated-`HOME` run wrote the registry into the real home), that divergence is surfaced in the failure message or in `--verbose` output rather than silently yielding zero receipts.
-- [ ] R4. No regression: provenance behaviour for `claude`, `grok`, `codex`, `pi` and the global-scope omp path is unchanged; a target whose plugin tree genuinely does not exist still throws the frozen error and writes no manifest.
+- [x] R1. A project-scope (`--no-global`) omp install of a native plugin writes a project manifest with a non-empty `installed` snapshot for the omp version present in this environment (18.1.19), instead of throwing `Install provenance inventory did not resolve any installed files …`. Where no receipt can be derived at all, the failure names the actual condition (host wrote no registry / nothing on disk under the resolved root) rather than only reporting an empty inventory.
+- [x] R2. omp receipt discovery no longer depends solely on `installed_plugins.json`: when that registry is absent, or present without the `plugin@marketplace` key, the receipts are derived from the plugin tree the host actually wrote under the resolved root (`<root>/.omp/plugins/cache/plugins/<plugin>___<marketplace>___<version>`). The registry stays the primary source when it has the key, so today's behaviour is preserved wherever it already works.
+- [x] R3. Home resolution for omp reflects where the host CLI actually wrote. If omp resolves its own home independently of `$HOME` (observed: an isolated-`HOME` run wrote the registry into the real home), that divergence is surfaced in the failure message or in `--verbose` output rather than silently yielding zero receipts.
+- [x] R4. No regression: provenance behaviour for `claude`, `grok`, `codex`, `pi` and the global-scope omp path is unchanged; a target whose plugin tree genuinely does not exist still throws the frozen error and writes no manifest.
 
 **Out of scope / non-goals**
 
@@ -93,15 +93,66 @@ The provenance pipeline then receives zero receipts for omp. Since receipts are 
 
 ### Solution
 
-<!-- Filled during implementation: file:line change map and concise rationale. -->
+All production changes land in `apps/cli/src/commands/install.ts`; omp receipt collection no longer assumes `installed_plugins.json` is the only source, and an empty resolution now explains itself.
+
+**Two-stage omp receipt resolution (R1, R2)**
+
+- `apps/cli/src/commands/install.ts:1300-1309` — new internal `OmpResolutionProbe` shape: `{ installPath?, source?: 'registry' | 'cache-tree', consulted: Array<{ root, registry: 'hit' | 'absent', tree: 'hit' | 'absent' }> }`.
+- `apps/cli/src/commands/install.ts:1310-1333` — `readOmpRegistryInstallPath` extracts the unchanged Stage A registry read (file existence → JSON parse → version/plugins shape → `plugin@marketplace` key → scope-preferred entry); behaviour byte-for-byte identical to the old resolver, including returning a registry `installPath` without an existence check.
+- `apps/cli/src/commands/install.ts:1335-1355` — new `listOmpCacheTreeHits` enumerates `<root>/.omp/plugins/cache/plugins/<plugin>___<marketplace>___*` directories (the Stage B receipt source, omp 18.1.19's on-disk layout), sorted so the lexicographically greatest version tail sorts last; the full `<plugin>___<marketplace>___` prefix anchor means another plugin's or marketplace's cache dir is never adopted, and non-directory entries are skipped.
+- `apps/cli/src/commands/install.ts:1357-1395` — `resolveOmpInstall` probes the ordered, de-duplicated root list (project scope → `[process.cwd(), resolveHomeDir()]`; global → `[resolveHomeDir()]`) and returns Stage A's registry hit when any root has one (today's behaviour preserved wherever it already works), else Stage B's cache-tree hit from the first root that has one, else an empty probe carrying the per-root findings.
+- `apps/cli/src/commands/install.ts:1423-1434` — exported `resolveOmpInstallPath` becomes a thin wrapper returning `.installPath`; its `(marketplace, plugin, global): string | undefined` signature is unchanged (pinned by `apps/cli/tests/commands/install-omp-helpers.test.ts:106`).
+
+**Self-explaining empty resolution + home divergence (R1, R3)**
+
+- `apps/cli/src/commands/install.ts:1397-1421` — `describeEmptyOmpResolution` builds one diagnostic line naming every consulted root with what the host wrote there (`registry hit|absent`, `plugin cache tree hit|absent`). When `os.homedir()` ≠ `resolveHomeDir()`, it additionally probes the real home and — only when a registry or cache tree exists there — appends the divergence note ("omp resolved its home independently of $HOME"). Diagnosis only: foreign-root receipts are never adopted into the manifest, preserving 0140's snapshot contract.
+- `apps/cli/src/commands/install.ts:803-821` — the omp dispatch now calls `resolveOmpInstall` and, on an empty probe, emits that line unconditionally (replacing the old verbose-only `OMP install path not found in registry` echo) before the frozen finalize error at `apps/cli/src/commands/install.ts:2306-2310` fires with its message unchanged.
+
+**Tests**
+
+- `apps/cli/tests/commands/install-omp-helpers.test.ts:172-239` — seven Stage B unit cases: home cache-tree fallback at project and global scope without a registry, ordered-roots preference (workspace tree before home tree at project scope), registry-primary when both sources exist, lexicographically-greatest version tail on multiple matches (deliberately lexicographic, not semver: `2.9.7` > `2.10.0`), never adopting another plugin/marketplace cache dir, and ignoring a non-directory cache entry. All eight pre-existing resolver cases pass unedited.
+- `apps/cli/tests/commands/install-manifest.test.ts:718-866` — four e2e cases through `executeInstall` via the `runOmpInstall` stub seam: (AC1) a tree-only host outcome writes a manifest with `installedRoot: 'home'` and non-empty `installed.files`; (AC2 unchanged path) a registry carrying `plugin@marketplace` still resolves through `installPath` and a decoy cache tree is ignored; (AC2/R4) neither registry nor tree throws the frozen `/did not resolve any installed files …/` error, writes no manifest, and names the consulted roots on stdout; (AC3) a registry present only under a divergent real home is named in the diagnosis ("independently of $HOME") while no manifest is written.
+
+**Design deviation (1, mechanical)**
+
+- AC3's divergence control: Bun's `os.homedir()` ignores mid-process `process.env.HOME` mutations (probed directly — startup value is what Bun returns), so the e2e test simulates the divergent real home with `spyOn(os, 'homedir')` rather than `process.env.HOME`. Same seam, Bun-compatible; production logic is untouched by the deviation.
+
+**Untouched per task non-goals**
+
+- 0140's scope-path mechanism (realpath membership, home-rooted snapshot fallback, `installedRoot` semantics), the frozen finalize error string, `snapshotFiles` / `validateSnapshot` / `toSlashRel`, the manifest schema, omp CLI invocation, and the claude dispatch `rmSync` (`apps/cli/src/commands/install.ts:753-754`) — all unchanged.
 
 ### Testing
 
-<!-- Filled during verification: regression command(s), outcomes, coverage claim or N/A. -->
+**Pipeline verify results**
+
+- Verdict: PASS (from verdict artifact)
+
+| Requirement | Status | Evidence |
+|-------------|--------|----------|
+| R1 | MET | `apps/cli/src/commands/install.ts:1362-1394` (two-stage probe) + `:1341-1358` (cache-tree receipt source) + `:816-821` (self-explaining empty resolution); tests `apps/cli/tests/commands/install-manifest.test.ts:718` (home-rooted manifest from tree) and `:798` (failure names consulted roots); live E2E this run: exit 0, omp manifest `installedRoot: 'home'` with 372 files under omp 18.1.19 |
+| R2 | MET | Stage A registry read behaviour-identical `apps/cli/src/commands/install.ts:1315-1334`; Stage B fallback `:1341-1358` and `:1385-1392`; tests `apps/cli/tests/commands/install-manifest.test.ts:753` (registry primary, decoy tree ignored), `apps/cli/tests/commands/install-omp-helpers.test.ts:172,180,188,199,212,223,233` (absent registry, global scope, ordered roots, lexicographic tail, never-adopts, non-directory) |
+| R3 | MET | `apps/cli/src/commands/install.ts:1397-1421` names every consulted root and probes `os.homedir()` divergence diagnosis-only; tests `apps/cli/tests/commands/install-manifest.test.ts:831` (names real home, foreign receipts never adopted) and `apps/cli/tests/commands/install.integration.test.ts:572` (exactly one non-verbose diagnostic line) |
+| R4 | MET | Frozen error unchanged `apps/cli/src/commands/install.ts:2308`; claude/grok/codex/pi and global-omp paths untouched by the diff; neither-source test `apps/cli/tests/commands/install-manifest.test.ts:798` throws the frozen error and writes no manifest; full suite 2369 pass / 0 fail; `packages/core/tests/operations/install-manifest.test.ts` 13 pass unedited |
+
+| Acceptance Criteria | Status | Evidence Type | Evidence |
+|---------------------|--------|---------------|----------|
+| **AC1 | MET | test | `apps/cli/tests/commands/install-manifest.test.ts:718-751` — stub writes only the omp cache tree, `executeInstall` with `global: false` writes a manifest with non-empty `installed.files` and `installedRoot === 'home'`; passed this run (53 pass / 0 fail across the two omp test files) |
+| **AC2 | MET | test | registry-present path unchanged `apps/cli/tests/commands/install-manifest.test.ts:753-796`; registry-absent path resolves on-disk `:718-751`; neither-source throws the frozen error and writes no manifest `:798-829`; all passed this run |
+| **AC3 | MET | test | `apps/cli/tests/commands/install-manifest.test.ts:831-881` — isolated `HOME_DIR`, receipts only under the divergent homedir → failure output names the real home and "independently of $HOME", no manifest written; passed this run |
+| **AC4 | MET | command | Fresh this session: `bun run lint` (biome 235 files + typecheck, 0 errors), `bun run test` 2369 pass / 0 fail across 113 files, `bun run build` exit 0, `bun run spur-check` (full tests + 3/3 post-check rules); no `.skip`/`.todo`/`.only` in touched test files; both install-manifest suites pass unedited (CLI additions-only diff, core file untouched) |
+| **AC5 | MET | command | E2E this run: isolated symlink-free HOME + scratch project, `dist/superskill install understand-anything --marketplace Egonex-AI/Understand-Anything --no-global` → exit 0 (`Installed 'understand-anything' to 9 target(s)`); omp manifest `installedRoot: 'home'`, 372 files, no `installed_plugins.json` anywhere (Stage B cache-tree receipts); real `~/.omp` verified unchanged (registry diff clean, newer-than-backup mtime scan empty) — nothing to revert |
+- Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review
 
-<!-- Filled during review: P1-P4 findings, residual risk, and final disposition. -->
+<!-- spur:record-review -->
+
+**SECU findings** (pipeline verify step — verdict: PASS)
+
+| Priority | Dimension | Location | Finding |
+|----------|-----------|----------|----------|
+| P4 | spur task check | — | task check passed |
+| P4 | evidence-rule-pass | — | All behavior-bearing AC rows have executable evidence or are explicitly non-behavioral. |
 
 ### References
 
@@ -111,3 +162,8 @@ The provenance pipeline then receives zero receipts for omp. Since receipts are 
 - Test seams: `apps/cli/tests/commands/install-omp-helpers.test.ts:106` (exported-signature pin), `apps/cli/tests/commands/install.test.ts:473` (`runOmpInstall` stub pattern), `apps/cli/tests/commands/install-manifest.test.ts:479` (home-rooted manifest pattern).
 
 ### History
+
+- 2026-09-14T15:18:40.458Z todo → wip (system)
+- 2026-09-14T15:58:56.152Z wip → testing (system)
+- 2026-09-14T16:00:00.376Z testing → done (system)
+
