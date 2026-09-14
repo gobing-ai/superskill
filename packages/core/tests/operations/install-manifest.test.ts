@@ -200,6 +200,29 @@ describe('install-manifest', () => {
         ]);
     });
 
+    it('round-trips installedRoot: home and rejects every other value', () => {
+        const scope = tmp('installed-root-');
+        const written = writeInstallManifest(
+            scope,
+            'claude',
+            'cc',
+            sampleManifest({ plugin: 'cc', target: 'claude', installedRoot: 'home' }),
+        );
+        expect(readInstallManifest(written).installedRoot).toBe('home');
+
+        const legacy = writeInstallManifest(scope, 'codex', 'cc', sampleManifest({ plugin: 'cc', target: 'codex' }));
+        expect(readInstallManifest(legacy).installedRoot).toBeUndefined();
+
+        const bad = join(scope, 'bad-installed-root.json');
+        for (const bogus of ['/etc', 'scopeRoot', 'HOME', 1, null]) {
+            writeFileSync(
+                bad,
+                `${JSON.stringify({ ...sampleManifest({ plugin: 'cc', target: 'codex' }), installedRoot: bogus })}\n`,
+            );
+            expect(() => readInstallManifest(bad)).toThrow(/installedRoot must be home/);
+        }
+    });
+
     it('round-trips optional locator and resolvedRef, and rejects invalid schema', () => {
         const scope = tmp('schema-');
         const written = writeInstallManifest(

@@ -2119,6 +2119,15 @@ function pluginPrefixedEntries(dir: string, plugin: string): string[] {
     return files;
 }
 
+/**
+ * True when realpath-normalized `abs` is a strict descendant of realpath-normalized `root`.
+ * The scope test for provenance receipts (task 0140 R3); both sides are already `realpathSync`'d.
+ */
+function isUnderRoot(root: string, abs: string): boolean {
+    const rel = relative(root, abs);
+    return rel !== '' && !rel.startsWith('..') && !isAbsolute(rel);
+}
+
 function writeInstallProvenance(args: {
     plugin: string;
     targets: Target[];
@@ -2150,26 +2159,44 @@ function writeInstallProvenance(args: {
             ),
         );
         const collected = args.receipts.get(target)?.files ?? [];
-        const unique: string[] = [];
         const seen = new Set<string>();
-        const scopeRoot = resolve(args.outputRoot);
         for (const file of collected) {
             const abs = resolve(file);
-            if (seen.has(abs) || !existsSync(abs)) continue;
+            if (!existsSync(abs)) continue;
             const st = lstatSync(abs);
+            // lstat before realpath, so a symlinked file stays excluded.
             if (st.isSymbolicLink() || !st.isFile()) continue;
-            // Host install trees can sit under $HOME while project scopeRoot is cwd.
-            const rel = relative(scopeRoot, abs);
-            if (rel.startsWith('..') || rel === '' || isAbsolute(rel)) continue;
-            seen.add(abs);
-            unique.push(abs);
+            seen.add(realpathSync(abs));
         }
-        if (unique.length === 0) {
-            throw new Error(
-                `Install provenance inventory did not resolve any installed files for plugin '${args.plugin}' target '${target}'`,
-            );
+        // Scope membership is decided on realpath-normalized paths: a host-reported receipt can
+        // come back realpath'd while outputRoot keeps the symlinked spelling (task 0140 R3).
+        // The scope root itself may not exist (a programmatic `outputRoot`, or a `HOME_DIR`
+        // pointing at a missing directory): fall back to the resolved path so the frozen
+        // inventory error below is raised instead of a raw `realpathSync` ENOENT.
+        const resolvedScopeRoot = resolve(args.outputRoot);
+        const realScopeRoot = existsSync(resolvedScopeRoot) ? realpathSync(resolvedScopeRoot) : resolvedScopeRoot;
+        const inScope = [...seen].filter((abs) => isUnderRoot(realScopeRoot, abs));
+        let installed: InstallManifestV1['installed'];
+        let installedRoot: InstallManifestV1['installedRoot'];
+        if (inScope.length > 0) {
+            installed = snapshotFiles(realScopeRoot, inScope);
+        } else {
+            // Native host installers materialize plugin content under the user home even at
+            // project scope, so every receipt is out of scope and the in-scope inventory is
+            // empty. Snapshot the home-rooted tree those targets only, and say so in the
+            // manifest (task 0140 R1/R2/R4).
+            const homeDir = resolveHomeDir();
+            const isNativeHostTarget = target === 'claude' || target === 'omp' || target === 'grok';
+            const realHomeRoot = isNativeHostTarget && existsSync(homeDir) ? realpathSync(homeDir) : undefined;
+            const inHome = realHomeRoot === undefined ? [] : [...seen].filter((abs) => isUnderRoot(realHomeRoot, abs));
+            if (realHomeRoot === undefined || inHome.length === 0) {
+                throw new Error(
+                    `Install provenance inventory did not resolve any installed files for plugin '${args.plugin}' target '${target}'`,
+                );
+            }
+            installed = snapshotFiles(realHomeRoot, inHome);
+            installedRoot = 'home';
         }
-        const installed = snapshotFiles(args.outputRoot, unique);
         const manifest: InstallManifestV1 = {
             schemaVersion: 1,
             plugin: args.plugin,
@@ -2184,6 +2211,7 @@ function writeInstallProvenance(args: {
             superskillVersion: cliVersion,
             installed,
             upstream,
+            ...(installedRoot !== undefined ? { installedRoot } : {}),
         };
         args.writer(args.outputRoot, target, args.plugin, manifest);
     }

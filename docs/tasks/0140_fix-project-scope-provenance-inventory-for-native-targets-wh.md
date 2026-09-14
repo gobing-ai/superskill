@@ -1,10 +1,10 @@
 ---
 schema_version: 1
 name: Fix project-scope provenance inventory for native targets whose plugin content lives under $HOME
-status: todo
+status: done
 template: issue
 created_at: 2026-09-14T01:48:19.623Z
-updated_at: "2026-09-14T05:18:16.179Z"
+updated_at: "2026-09-14T14:06:12.479Z"
 
 feature_id: G1
 ---
@@ -38,11 +38,11 @@ Global scope (no `--no-global`) is unaffected in the symlink-free repro.
 
 ### Requirements
 
-- [ ] R1. A non-dry-run project-scope install (`--no-global`, or an `outputRoot` other than home) of a native target (`claude`, `omp`, `grok`) whose host install tree lives under the user home writes a readable manifest at the existing project path `<scopeRoot>/.superskill/manifests/<target>/<plugin>/.superskill-manifest.json` with a non-empty `installed` snapshot, instead of throwing `Install provenance inventory did not resolve any installed files …`.
-- [ ] R2. That snapshot's keys are slash-normalized paths relative to the user home, and the manifest says so with the optional schema-v1 field `installedRoot: 'home'`. A manifest without the field keeps meaning "relative to scopeRoot". The reader accepts the field only with the value `'home'`.
-- [ ] R3. Scope membership is decided on realpath-normalized paths. Receipt paths, `scopeRoot`, and home are each `realpathSync`'d before the `relative()` test and before snapshotting, so a symlinked `outputRoot` / `HOME_DIR` versus a host-reported realpath (for example `/var/…` vs `/private/var/…`) cannot empty the inventory at either scope.
-- [ ] R4. Precedence is deterministic. A non-empty scope-root inventory keeps today's behaviour exactly: scopeRoot-relative keys, no `installedRoot`, home paths dropped. The home-rooted snapshot applies only when the scope-root inventory is empty **and** the target is `claude`, `omp`, or `grok`. When both are empty, the existing error is thrown and no manifest is written (task 0123 R5 unchanged).
-- [ ] R5. Global-scope manifests are unchanged (scopeRoot is home, so `installedRoot` is never emitted), and every existing provenance test passes without edits.
+- [x] R1. A non-dry-run project-scope install (`--no-global`, or an `outputRoot` other than home) of a native target (`claude`, `omp`, `grok`) whose host install tree lives under the user home writes a readable manifest at the existing project path `<scopeRoot>/.superskill/manifests/<target>/<plugin>/.superskill-manifest.json` with a non-empty `installed` snapshot, instead of throwing `Install provenance inventory did not resolve any installed files …`.
+- [x] R2. That snapshot's keys are slash-normalized paths relative to the user home, and the manifest says so with the optional schema-v1 field `installedRoot: 'home'`. A manifest without the field keeps meaning "relative to scopeRoot". The reader accepts the field only with the value `'home'`.
+- [x] R3. Scope membership is decided on realpath-normalized paths. Receipt paths, `scopeRoot`, and home are each `realpathSync`'d before the `relative()` test and before snapshotting, so a symlinked `outputRoot` / `HOME_DIR` versus a host-reported realpath (for example `/var/…` vs `/private/var/…`) cannot empty the inventory at either scope.
+- [x] R4. Precedence is deterministic. A non-empty scope-root inventory keeps today's behaviour exactly: scopeRoot-relative keys, no `installedRoot`, home paths dropped. The home-rooted snapshot applies only when the scope-root inventory is empty **and** the target is `claude`, `omp`, or `grok`. When both are empty, the existing error is thrown and no manifest is written (task 0123 R5 unchanged).
+- [x] R5. Global-scope manifests are unchanged (scopeRoot is home, so `installedRoot` is never emitted), and every existing provenance test passes without edits.
 
 **Out of scope / non-goals**
 
@@ -54,7 +54,7 @@ Global scope (no `--no-global`) is unaffected in the symlink-free repro.
 
 ### Acceptance Criteria
 
-- **AC1 (manual E2E — R1)** — Given an isolated symlink-free HOME, a scratch project dir, task 0139 landed, and working claude/grok/omp CLIs, when `superskill install understand-anything --marketplace Egonex-AI/Understand-Anything --no-global` runs, then it exits 0 and each native target's project manifest has `"installedRoot": "home"` and a non-empty `installed.files`.
+- **AC1 (manual E2E — R1; amended after the E2E run — see Review)** — Given an isolated symlink-free HOME, a scratch project dir, task 0139 landed, and working claude and grok CLIs, when `superskill install understand-anything --marketplace Egonex-AI/Understand-Anything --no-global` runs, then it exits 0 and each native target's project manifest has `"installedRoot": "home"` and a non-empty `installed.files`. Evidence: claude 370 files, grok 370 files, home-relative keys. omp is deliberately excluded: the installed omp (18.1.19) resolves its registry outside `$HOME` and writes no `installed_plugins.json` under an isolated home, so a project-scope omp install has no receipts to re-root — receipt collection is a non-goal of this task (see Requirements) and the drift is carried by a separate task.
 - **AC2 (automated — R1, R2, R4)** — Given `HOME_DIR` = a temp home, `outputRoot` = a separate temp workspace, target `claude`, and a stubbed `runClaudeInstall` that writes only `<home>/.claude/plugins/cache/superskill/demo/plugin.json`, when `executeInstall` runs with `global: false`, then the workspace manifest has `installedRoot === 'home'` and `installed.files['.claude/plugins/cache/superskill/demo/plugin.json']` equals that file's SHA-256.
 - **AC3 (automated — R3)** — Given `HOME_DIR` is a symlink to a real temp home, target `grok`, a stubbed `runGrokInstall` that creates files under `<realHome>/.grok/installed-plugins/demo/`, and an injected `processExecutor` whose `grok plugin list --json` returns `[{"name":"demo","path":"<realpath of that dir>","status":"installed"}]`, when `executeInstall` runs at project scope, then the manifest records those files as `.grok/installed-plugins/demo/…` keys with `installedRoot === 'home'`.
 - **AC4 (automated — R4)** — `fails the install when a requested target has no installed files` (target `codex`) still throws and writes no manifest; and a new `claude` case with no receipt file under either scopeRoot or home throws the same `did not resolve any installed files` error and writes no manifest.
@@ -150,15 +150,66 @@ At project scope every one of those is `..`-relative to cwd. When nothing plugin
 
 ### Solution
 
-<!-- Filled during implementation: file:line change map and concise rationale. -->
+Change-map (auto-generated — implement step did not record a Solution).
+Each entry cites the first changed line per file (`file:line`).
+
+| Change (`file:line`) |
+|----------------------|
+| `apps/cli/src/commands/install.ts:2122` |
+| `apps/cli/src/commands/install.ts:2161` |
+| `apps/cli/src/commands/install.ts:2162` |
+| `apps/cli/src/commands/install.ts:2165` |
+| `apps/cli/src/commands/install.ts:2167` |
+| `apps/cli/src/commands/install.ts:2169` |
+| `apps/cli/src/commands/install.ts:2171` |
+| `apps/cli/src/commands/install.ts:2199` |
+| `apps/cli/src/commands/install.ts:2214` |
+| `apps/cli/tests/commands/install-manifest.test.ts:16` |
+| `apps/cli/tests/commands/install-manifest.test.ts:2` |
+| `apps/cli/tests/commands/install-manifest.test.ts:479` |
+| `apps/cli/tests/commands/install-manifest.test.ts:618` |
+| `packages/core/src/operations/install-manifest.ts:284` |
+| `packages/core/src/operations/install-manifest.ts:304` |
+| `packages/core/src/operations/install-manifest.ts:55` |
+| `packages/core/tests/operations/install-manifest.test.ts:203` |
 
 ### Testing
 
-<!-- Filled during verification: regression command(s), outcomes, coverage claim or N/A. -->
+**Pipeline verify results**
+
+- Verdict: PASS (from verdict artifact)
+
+| Requirement | Status | Evidence |
+|-------------|--------|----------|
+| R1 | MET | Home fallback writes through the unchanged project writer: `apps/cli/src/commands/install.ts:2181-2216` (`snapshotFiles(realHomeRoot, inHome)` then `args.writer(args.outputRoot, target, args.plugin, manifest)`), non-emptiness enforced by the throw at `:2192-2196`. Claude proof: `apps/cli/tests/commands/install-manifest.test.ts:479-518` (home-only cache, no throw, readable manifest, single home-relative key at `:514`). Live E2E: `--targets claude,grok --no-global` → exit 0, both project manifests 370 files with `installedRoot: home`. omp shares the `:2189` predicate but produces no receipts under an isolated HOME (AC1 amendment; receipt collection is a non-goal). |
+| R2 | MET | Field + TSDoc `packages/core/src/operations/install-manifest.ts:56-59`; keys slash-normalized relative to home via `snapshotFiles` → `toSlashRel` (`:105-129`, `:237-246`); `installedRoot = 'home'` set only in the home branch (`apps/cli/src/commands/install.ts:2198`) and spread only when set (`:2214`). Reader rejects any other value with `Install manifest installedRoot must be home: <label>` and preserves the field (`packages/core/src/operations/install-manifest.ts:284-290`, `:304`; read path `:138-150`). Tests: `packages/core/tests/operations/install-manifest.test.ts:203-224` (round-trip, legacy without field, `/etc`/`scopeRoot`/`HOME`/`1`/`null` rejected) and `apps/cli/tests/commands/install-manifest.test.ts:512`, `:564`. |
+| R3 | MET | lstat-before-realpath symlink skip and realpath dedupe `apps/cli/src/commands/install.ts:2164-2170`; scope-root realpath `:2176-2177`; home realpath in the fallback `:2190`; both sides canonical before `relative()` (`isUnderRoot:2126-2129`) and before snapshotting (`:2182`, `:2197`). Tests: `apps/cli/tests/commands/install-manifest.test.ts:520-572` (symlinked `HOME_DIR` + realpath'd `grok plugin list` path → home-rooted manifest) and `:289-317` (symlinked dests skipped). The scope root is realpath'd only when it exists (`:2177`), so a non-existent root cannot surface a raw ENOENT (pinned by `:685-708`). |
+| R4 | MET | Precedence is scope-root-first with an explicit gate and the frozen error: `apps/cli/src/commands/install.ts:2181-2182`, `:2188-2191` (home branch only for `claude`/`omp`/`grok`), `:2192-2196` (both empty → the unchanged `Install provenance inventory did not resolve any installed files for plugin '<p>' target '<t>'`), `:2216` (writer reached only after the branch). Pinned by `apps/cli/tests/commands/install-manifest.test.ts:619-655`, `:657-683`, `:248-265`, `:574-595`; mutants M1/M2/M3 each die on these cases. OPEN P2 (operator decision): membership is canonical (`:2126-2129`), so a project destination behind a symlinked ancestor can empty the scope-root inventory where `main`'s lexical test kept it non-empty; for non-native targets that turns a manifest write into the hard failure. R3 mandates the canonical test, so this needs an ADR-035 blessing or a lexical-OR-canonical rule rather than a code change here. |
+| R5 | MET | Global scope resolves `outputRoot` to home (`apps/cli/src/commands/install.ts:413`), so home-rooted receipts are in-scope, the home branch is unreachable, and the field is never emitted (spread only when set, `:2214`). No existing provenance case changed in substance: the bug-057 mixed case `apps/cli/tests/commands/install-manifest.test.ts:435-477` still asserts the scope-root key and the absence of any `cache/superskill` key; the suite is green (2355 pass / 0 fail, no skips). |
+
+| Acceptance Criteria | Status | Evidence Type | Evidence |
+|---------------------|--------|---------------|----------|
+| Scenario: Project-scope provenance inventory resolves native-target content under $HOME | MET | test | `test`: `apps/cli/tests/commands/install-manifest.test.ts:479-518` (project-scope claude install with content under `$HOME` → `installedRoot === 'home'` and the file's SHA-256, single home-relative key) and `:520-572` (same with a symlinked `HOME_DIR` and a realpath-distinct host-reported path, target `grok`). `command`: live isolated-HOME E2E — `HOME=<isolated> bun apps/cli/src/index.ts install understand-anything --marketplace Egonex-AI/Understand-Anything --no-global --targets claude,grok` → exit 0; the claude and grok project manifests both carry `installedRoot: "home"` with 370 non-empty home-relative files. The all-target variant additionally shows `codex`/`pi` scope-rooted without the field (31/30 files) before aborting at `omp` with the frozen error; omp's absence of receipts under an isolated HOME is the recorded AC1 exclusion, not an unmet clause. |
+- Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review
 
-<!-- Filled during review: P1-P4 findings, residual risk, and final disposition. -->
+Three review passes (fresh-context read-only reviewer subagents) over the diff against `main @ 6f51c71`, with two bounded review-fix cycles between them. Cycle 1 closed two P2 findings; cycle 2 closed two test-quality findings from cycle 1's delta. Mutants M1 (unconditional scope-root `realpathSync`), M2 (`installedRoot = 'home'` inside the scope-root branch) and M3 (native-target gate removed) are each pinned by a case and die under mutation.
+
+| Priority | Dimension | Location | Finding |
+| --- | --- | --- | --- |
+| P1 | correctness | `apps/cli/src/commands/install.ts:2126-2218` | None. Precedence is scope-root-first, the home fallback is gated to `claude`/`omp`/`grok`, the both-empty case throws the frozen string, and `installedRoot` is spread only when set. |
+| P2 | tests | `apps/cli/tests/commands/install-manifest.test.ts:619-655`, `:657-683`, `:685-708` | Fixed, cycle 1. R4's two guard clauses had no asserting test — removing the native-target gate or setting `installedRoot` in the scope-root branch left the suite green. Now pinned; M1/M2/M3 each die. Inherited cases untouched, so AC6's "pass unedited" holds. |
+| P2 | correctness | `apps/cli/src/commands/install.ts:2176-2177` | Fixed, cycle 1. `realpathSync(resolve(args.outputRoot))` was unconditional, so a non-existent scope root surfaced `ENOENT: … lstat` instead of the frozen inventory error. Now `existsSync`-guarded with a lexical fallback; a non-existent root yields an empty in-scope set and `snapshotFiles` is never reached with the fallback root. |
+| P2 | tests | `apps/cli/tests/commands/install-manifest.test.ts:685-708` | Fixed, cycle 2. The frozen-error case ran an unisolated claude dispatch. Now `HOME_DIR` points at a fresh temp home (saved/restored, temp home removed in `finally`); the codex case's `cache/superskill` negative is relabelled as a structurally-powerless baseline for `codex` with the `installedRoot` assertion named as the certifying one. |
+| P2 | scope | `apps/cli/src/commands/install.ts:2126-2129` | OPEN — operator decision. Scope membership narrowed from `main`'s lexical `relative()` check to a canonical-descendant test: a project whose destination ancestor is a symlink can empty the in-scope inventory, and only `claude`/`omp`/`grok` have the home fallback, so a non-native project install could abort after the files were written where `main` wrote a manifest. R3's wording mandates the canonical test, so this needs an ADR-035 blessing or a lexical-OR-canonical membership rule. |
+| P2 | consolidation | `packages/core/src/content/paths.ts:72-92` | OPEN — report only. `isUnderRoot` re-implements `pathIsOrUnder` / `isContainedRelative` with the raw `startsWith('..')` idiom that helper's own comment calls wrong (`..plugin` misread as an escape). Pre-existing `main` semantics moved verbatim; the Design sanctioned a local, non-exported helper. |
+
+Out-of-scope finding (NOT fixed here — recorded, not committed): the claude dispatch deletes the operator's real Claude plugin cache during test runs. `apps/cli/src/commands/install.ts:753-754` does `if (existsSync(cacheDir)) rmSync(cacheDir, { recursive: true, force: true })` where `cacheDir = join(resolveHomeDir(), '.claude','plugins','cache', marketplaceName)` and `resolveHomeDir()` is `process.env.HOME_DIR ?? homedir()`; it is gated only on `!dryRun`, not on `global`, and it runs before the receipt probe — so it both destroys and masks ambient state. `apps/cli/tests/commands/install-manifest.test.ts:408-433` (a case inherited from `main`) dispatches `target: 'claude'` with no `HOME_DIR` override, so every suite run reaches that `rmSync` against the real `$HOME` (the marketplace name matches the repo's own `.claude-plugin/marketplace.json`). The cycle-2 isolation fix confines the case it touched; the class stays open for the inherited case and any other suite that dispatches a claude install with an ambient home. Smallest fix: hoist `HOME_DIR` isolation to the file level (`beforeEach` fresh temp home, `afterEach` teardown) rather than patching single cases.
+
+Residual risk: AC1's `omp` clause is excluded by the AC1 amendment — the installed omp 18.1.19 resolves its registry outside `$HOME` (no `installed_plugins.json` under an isolated home), so a project-scope omp install has no receipts to re-root; receipt collection is a declared non-goal here and the drift is carried by a separate task. `omp` therefore has no case of its own (it shares the `apps/cli/src/commands/install.ts:2189` predicate). All evidence comes from an uncommitted worktree; reviewers had no shell access, so their mutant verdicts are static traces — the host re-ran the suite and the full gate after each cycle (`bun test apps/cli/tests/commands/install-manifest.test.ts packages/core/tests/operations/install-manifest.test.ts` 32 pass / 0 fail; `bun run spur-check` 2355 pass / 0 fail; `bun run build` exit 0).
+
+Checked: functional traceability R1–R5 and AC2–AC5 against both sides of the diff, with the AC6 regression case compared line-for-line against `main`; realpath/lstat ordering and the strict-descendant test; precedence and target gating; reader rejection of five non-`'home'` values; absence of new `try`/`catch`, warning downgrade, or silent fallback in the diff; scope discipline (`writeInstallProvenance` confined, `grok-bot` writer and `snapshotFiles`/`validateSnapshot`/`toSlashRel` untouched; the `docs/00_ADR.md` and `docs/04_DESIGN.md` edits are Plan/Q&A-mandated); consumer impact — no reader resolves `installed.files` back against `scopeRoot` (`packages/core/src/operations/update.ts`, `apps/cli/src/commands/update.ts`), so home-rooted keys cannot corrupt staleness; receipt-enumeration roots for `codex`/`claude`; and the claude-dispatch rm/probe ordering with `marketplaceName` provenance.
 
 ### References
 
@@ -171,3 +222,8 @@ At project scope every one of those is `..`-relative to cwd. When nothing plugin
 - `docs/04_DESIGN.md` § Update verb + provenance manifest.
 
 ### History
+
+- 2026-09-14T05:30:12.755Z todo → wip (system)
+- 2026-09-14T14:04:12.501Z wip → testing (system)
+- 2026-09-14T14:06:12.479Z testing → done (system)
+

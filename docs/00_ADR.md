@@ -612,6 +612,17 @@ and schema v1 gains a backward-compatible optional `grokBot: { materialize:
 'bridge' | 'full' }` field emitted only for Bot; existing targets and legacy
 receipts without the field remain readable.
 
+**Target-specific exception (2026-09-13, task 0140).** For the native host
+targets (`claude`, `omp`, `grok`), a project-scope install whose receipts all
+live outside the scope root writes the same project receipt at the same path
+with the backward-compatible optional schema-v1 field `installedRoot: 'home'`;
+`installed.files` keys are then relative to the user home instead of
+`scopeRoot`, and scope membership is decided on realpath-normalized paths. A
+receipt without the field keeps its existing meaning (keys relative to
+`scopeRoot`), the home-rooted snapshot is used only when the scope-root
+inventory is empty, and an inventory that is empty under both roots still fails
+the install (0123 R5 unchanged).
+
 **Amendment (2026-09-13, F8) — lock-tracked skills and actionable output.**
 `superskill update` also reports on and updates skills installed with
 `superskill skill add`. It reads them from the ADR-028 locks: `~/.agents/.skill-lock.json`

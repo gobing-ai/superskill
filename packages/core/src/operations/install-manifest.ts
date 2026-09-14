@@ -52,6 +52,11 @@ export interface InstallManifestV1 {
     upstream: InstallSnapshot;
     /** grok-bot only (task 0128): how the Bot catalog was materialized. */
     grokBot?: { materialize: 'bridge' | 'full' };
+    /**
+     * `installed.files` keys are relative to the user home instead of the manifest
+     * scope root (task 0140: native host trees at project scope).
+     */
+    installedRoot?: 'home';
 }
 
 /**
@@ -276,6 +281,13 @@ function validateInstallManifest(value: unknown, label: string): InstallManifest
         }
         grokBot = { materialize: g.materialize };
     }
+    let installedRoot: InstallManifestV1['installedRoot'];
+    if (rec.installedRoot !== undefined) {
+        if (rec.installedRoot !== 'home') {
+            throw new Error(`Install manifest installedRoot must be home: ${label}`);
+        }
+        installedRoot = 'home';
+    }
     return {
         schemaVersion: 1,
         plugin,
@@ -289,6 +301,7 @@ function validateInstallManifest(value: unknown, label: string): InstallManifest
         installed: validateSnapshot(rec.installed, `${label} installed`),
         upstream: validateSnapshot(rec.upstream, `${label} upstream`),
         ...(grokBot !== undefined ? { grokBot } : {}),
+        ...(installedRoot !== undefined ? { installedRoot } : {}),
     };
 }
 

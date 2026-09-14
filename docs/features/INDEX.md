@@ -19,7 +19,7 @@
     ├── [done] **F7**: Install dest fidelity: flattened path rewrite + plugin-scoped prune ([F7_install-dest-fidelity-flattened-path-rewrite-plugin-scoped-prune.md](./F7_install-dest-fidelity-flattened-path-rewrite-plugin-scoped-prune.md))
     └── [done] **F8**: Unified update: lock-tracked skills + actionable output ([F8_unified-update-lock-tracked-skills-actionable-output.md](./F8_unified-update-lock-tracked-skills-actionable-output.md))
 [done] **G**: Package Core ([G_package-core.md](./G_package-core.md))
-    ├── [backlog] **G1**: Install pipeline (legacy Phase 1) ([G1_install-pipeline-legacy-phase-1.md](./G1_install-pipeline-legacy-phase-1.md))
+    ├── [active] **G1**: Install pipeline (legacy Phase 1) ([G1_install-pipeline-legacy-phase-1.md](./G1_install-pipeline-legacy-phase-1.md))
         ├── [done] **G11**: Target taxonomy + config schema ([G11_target-taxonomy-config-schema.md](./G11_target-taxonomy-config-schema.md))
         ├── [done] **G12**: Plugin → .rulesync/ mapper ([G12_plugin-rulesync-mapper.md](./G12_plugin-rulesync-mapper.md))
         ├── [done] **G13**: Conversion pipeline + rulesync integration ([G13_conversion-pipeline-rulesync-integration.md](./G13_conversion-pipeline-rulesync-integration.md))

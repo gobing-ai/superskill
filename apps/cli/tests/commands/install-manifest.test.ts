@@ -1,9 +1,19 @@
 import { afterEach, describe, expect, it, mock, spyOn } from 'bun:test';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import {
+    existsSync,
+    mkdirSync,
+    mkdtempSync,
+    readFileSync,
+    realpathSync,
+    rmSync,
+    symlinkSync,
+    writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { Target } from '@gobing-ai/superskill-core';
 import { computeContentHash, installManifestPath, readInstallManifest } from '@gobing-ai/superskill-core';
+import type { ProcessExecutor, ProcessOptions } from '@gobing-ai/ts-runtime';
 import type { GenerateResult } from 'rulesync';
 import { executeInstall } from '../../src/commands/install';
 import { cliVersion } from '../../src/version';
@@ -466,6 +476,124 @@ describe('executeInstall provenance manifest', () => {
         }
     });
 
+    it('roots a project-scope native manifest at home when every receipt lives under $HOME', async () => {
+        const workspace = createTempWorkspace();
+        const fakeHome = mkdtempSync(join(tmpdir(), 'superskill-native-home-'));
+        process.env.HOME_DIR = fakeHome;
+        createPlugin(workspace, 'demo', '1.0.0');
+        const marketplacePath = writeMarketplace(workspace, 'demo', '1.0.0');
+        spyOn(process.stdout, 'write').mockImplementation(() => true);
+
+        try {
+            await executeInstall(
+                'demo',
+                ['claude'],
+                { marketplacePath, global: false, dryRun: false, verbose: false, outputRoot: workspace },
+                {
+                    runRulesync: async () => emptyRulesync(),
+                    runClaudeInstall: async () => {
+                        const homeCache = join(
+                            fakeHome,
+                            '.claude',
+                            'plugins',
+                            'cache',
+                            'superskill',
+                            'demo',
+                            'plugin.json',
+                        );
+                        mkdirSync(join(homeCache, '..'), { recursive: true });
+                        writeFileSync(homeCache, '{"home":true}\n');
+                    },
+                },
+            );
+
+            const manifest = readInstallManifest(installManifestPath(workspace, 'claude', 'demo'));
+            const homeRel = '.claude/plugins/cache/superskill/demo/plugin.json';
+            expect(manifest.installedRoot).toBe('home');
+            expect(manifest.installed.files[homeRel]).toBe(computeContentHash(readFileSync(join(fakeHome, homeRel))));
+            expect(Object.keys(manifest.installed.files)).toEqual([homeRel]);
+        } finally {
+            rmSync(fakeHome, { recursive: true, force: true });
+        }
+    });
+
+    it('records a home-rooted grok manifest when the reported path is realpath-distinct from a symlinked HOME_DIR', async () => {
+        const workspace = createTempWorkspace();
+        const realHome = mkdtempSync(join(tmpdir(), 'superskill-real-home-'));
+        const linkedHome = `${realHome}-link`;
+        symlinkSync(realHome, linkedHome);
+        process.env.HOME_DIR = linkedHome;
+        createPlugin(workspace, 'demo', '1.0.0');
+        const marketplacePath = writeMarketplace(workspace, 'demo', '1.0.0');
+        const grokPluginDir = join(realHome, '.grok', 'installed-plugins', 'demo');
+        const grokPluginFile = join(grokPluginDir, 'plugin.json');
+        const processExecutor: ProcessExecutor = {
+            run: (options: ProcessOptions) => {
+                const args = options.args ?? [];
+                return Promise.resolve({
+                    command: options.command,
+                    args,
+                    exitCode: 0,
+                    stdout: JSON.stringify([{ name: 'demo', path: realpathSync(grokPluginDir), status: 'installed' }]),
+                    stderr: '',
+                    durationMs: 0,
+                });
+            },
+            runStreaming: () => {
+                throw new Error('runStreaming is not used by install');
+            },
+        };
+        spyOn(process.stdout, 'write').mockImplementation(() => true);
+
+        try {
+            await executeInstall(
+                'demo',
+                ['grok'],
+                { marketplacePath, global: false, dryRun: false, verbose: false, outputRoot: workspace },
+                {
+                    runRulesync: async () => emptyRulesync(),
+                    processExecutor,
+                    runGrokInstall: async () => {
+                        mkdirSync(grokPluginDir, { recursive: true });
+                        writeFileSync(grokPluginFile, '{"grok":true}\n');
+                    },
+                },
+            );
+
+            const manifest = readInstallManifest(installManifestPath(workspace, 'grok', 'demo'));
+            expect(manifest.installedRoot).toBe('home');
+            expect(manifest.installed.files['.grok/installed-plugins/demo/plugin.json']).toBe(
+                computeContentHash(readFileSync(grokPluginFile)),
+            );
+        } finally {
+            rmSync(linkedHome, { force: true });
+            rmSync(realHome, { recursive: true, force: true });
+        }
+    });
+
+    it('still fails when a native target has no receipt under either the scope root or home', async () => {
+        const workspace = createTempWorkspace();
+        const fakeHome = mkdtempSync(join(tmpdir(), 'superskill-empty-home-'));
+        process.env.HOME_DIR = fakeHome;
+        createPlugin(workspace, 'demo');
+        const marketplacePath = writeMarketplace(workspace, 'demo');
+        spyOn(process.stdout, 'write').mockImplementation(() => true);
+
+        try {
+            await expect(
+                executeInstall(
+                    'demo',
+                    ['claude'],
+                    { marketplacePath, global: false, dryRun: false, verbose: false, outputRoot: workspace },
+                    { runRulesync: async () => emptyRulesync(), runClaudeInstall: async () => {} },
+                ),
+            ).rejects.toThrow(/did not resolve any installed files for plugin 'demo' target 'claude'/);
+            expect(existsSync(installManifestPath(workspace, 'claude', 'demo'))).toBe(false);
+        } finally {
+            rmSync(fakeHome, { recursive: true, force: true });
+        }
+    });
+
     it('includes plugin rules written for a target that has a rules directory', async () => {
         const workspace = createTempWorkspace();
         const pluginRoot = createPlugin(workspace, 'demo', '1.0.0');
@@ -486,5 +614,103 @@ describe('executeInstall provenance manifest', () => {
         expect(manifest.installed.files['.agents/rules/style.md']).toBe(
             computeContentHash(readFileSync(join(workspace, '.agents', 'rules', 'style.md'))),
         );
+    });
+
+    it('leaves a scope-rooted non-native manifest unscoped when a home cache tree also exists', async () => {
+        const workspace = createTempWorkspace();
+        const fakeHome = mkdtempSync(join(tmpdir(), 'superskill-codex-home-'));
+        process.env.HOME_DIR = fakeHome;
+        createPlugin(workspace, 'demo', '1.0.0');
+        const marketplacePath = writeMarketplace(workspace, 'demo', '1.0.0');
+        // A claude-shaped cache tree under $HOME that can never be a codex receipt:
+        // enumeratePluginOwnedDests derives codex dests from outputRoot, and the home fallback is
+        // gated to the native host targets. So this case pins the scope-root branch's shape
+        // (installedRoot stays unset — the M2 mutant), not a mixed-root precedence contest.
+        const homeCache = join(fakeHome, '.claude', 'plugins', 'cache', 'superskill', 'demo', 'plugin.json');
+        mkdirSync(join(homeCache, '..'), { recursive: true });
+        writeFileSync(homeCache, '{"home":true}\n');
+        const scopedSkill = seedInstalledSkill(workspace, 'demo');
+        spyOn(process.stdout, 'write').mockImplementation(() => true);
+
+        try {
+            await executeInstall(
+                'demo',
+                ['codex'],
+                { marketplacePath, global: false, dryRun: false, verbose: false, outputRoot: workspace },
+                { runRulesync: async () => ({ ...emptyRulesync(), skillsPaths: [scopedSkill] }) },
+            );
+
+            const manifest = readInstallManifest(installManifestPath(workspace, 'codex', 'demo'));
+            expect(manifest.installedRoot).toBeUndefined();
+            expect(manifest.installed.files['.agents/skills/demo-a/SKILL.md']).toBe(
+                computeContentHash(readFileSync(scopedSkill)),
+            );
+            // Baseline negative, structurally powerless for codex: no home-cache key can enter a
+            // codex snapshot (its receipts derive from outputRoot only). It pins that shape; the
+            // installedRoot assertion above is what certifies the precedence gate.
+            expect(Object.keys(manifest.installed.files).some((path) => path.includes('cache/superskill'))).toBe(false);
+        } finally {
+            rmSync(fakeHome, { recursive: true, force: true });
+        }
+    });
+
+    it('refuses a home-rooted inventory for a non-native target', async () => {
+        const workspace = createTempWorkspace();
+        const fakeHome = mkdtempSync(join(tmpdir(), 'superskill-codex-gate-home-'));
+        process.env.HOME_DIR = fakeHome;
+        createPlugin(workspace, 'demo', '1.0.0');
+        const marketplacePath = writeMarketplace(workspace, 'demo', '1.0.0');
+        // The only receipt is home-rooted and out of scope; the home fallback is gated to the
+        // native host targets, so codex must fail loud rather than adopt a home-rooted snapshot.
+        const homeSkill = join(fakeHome, '.agents', 'skills', 'demo-a', 'SKILL.md');
+        mkdirSync(join(homeSkill, '..'), { recursive: true });
+        writeFileSync(homeSkill, '# home skill\n');
+        spyOn(process.stdout, 'write').mockImplementation(() => true);
+
+        try {
+            await expect(
+                executeInstall(
+                    'demo',
+                    ['codex'],
+                    { marketplacePath, global: false, dryRun: false, verbose: false, outputRoot: workspace },
+                    { runRulesync: async () => ({ ...emptyRulesync(), skillsPaths: [homeSkill] }) },
+                ),
+            ).rejects.toThrow(/did not resolve any installed files for plugin 'demo' target 'codex'/);
+            expect(existsSync(installManifestPath(workspace, 'codex', 'demo'))).toBe(false);
+        } finally {
+            rmSync(fakeHome, { recursive: true, force: true });
+        }
+    });
+
+    it('raises the frozen inventory error when the scope root does not exist', async () => {
+        const workspace = createTempWorkspace();
+        // A fresh HOME_DIR keeps this install's claude dispatch away from the developer's real
+        // ~/.claude tree: the dispatch clears <home>/.claude/plugins/cache/<marketplace> before it
+        // probes for receipts, so an unisolated run deletes the operator's real superskill cache.
+        // The isolated home also cannot leak receipts into the case.
+        const previousHomeDir = process.env.HOME_DIR;
+        const fakeHome = mkdtempSync(join(tmpdir(), 'superskill-missing-scope-home-'));
+        process.env.HOME_DIR = fakeHome;
+        createPlugin(workspace, 'demo');
+        const marketplacePath = writeMarketplace(workspace, 'demo');
+        const missingRoot = join(workspace, 'missing-scope-root');
+        spyOn(process.stdout, 'write').mockImplementation(() => true);
+
+        try {
+            await expect(
+                executeInstall(
+                    'demo',
+                    ['claude'],
+                    { marketplacePath, global: false, dryRun: false, verbose: false, outputRoot: missingRoot },
+                    { runRulesync: async () => emptyRulesync(), runClaudeInstall: async () => {} },
+                ),
+            ).rejects.toThrow(/did not resolve any installed files for plugin 'demo' target 'claude'/);
+
+            expect(existsSync(installManifestPath(missingRoot, 'claude', 'demo'))).toBe(false);
+        } finally {
+            if (previousHomeDir === undefined) delete process.env.HOME_DIR;
+            else process.env.HOME_DIR = previousHomeDir;
+            rmSync(fakeHome, { recursive: true, force: true });
+        }
     });
 });
