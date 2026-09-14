@@ -4,7 +4,7 @@ name: Fix project-scope provenance inventory for native targets whose plugin con
 status: todo
 template: issue
 created_at: 2026-09-14T01:48:19.623Z
-updated_at: "2026-09-14T04:37:27.259Z"
+updated_at: "2026-09-14T05:18:16.179Z"
 
 feature_id: G1
 ---
@@ -60,6 +60,13 @@ Global scope (no `--no-global`) is unaffected in the symlink-free repro.
 - **AC4 (automated — R4)** — `fails the install when a requested target has no installed files` (target `codex`) still throws and writes no manifest; and a new `claude` case with no receipt file under either scopeRoot or home throws the same `did not resolve any installed files` error and writes no manifest.
 - **AC5 (automated — R2)** — In `packages/core/tests/operations/install-manifest.test.ts`, a manifest with `installedRoot: 'home'` round-trips through `writeInstallManifest` / `readInstallManifest`; any other `installedRoot` value (e.g. `'/etc'`) is rejected; a manifest without the field still validates.
 - **AC6 (no regression — R5)** — `drops out-of-scope HOME claude cache files and still writes an in-scope manifest` and every other existing case in `apps/cli/tests/commands/install-manifest.test.ts` pass unedited; `bun run lint`, `bun run test`, and `bun run build` are green with no skipped tests.
+
+```gherkin
+Scenario: Project-scope provenance inventory resolves native-target content under $HOME
+  Given a project-scope install with a symlink-free HOME
+  When the provenance inventory is built for the plugin target
+  Then every installed file resolves and provenance reports non-empty
+```
 
 ### Q&A
 

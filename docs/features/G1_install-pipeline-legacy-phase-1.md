@@ -6,7 +6,7 @@ status: backlog
 priority: P2
 tags: []
 created_at: "2026-08-01T02:03:55.572Z"
-updated_at: "2026-08-01T02:12:58.606Z"
+updated_at: "2026-09-14T05:17:45.882Z"
 ---
 
 # G1: Install pipeline (legacy Phase 1)
@@ -21,10 +21,15 @@ Phase 1 legacy group — target taxonomy, plugin→rulesync mapping, conversion 
 ```gherkin
 Feature: Install pipeline (legacy Phase 1)
 
-  Scenario: Basic acceptance
-    Given a precondition
-    When an action
-    Then an expected outcome
+  Scenario: Remote marketplace materialization survives binary and oversized assets
+    Given a remote --marketplace repo containing binary or oversized assets
+    When install cold-materializes the repo into the marketplace cache
+    Then acquisition completes without AcquisitionLimitError
+
+  Scenario: Project-scope provenance inventory resolves native-target content under $HOME
+    Given a project-scope install with a symlink-free HOME
+    When the provenance inventory is built for the plugin target
+    Then every installed file resolves and provenance reports non-empty
 ```
 
 ## Tasks

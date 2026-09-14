@@ -4,7 +4,7 @@ name: Fix remote marketplace materialization failing on binary and oversized rep
 status: todo
 template: issue
 created_at: 2026-09-14T01:08:36.536Z
-updated_at: "2026-09-14T04:37:24.723Z"
+updated_at: "2026-09-14T05:18:15.994Z"
 
 feature_id: G1
 ---
@@ -41,6 +41,13 @@ Remote `--marketplace` resolution (`resolveRemoteMarketplace`, `apps/cli/src/com
 - **AC2 (bytes, manual E2E — R2)** — Given the AC1 cache, then `understand-anything-plugin/packages/tree-sitter-swift-wasm/tree-sitter-swift.wasm` (3,825,127 B) has sha256 `0bbf7a0668f8f155addbcd8284880447dbe393b67b5eb09c7b042b02080d9498`, and every blob in the resolved tree is materialized (515/515 when reported; the upstream count may drift).
 - **AC3 (boundary, automated — R2, R3)** — `packages/core/tests/skills-ecosystem/fetch.test.ts` proves: a binary blob round-trips byte-for-byte; a blob declared at cap+1 is rejected with zero raw fetches and no dest file; a blob declared exactly at the cap is fetched and written; an undeclared-size blob streamed past the cap throws `AcquisitionLimitError` and leaves no partial file.
 - **AC4 (no regression, automated — R4)** — The existing SKILL.md / tree / download-manifest cap tests in `fetch.test.ts` pass unedited, and `bun run lint`, `bun run test`, and `bun run build` are green with no skipped tests.
+
+```gherkin
+Scenario: Remote marketplace materialization survives binary and oversized assets
+  Given a remote --marketplace repo containing binary or oversized assets
+  When install cold-materializes the repo into the marketplace cache
+  Then acquisition completes without AcquisitionLimitError
+```
 
 ### Q&A
 
