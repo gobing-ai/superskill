@@ -106,6 +106,14 @@ const MAX_CONCURRENT_FETCHES = 8;
 const MAX_TREE_JSON_BYTES = 16 * 1024 * 1024;
 const MAX_RAW_FILE_BYTES = 2 * 1024 * 1024;
 const MAX_DOWNLOAD_JSON_BYTES = 32 * 1024 * 1024;
+/**
+ * Per-blob cap for a materialized repository subtree. Deliberately larger than
+ * {@link MAX_RAW_FILE_BYTES}: that cap bounds text decoded into memory (SKILL.md), while a
+ * marketplace repository legitimately ships multi-MB binary assets (images, `.wasm`) whose size
+ * must not abort resolution. Still a bound (R9) — oversized blobs are rejected before download
+ * via the tree entry's `size` when present.
+ */
+export const MAX_MATERIALIZED_BLOB_BYTES = 64 * 1024 * 1024;
 
 /**
  * Map over `items` with at most `limit` in-flight workers (R9). Results keep input
@@ -158,6 +166,55 @@ async function readBodyBounded(response: Response, limitBytes: number, label: st
         }
     }
     return Buffer.concat(chunks.map((chunk) => Buffer.from(chunk))).toString('utf-8');
+}
+
+/**
+ * Stream a response body into `destPath` byte-for-byte under a hard byte cap (R9). Oversized
+ * payloads reject with {@link AcquisitionLimitError} and the partial destination file is removed.
+ * Unlike {@link readBodyBounded} this never decodes to text: repository blobs include binary
+ * assets (images, fonts, `.wasm`) that a UTF-8 round-trip would silently corrupt.
+ */
+async function writeBodyToFileBounded(
+    response: Response,
+    destPath: string,
+    limitBytes: number,
+    label: string,
+): Promise<void> {
+    const body = response.body;
+    if (!body) {
+        const buffer = Buffer.from(await response.arrayBuffer());
+        if (buffer.byteLength > limitBytes) {
+            throw new AcquisitionLimitError(`${label} exceeds the ${limitBytes}-byte read cap`);
+        }
+        await writeFile(destPath, buffer);
+        return;
+    }
+    const writer = Bun.file(destPath).writer();
+    const reader = body.getReader();
+    let total = 0;
+    try {
+        for (;;) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            if (value) {
+                total += value.byteLength;
+                if (total > limitBytes) {
+                    await reader.cancel().catch(() => {});
+                    throw new AcquisitionLimitError(`${label} exceeds the ${limitBytes}-byte read cap`);
+                }
+                writer.write(value);
+            }
+        }
+        await writer.end();
+    } catch (error) {
+        try {
+            await writer.end();
+        } catch {
+            // best-effort flush; the partial file is removed below regardless
+        }
+        await rm(destPath, { force: true }).catch(() => {});
+        throw error;
+    }
 }
 
 /** Info extracted from a GitHub repository URL. */
@@ -659,6 +716,12 @@ export async function materializeRepoSubdir(
     const token = options.getToken ? options.getToken() : null;
     await mapWithConcurrency(materializable, MAX_CONCURRENT_FETCHES, async (blob) => {
         const rel = blob.path.slice(prefix.length);
+        // R9: reject an oversized blob from tree metadata before spending the download.
+        if (blob.size !== undefined && blob.size > MAX_MATERIALIZED_BLOB_BYTES) {
+            throw new AcquisitionLimitError(
+                `blob ${blob.path} in ${ownerRepo} (${blob.size} bytes) exceeds the ${MAX_MATERIALIZED_BLOB_BYTES}-byte read cap`,
+            );
+        }
         const url = `https://raw.githubusercontent.com/${ownerRepo}/${tree.branch}/${blob.path}`;
         const headers: Record<string, string> = { 'User-Agent': 'superskill-core' };
         if (token) headers.Authorization = `Bearer ${token}`;
@@ -666,10 +729,9 @@ export async function materializeRepoSubdir(
         if (!res.ok) {
             throw new Error(`Failed to fetch ${url}: HTTP ${res.status}`);
         }
-        const text = await readBodyBounded(res, MAX_RAW_FILE_BYTES, `blob ${blob.path} in ${ownerRepo}`);
         const dest = join(destDir, rel);
         await mkdir(dirname(dest), { recursive: true });
-        await writeFile(dest, text);
+        await writeBodyToFileBounded(res, dest, MAX_MATERIALIZED_BLOB_BYTES, `blob ${blob.path} in ${ownerRepo}`);
     });
     return tree;
 }

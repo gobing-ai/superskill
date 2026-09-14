@@ -14,6 +14,7 @@ import {
     getSkillFolderHashFromTree,
     ghAuthTokenFromCli,
     isGitHubHttpsCloneUrl,
+    MAX_MATERIALIZED_BLOB_BYTES,
     MAX_MATERIALIZED_FILES,
     materializeRepoSubdir,
     parseGitHubRepoUrl,
@@ -690,6 +691,143 @@ describe('fetch.ts - materializeRepoSubdir (T2/R3 shared fetch primitive)', () =
             await rm(destDir, { recursive: true, force: true });
         }
     });
+
+    // Regression: materialization used to read every blob as text, so a binary asset
+    // (image/wasm) reached the cache UTF-8-mangled even when it fit the size cap.
+    it('materializes a binary blob byte-for-byte instead of UTF-8 decoded text', async () => {
+        const bytes = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x00, 0xc3, 0x28, 0xff, 0xfe, 0x00, 0x01]);
+        const tree = {
+            sha: 'abc',
+            branch: 'main',
+            tree: [{ path: 'skills/x/logo.png', type: 'blob' as const, sha: 'p1', size: bytes.byteLength }],
+        };
+        const fetchFn = (async (urlStr: string | URL | Request) => {
+            const url = String(urlStr);
+            if (url.includes('/git/trees/')) return new Response(JSON.stringify(tree), { status: 200 });
+            if (url.includes('raw.githubusercontent.com')) return new Response(bytes, { status: 200 });
+            return new Response('not found', { status: 404 });
+        }) as unknown as typeof fetch;
+
+        const destDir = await mkdtemp(join(tmpdir(), 'superskill-materialize-bin-'));
+        try {
+            await materializeRepoSubdir('owner/repo', 'skills', destDir, { fetchFn });
+            const written = new Uint8Array(readFileSync(join(destDir, 'x', 'logo.png')));
+            expect(Array.from(written)).toEqual(Array.from(bytes));
+        } finally {
+            await rm(destDir, { recursive: true, force: true });
+        }
+    });
+
+    // Residual-proof (R9): the declared-size precheck has both halves — at the cap the blob is
+    // fetched and written, one byte over is a terminal error and no download is attempted.
+    it('rejects a blob declared at the cap + 1 byte from tree metadata without fetching it', async () => {
+        const tree = {
+            sha: 'abc',
+            branch: 'main',
+            tree: [
+                {
+                    path: 'homepage/big.gif',
+                    type: 'blob' as const,
+                    sha: 'big',
+                    size: MAX_MATERIALIZED_BLOB_BYTES + 1,
+                },
+            ],
+        };
+        let rawFetches = 0;
+        const fetchFn = (async (urlStr: string | URL | Request) => {
+            const url = String(urlStr);
+            if (url.includes('/git/trees/')) return new Response(JSON.stringify(tree), { status: 200 });
+            if (url.includes('raw.githubusercontent.com')) rawFetches++;
+            return new Response('x', { status: 200 });
+        }) as unknown as typeof fetch;
+
+        const destDir = await mkdtemp(join(tmpdir(), 'superskill-materialize-big-'));
+        try {
+            const failure = await materializeRepoSubdir('owner/repo', '', destDir, { fetchFn }).catch((e) => e);
+            expect(failure).toBeInstanceOf(AcquisitionLimitError);
+            expect((failure as Error).message).toMatch(/blob homepage\/big\.gif in owner\/repo \(\d+ bytes\)/);
+            expect((failure as Error).message).toMatch(
+                new RegExp(`exceeds the ${MAX_MATERIALIZED_BLOB_BYTES}-byte read cap`),
+            );
+            expect(rawFetches).toBe(0);
+            expect(readdirSync(destDir)).toEqual([]);
+        } finally {
+            await rm(destDir, { recursive: true, force: true });
+        }
+    });
+
+    it('fetches a blob declared exactly at the materialization cap', async () => {
+        const tree = {
+            sha: 'abc',
+            branch: 'main',
+            tree: [
+                { path: 'homepage/exact.gif', type: 'blob' as const, sha: 'exact', size: MAX_MATERIALIZED_BLOB_BYTES },
+            ],
+        };
+        let rawFetches = 0;
+        const fetchFn = (async (urlStr: string | URL | Request) => {
+            const url = String(urlStr);
+            if (url.includes('/git/trees/')) return new Response(JSON.stringify(tree), { status: 200 });
+            if (url.includes('raw.githubusercontent.com')) {
+                rawFetches++;
+                return new Response('ok', { status: 200 });
+            }
+            return new Response('not found', { status: 404 });
+        }) as unknown as typeof fetch;
+
+        const destDir = await mkdtemp(join(tmpdir(), 'superskill-materialize-exact-'));
+        try {
+            await materializeRepoSubdir('owner/repo', '', destDir, { fetchFn });
+            expect(rawFetches).toBe(1);
+            expect(readFileSync(join(destDir, 'homepage', 'exact.gif'), 'utf-8')).toBe('ok');
+        } finally {
+            await rm(destDir, { recursive: true, force: true });
+        }
+    });
+
+    // Residual-proof (R9): with no declared size the streamed guard is the only bound — the
+    // partial file must be removed rather than left truncated in the cache.
+    it('caps a streamed blob with no declared tree size and removes the partial file', async () => {
+        const tree = {
+            sha: 'abc',
+            branch: 'main',
+            tree: [{ path: 'homepage/undeclared.gif', type: 'blob' as const, sha: 'u1' }],
+        };
+        const chunk = new Uint8Array(1024 * 1024);
+        let sent = 0;
+        const fetchFn = (async (urlStr: string | URL | Request) => {
+            const url = String(urlStr);
+            if (url.includes('/git/trees/')) return new Response(JSON.stringify(tree), { status: 200 });
+            if (url.includes('raw.githubusercontent.com')) {
+                return new Response(
+                    new ReadableStream({
+                        pull(controller) {
+                            if (sent > MAX_MATERIALIZED_BLOB_BYTES) {
+                                controller.close();
+                                return;
+                            }
+                            sent += chunk.byteLength;
+                            controller.enqueue(chunk);
+                        },
+                    }),
+                    { status: 200 },
+                );
+            }
+            return new Response('not found', { status: 404 });
+        }) as unknown as typeof fetch;
+
+        const destDir = await mkdtemp(join(tmpdir(), 'superskill-materialize-stream-'));
+        try {
+            await expect(materializeRepoSubdir('owner/repo', '', destDir, { fetchFn })).rejects.toThrow(
+                new RegExp(
+                    `blob homepage/undeclared\\.gif in owner/repo exceeds the ${MAX_MATERIALIZED_BLOB_BYTES}-byte read cap`,
+                ),
+            );
+            expect(existsSync(join(destDir, 'homepage', 'undeclared.gif'))).toBe(false);
+        } finally {
+            await rm(destDir, { recursive: true, force: true });
+        }
+    }, 20000);
 });
 
 describe('fetch.ts - bounded acquisition (R9/F9)', () => {
