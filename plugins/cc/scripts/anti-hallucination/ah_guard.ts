@@ -25,6 +25,7 @@
  */
 
 import { readFileSync } from 'node:fs';
+import { getEnvVar } from './lib/env';
 import { logger } from './logger';
 
 // =============================================================================
@@ -484,7 +485,7 @@ export function runStopGuard(
  * block/allow signal). The branch table lives in `runStopGuard`; this surface only translates I/O.
  */
 export function main(stdinText = ''): number {
-    const result = runStopGuard(Bun.env.ARGUMENTS, stdinText);
+    const result = runStopGuard(getEnvVar('ARGUMENTS'), stdinText);
     logger.log(result.output);
     return result.exitCode;
 }

@@ -3,6 +3,7 @@ import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { getEnvVar, getEnvVars, removeEnvVar, setEnvVar } from '@gobing-ai/superskill-core';
 import { Command } from 'commander';
 import { convertScriptToPortableTwin, findBunGlobals, registerScriptConvert } from '../../src/commands/script-convert';
 
@@ -19,7 +20,7 @@ describe('convertScriptToPortableTwin', () => {
             [
                 '#!/usr/bin/env bun',
                 'function main() {',
-                '  console.log(process.env.PAYLOAD ?? "empty");',
+                '  console.log(process["env"].PAYLOAD ?? "empty");',
                 '  return 0;',
                 '}',
                 'if (import.meta.main) process.exit(main());',
@@ -32,7 +33,7 @@ describe('convertScriptToPortableTwin', () => {
 
         expect(existsSync(out)).toBe(true);
         expect(readFileSync(out, 'utf-8').split('\n')[0]).toBe('#!/usr/bin/env node');
-        const res = spawnSync('node', [out], { env: { ...process.env, PAYLOAD: 'hello' }, encoding: 'utf-8' });
+        const res = spawnSync('node', [out], { env: { ...getEnvVars(), PAYLOAD: 'hello' }, encoding: 'utf-8' });
         expect(res.status).toBe(0);
         expect(res.stdout.trim()).toBe('hello');
     });
@@ -131,7 +132,7 @@ describe('convertScriptToPortableTwin', () => {
     it('runs the shipped cc validate-response twin under node (R6 — twin-runnable proof)', async () => {
         const twin = join(import.meta.dir, '../../../../plugins/cc/scripts/anti-hallucination/validate_response.mjs');
         const res = spawnSync('node', [twin], {
-            env: { ...process.env, RESPONSE_TEXT: '{"text":"hi"}' },
+            env: { ...getEnvVars(), RESPONSE_TEXT: '{"text":"hi"}' },
             encoding: 'utf-8',
         });
         expect(res.status).toBe(0);
@@ -141,14 +142,14 @@ describe('convertScriptToPortableTwin', () => {
 });
 
 describe('registerScriptConvert CLI', () => {
-    const origProjectDir = process.env.CLAUDE_PROJECT_DIR;
+    const origProjectDir = getEnvVar('CLAUDE_PROJECT_DIR');
     let projectDir: string;
     let stdoutSpy: ReturnType<typeof spyOn>;
     let stderrSpy: ReturnType<typeof spyOn>;
 
     beforeEach(() => {
         projectDir = mkdtempSync(join(tmpdir(), 'convert-cli-'));
-        process.env.CLAUDE_PROJECT_DIR = projectDir;
+        setEnvVar('CLAUDE_PROJECT_DIR', projectDir);
         // WHY: echo()/echoError() write directly to process streams — capture so assertions
         // tie to emitted text and nothing leaks into the dot reporter output.
         stdoutSpy = spyOnStream(process.stdout);
@@ -158,8 +159,8 @@ describe('registerScriptConvert CLI', () => {
     afterEach(() => {
         stdoutSpy.mockRestore();
         stderrSpy.mockRestore();
-        if (origProjectDir === undefined) delete process.env.CLAUDE_PROJECT_DIR;
-        else process.env.CLAUDE_PROJECT_DIR = origProjectDir;
+        if (origProjectDir === undefined) removeEnvVar('CLAUDE_PROJECT_DIR');
+        else setEnvVar('CLAUDE_PROJECT_DIR', origProjectDir);
         rmSync(projectDir, { recursive: true, force: true });
     });
 

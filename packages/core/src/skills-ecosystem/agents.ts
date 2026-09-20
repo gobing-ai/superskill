@@ -1,6 +1,7 @@
 import { existsSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
+import { getEnvVars } from '../env';
 import { TARGETS, type Target } from '../targets';
 
 /**
@@ -48,7 +49,7 @@ export function getTargetAgentConfig(
     target: Target,
     opts?: { homeDir?: string; env?: Record<string, string | undefined> },
 ): TargetAgentConfig {
-    const env = opts?.env ?? process.env;
+    const env = opts?.env ?? getEnvVars();
     const home = opts?.homeDir ?? homedir();
     const configHome = env.XDG_CONFIG_HOME?.trim() || join(home, '.config');
 

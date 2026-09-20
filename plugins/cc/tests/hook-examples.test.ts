@@ -2,6 +2,7 @@ import { describe, expect, it } from 'bun:test';
 import { existsSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { getEnvVars } from '../scripts/anti-hallucination/lib/env';
 
 const EXAMPLES_ROOT = join(import.meta.dir, '..', 'skills', 'cc-hooks', 'examples');
 
@@ -13,7 +14,7 @@ interface ExampleResult {
 
 async function runExampleRaw(script: string, input: string, env: Record<string, string> = {}): Promise<ExampleResult> {
     const proc = Bun.spawn([join(EXAMPLES_ROOT, script)], {
-        env: { ...process.env, ...env },
+        env: { ...getEnvVars(), ...env },
         stdin: 'pipe',
         stdout: 'pipe',
         stderr: 'pipe',

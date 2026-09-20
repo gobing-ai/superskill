@@ -2,6 +2,7 @@ import { describe, expect, it, spyOn } from 'bun:test';
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { getEnvVar, removeEnvVar, setEnvVar } from '@gobing-ai/superskill-core';
 import { Command } from 'commander';
 import { registerDoctor } from '../../src/commands/doctor';
 
@@ -40,10 +41,10 @@ describe('doctor command (task 0128 / R6)', () => {
         expect((await runDoctor(['--targets', 'codex'])).code).toBe(2);
 
         const home = mkdtempSync(join(tmpdir(), 'superskill-doctor-home-'));
-        const savedHome = process.env.HOME_DIR;
-        const savedSand = process.env.SAND_DATA;
-        process.env.HOME_DIR = home;
-        delete process.env.SAND_DATA;
+        const savedHome = getEnvVar('HOME_DIR');
+        const savedSand = getEnvVar('SAND_DATA');
+        setEnvVar('HOME_DIR', home);
+        removeEnvVar('SAND_DATA');
         try {
             expect((await runDoctor(['--targets', 'grok-bot'])).code).toBe(1);
             const sand = join(home, 'sand-data');
@@ -58,22 +59,22 @@ describe('doctor command (task 0128 / R6)', () => {
             expect(humanHealthy.code).toBe(0);
             expect(humanHealthy.output).toContain('OK');
         } finally {
-            if (savedHome === undefined) delete process.env.HOME_DIR;
-            else process.env.HOME_DIR = savedHome;
-            if (savedSand === undefined) delete process.env.SAND_DATA;
-            else process.env.SAND_DATA = savedSand;
-            if (savedSand === undefined) delete process.env.SAND_DATA;
-            else process.env.SAND_DATA = savedSand;
+            if (savedHome === undefined) removeEnvVar('HOME_DIR');
+            else setEnvVar('HOME_DIR', savedHome);
+            if (savedSand === undefined) removeEnvVar('SAND_DATA');
+            else setEnvVar('SAND_DATA', savedSand);
+            if (savedSand === undefined) removeEnvVar('SAND_DATA');
+            else setEnvVar('SAND_DATA', savedSand);
             rmSync(home, { recursive: true, force: true });
         }
     });
 
     it('reports issues for invalid workflows in the catalog', async () => {
         const home = mkdtempSync(join(tmpdir(), 'superskill-doctor-home2-'));
-        const savedHome = process.env.HOME_DIR;
-        const savedSand = process.env.SAND_DATA;
-        process.env.HOME_DIR = home;
-        delete process.env.SAND_DATA;
+        const savedHome = getEnvVar('HOME_DIR');
+        const savedSand = getEnvVar('SAND_DATA');
+        setEnvVar('HOME_DIR', home);
+        removeEnvVar('SAND_DATA');
         try {
             const sand = join(home, 'sand-data');
             mkdirSync(join(sand, 'workflows', 'broken'), { recursive: true });
@@ -87,20 +88,20 @@ describe('doctor command (task 0128 / R6)', () => {
             expect(human.code).toBe(1);
             expect(human.output).toContain('[frontmatter]');
         } finally {
-            if (savedHome === undefined) delete process.env.HOME_DIR;
-            else process.env.HOME_DIR = savedHome;
-            if (savedSand === undefined) delete process.env.SAND_DATA;
-            else process.env.SAND_DATA = savedSand;
+            if (savedHome === undefined) removeEnvVar('HOME_DIR');
+            else setEnvVar('HOME_DIR', savedHome);
+            if (savedSand === undefined) removeEnvVar('SAND_DATA');
+            else setEnvVar('SAND_DATA', savedSand);
             rmSync(home, { recursive: true, force: true });
         }
     });
 
     it('reports slash registry unknown with handoff guidance without changing exit semantics (task 0130)', async () => {
         const home = mkdtempSync(join(tmpdir(), 'superskill-doctor-home3-'));
-        const savedHome = process.env.HOME_DIR;
-        const savedSand = process.env.SAND_DATA;
-        process.env.HOME_DIR = home;
-        delete process.env.SAND_DATA;
+        const savedHome = getEnvVar('HOME_DIR');
+        const savedSand = getEnvVar('SAND_DATA');
+        setEnvVar('HOME_DIR', home);
+        removeEnvVar('SAND_DATA');
         try {
             const sand = join(home, 'sand-data');
             mkdirSync(sand, { recursive: true });
@@ -121,15 +122,15 @@ describe('doctor command (task 0128 / R6)', () => {
             expect(human.output).toContain('slash registry: unknown');
             expect(human.output).toContain('verified registration method');
             // Unresolved root still surfaces the caveat.
-            delete process.env.SAND_DATA;
-            process.env.HOME_DIR = join(home, 'missing-home');
+            removeEnvVar('SAND_DATA');
+            setEnvVar('HOME_DIR', join(home, 'missing-home'));
             const unresolved = await runDoctor(['--targets', 'grok-bot']);
             expect(unresolved.output).toContain('slash registry: unknown');
         } finally {
-            if (savedHome === undefined) delete process.env.HOME_DIR;
-            else process.env.HOME_DIR = savedHome;
-            if (savedSand === undefined) delete process.env.SAND_DATA;
-            else process.env.SAND_DATA = savedSand;
+            if (savedHome === undefined) removeEnvVar('HOME_DIR');
+            else setEnvVar('HOME_DIR', savedHome);
+            if (savedSand === undefined) removeEnvVar('SAND_DATA');
+            else setEnvVar('SAND_DATA', savedSand);
             rmSync(home, { recursive: true, force: true });
         }
     });

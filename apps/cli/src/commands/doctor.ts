@@ -1,4 +1,4 @@
-import { type GrokBotDoctorReport, inspectGrokBotTarget } from '@gobing-ai/superskill-core';
+import { type GrokBotDoctorReport, getEnvVar, inspectGrokBotTarget } from '@gobing-ai/superskill-core';
 import { echo } from '@gobing-ai/ts-utils';
 import type { Command } from 'commander';
 import { resolveHomeDir } from './install';
@@ -49,7 +49,7 @@ export function registerDoctor(program: Command): void {
                 process.exit(2);
             }
             const report = inspectGrokBotTarget({
-                sandData: process.env.SAND_DATA,
+                sandData: getEnvVar('SAND_DATA'),
                 homeDir: resolveHomeDir(),
             });
             if (options.json === true) {

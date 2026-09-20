@@ -3,7 +3,14 @@ import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { addSkills, cleanAndCreateDir, writeGlobalLock } from '@gobing-ai/superskill-core';
+import {
+    addSkills,
+    cleanAndCreateDir,
+    getEnvVar,
+    removeEnvVar,
+    setEnvVar,
+    writeGlobalLock,
+} from '@gobing-ai/superskill-core';
 import { Command } from 'commander';
 import {
     handleSkillAdd,
@@ -30,11 +37,11 @@ const HOME_OVERRIDE_VARS = [
 /** Run fn with an isolated temp HOME; restores every overridden env var afterwards. */
 async function withIsolatedHome(fn: (testHome: string) => Promise<void>): Promise<void> {
     const testHome = await mkdtemp(join(tmpdir(), 'cli-verbs-home-'));
-    const saved = new Map<string, string | undefined>(HOME_OVERRIDE_VARS.map((k) => [k, process.env[k]]));
-    process.env.HOME = testHome;
+    const saved = new Map<string, string | undefined>(HOME_OVERRIDE_VARS.map((k) => [k, getEnvVar(k)]));
+    setEnvVar('HOME', testHome);
     for (const key of HOME_OVERRIDE_VARS) {
         if (key !== 'HOME') {
-            delete process.env[key];
+            removeEnvVar(key);
         }
     }
     try {
@@ -42,9 +49,9 @@ async function withIsolatedHome(fn: (testHome: string) => Promise<void>): Promis
     } finally {
         for (const [key, value] of saved) {
             if (value === undefined) {
-                delete process.env[key];
+                removeEnvVar(key);
             } else {
-                process.env[key] = value;
+                setEnvVar(key, value);
             }
         }
         await rm(testHome, { recursive: true, force: true });

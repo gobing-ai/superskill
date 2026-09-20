@@ -4,10 +4,11 @@
  * and isRepoPrivate (fetch mocked — no network in tests).
  */
 import { afterEach, describe, expect, it } from 'bun:test';
+import { getEnvVar, removeEnvVar, setEnvVar } from '@gobing-ai/superskill-core';
 import { getGitHubHost, isGitHubHost } from '../../src/skills-ecosystem/github-host';
 import { isRepoPrivate, parseOwnerRepo, parseSource } from '../../src/skills-ecosystem/source-parser';
 
-const ORIGINAL_GH_HOST = process.env.GH_HOST;
+const ORIGINAL_GH_HOST = getEnvVar('GH_HOST');
 const originalFetch = globalThis.fetch;
 
 // Bun's fetch type carries a `preconnect` property; a bare lambda can't be
@@ -18,48 +19,48 @@ function stubFetch(impl: () => Promise<Response>): void {
 
 afterEach(() => {
     if (ORIGINAL_GH_HOST === undefined) {
-        delete process.env.GH_HOST;
+        removeEnvVar('GH_HOST');
     } else {
-        process.env.GH_HOST = ORIGINAL_GH_HOST;
+        setEnvVar('GH_HOST', ORIGINAL_GH_HOST);
     }
     globalThis.fetch = originalFetch;
 });
 
 describe('getGitHubHost', () => {
     it('defaults to github.com when GH_HOST is unset', () => {
-        delete process.env.GH_HOST;
+        removeEnvVar('GH_HOST');
         expect(getGitHubHost()).toBe('github.com');
     });
 
     it('returns the configured enterprise hostname', () => {
-        process.env.GH_HOST = 'github.example.com';
+        setEnvVar('GH_HOST', 'github.example.com');
         expect(getGitHubHost()).toBe('github.example.com');
         expect(isGitHubHost('GitHub.Example.COM')).toBe(true);
     });
 
     it('falls back to github.com for invalid GH_HOST values', () => {
         for (const bad of ['https://github.example.com', 'user:pass@host', 'host:8443', 'host/path', '   ']) {
-            process.env.GH_HOST = bad;
+            setEnvVar('GH_HOST', bad);
             expect(getGitHubHost()).toBe('github.com');
         }
     });
 
     it('falls back to github.com when GH_HOST cannot parse as a URL host', () => {
-        process.env.GH_HOST = 'host:notaport';
+        setEnvVar('GH_HOST', 'host:notaport');
         expect(getGitHubHost()).toBe('github.com');
     });
 });
 
 describe('parseSource with GH_HOST (GitHub Enterprise)', () => {
     it('treats shorthand as a generic git source on the enterprise host', () => {
-        process.env.GH_HOST = 'github.example.com';
+        setEnvVar('GH_HOST', 'github.example.com');
         const result = parseSource('owner/repo');
         expect(result.type).toBe('git');
         expect(result.url).toBe('https://github.example.com/owner/repo.git');
     });
 
     it('parses an enterprise tree URL into a git source with ref and subpath', () => {
-        process.env.GH_HOST = 'github.example.com';
+        setEnvVar('GH_HOST', 'github.example.com');
         const result = parseSource('https://github.example.com/owner/repo/tree/main/skills/my-skill');
         expect(result.type).toBe('git');
         expect(result.url).toBe('https://github.example.com/owner/repo.git');
@@ -68,7 +69,7 @@ describe('parseSource with GH_HOST (GitHub Enterprise)', () => {
     });
 
     it('parses an enterprise repo URL with a fragment ref', () => {
-        process.env.GH_HOST = 'github.example.com';
+        setEnvVar('GH_HOST', 'github.example.com');
         const result = parseSource('https://github.example.com/owner/repo.git#release');
         expect(result.type).toBe('git');
         expect(result.url).toBe('https://github.example.com/owner/repo.git');
@@ -81,7 +82,7 @@ describe('parseSource with GH_HOST (GitHub Enterprise)', () => {
         // constructor normalizes `..` away before segments are extracted, so
         // no unsafe subpath can reach the clone path. Asserts the traversal
         // leaves no subpath at all — not merely that one half is absent.
-        process.env.GH_HOST = 'github.example.com';
+        setEnvVar('GH_HOST', 'github.example.com');
         const result = parseSource('https://github.example.com/owner/repo/tree/main/../../etc');
         expect(result.type).toBe('git');
         expect(result.url).toBe('https://github.example.com/owner/repo.git');
@@ -89,7 +90,7 @@ describe('parseSource with GH_HOST (GitHub Enterprise)', () => {
     });
 
     it('does not reroute github.com URLs through the enterprise path', () => {
-        process.env.GH_HOST = 'github.example.com';
+        setEnvVar('GH_HOST', 'github.example.com');
         const result = parseSource('https://github.com/owner/repo');
         expect(result.type).toBe('github');
         expect(result.url).toBe('https://github.com/owner/repo.git');

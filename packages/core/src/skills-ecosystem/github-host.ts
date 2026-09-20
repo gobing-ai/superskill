@@ -7,6 +7,8 @@
  * Copyright (c) 2026 Vercel, Inc. MIT License — see vendors/skills/LICENSE.
  */
 
+import { getEnvVar } from '../env';
+
 const DEFAULT_GITHUB_HOST = 'github.com';
 
 /**
@@ -17,7 +19,7 @@ const DEFAULT_GITHUB_HOST = 'github.com';
  * clone URLs.
  */
 export function getGitHubHost(): string {
-    const configuredHost = process.env.GH_HOST?.trim();
+    const configuredHost = getEnvVar('GH_HOST')?.trim();
     if (!configuredHost) {
         return DEFAULT_GITHUB_HOST;
     }

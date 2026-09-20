@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, spyOn } from 'bun:test';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { MAGENT_LAYER_FILES, stageMagentsFromDir, TARGETS } from '@gobing-ai/superskill-core';
+import { MAGENT_LAYER_FILES, removeEnvVar, setEnvVar, stageMagentsFromDir, TARGETS } from '@gobing-ai/superskill-core';
 import { emitMagents, emitPluginRules, type InstallOptions } from '../../src/commands/install';
 
 const originalCwd = process.cwd();
@@ -184,10 +184,10 @@ describe('emitMagents', () => {
         // Global mode resolves ~/.claude for claude target. Point HOME at our temp root.
         const fakeHome = join(root, 'home');
         mkdirSync(fakeHome, { recursive: true });
-        process.env.HOME_DIR = fakeHome;
+        setEnvVar('HOME_DIR', fakeHome);
         emitMagents('demo', ['claude'], outputDir, join(root, 'unused'), opts({ global: true }));
         expect(existsSync(join(fakeHome, '.claude', 'CLAUDE.md'))).toBe(true);
-        delete process.env.HOME_DIR;
+        removeEnvVar('HOME_DIR');
     });
 });
 
@@ -252,9 +252,9 @@ describe('emitPluginRules', () => {
         writeFileSync(join(pluginRoot, 'rules', 'safety.md'), '# global safety\n');
         const fakeHome = join(root, 'home');
         mkdirSync(fakeHome, { recursive: true });
-        process.env.HOME_DIR = fakeHome;
+        setEnvVar('HOME_DIR', fakeHome);
         emitPluginRules(pluginRoot, ['claude'], join(root, 'unused'), opts({ global: true }));
         expect(existsSync(join(fakeHome, '.claude', '.claude', 'rules', 'safety.md'))).toBe(true);
-        delete process.env.HOME_DIR;
+        removeEnvVar('HOME_DIR');
     });
 });

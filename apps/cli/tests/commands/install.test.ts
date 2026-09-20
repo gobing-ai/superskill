@@ -11,6 +11,7 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { getEnvVar, removeEnvVar, setEnvVar } from '@gobing-ai/superskill-core';
 import type { ProcessExecutor, ProcessOptions } from '@gobing-ai/ts-runtime';
 import { Command } from 'commander';
 import {
@@ -29,7 +30,7 @@ import {
 import { cliVersion } from '../../src/version';
 
 const originalCwd = process.cwd();
-const savedHomeDir = process.env.HOME_DIR;
+const savedHomeDir = getEnvVar('HOME_DIR');
 let tempDir: string | undefined;
 let fileLevelHome: string | undefined;
 
@@ -60,13 +61,13 @@ function createPlugin(root: string, pluginName = 'demo'): string {
 // marketplace-metadata cases run it without their own HOME_DIR override.
 beforeEach(() => {
     fileLevelHome = mkdtempSync(join(tmpdir(), 'superskill-install-test-home-'));
-    process.env.HOME_DIR = fileLevelHome;
+    setEnvVar('HOME_DIR', fileLevelHome);
 });
 
 afterEach(() => {
     process.chdir(originalCwd);
-    if (savedHomeDir === undefined) delete process.env.HOME_DIR;
-    else process.env.HOME_DIR = savedHomeDir;
+    if (savedHomeDir === undefined) removeEnvVar('HOME_DIR');
+    else setEnvVar('HOME_DIR', savedHomeDir);
     if (tempDir) {
         rmSync(tempDir, { recursive: true, force: true });
         tempDir = undefined;
@@ -1122,8 +1123,8 @@ describe('resolveRemoteMarketplace — cache + offline contract (R4/R9/AC6)', ()
     const savedHomeDir = process.env.HOME_DIR;
 
     afterEach(() => {
-        if (savedHomeDir === undefined) delete process.env.HOME_DIR;
-        else process.env.HOME_DIR = savedHomeDir;
+        if (savedHomeDir === undefined) removeEnvVar('HOME_DIR');
+        else setEnvVar('HOME_DIR', savedHomeDir);
     });
 
     it('resolves a warm cache offline with zero network calls', async () => {
@@ -1147,7 +1148,7 @@ describe('resolveRemoteMarketplace — cache + offline contract (R4/R9/AC6)', ()
 
     it('fails a cold cache with an actionable error naming the fetch target and cache path', async () => {
         const home = createTempWorkspace();
-        process.env.HOME_DIR = home;
+        setEnvVar('HOME_DIR', home);
         const cacheRoot = join(marketplaceCacheRoot(), 'gobing-ai', 'superskill', 'HEAD');
 
         await expect(
@@ -1168,7 +1169,7 @@ describe('resolveRemoteMarketplace — cache + offline contract (R4/R9/AC6)', ()
 
     it('asserts every locator-derived cache path segment before any mkdir (AC6)', async () => {
         const home = createTempWorkspace();
-        process.env.HOME_DIR = home;
+        setEnvVar('HOME_DIR', home);
         await expect(resolveRemoteMarketplace('gobing-ai/..')).rejects.toThrow('single path segment');
         // `..` is URL-normalized away by the URL parser and never reaches a cache path segment.
         await expect(resolveRemoteMarketplace('https://github.com/../repo')).rejects.toThrow(
@@ -1216,7 +1217,7 @@ describe('resolveRemoteMarketplace — cache + offline contract (R4/R9/AC6)', ()
         ['owner/repo shorthand', 'gobing-ai/superskill'],
     ])('resolves the cc plugin into the cache from a %s (AC2)', async (_label, locator) => {
         const home = createTempWorkspace();
-        process.env.HOME_DIR = home;
+        setEnvVar('HOME_DIR', home);
 
         const resolved = await resolveRemoteMarketplace(locator, { fetchFn: ccRepoFetch() });
         const cacheRoot = resolved.root;
@@ -1235,7 +1236,7 @@ describe('resolveRemoteMarketplace — cache + offline contract (R4/R9/AC6)', ()
     // or staging dir behind — otherwise the warm-cache check accepts the partial tree forever.
     it('leaves no cache root or staging leftovers when a cold-cache fetch fails', async () => {
         const home = createTempWorkspace();
-        process.env.HOME_DIR = home;
+        setEnvVar('HOME_DIR', home);
         const cacheParent = join(marketplaceCacheRoot(), 'gobing-ai', 'superskill');
 
         await expect(
@@ -1257,7 +1258,7 @@ describe('resolveRemoteMarketplace — cache + offline contract (R4/R9/AC6)', ()
     // and the partial tree used to poison the warm-cache check. A retry must see a cold cache.
     it('a mid-materialization failure leaves no manifest behind for the warm-cache check', async () => {
         const home = createTempWorkspace();
-        process.env.HOME_DIR = home;
+        setEnvVar('HOME_DIR', home);
         const cacheRoot = join(marketplaceCacheRoot(), 'gobing-ai', 'superskill', 'HEAD');
 
         const full = ccRepoFetch();
@@ -1287,7 +1288,7 @@ describe('resolveRemoteMarketplace — cache + offline contract (R4/R9/AC6)', ()
     // re-materialize once, and resolve the plugin instead of dying on 'Plugin root not found'.
     it('executeInstall re-materializes a poisoned warm cache whose plugin dir is missing', async () => {
         const home = createTempWorkspace();
-        process.env.HOME_DIR = home;
+        setEnvVar('HOME_DIR', home);
         const cacheRoot = join(marketplaceCacheRoot(), 'gobing-ai', 'superskill', 'HEAD');
         mkdirSync(join(cacheRoot, '.claude-plugin'), { recursive: true });
         writeFileSync(

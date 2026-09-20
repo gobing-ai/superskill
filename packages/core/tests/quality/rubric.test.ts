@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'bun:test';
 import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { getEnvVar, removeEnvVar, setEnvVar } from '@gobing-ai/superskill-core';
 import { loadRubric, RubricError, RubricSchema } from '../../src/quality/rubric';
 import { type ContentType, DIMENSION_REGISTRY } from '../../src/quality/types';
 
@@ -8,7 +9,7 @@ import { type ContentType, DIMENSION_REGISTRY } from '../../src/quality/types';
 
 /** Temp dir for test fixtures (invalid rubrics + user-override simulation). */
 const TMP_DIR = join(import.meta.dir, '..', '..', 'tmp-rubric-tests');
-const ORIGINAL_HOME = process.env.HOME;
+const ORIGINAL_HOME = getEnvVar('HOME');
 
 /** Valid rubric used as a base for mutation in validation tests. */
 const validAgentRubric = `version: 1
@@ -80,15 +81,15 @@ function writeFixture(name: string, content: string): string {
 beforeAll(() => {
     rmSync(TMP_DIR, { recursive: true, force: true });
     mkdirSync(TMP_DIR, { recursive: true });
-    process.env.HOME = TMP_DIR;
+    setEnvVar('HOME', TMP_DIR);
 });
 
 afterAll(() => {
     rmSync(TMP_DIR, { recursive: true, force: true });
     if (ORIGINAL_HOME === undefined) {
-        delete process.env.HOME;
+        removeEnvVar('HOME');
     } else {
-        process.env.HOME = ORIGINAL_HOME;
+        setEnvVar('HOME', ORIGINAL_HOME);
     }
 });
 
@@ -138,7 +139,7 @@ describe('resolution order', () => {
     });
 
     it('explicit path wins over user override', () => {
-        const homeDir = process.env.HOME ?? TMP_DIR;
+        const homeDir = getEnvVar('HOME') ?? TMP_DIR;
         expect(homeDir).toBe(TMP_DIR);
         const userRubricDir = join(homeDir, '.superskill', 'rubrics');
         const userRubricPath = join(userRubricDir, 'agent.yaml');
@@ -175,7 +176,7 @@ describe('resolution order', () => {
     });
 
     it('user override wins over package default', () => {
-        const homeDir = process.env.HOME ?? TMP_DIR;
+        const homeDir = getEnvVar('HOME') ?? TMP_DIR;
         expect(homeDir).toBe(TMP_DIR);
         const userRubricDir = join(homeDir, '.superskill', 'rubrics');
         const userRubricPath = join(userRubricDir, 'agent.yaml');

@@ -1,5 +1,6 @@
 import { readdir, readFile, stat } from 'node:fs/promises';
 import { basename, dirname, join, relative, resolve } from 'node:path';
+import { getEnvVar } from '../env';
 import { parseSkillFrontmatter } from './frontmatter';
 import { readLocalLock } from './locks';
 import { sanitizeMetadata } from './sanitize';
@@ -62,7 +63,7 @@ export interface DiscoverSkillsOptions {
  * Check if internal skills should be installed (INSTALL_INTERNAL_SKILLS=1 or true).
  */
 export function shouldInstallInternalSkills(env?: Record<string, string | undefined>): boolean {
-    const val = env?.INSTALL_INTERNAL_SKILLS ?? process.env.INSTALL_INTERNAL_SKILLS;
+    const val = env?.INSTALL_INTERNAL_SKILLS ?? getEnvVar('INSTALL_INTERNAL_SKILLS');
     return val === '1' || val === 'true';
 }
 

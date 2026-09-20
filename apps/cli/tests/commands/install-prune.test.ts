@@ -2,10 +2,11 @@ import { afterEach, beforeEach, describe, expect, it, spyOn } from 'bun:test';
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { getEnvVar, removeEnvVar, setEnvVar } from '@gobing-ai/superskill-core';
 import { executeInstall } from '../../src/commands/install';
 
 const originalCwd = process.cwd();
-const savedHomeDir = process.env.HOME_DIR;
+const savedHomeDir = getEnvVar('HOME_DIR');
 let tempDir: string | undefined;
 let fileLevelHome: string | undefined;
 
@@ -66,14 +67,14 @@ let stdoutSpy: ReturnType<typeof spyOn> | undefined;
 // native-dests case runs it without any HOME_DIR override.
 beforeEach(() => {
     fileLevelHome = mkdtempSync(join(tmpdir(), 'superskill-prune-test-home-'));
-    process.env.HOME_DIR = fileLevelHome;
+    setEnvVar('HOME_DIR', fileLevelHome);
 });
 
 afterEach(() => {
     stdoutSpy?.mockRestore();
     process.chdir(originalCwd);
-    if (savedHomeDir === undefined) delete process.env.HOME_DIR;
-    else process.env.HOME_DIR = savedHomeDir;
+    if (savedHomeDir === undefined) removeEnvVar('HOME_DIR');
+    else setEnvVar('HOME_DIR', savedHomeDir);
     if (tempDir) {
         rmSync(tempDir, { recursive: true, force: true });
         tempDir = undefined;

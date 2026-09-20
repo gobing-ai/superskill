@@ -3,6 +3,7 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { parse } from 'yaml';
 import { z } from 'zod';
+import { getEnvVar } from '../env';
 import { type ContentType, DIMENSION_REGISTRY } from './types';
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -102,7 +103,7 @@ function resolveRubricContent(type: ContentType, opts?: LoadRubricOptions): stri
     }
 
     // 2. User override (~/.superskill/rubrics/<type>.yaml)
-    const homeDir = process.env.HOME || homedir();
+    const homeDir = getEnvVar('HOME') || homedir();
     const userPath = join(homeDir, '.superskill', 'rubrics', `${type}.yaml`);
     if (existsSync(userPath)) {
         return readFileSync(userPath, 'utf-8');

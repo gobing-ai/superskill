@@ -26,6 +26,7 @@ import {
     createPostInstallRegistry,
     emitGrokBotInstall,
     type GrokBotSource,
+    getEnvVar,
     getGitHubToken,
     INSTALL_TARGETS,
     type InstallManifestV1,
@@ -2378,7 +2379,7 @@ function writeInstallProvenance(args: {
  * rulesync wrote to.)
  */
 export function resolveHomeDir(): string {
-    return process.env.HOME_DIR ?? homedir();
+    return getEnvVar('HOME_DIR') ?? homedir();
 }
 
 /** Count skill directories (dirs containing `SKILL.md`) under `skillsDir`. */

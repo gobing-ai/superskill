@@ -13,6 +13,7 @@
  */
 
 import { readPipedStdin, verifyAntiHallucinationProtocol } from './ah_guard';
+import { getEnvVar } from './lib/env';
 import { logger } from './logger';
 
 interface ValidationResult {
@@ -47,7 +48,7 @@ export async function readStdinText(
 }
 
 export async function main(): Promise<number> {
-    const responseText = process.env.RESPONSE_TEXT ?? (await readStdinText());
+    const responseText = getEnvVar('RESPONSE_TEXT') ?? (await readStdinText());
     const result = validateResponseText(responseText);
 
     logger.log(JSON.stringify(result));

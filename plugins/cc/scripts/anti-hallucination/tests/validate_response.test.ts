@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
 import { join } from 'node:path';
+import { getEnvVar, setEnvVar } from '../lib/env';
 import { isGlobalSilent, setGlobalSilent } from '../logger';
 import { main, readStdinText, validateResponseText } from '../validate_response';
 
@@ -98,50 +99,54 @@ describe('main', () => {
     });
 
     it('returns 0 when RESPONSE_TEXT is empty', async () => {
-        const originalResponseText = Bun.env.RESPONSE_TEXT;
-        Bun.env.RESPONSE_TEXT = '';
+        const originalResponseText = getEnvVar('RESPONSE_TEXT');
+        setEnvVar('RESPONSE_TEXT', '');
 
         try {
             expect(await main()).toBe(0);
         } finally {
             if (originalResponseText === undefined) {
-                Bun.env.RESPONSE_TEXT = undefined;
+                setEnvVar('RESPONSE_TEXT', undefined);
             } else {
-                Bun.env.RESPONSE_TEXT = originalResponseText;
+                setEnvVar('RESPONSE_TEXT', originalResponseText);
             }
         }
     });
 
     it('returns 1 when RESPONSE_TEXT fails validation', async () => {
-        const originalResponseText = Bun.env.RESPONSE_TEXT;
-        Bun.env.RESPONSE_TEXT =
-            'The API method is getUser() which returns a user object and was introduced in version 2.0.';
+        const originalResponseText = getEnvVar('RESPONSE_TEXT');
+        setEnvVar(
+            'RESPONSE_TEXT',
+            'The API method is getUser() which returns a user object and was introduced in version 2.0.',
+        );
 
         try {
             expect(await main()).toBe(1);
         } finally {
             if (originalResponseText === undefined) {
-                Bun.env.RESPONSE_TEXT = undefined;
+                setEnvVar('RESPONSE_TEXT', undefined);
             } else {
-                Bun.env.RESPONSE_TEXT = originalResponseText;
+                setEnvVar('RESPONSE_TEXT', originalResponseText);
             }
         }
     });
 
     it('returns 0 when RESPONSE_TEXT passes validation', async () => {
-        const originalResponseText = Bun.env.RESPONSE_TEXT;
-        Bun.env.RESPONSE_TEXT =
+        const originalResponseText = getEnvVar('RESPONSE_TEXT');
+        setEnvVar(
+            'RESPONSE_TEXT',
             'According to the official documentation at https://api.example.com, ' +
-            'the method is getUser(id: string): User. ' +
-            '**Confidence**: HIGH. Source: https://api.example.com/docs';
+                'the method is getUser(id: string): User. ' +
+                '**Confidence**: HIGH. Source: https://api.example.com/docs',
+        );
 
         try {
             expect(await main()).toBe(0);
         } finally {
             if (originalResponseText === undefined) {
-                Bun.env.RESPONSE_TEXT = undefined;
+                setEnvVar('RESPONSE_TEXT', undefined);
             } else {
-                Bun.env.RESPONSE_TEXT = originalResponseText;
+                setEnvVar('RESPONSE_TEXT', originalResponseText);
             }
         }
     });

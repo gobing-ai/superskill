@@ -1,6 +1,7 @@
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
+import { getEnvVar } from '@gobing-ai/superskill-core';
 import { echo, echoError } from '@gobing-ai/ts-utils';
 import type { Command } from 'commander';
 import { assertScriptLocator } from './script-path';
@@ -15,7 +16,7 @@ const NODE_SHEBANG = '#!/usr/bin/env node';
  */
 const BUN_GLOBAL_NODE_EQUIVALENTS: Record<string, string> = {
     argv: 'process.argv.slice(2)',
-    env: 'process.env',
+    env: 'an env record (the global process environment)',
     file: 'node:fs (readFileSync / createReadStream)',
     write: 'node:fs (writeFileSync)',
     spawn: 'node:child_process (spawn)',
@@ -157,7 +158,7 @@ export function registerScriptConvert(program: Command, ci?: { exit(code: number
                 echoError((err as Error).message);
                 exitFn(1);
             }
-            const projectRoot = process.env.CLAUDE_PROJECT_DIR ?? process.cwd();
+            const projectRoot = getEnvVar('CLAUDE_PROJECT_DIR') ?? process.cwd();
             const src = join(projectRoot, 'plugins', plugin, 'scripts', rel);
             if (!existsSync(src)) {
                 echoError(`Source not found: plugins/${plugin}/scripts/${rel}`);

@@ -12,6 +12,7 @@ import {
 } from 'node:fs';
 import { join } from 'node:path';
 import type { RulesyncOptions, Target } from '@gobing-ai/superskill-core';
+import { getEnvVar, removeEnvVar, setEnvVar } from '@gobing-ai/superskill-core';
 import { executeInstall } from '../../src/commands/install';
 
 const FIXTURE_DIR = join(import.meta.dir, '..', 'fixtures', 'plugin-min');
@@ -413,11 +414,11 @@ describe('executeInstall', () => {
     it('R3 (task 0072): antigravity-cli global install lands at ~/.gemini/antigravity-cli/skills/', async () => {
         const { marketplacePath } = setupPluginDir();
         // Isolate rulesync's getHomeDirectory() from the real $HOME so global writes land in
-        // a sandbox; rulesync reads process.env.HOME_DIR first, falling back to os.homedir().
+        // a sandbox; rulesync reads HOME_DIR through the env gateway first, falling back to os.homedir().
         const fakeHome = join(tmpDir, 'fake-home-agy');
         mkdirSync(fakeHome, { recursive: true });
-        const origHomeDir = process.env.HOME_DIR;
-        process.env.HOME_DIR = fakeHome;
+        const origHomeDir = getEnvVar('HOME_DIR');
+        setEnvVar('HOME_DIR', fakeHome);
         try {
             await executeInstall('demo', ['antigravity-cli'], {
                 marketplacePath,
@@ -426,8 +427,8 @@ describe('executeInstall', () => {
                 verbose: false,
             });
         } finally {
-            if (origHomeDir === undefined) delete process.env.HOME_DIR;
-            else process.env.HOME_DIR = origHomeDir;
+            if (origHomeDir === undefined) removeEnvVar('HOME_DIR');
+            else setEnvVar('HOME_DIR', origHomeDir);
         }
 
         // antigravity-cli global reldir: .gemini/antigravity-cli/skills (verified against
@@ -442,8 +443,8 @@ describe('executeInstall', () => {
         const { marketplacePath } = setupPluginDir();
         const fakeHome = join(tmpDir, 'fake-home-ide');
         mkdirSync(fakeHome, { recursive: true });
-        const origHomeDir = process.env.HOME_DIR;
-        process.env.HOME_DIR = fakeHome;
+        const origHomeDir = getEnvVar('HOME_DIR');
+        setEnvVar('HOME_DIR', fakeHome);
         try {
             await executeInstall('demo', ['antigravity-ide'], {
                 marketplacePath,
@@ -452,8 +453,8 @@ describe('executeInstall', () => {
                 verbose: false,
             });
         } finally {
-            if (origHomeDir === undefined) delete process.env.HOME_DIR;
-            else process.env.HOME_DIR = origHomeDir;
+            if (origHomeDir === undefined) removeEnvVar('HOME_DIR');
+            else setEnvVar('HOME_DIR', origHomeDir);
         }
 
         // antigravity-ide global reldir: .gemini/config/skills (verified against
@@ -483,8 +484,8 @@ describe('executeInstall', () => {
         const { marketplacePath } = setupPluginDir();
         const fakeHome = join(tmpDir, 'fake-home-codex');
         mkdirSync(fakeHome, { recursive: true });
-        const origHomeDir = process.env.HOME_DIR;
-        process.env.HOME_DIR = fakeHome;
+        const origHomeDir = getEnvVar('HOME_DIR');
+        setEnvVar('HOME_DIR', fakeHome);
         try {
             await executeInstall('demo', ['codex', 'pi'], {
                 marketplacePath,
@@ -493,8 +494,8 @@ describe('executeInstall', () => {
                 verbose: false,
             });
         } finally {
-            if (origHomeDir === undefined) delete process.env.HOME_DIR;
-            else process.env.HOME_DIR = origHomeDir;
+            if (origHomeDir === undefined) removeEnvVar('HOME_DIR');
+            else setEnvVar('HOME_DIR', origHomeDir);
         }
 
         // codex/pi share codexcli → global reldir .agents/skills. (omp no longer uses this
@@ -512,8 +513,8 @@ describe('executeInstall', () => {
         const { marketplacePath } = setupPluginDir();
         const fakeHome = join(tmpDir, 'fake-home-verbose');
         mkdirSync(fakeHome, { recursive: true });
-        const origHomeDir = process.env.HOME_DIR;
-        process.env.HOME_DIR = fakeHome;
+        const origHomeDir = getEnvVar('HOME_DIR');
+        setEnvVar('HOME_DIR', fakeHome);
 
         // Capture stdout into a string buffer.
         const chunks: string[] = [];
@@ -540,8 +541,8 @@ describe('executeInstall', () => {
             );
         } finally {
             process.stdout.write = origWrite;
-            if (origHomeDir === undefined) delete process.env.HOME_DIR;
-            else process.env.HOME_DIR = origHomeDir;
+            if (origHomeDir === undefined) removeEnvVar('HOME_DIR');
+            else setEnvVar('HOME_DIR', origHomeDir);
         }
         const output = chunks.join('');
         // Two semantically distinct kinds of line both start with the per-target prefix in
@@ -580,8 +581,8 @@ describe('executeInstall', () => {
         const { marketplacePath } = setupPluginDir();
         const fakeHome = join(tmpDir, 'fake-home-quiet');
         mkdirSync(fakeHome, { recursive: true });
-        const origHomeDir = process.env.HOME_DIR;
-        process.env.HOME_DIR = fakeHome;
+        const origHomeDir = getEnvVar('HOME_DIR');
+        setEnvVar('HOME_DIR', fakeHome);
 
         const chunks: string[] = [];
         const origWrite = process.stdout.write.bind(process.stdout);
@@ -607,8 +608,8 @@ describe('executeInstall', () => {
             );
         } finally {
             process.stdout.write = origWrite;
-            if (origHomeDir === undefined) delete process.env.HOME_DIR;
-            else process.env.HOME_DIR = origHomeDir;
+            if (origHomeDir === undefined) removeEnvVar('HOME_DIR');
+            else setEnvVar('HOME_DIR', origHomeDir);
         }
 
         const output = chunks.join('');
@@ -636,8 +637,8 @@ describe('executeInstall', () => {
         const { marketplacePath } = setupPluginDir();
         const fakeHome = join(tmpDir, 'fake-home-actualcount');
         mkdirSync(fakeHome, { recursive: true });
-        const origHomeDir = process.env.HOME_DIR;
-        process.env.HOME_DIR = fakeHome;
+        const origHomeDir = getEnvVar('HOME_DIR');
+        setEnvVar('HOME_DIR', fakeHome);
 
         const chunks: string[] = [];
         const origWrite = process.stdout.write.bind(process.stdout);
@@ -663,8 +664,8 @@ describe('executeInstall', () => {
             });
         } finally {
             process.stdout.write = origWrite;
-            if (origHomeDir === undefined) delete process.env.HOME_DIR;
-            else process.env.HOME_DIR = origHomeDir;
+            if (origHomeDir === undefined) removeEnvVar('HOME_DIR');
+            else setEnvVar('HOME_DIR', origHomeDir);
         }
 
         const output = chunks.join('');

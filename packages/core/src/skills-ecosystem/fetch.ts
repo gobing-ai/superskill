@@ -2,6 +2,7 @@ import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join, normalize, resolve, sep } from 'node:path';
 import { NodeProcessExecutor, type ProcessExecutor } from '@gobing-ai/ts-runtime';
+import { getEnvVar, getEnvVars } from '../env';
 import { parseSkillFrontmatter } from './frontmatter';
 import { isGitHubHost } from './github-host';
 import { computeStructuredContentHash } from './locks';
@@ -247,7 +248,7 @@ export async function getGitHubToken(
     env?: Record<string, string | undefined>,
     ghAuthToken?: () => Promise<string | null>,
 ): Promise<string | null> {
-    const environ = env ?? process.env;
+    const environ = env ?? getEnvVars();
     if (environ.GITHUB_TOKEN?.trim()) return environ.GITHUB_TOKEN.trim();
     if (environ.GH_TOKEN?.trim()) return environ.GH_TOKEN.trim();
     return ghAuthToken ? ghAuthToken() : null;
@@ -611,7 +612,7 @@ export async function tryBlobInstall(
         try {
             const [owner, repo] = source.split('/');
             if (!owner || !repo) return null;
-            const downloadBase = process.env.SKILLS_DOWNLOAD_URL?.trim() || DEFAULT_DOWNLOAD_BASE_URL;
+            const downloadBase = getEnvVar('SKILLS_DOWNLOAD_URL')?.trim() || DEFAULT_DOWNLOAD_BASE_URL;
             const url = `${downloadBase}/api/download/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/${encodeURIComponent(skill.slug)}`;
             const res = await fetchFn(url);
             if (!res.ok) return null;
@@ -817,7 +818,7 @@ export async function cloneRepo(
     const timeoutMs = options?.timeoutMs ?? DEFAULT_CLONE_TIMEOUT_MS;
     const cloneFlags = ref ? ['clone', '--depth', '1', '--branch', ref] : ['clone', '--depth', '1'];
     const gitEnv: Record<string, string> = {
-        ...(process.env as Record<string, string>),
+        ...(getEnvVars() as Record<string, string>),
         GIT_TERMINAL_PROMPT: '0',
         GIT_ALLOW_PROTOCOL: ALLOWED_GIT_PROTOCOLS,
         GIT_LFS_SKIP_SMUDGE: '1',
@@ -864,7 +865,7 @@ export async function cloneRepo(
                     ['-c', 'filter.lfs.required=false', ...cloneFlags, '--', repo.sshUrl, sshDir],
                     {
                         ...gitEnv,
-                        GIT_SSH_COMMAND: process.env.GIT_SSH_COMMAND ?? 'ssh -o BatchMode=yes',
+                        GIT_SSH_COMMAND: getEnvVar('GIT_SSH_COMMAND') ?? 'ssh -o BatchMode=yes',
                     },
                     timeoutMs,
                 );

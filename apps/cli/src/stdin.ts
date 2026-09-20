@@ -15,6 +15,8 @@
  * genuine idleness may end the read.
  */
 
+import { getEnvVars } from '@gobing-ai/superskill-core';
+
 /** Default idle budget, in ms, for the first stdin byte and between chunks. */
 export const DEFAULT_STDIN_TIMEOUT_MS = 250;
 
@@ -23,7 +25,7 @@ export const DEFAULT_STDIN_TIMEOUT_MS = 250;
  * host with unusual piping latency can be tuned without a code change. Non-numeric or
  * non-positive values fall back to {@link DEFAULT_STDIN_TIMEOUT_MS}.
  */
-export function resolveStdinTimeoutMs(env: NodeJS.ProcessEnv = process.env): number {
+export function resolveStdinTimeoutMs(env: NodeJS.ProcessEnv = getEnvVars()): number {
     const parsed = Number.parseInt(env.SUPERSKILL_STDIN_TIMEOUT_MS ?? '', 10);
     return Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_STDIN_TIMEOUT_MS;
 }

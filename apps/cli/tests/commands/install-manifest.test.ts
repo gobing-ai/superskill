@@ -13,14 +13,21 @@ import * as os from 'node:os';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { Target } from '@gobing-ai/superskill-core';
-import { computeContentHash, installManifestPath, readInstallManifest } from '@gobing-ai/superskill-core';
+import {
+    computeContentHash,
+    getEnvVar,
+    installManifestPath,
+    readInstallManifest,
+    removeEnvVar,
+    setEnvVar,
+} from '@gobing-ai/superskill-core';
 import type { ProcessExecutor, ProcessOptions } from '@gobing-ai/ts-runtime';
 import type { GenerateResult } from 'rulesync';
 import { executeInstall } from '../../src/commands/install';
 import { cliVersion } from '../../src/version';
 
 const originalCwd = process.cwd();
-const savedHomeDir = process.env.HOME_DIR;
+const savedHomeDir = getEnvVar('HOME_DIR');
 const savedFetch = globalThis.fetch;
 let tempDir: string | undefined;
 let fileLevelHome: string | undefined;
@@ -91,14 +98,14 @@ function seedInstalledSkill(scopeRoot: string, plugin: string): string {
 // HOME_DIR themselves overwrite this default for their own duration.
 beforeEach(() => {
     fileLevelHome = mkdtempSync(join(tmpdir(), 'superskill-manifest-home-'));
-    process.env.HOME_DIR = fileLevelHome;
+    setEnvVar('HOME_DIR', fileLevelHome);
 });
 
 afterEach(() => {
     mock.restore();
     globalThis.fetch = savedFetch;
-    if (savedHomeDir === undefined) delete process.env.HOME_DIR;
-    else process.env.HOME_DIR = savedHomeDir;
+    if (savedHomeDir === undefined) removeEnvVar('HOME_DIR');
+    else setEnvVar('HOME_DIR', savedHomeDir);
     process.chdir(originalCwd);
     if (tempDir) {
         rmSync(tempDir, { recursive: true, force: true });
@@ -366,7 +373,7 @@ describe('executeInstall provenance manifest', () => {
 
     it('records the remote tree SHA and verbatim marketplace locator on a cold-cache install', async () => {
         const workspace = createTempWorkspace();
-        process.env.HOME_DIR = workspace;
+        setEnvVar('HOME_DIR', workspace);
         seedInstalledSkill(workspace, 'demo');
         spyOn(process.stdout, 'write').mockImplementation(() => true);
 
@@ -450,7 +457,7 @@ describe('executeInstall provenance manifest', () => {
     it('drops out-of-scope HOME claude cache files and still writes an in-scope manifest', async () => {
         const workspace = createTempWorkspace();
         const fakeHome = mkdtempSync(join(tmpdir(), 'superskill-claude-home-'));
-        process.env.HOME_DIR = fakeHome;
+        setEnvVar('HOME_DIR', fakeHome);
         createPlugin(workspace, 'demo', '1.0.0');
         const marketplacePath = writeMarketplace(workspace, 'demo', '1.0.0');
         const scopedDest = join(workspace, '.claude', 'plugins', 'demo', 'plugin.json');
@@ -494,7 +501,7 @@ describe('executeInstall provenance manifest', () => {
     it('roots a project-scope native manifest at home when every receipt lives under $HOME', async () => {
         const workspace = createTempWorkspace();
         const fakeHome = mkdtempSync(join(tmpdir(), 'superskill-native-home-'));
-        process.env.HOME_DIR = fakeHome;
+        setEnvVar('HOME_DIR', fakeHome);
         createPlugin(workspace, 'demo', '1.0.0');
         const marketplacePath = writeMarketplace(workspace, 'demo', '1.0.0');
         spyOn(process.stdout, 'write').mockImplementation(() => true);
@@ -537,7 +544,7 @@ describe('executeInstall provenance manifest', () => {
         const realHome = mkdtempSync(join(tmpdir(), 'superskill-real-home-'));
         const linkedHome = `${realHome}-link`;
         symlinkSync(realHome, linkedHome);
-        process.env.HOME_DIR = linkedHome;
+        setEnvVar('HOME_DIR', linkedHome);
         createPlugin(workspace, 'demo', '1.0.0');
         const marketplacePath = writeMarketplace(workspace, 'demo', '1.0.0');
         const grokPluginDir = join(realHome, '.grok', 'installed-plugins', 'demo');
@@ -589,7 +596,7 @@ describe('executeInstall provenance manifest', () => {
     it('still fails when a native target has no receipt under either the scope root or home', async () => {
         const workspace = createTempWorkspace();
         const fakeHome = mkdtempSync(join(tmpdir(), 'superskill-empty-home-'));
-        process.env.HOME_DIR = fakeHome;
+        setEnvVar('HOME_DIR', fakeHome);
         createPlugin(workspace, 'demo');
         const marketplacePath = writeMarketplace(workspace, 'demo');
         spyOn(process.stdout, 'write').mockImplementation(() => true);
@@ -634,7 +641,7 @@ describe('executeInstall provenance manifest', () => {
     it('leaves a scope-rooted non-native manifest unscoped when a home cache tree also exists', async () => {
         const workspace = createTempWorkspace();
         const fakeHome = mkdtempSync(join(tmpdir(), 'superskill-codex-home-'));
-        process.env.HOME_DIR = fakeHome;
+        setEnvVar('HOME_DIR', fakeHome);
         createPlugin(workspace, 'demo', '1.0.0');
         const marketplacePath = writeMarketplace(workspace, 'demo', '1.0.0');
         // A claude-shaped cache tree under $HOME that can never be a codex receipt:
@@ -672,7 +679,7 @@ describe('executeInstall provenance manifest', () => {
     it('refuses a home-rooted inventory for a non-native target', async () => {
         const workspace = createTempWorkspace();
         const fakeHome = mkdtempSync(join(tmpdir(), 'superskill-codex-gate-home-'));
-        process.env.HOME_DIR = fakeHome;
+        setEnvVar('HOME_DIR', fakeHome);
         createPlugin(workspace, 'demo', '1.0.0');
         const marketplacePath = writeMarketplace(workspace, 'demo', '1.0.0');
         // The only receipt is home-rooted and out of scope; the home fallback is gated to the
@@ -703,9 +710,9 @@ describe('executeInstall provenance manifest', () => {
         // ~/.claude tree: the dispatch clears <home>/.claude/plugins/cache/<marketplace> before it
         // probes for receipts, so an unisolated run deletes the operator's real superskill cache.
         // The isolated home also cannot leak receipts into the case.
-        const previousHomeDir = process.env.HOME_DIR;
+        const previousHomeDir = getEnvVar('HOME_DIR');
         const fakeHome = mkdtempSync(join(tmpdir(), 'superskill-missing-scope-home-'));
-        process.env.HOME_DIR = fakeHome;
+        setEnvVar('HOME_DIR', fakeHome);
         createPlugin(workspace, 'demo');
         const marketplacePath = writeMarketplace(workspace, 'demo');
         const missingRoot = join(workspace, 'missing-scope-root');
@@ -723,8 +730,8 @@ describe('executeInstall provenance manifest', () => {
 
             expect(existsSync(installManifestPath(missingRoot, 'claude', 'demo'))).toBe(false);
         } finally {
-            if (previousHomeDir === undefined) delete process.env.HOME_DIR;
-            else process.env.HOME_DIR = previousHomeDir;
+            if (previousHomeDir === undefined) removeEnvVar('HOME_DIR');
+            else setEnvVar('HOME_DIR', previousHomeDir);
             rmSync(fakeHome, { recursive: true, force: true });
         }
     });
@@ -732,7 +739,7 @@ describe('executeInstall provenance manifest', () => {
     it('writes a home-rooted omp manifest from the cache tree when the host writes no registry (task 0141 R1/R2)', async () => {
         const workspace = createTempWorkspace();
         const ompHome = mkdtempSync(join(tmpdir(), 'superskill-omp-home-'));
-        process.env.HOME_DIR = ompHome;
+        setEnvVar('HOME_DIR', ompHome);
         createPlugin(workspace, 'demo', '1.0.0');
         const marketplacePath = writeMarketplace(workspace, 'demo', '1.0.0');
         // omp 18.1.19 materializes the payload under its cache tree and writes no
@@ -767,7 +774,7 @@ describe('executeInstall provenance manifest', () => {
     it('still resolves omp receipts through the registry installPath when installed_plugins.json carries the key (task 0141 R2 unchanged)', async () => {
         const workspace = createTempWorkspace();
         const ompHome = mkdtempSync(join(tmpdir(), 'superskill-omp-reg-home-'));
-        process.env.HOME_DIR = ompHome;
+        setEnvVar('HOME_DIR', ompHome);
         createPlugin(workspace, 'demo', '1.0.0');
         const marketplacePath = writeMarketplace(workspace, 'demo', '1.0.0');
         const registryInstallPath = join(ompHome, 'registry-cache', 'demo');
@@ -812,7 +819,7 @@ describe('executeInstall provenance manifest', () => {
     it('throws the frozen error, writes no manifest, and names the consulted roots when omp leaves neither registry nor cache tree (task 0141 R1/R4)', async () => {
         const workspace = createTempWorkspace();
         const ompHome = mkdtempSync(join(tmpdir(), 'superskill-omp-empty-home-'));
-        process.env.HOME_DIR = ompHome;
+        setEnvVar('HOME_DIR', ompHome);
         createPlugin(workspace, 'demo');
         const marketplacePath = writeMarketplace(workspace, 'demo');
         const stdout = spyOn(process.stdout, 'write').mockImplementation(() => true);
@@ -846,8 +853,8 @@ describe('executeInstall provenance manifest', () => {
         const workspace = createTempWorkspace();
         const resolvedHome = mkdtempSync(join(tmpdir(), 'superskill-omp-homedir-'));
         const realHome = mkdtempSync(join(tmpdir(), 'superskill-omp-realhome-'));
-        process.env.HOME_DIR = resolvedHome;
-        // Bun's os.homedir() ignores mid-process process.env.HOME mutations (probed), so the
+        setEnvVar('HOME_DIR', resolvedHome);
+        // Bun's os.homedir() ignores mid-process HOME mutations through the env record (probed), so the
         // divergent real home is simulated with the module spy — same seam, Bun-compatible.
         const homedirSpy = spyOn(os, 'homedir').mockImplementation(() => realHome);
         createPlugin(workspace, 'demo', '1.0.0');

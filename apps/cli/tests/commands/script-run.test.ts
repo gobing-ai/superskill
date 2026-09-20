@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, mock, spyOn } from 'bun:test';
+import { removeEnvVar, setEnvVar } from '@gobing-ai/superskill-core';
 import { Command } from 'commander';
 import { isGlobalSilent, setGlobalSilent } from '../../../../plugins/cc/scripts/anti-hallucination/logger';
 import { main as sourceMain } from '../../../../plugins/cc/scripts/anti-hallucination/validate_response';
@@ -49,7 +50,7 @@ function capture(plugin: string, scriptId: string, input: { stdinText?: string; 
 
 afterEach(() => {
     mock.restore();
-    delete Bun.env.RESPONSE_TEXT;
+    removeEnvVar('RESPONSE_TEXT');
 });
 
 describe('script run — registration', () => {
@@ -208,9 +209,9 @@ describe('cc/validate-response — parity with the source script (AC3)', () => {
      * exit code AND stdout bytes. Any output drift fails CI here, not an agent in the field.
      */
     async function captureSource(text: string): Promise<{ code: number; out: string }> {
-        // Write via Bun.env, not process.env: main() reads Bun.env, and a prior file may have
-        // reassigned process.env wholesale (splitting the alias) — see install-omp-helpers.
-        Bun.env.RESPONSE_TEXT = text;
+        // Write through the env gateway, not a direct record write: main() reads getEnvVar,
+        // and a prior file may have reassigned the env record wholesale (splitting the alias) — see install-omp-helpers.
+        setEnvVar('RESPONSE_TEXT', text);
         const logs: string[] = [];
         const origLog = console.log;
         // The plugin's own tests toggle logger.setGlobalSilent — a leaked `true` would silence
@@ -225,7 +226,7 @@ describe('cc/validate-response — parity with the source script (AC3)', () => {
         } finally {
             console.log = origLog;
             setGlobalSilent(priorSilent);
-            delete Bun.env.RESPONSE_TEXT;
+            removeEnvVar('RESPONSE_TEXT');
         }
     }
 

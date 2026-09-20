@@ -2,6 +2,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { mkdir, readdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { dirname, join, relative } from 'node:path';
+import { getEnvVars } from '../env';
 
 /** Default filename for project-scoped local skills lock files. */
 export const LOCAL_LOCK_FILE_NAME = 'skills-lock.json';
@@ -84,7 +85,7 @@ export function getLocalLockPath(cwd?: string): string {
  * Path to global skills lock file ($XDG_STATE_HOME/skills/.skill-lock.json or ~/.agents/.skill-lock.json).
  */
 export function getGlobalLockPath(env?: Record<string, string | undefined>, homeDir?: string): string {
-    const environ = env ?? process.env;
+    const environ = env ?? getEnvVars();
     const xdgStateHome = environ.XDG_STATE_HOME?.trim();
     if (xdgStateHome) {
         return join(xdgStateHome, 'skills', GLOBAL_LOCK_FILE_NAME);

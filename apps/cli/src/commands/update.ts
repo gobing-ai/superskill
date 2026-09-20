@@ -8,6 +8,8 @@ import {
     checkSkills,
     compareBundledVersion,
     compareMarketplaceManifest,
+    getEnvVar,
+    getEnvVars,
     getGlobalLockPath,
     getLocalLockPath,
     type InstallTarget,
@@ -182,7 +184,7 @@ export async function executeUpdate(
     let skillNamesArg: string[] | undefined;
     let skillsActive = true;
     if (name !== undefined) {
-        const scopeLock = options.global ? await readGlobalLock(process.env, homeDir) : await readLocalLock(skillCwd);
+        const scopeLock = options.global ? await readGlobalLock(getEnvVars(), homeDir) : await readLocalLock(skillCwd);
         const matchesSkill = sanitizeName(name) in scopeLock.skills;
         const matchesPlugin = knownPlugins.includes(name);
         const scopeLabel = options.global ? 'global' : 'project';
@@ -193,7 +195,7 @@ export async function executeUpdate(
             );
         }
         if (!matchesSkill && !matchesPlugin) {
-            const lockPath = options.global ? getGlobalLockPath(process.env, homeDir) : getLocalLockPath(skillCwd);
+            const lockPath = options.global ? getGlobalLockPath(getEnvVars(), homeDir) : getLocalLockPath(skillCwd);
             throw new Error(
                 `no plugin or skill named '${name}' in the ${scopeLabel} scope ` +
                     `(manifests: ${join(resolve(scopeRoot), '.superskill', 'manifests')}; skills lock: ${lockPath})`,
@@ -314,7 +316,7 @@ export async function executeUpdate(
             global: options.global,
             cwd: skillCwd,
             homeDir,
-            env: process.env,
+            env: getEnvVars(),
             ...(dependencies.fetchFn ? { fetchFn: dependencies.fetchFn } : {}),
         });
         skillCheckRows = check.rows;
@@ -396,7 +398,7 @@ export async function executeUpdate(
                     global: options.global,
                     cwd: skillCwd,
                     homeDir,
-                    env: process.env,
+                    env: getEnvVars(),
                     precheck: staleCheckRows,
                     ...(dependencies.fetchFn ? { fetchFn: dependencies.fetchFn } : {}),
                 },
@@ -790,5 +792,5 @@ function utf8Sort(a: string, b: string): number {
 }
 
 function resolveHomeDir(): string {
-    return process.env.HOME_DIR ?? homedir();
+    return getEnvVar('HOME_DIR') ?? homedir();
 }

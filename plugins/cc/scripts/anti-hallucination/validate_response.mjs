@@ -170,6 +170,12 @@ function readPipedStdin(idleMs = 250) {
 }
 if (false) {}
 
+// plugins/cc/scripts/anti-hallucination/lib/env.ts
+function getEnvVar2(name, fallback) {
+  const raw = process.env[name];
+  return raw === undefined ? fallback : raw;
+}
+
 // plugins/cc/scripts/anti-hallucination/logger.ts
 var globalSilent = false;
 var logger2 = {
@@ -203,7 +209,7 @@ async function readStdinText(readStdin = readPipedStdin, isTty = Boolean(process
   }
 }
 async function main() {
-  const responseText = process.env.RESPONSE_TEXT ?? await readStdinText();
+  const responseText = getEnvVar2("RESPONSE_TEXT") ?? await readStdinText();
   const result = validateResponseText(responseText);
   logger2.log(JSON.stringify(result));
   return result.ok ? 0 : 1;

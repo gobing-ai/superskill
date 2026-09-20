@@ -1,6 +1,7 @@
 import { existsSync } from 'node:fs';
 import { readdir } from 'node:fs/promises';
 import { resolve } from 'node:path';
+import { getEnvVars } from '../env';
 import { TARGETS, type Target } from '../targets';
 import { discoverSkills, type Skill } from './discovery';
 import { emitSkillForTargets, removeSkillFromTargets, resolveSkillsToRemove } from './emit';
@@ -120,7 +121,7 @@ async function addResolvedSkills(
     const global = options.global ?? false;
     const cwd = options.cwd || process.cwd();
     const homeDir = options.homeDir;
-    const env = options.env ?? process.env;
+    const env = options.env ?? getEnvVars();
     const targetAgents = options.targets ?? [...TARGETS];
     const { parsed, lockSource, lockSkillPath } = resolvedSource;
     const isLocal = parsed.type === 'local';
@@ -393,7 +394,7 @@ export interface ListSkillsResult {
 export async function listSkills(options: ListSkillsOptions = {}): Promise<ListSkillsResult> {
     const global = options.global ?? false;
     const cwd = options.cwd || process.cwd();
-    const env = options.env ?? process.env;
+    const env = options.env ?? getEnvVars();
     const homeDir = options.homeDir;
 
     const items: ListedSkillItem[] = [];
@@ -486,7 +487,7 @@ export async function removeSkills(names: string[], options: RemoveSkillsOptions
     const global = options.global ?? false;
     const cwd = options.cwd || process.cwd();
     const homeDir = options.homeDir;
-    const env = options.env ?? process.env;
+    const env = options.env ?? getEnvVars();
     const targets = options.targets ?? [...TARGETS];
 
     // R3/F3: remove is a read-modify-write over the lock; hold the per-scope mutation
@@ -621,7 +622,7 @@ export interface CheckSkillsResult {
 export async function updateSkills(names?: string[], options: UpdateSkillsOptions = {}): Promise<UpdateSkillsResult> {
     const global = options.global ?? false;
     const cwd = options.cwd || process.cwd();
-    const env = options.env ?? process.env;
+    const env = options.env ?? getEnvVars();
 
     const lock = global ? await readGlobalLock(env, options.homeDir) : await readLocalLock(cwd);
     if (lock.warning) {
@@ -764,7 +765,7 @@ export async function updateSkills(names?: string[], options: UpdateSkillsOption
 export async function checkSkills(names?: string[], options: UpdateSkillsOptions = {}): Promise<CheckSkillsResult> {
     const global = options.global ?? false;
     const cwd = options.cwd || process.cwd();
-    const env = options.env ?? process.env;
+    const env = options.env ?? getEnvVars();
 
     const lock = global ? await readGlobalLock(env, options.homeDir) : await readLocalLock(cwd);
     if (lock.warning) {

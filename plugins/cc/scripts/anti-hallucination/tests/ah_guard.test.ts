@@ -13,6 +13,7 @@ import {
     resolveStopContext,
     verifyAntiHallucinationProtocol,
 } from '../ah_guard';
+import { getEnvVar, setEnvVar } from '../lib/env';
 import { isGlobalSilent, setGlobalSilent } from '../logger';
 
 describe('extractLastAssistantMessage', () => {
@@ -406,48 +407,51 @@ describe('main', () => {
     });
 
     it('returns 0 for invalid JSON hook payloads', () => {
-        const originalArguments = Bun.env.ARGUMENTS;
-        Bun.env.ARGUMENTS = 'invalid json';
+        const originalArguments = getEnvVar('ARGUMENTS');
+        setEnvVar('ARGUMENTS', 'invalid json');
 
         try {
             expect(main()).toBe(0);
         } finally {
             if (originalArguments === undefined) {
-                Bun.env.ARGUMENTS = undefined;
+                setEnvVar('ARGUMENTS', undefined);
             } else {
-                Bun.env.ARGUMENTS = originalArguments;
+                setEnvVar('ARGUMENTS', originalArguments);
             }
         }
     });
 
     it('returns 0 when ARGUMENTS is empty', () => {
-        const originalArguments = Bun.env.ARGUMENTS;
-        Bun.env.ARGUMENTS = '';
+        const originalArguments = getEnvVar('ARGUMENTS');
+        setEnvVar('ARGUMENTS', '');
 
         try {
             expect(main()).toBe(0);
         } finally {
             if (originalArguments === undefined) {
-                Bun.env.ARGUMENTS = undefined;
+                setEnvVar('ARGUMENTS', undefined);
             } else {
-                Bun.env.ARGUMENTS = originalArguments;
+                setEnvVar('ARGUMENTS', originalArguments);
             }
         }
     });
 
     it('returns 0 when there is no content to verify', () => {
-        const originalArguments = Bun.env.ARGUMENTS;
-        Bun.env.ARGUMENTS = JSON.stringify({
-            messages: [{ role: 'user', content: 'hello' }],
-        });
+        const originalArguments = getEnvVar('ARGUMENTS');
+        setEnvVar(
+            'ARGUMENTS',
+            JSON.stringify({
+                messages: [{ role: 'user', content: 'hello' }],
+            }),
+        );
 
         try {
             expect(main()).toBe(0);
         } finally {
             if (originalArguments === undefined) {
-                Bun.env.ARGUMENTS = undefined;
+                setEnvVar('ARGUMENTS', undefined);
             } else {
-                Bun.env.ARGUMENTS = originalArguments;
+                setEnvVar('ARGUMENTS', originalArguments);
             }
         }
     });
@@ -457,49 +461,55 @@ describe('main', () => {
         // `decision:"block"` + `reason` JSON that main() writes, not on exit 2 (which would
         // discard that JSON and surface stderr as a "blocking error"). Exit 1 is a non-blocking
         // error and could never block a Stop.
-        const originalArguments = Bun.env.ARGUMENTS;
-        Bun.env.ARGUMENTS = JSON.stringify({
-            messages: [
-                {
-                    role: 'assistant',
-                    content:
-                        'The API method is getUser() which returns a user object and was introduced in version 2.0.',
-                },
-            ],
-        });
+        const originalArguments = getEnvVar('ARGUMENTS');
+        setEnvVar(
+            'ARGUMENTS',
+            JSON.stringify({
+                messages: [
+                    {
+                        role: 'assistant',
+                        content:
+                            'The API method is getUser() which returns a user object and was introduced in version 2.0.',
+                    },
+                ],
+            }),
+        );
 
         try {
             expect(main()).toBe(0);
         } finally {
             if (originalArguments === undefined) {
-                Bun.env.ARGUMENTS = undefined;
+                setEnvVar('ARGUMENTS', undefined);
             } else {
-                Bun.env.ARGUMENTS = originalArguments;
+                setEnvVar('ARGUMENTS', originalArguments);
             }
         }
     });
 
     it('returns 0 for compliant externally sourced claims', () => {
-        const originalArguments = Bun.env.ARGUMENTS;
-        Bun.env.ARGUMENTS = JSON.stringify({
-            messages: [
-                {
-                    role: 'assistant',
-                    content:
-                        'According to the official documentation at https://api.example.com, ' +
-                        'the method is getUser(id: string): User. ' +
-                        '**Confidence**: HIGH. Source: https://api.example.com/docs',
-                },
-            ],
-        });
+        const originalArguments = getEnvVar('ARGUMENTS');
+        setEnvVar(
+            'ARGUMENTS',
+            JSON.stringify({
+                messages: [
+                    {
+                        role: 'assistant',
+                        content:
+                            'According to the official documentation at https://api.example.com, ' +
+                            'the method is getUser(id: string): User. ' +
+                            '**Confidence**: HIGH. Source: https://api.example.com/docs',
+                    },
+                ],
+            }),
+        );
 
         try {
             expect(main()).toBe(0);
         } finally {
             if (originalArguments === undefined) {
-                Bun.env.ARGUMENTS = undefined;
+                setEnvVar('ARGUMENTS', undefined);
             } else {
-                Bun.env.ARGUMENTS = originalArguments;
+                setEnvVar('ARGUMENTS', originalArguments);
             }
         }
     });

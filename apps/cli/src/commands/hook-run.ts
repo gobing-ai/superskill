@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { getEnvVar, getEnvVars } from '@gobing-ai/superskill-core';
 import { NodeProcessExecutor, type ProcessExecutor } from '@gobing-ai/ts-runtime';
 import { echo, echoError } from '@gobing-ai/ts-utils';
 import type { Command } from 'commander';
@@ -106,7 +107,7 @@ export async function resolveSpurTaskOwnership(
     cwd: string,
     executor: ProcessExecutor = hookProcessExecutor,
 ): Promise<TaskOwnership> {
-    const spurBin = process.env.SPUR_BIN || 'spur';
+    const spurBin = getEnvVar('SPUR_BIN') || 'spur';
     const parts = parseSpurBinSpec(spurBin);
     const cmd = parts[0] ?? 'spur';
     const args = [...parts.slice(1), 'task', 'resolve', filePath, '--strict', '--json'];
@@ -493,7 +494,7 @@ export function registerHookRun(cmd: Command, readInput?: () => string): void {
                 stdinText = (await readStdinNonBlocking()) ?? '';
             }
             const profile: StopProfile = options.profile === 'deny' ? 'deny' : 'block';
-            const code = await hookRun(plugin, hookId, process.env, stdinText, profile);
+            const code = await hookRun(plugin, hookId, getEnvVars(), stdinText, profile);
             process.exit(code);
         });
 }

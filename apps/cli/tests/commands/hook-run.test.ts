@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, mock, spyOn } from 'bun:te
 import { existsSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { getEnvVar, removeEnvVar, setEnvVar } from '@gobing-ai/superskill-core';
 import type { ProcessExecutor, ProcessOptions } from '@gobing-ai/ts-runtime';
 import { Command } from 'commander';
 import {
@@ -342,13 +343,13 @@ describe('resolveSpurTaskOwnership — subprocess contract', () => {
 
     it('honors a quoted SPUR_BIN override by splitting it into command + leading args', async () => {
         const { executor, calls } = fakeExecutor(0);
-        const restore = process.env.SPUR_BIN;
-        process.env.SPUR_BIN = '"/opt/my tools/spur" --no-color';
+        const restore = getEnvVar('SPUR_BIN');
+        setEnvVar('SPUR_BIN', '"/opt/my tools/spur" --no-color');
         try {
             await resolveSpurTaskOwnership('/x.md', '/repo', executor);
         } finally {
-            if (restore === undefined) delete process.env.SPUR_BIN;
-            else process.env.SPUR_BIN = restore;
+            if (restore === undefined) removeEnvVar('SPUR_BIN');
+            else setEnvVar('SPUR_BIN', restore);
         }
         expect(calls[0]).toBeDefined();
         const opts = calls[0];

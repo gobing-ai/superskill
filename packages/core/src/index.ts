@@ -18,6 +18,7 @@ export * from './content/paths';
 // `export *` treats the duplicate as ambiguous, so re-export it explicitly.
 export type { ContentType } from './content/types';
 export * from './content/types';
+export * from './env';
 export * from './mapper';
 export * from './marketplace';
 // ── Operations ───────────────────────────────────────────────────────────────
@@ -70,6 +71,7 @@ export {
     cleanAndCreateDir,
     copyDir,
     createSymlink,
+    FilesystemTransaction,
     getCanonicalSkillsDir,
     installSkillCanonical,
     isPathSafe,

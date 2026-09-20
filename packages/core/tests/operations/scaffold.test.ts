@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { getEnvVar, removeEnvVar, setEnvVar } from '@gobing-ai/superskill-core';
 import { scaffold } from '../../src/operations/scaffold';
 import { evaluateMagent } from '../../src/quality/magent';
 
@@ -157,8 +158,8 @@ describe('scaffold', () => {
     });
 
     it('uses user template override when it exists', async () => {
-        const originalHome = process.env.HOME;
-        process.env.HOME = tmpDir;
+        const originalHome = getEnvVar('HOME');
+        setEnvVar('HOME', tmpDir);
         const userTemplateDir = join(tmpDir, '.superskill', 'templates', 'skill');
         try {
             const { mkdirSync } = await import('node:fs');
@@ -178,9 +179,9 @@ describe('scaffold', () => {
         } finally {
             rmSync(join(tmpDir, '.superskill', 'templates'), { recursive: true, force: true });
             if (originalHome === undefined) {
-                delete process.env.HOME;
+                removeEnvVar('HOME');
             } else {
-                process.env.HOME = originalHome;
+                setEnvVar('HOME', originalHome);
             }
         }
     });
@@ -308,8 +309,8 @@ describe('scaffold', () => {
             ].join('\n'),
             'utf-8',
         );
-        const originalHome = process.env.HOME;
-        process.env.HOME = tmpDir;
+        const originalHome = getEnvVar('HOME');
+        setEnvVar('HOME', tmpDir);
         try {
             const filePath = await scaffold('skill', 'hr-skill', {
                 output: tmpDir,
@@ -324,13 +325,13 @@ describe('scaffold', () => {
             // Body HR text is preserved
             expect(content).toContain('A horizontal rule above this line.');
         } finally {
-            process.env.HOME = originalHome;
+            setEnvVar('HOME', originalHome);
         }
     });
 
     it('resolves a user-override template tier from ~/.superskill/templates', async () => {
-        const originalHome = process.env.HOME;
-        process.env.HOME = tmpDir;
+        const originalHome = getEnvVar('HOME');
+        setEnvVar('HOME', tmpDir);
         const userTierDir = join(tmpDir, '.superskill', 'templates', 'agent');
         try {
             mkdirSync(userTierDir, { recursive: true });
@@ -350,7 +351,11 @@ describe('scaffold', () => {
             expect(content).toContain('model: haiku');
         } finally {
             rmSync(join(tmpDir, '.superskill', 'templates'), { recursive: true, force: true });
-            process.env.HOME = originalHome ?? '';
+            if (originalHome === undefined) {
+                removeEnvVar('HOME');
+            } else {
+                setEnvVar('HOME', originalHome);
+            }
         }
     });
 
@@ -535,9 +540,9 @@ describe('scaffold invocation axis', () => {
     });
 
     it('user mode replaces an existing disable-model-invocation key instead of duplicating it', async () => {
-        const originalHome = process.env.HOME;
+        const originalHome = getEnvVar('HOME');
         try {
-            process.env.HOME = tmpDir;
+            setEnvVar('HOME', tmpDir);
             const templateDir = join(tmpDir, '.superskill', 'templates', 'skill');
             mkdirSync(templateDir, { recursive: true });
             writeFileSync(
@@ -555,7 +560,7 @@ describe('scaffold invocation axis', () => {
             expect(content).toContain('disable-model-invocation: true');
             expect(content).not.toContain('disable-model-invocation: false');
         } finally {
-            process.env.HOME = originalHome;
+            setEnvVar('HOME', originalHome);
         }
     });
 

@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { getEnvVars, removeEnvVar, setEnvVar } from '@gobing-ai/superskill-core';
 import type { ProcessExecutor, ProcessOptions, ProcessResult } from '@gobing-ai/ts-runtime';
 import {
     defaultRunOmpInstall,
@@ -47,7 +48,7 @@ function argv(call: RecordedRun): string[] {
 // ── Env fixtures ─────────────────────────────────────────────────────────────
 
 const originalCwd = process.cwd();
-const originalEnv = { ...process.env };
+const originalEnv = { ...getEnvVars() };
 let tempHome: string | undefined;
 let tempWorkspace: string | undefined;
 
@@ -58,20 +59,20 @@ function makeTempDir(prefix: string): string {
 beforeEach(() => {
     tempHome = makeTempDir('superskill-omp-home-');
     tempWorkspace = makeTempDir('superskill-omp-ws-');
-    process.env.HOME_DIR = tempHome;
+    setEnvVar('HOME_DIR', tempHome);
     process.chdir(tempWorkspace);
 });
 
 afterEach(() => {
     process.chdir(originalCwd);
-    // Restore by MUTATION, never `process.env = {...}` — reassignment replaces the global
-    // binding while `Bun.env` keeps pointing at the ORIGINAL object, splitting the alias for
+    // Restore by MUTATION, never wholesale record reassignment — it replaces the global
+    // binding while other env aliases keep pointing at the ORIGINAL object, splitting the alias for
     // every test file that runs after this one (order-dependent pollution, bug class from
     // the cerebrum: passes in isolation, fails in the full suite).
-    for (const key of Object.keys(process.env)) {
-        if (!(key in originalEnv)) delete process.env[key];
+    for (const key of Object.keys(getEnvVars())) {
+        if (!(key in originalEnv)) removeEnvVar(key);
     }
-    Object.assign(process.env, originalEnv);
+    Object.assign(getEnvVars(), originalEnv);
     if (tempHome) rmSync(tempHome, { recursive: true, force: true });
     if (tempWorkspace) rmSync(tempWorkspace, { recursive: true, force: true });
     tempHome = undefined;

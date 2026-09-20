@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { cwd } from 'node:process';
 import { assertSafePathSegment } from '../content/identity';
 import type { ContentType } from '../content/types';
+import { getEnvVar } from '../env';
 import agentDefaultTemplate from '../templates/agent/default.md' with { type: 'text' };
 import agentMinimalTemplate from '../templates/agent/minimal.md' with { type: 'text' };
 import agentSpecialistTemplate from '../templates/agent/specialist.md' with { type: 'text' };
@@ -183,7 +184,7 @@ const BUILTIN_TEMPLATES: Partial<Record<ContentType, Record<string, string>>> = 
  * An explicit tier that resolves to no file (user or built-in) throws a clear error.
  */
 function resolveTemplate(type: ContentType, tier?: string): string {
-    const homeDir = process.env.HOME ?? homedir();
+    const homeDir = getEnvVar('HOME') ?? homedir();
     const tierName = tier?.trim();
     if (tierName) assertSafePathSegment(tierName, 'template tier');
 

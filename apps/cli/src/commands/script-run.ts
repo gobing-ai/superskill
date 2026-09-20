@@ -1,3 +1,4 @@
+import { getEnvVars } from '@gobing-ai/superskill-core';
 import { echo, echoError } from '@gobing-ai/ts-utils';
 import type { Command } from 'commander';
 import { validateResponseText } from '../../../../plugins/cc/scripts/anti-hallucination/validate_response';
@@ -117,7 +118,7 @@ export function registerScriptRun(program: Command, readInput?: () => string | u
         .description('Run a registered plugin script (the runtime command skill docs reference)')
         .action(async (plugin: string, scriptId: string) => {
             const stdinText = readInput ? readInput() : await readStdinNonBlocking();
-            const code = scriptRun(plugin, scriptId, { stdinText, env: process.env });
+            const code = scriptRun(plugin, scriptId, { stdinText, env: getEnvVars() });
             process.exit(code);
         });
 }

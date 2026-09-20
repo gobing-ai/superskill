@@ -5,8 +5,12 @@ import { join } from 'node:path';
 import {
     addSkills,
     checkSkills,
+    getEnvVar,
+    getEnvVars,
     type InstallTarget,
     listRegularFilesUnder,
+    removeEnvVar,
+    setEnvVar,
     snapshotFiles,
     writeInstallManifest,
 } from '@gobing-ai/superskill-core';
@@ -22,8 +26,8 @@ import {
 } from '../../src/commands/update';
 
 const originalCwd = process.cwd();
-const originalHomeDir = process.env.HOME_DIR;
-const originalXdgStateHome = process.env.XDG_STATE_HOME;
+const originalHomeDir = getEnvVar('HOME_DIR');
+const originalXdgStateHome = getEnvVar('XDG_STATE_HOME');
 let tempDir: string | undefined;
 let testHome: string | undefined;
 
@@ -35,10 +39,10 @@ function workspace(): string {
 
 afterEach(() => {
     mock.restore();
-    if (originalHomeDir === undefined) delete process.env.HOME_DIR;
-    else process.env.HOME_DIR = originalHomeDir;
-    if (originalXdgStateHome === undefined) delete process.env.XDG_STATE_HOME;
-    else process.env.XDG_STATE_HOME = originalXdgStateHome;
+    if (originalHomeDir === undefined) removeEnvVar('HOME_DIR');
+    else setEnvVar('HOME_DIR', originalHomeDir);
+    if (originalXdgStateHome === undefined) removeEnvVar('XDG_STATE_HOME');
+    else setEnvVar('XDG_STATE_HOME', originalXdgStateHome);
     process.chdir(originalCwd);
     if (tempDir) {
         rmSync(tempDir, { recursive: true, force: true });
@@ -57,13 +61,13 @@ function skillMd(name: string): string {
 
 /** Install one skill into the global (HOME_DIR) scope via the real addSkills path. */
 async function installGlobalSkillFrom(sourceDir: string): Promise<void> {
-    const res = await addSkills(sourceDir, { global: true, homeDir: process.env.HOME_DIR });
+    const res = await addSkills(sourceDir, { global: true, homeDir: getEnvVar('HOME_DIR') });
     if (!res.success) throw new Error(res.error ?? 'addSkills failed');
 }
 
 /** Seed a global lock whose skill rows have no hashable local source (fetch-only shapes). */
 function writeGlobalSkillsLock(skills: Record<string, unknown>): void {
-    const home = process.env.HOME_DIR as string;
+    const home = getEnvVar('HOME_DIR') as string;
     mkdirSync(join(home, '.agents'), { recursive: true });
     writeFileSync(join(home, '.agents', '.skill-lock.json'), JSON.stringify({ version: 3, skills }));
 }
@@ -769,13 +773,13 @@ describe('executeUpdate', () => {
 
     it('scans HOME_DIR when global is true', async () => {
         const root = workspace();
-        process.env.HOME_DIR = root;
+        setEnvVar('HOME_DIR', root);
         const pluginRoot = writePlugin(root, 'demo', '1.0.0', '# x\n');
         const market = writeMarket(root, 'demo', '1.0.0');
         writeManifest(root, 'demo', pluginRoot, { version: '1.0.0', locator: market });
         spyOn(process.stdout, 'write').mockImplementation(() => true);
         const code = await executeUpdate('demo', ['codex'], { check: true, global: true, marketplacePath: market });
-        delete process.env.HOME_DIR;
+        removeEnvVar('HOME_DIR');
         expect(code).toBe(0);
     });
 
@@ -810,7 +814,7 @@ describe('executeUpdate', () => {
         const oldPluginRoot = writePlugin(oldRoot, 'demo', '1.0.0', '# old\n');
         const sandRoot = join(root, 'sand-data');
         mkdirSync(sandRoot, { recursive: true });
-        process.env.SAND_DATA = sandRoot;
+        setEnvVar('SAND_DATA', sandRoot);
         writeManifest(sandRoot, 'demo', oldPluginRoot, {
             version: '1.0.0',
             locator: market,
@@ -833,7 +837,7 @@ describe('executeUpdate', () => {
             expect(code).toBe(0);
             expect(calls).toEqual([{ targets: ['grok-bot'], materialize: 'full' }]);
         } finally {
-            delete process.env.SAND_DATA;
+            removeEnvVar('SAND_DATA');
         }
     });
 
@@ -845,7 +849,7 @@ describe('executeUpdate', () => {
         const oldPluginRoot = writePlugin(oldRoot, 'demo', '1.0.0', '# old\n');
         const sandRoot = join(root, 'sand-data');
         mkdirSync(sandRoot, { recursive: true });
-        process.env.SAND_DATA = sandRoot;
+        setEnvVar('SAND_DATA', sandRoot);
         writeManifest(sandRoot, 'demo', oldPluginRoot, { version: '1.0.0', locator: market, target: 'grok-bot' });
         let installs = 0;
         spyOn(process.stdout, 'write').mockImplementation(() => true);
@@ -866,7 +870,7 @@ describe('executeUpdate', () => {
             const errOut = stderr.mock.calls.map((call) => String(call[0])).join('');
             expect(errOut).toContain('no recorded materialization mode');
         } finally {
-            delete process.env.SAND_DATA;
+            removeEnvVar('SAND_DATA');
         }
     });
     it('names content drift at an unchanged version instead of 0.0.1 → 0.0.1 (R8)', async () => {
@@ -1013,8 +1017,8 @@ describe('executeUpdate - lock-tracked skills (F8 task 0135)', () => {
         // Skill locks resolve through HOME_DIR/XDG_STATE_HOME; give every test a private home
         // so a bare update can never read or write the real user lock.
         testHome = mkdtempSync(join(tmpdir(), 'superskill-update-home-'));
-        process.env.HOME_DIR = testHome;
-        delete process.env.XDG_STATE_HOME;
+        setEnvVar('HOME_DIR', testHome);
+        removeEnvVar('XDG_STATE_HOME');
     });
 
     function drain(stdout: { mock: { calls: unknown[][] } }): string {
@@ -1115,7 +1119,7 @@ describe('executeUpdate - lock-tracked skills (F8 task 0135)', () => {
         stderr.mockRestore();
         expect(mutCode).toBe(0);
         expect(output).toContain('last30days: updated');
-        const check = await checkSkills(undefined, { global: true, homeDir: home, env: process.env });
+        const check = await checkSkills(undefined, { global: true, homeDir: home, env: getEnvVars() });
         expect(check.rows[0]?.status).toBe('current');
     });
 
@@ -1273,8 +1277,8 @@ describe('executeUpdate - apply progress lines and JSON envelope (F8 task 0137)'
         // Skill locks resolve through HOME_DIR/XDG_STATE_HOME; give every test a private home
         // so a bare update can never read or write the real user lock.
         testHome = mkdtempSync(join(tmpdir(), 'superskill-update-home-'));
-        process.env.HOME_DIR = testHome;
-        delete process.env.XDG_STATE_HOME;
+        setEnvVar('HOME_DIR', testHome);
+        removeEnvVar('XDG_STATE_HOME');
     });
 
     function drain(stdout: { mock: { calls: unknown[][] } }): string {

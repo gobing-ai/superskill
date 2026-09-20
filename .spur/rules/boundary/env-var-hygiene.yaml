@@ -1,0 +1,42 @@
+$schema: "@gobing-ai/spur/schemas/rule-file.schema.json"
+# Environment-variable hygiene — env access funnels through the vendored gateway.
+#
+# Project-local scoping of the bundled boundary rule: the bundled copy has no
+# include/exclude, so it fires tree-wide on this repo. This scoped copy mirrors
+# spur-new's contract, adapted to superskill's layout:
+# - `packages/core/src/env.ts` is the vendored standalone gateway (mirrors
+#   upstream ts-utils semantics) — the one exempt file, whose sole job is
+#   direct `process.env` access.
+# - Converted `.mjs` script twins stay self-contained by inlining; only TS
+#   sources are scanned.
+#
+# Scope: apps/**, packages/**, scripts/**, plugins/** — src AND tests.
+include:
+    - "apps/**/src/**/*.{ts,tsx}"
+    - "apps/**/tests/**/*.{ts,tsx}"
+    - "packages/**/src/**/*.{ts,tsx}"
+    - "packages/**/tests/**/*.{ts,tsx}"
+    - "scripts/**/*.ts"
+    - "plugins/**/*.ts"
+exclude:
+    # packages/core/src/env.ts is the vendored env gateway; direct process.env
+    # access is its entire purpose. Mirrors the upstream ts-utils gateway.
+    - "packages/core/src/env.ts"
+    # plugins/cc/scripts/anti-hallucination/lib/env.ts is the standalone-plugin
+    # vendored copy of the gateway (ADR-024 self-containment, spur task 0669);
+    # keep in sync with packages/core/src/env.ts.
+    - "plugins/cc/scripts/anti-hallucination/lib/env.ts"
+rules:
+    - id: env-var-hygiene
+      description: >
+          No direct `process.env` or `Bun.env` access outside the packages/core
+          env gateway. Read via `getEnvVar` (single var, undefined-only
+          fallback), seed/compose via `getEnvVars()` (live record — also the
+          sanctioned form for setting/deleting parent→child contract markers),
+          or take an injected `env` record parameter. Aliasing
+          (`const env = process.env`) is caught too — it must touch `process.env`.
+      severity: error
+      evaluator:
+          type: rg
+          config:
+              pattern: "process\\.env|\\bBun\\.env\\b"

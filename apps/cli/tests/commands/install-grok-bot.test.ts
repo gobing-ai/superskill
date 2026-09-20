@@ -14,9 +14,12 @@ import { join } from 'node:path';
 import {
     type BotRegisterHandoff,
     collectBotSkillEntries,
+    getEnvVar,
     installManifestPath,
     mapPluginToRulesync,
     readInstallManifest,
+    removeEnvVar,
+    setEnvVar,
 } from '@gobing-ai/superskill-core';
 import { executeInstall } from '../../src/commands/install';
 import { executeUpdate } from '../../src/commands/update';
@@ -29,10 +32,10 @@ function botEnv(): { home: string; sand: string } {
     const home = join(tempDir, 'home');
     const sand = join(tempDir, 'sand');
     mkdirSync(home, { recursive: true });
-    saved.HOME_DIR = process.env.HOME_DIR;
-    saved.SAND_DATA = process.env.SAND_DATA;
-    process.env.HOME_DIR = home;
-    process.env.SAND_DATA = sand;
+    saved.HOME_DIR = getEnvVar('HOME_DIR');
+    saved.SAND_DATA = getEnvVar('SAND_DATA');
+    setEnvVar('HOME_DIR', home);
+    setEnvVar('SAND_DATA', sand);
     return { home, sand };
 }
 
@@ -51,8 +54,8 @@ afterEach(() => {
     stdoutSpy?.mockRestore();
     stdoutSpy = undefined;
     for (const [key, value] of Object.entries(saved)) {
-        if (value === undefined) delete process.env[key];
-        else process.env[key] = value;
+        if (value === undefined) removeEnvVar(key);
+        else setEnvVar(key, value);
         delete saved[key];
     }
     if (tempDir) {
@@ -227,10 +230,10 @@ describe('grok-bot install (task 0128)', () => {
     it('fails with an actionable error when no Sand root resolves', async () => {
         const home = join(tempDir, 'home');
         mkdirSync(home, { recursive: true });
-        saved.HOME_DIR = process.env.HOME_DIR;
-        saved.SAND_DATA = process.env.SAND_DATA;
-        process.env.HOME_DIR = home;
-        delete process.env.SAND_DATA;
+        saved.HOME_DIR = getEnvVar('HOME_DIR');
+        saved.SAND_DATA = getEnvVar('SAND_DATA');
+        setEnvVar('HOME_DIR', home);
+        removeEnvVar('SAND_DATA');
         const pluginRoot = createPlugin(tempDir);
         await expect(
             executeInstall('demo', ['grok-bot'], {
@@ -298,10 +301,10 @@ describe('grok-bot install (task 0128)', () => {
     it('update skips the Bot manifest scan with a warning when no Sand root resolves', async () => {
         const home = join(tempDir, 'home');
         mkdirSync(home, { recursive: true });
-        saved.HOME_DIR = process.env.HOME_DIR;
-        saved.SAND_DATA = process.env.SAND_DATA;
-        process.env.HOME_DIR = home;
-        delete process.env.SAND_DATA;
+        saved.HOME_DIR = getEnvVar('HOME_DIR');
+        saved.SAND_DATA = getEnvVar('SAND_DATA');
+        setEnvVar('HOME_DIR', home);
+        removeEnvVar('SAND_DATA');
         const stderrSpy = spyOn(process.stderr, 'write').mockImplementation(() => true);
         // Task 0135 R2: an unknown explicit name is a usage error, so pass no name; an empty
         // bundled list keeps the scan offline (no npm lookups for real bundled plugins).

@@ -12,6 +12,7 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { getEnvVar, removeEnvVar, setEnvVar } from '@gobing-ai/superskill-core';
 import {
     applyGrokBotDialect,
     BOT_ORIGIN_MARKER,
@@ -35,15 +36,15 @@ import {
 import { installManifestPath, readInstallManifest, writeInstallManifest } from '../../src/operations/install-manifest';
 
 let tmp: string;
-const savedSandData = process.env[BOT_SAND_DATA_ENV];
+const savedSandData = getEnvVar(BOT_SAND_DATA_ENV);
 
 beforeEach(() => {
     tmp = mkdtempSync(join(tmpdir(), 'superskill-grok-bot-'));
 });
 afterEach(() => {
     rmSync(tmp, { recursive: true, force: true });
-    if (savedSandData === undefined) delete process.env[BOT_SAND_DATA_ENV];
-    else process.env[BOT_SAND_DATA_ENV] = savedSandData;
+    if (savedSandData === undefined) removeEnvVar(BOT_SAND_DATA_ENV);
+    else setEnvVar(BOT_SAND_DATA_ENV, savedSandData);
 });
 
 const SOURCE = { channel: 'bundled' as const, locator: '@gobing-ai/superskill' };
@@ -1040,7 +1041,7 @@ describe('registration handoff (task 0130)', () => {
     it('doctor reports slash registry unknown with guidance, without affecting availability', async () => {
         const root = join(tmp, 'root');
         mkdirSync(root, { recursive: true });
-        process.env[BOT_SAND_DATA_ENV] = root;
+        setEnvVar(BOT_SAND_DATA_ENV, root);
         const report = inspectGrokBotTarget({ sandData: root, homeDir: tmp });
         expect(report.slashRegistry.status).toBe('unknown');
         expect(report.slashRegistry.handoffDir).toBe(join(realpathSync(root), '.superskill', 'grok-bot', 'register'));
