@@ -4,12 +4,13 @@ name: Revalidate marketplace cache freshness before warm-cache reuse
 status: done
 template: issue
 created_at: 2026-09-20T00:43:37.722Z
-updated_at: "2026-09-20T04:23:55.660Z"
+updated_at: "2026-09-20T05:53:21.803Z"
 
 priority: P1
 estimate_hours: "4"
 ac_numbering: task-local
 ac_altitude: task-local
+feature_id: B
 ---
 
 ## 0145. Revalidate marketplace cache freshness before warm-cache reuse

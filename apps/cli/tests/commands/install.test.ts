@@ -1,17 +1,19 @@
 import { afterEach, beforeEach, describe, expect, it, spyOn } from 'bun:test';
+import * as nodeFs from 'node:fs';
 import {
     existsSync,
     mkdirSync,
     mkdtempSync,
     readdirSync,
     readFileSync,
+    renameSync,
     rmSync,
     symlinkSync,
     writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { FilesystemTransaction, getEnvVar, removeEnvVar, setEnvVar } from '@gobing-ai/superskill-core';
+import { getEnvVar, removeEnvVar, setEnvVar } from '@gobing-ai/superskill-core';
 import type { ProcessExecutor, ProcessOptions } from '@gobing-ai/ts-runtime';
 import { Command } from 'commander';
 import {
@@ -1594,13 +1596,12 @@ describe('resolveRemoteMarketplace — freshness probe + cache contract (task 01
         const manifestBefore = readFileSync(join(cacheRoot, '.claude-plugin', 'marketplace.json'), 'utf-8');
         const markerBefore = markerText(cacheRoot);
 
-        const replaceSpy = spyOn(FilesystemTransaction.prototype, 'replace').mockImplementationOnce(async function (
-            this: FilesystemTransaction,
-            destination: string,
-        ) {
-            // Exercise the real reservation so rollback restores real backup state.
-            await (this as unknown as { reserve: (destination: string) => Promise<unknown> }).reserve(destination);
-            throw new Error('simulated promotion failure');
+        // Fail only the promotion rename (populate): reserve runs for real, so rollback
+        // restores a real backup; other renameSync calls (staging moves) pass through.
+        const realRenameSync = renameSync;
+        const renameSpy = spyOn(nodeFs, 'renameSync').mockImplementation((src, dest) => {
+            if (String(dest) === cacheRoot) throw new Error('simulated promotion failure');
+            realRenameSync(src, dest);
         });
         try {
             await expect(
@@ -1609,7 +1610,7 @@ describe('resolveRemoteMarketplace — freshness probe + cache contract (task 01
                 }),
             ).rejects.toThrow(/Failed to promote the refreshed marketplace cache.*previous cache was restored/s);
         } finally {
-            replaceSpy.mockRestore();
+            renameSpy.mockRestore();
         }
         expect(readFileSync(join(cacheRoot, 'plugins', 'cc', 'skills', 'a.md'), 'utf-8')).toBe('# previous\n');
         expect(readFileSync(join(cacheRoot, '.claude-plugin', 'marketplace.json'), 'utf-8')).toBe(manifestBefore);
