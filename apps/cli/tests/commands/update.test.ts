@@ -1010,6 +1010,219 @@ describe('executeUpdate', () => {
         expect(code).toBe(1);
         expect(output.trimEnd().endsWith('Summary: 1 stale, 1 up to date. Run: superskill update')).toBe(true);
     });
+
+    // ── Task 0145 AC6: remote same-version drift through the real resolver ──
+
+    const COMMIT_A = '0123456789abcdef0123456789abcdef01234567';
+    const TREE_A = 'fedcba9876543210fedcba9876543210fedcba98';
+    const COMMIT_B = '1111222233334444555566667777888899990000';
+    const TREE_B = 'aaaabbbbccccddddeeeeffff0000111122223333';
+
+    /** Private HOME_DIR so the acquisition cache and locks resolve inside the test temp tree. */
+    function privateHome(): string {
+        testHome = mkdtempSync(join(tmpdir(), 'superskill-update-home-'));
+        setEnvVar('HOME_DIR', testHome);
+        return testHome;
+    }
+
+    /**
+     * Warm the gobing-ai/superskill@HEAD acquisition cache at COMMIT_A: valid identity
+     * marker, same declared plugin version as the receipt, pre-drift bytes.
+     */
+    function seedRemoteWarmCache(): string {
+        const cacheRoot = join(installNs.marketplaceCacheRoot(), 'gobing-ai', 'superskill', 'HEAD');
+        mkdirSync(join(cacheRoot, '.claude-plugin'), { recursive: true });
+        mkdirSync(join(cacheRoot, 'plugins', 'demo', 'skills'), { recursive: true });
+        writeFileSync(
+            join(cacheRoot, '.claude-plugin', 'marketplace.json'),
+            JSON.stringify({
+                name: 'superskill',
+                plugins: [{ name: 'demo', source: './plugins/demo', version: '1.0.0' }],
+            }),
+        );
+        writeFileSync(
+            join(cacheRoot, 'plugins', 'demo', 'plugin.json'),
+            JSON.stringify({ name: 'demo', version: '1.0.0' }),
+        );
+        writeFileSync(join(cacheRoot, 'plugins', 'demo', 'skills', 'a.md'), '# old\n');
+        writeFileSync(
+            join(cacheRoot, '.superskill-ref.json'),
+            JSON.stringify({
+                owner: 'gobing-ai',
+                repo: 'superskill',
+                ref: 'HEAD',
+                subdir: '',
+                commitSha: COMMIT_A,
+                treeSha: TREE_A,
+                materializedAt: '2026-09-19T00:00:00.000Z',
+            }),
+        );
+        return cacheRoot;
+    }
+
+    /** Installed receipt at the same declared version whose bytes match the commit-A cache. */
+    function seedRemoteReceipt(root: string): { manifestPath: string; installedSkill: string } {
+        const oldRoot = join(root, 'old');
+        writePlugin(oldRoot, 'demo', '1.0.0', '# old\n');
+        writeManifest(root, 'demo', join(oldRoot, 'plugins', 'demo'), {
+            version: '1.0.0',
+            locator: 'gobing-ai/superskill',
+        });
+        return {
+            manifestPath: join(root, '.superskill', 'manifests', 'codex', 'demo', '.superskill-manifest.json'),
+            installedSkill: join(oldRoot, 'plugins', 'demo', 'skills', 'a.md'),
+        };
+    }
+
+    /**
+     * Injected GitHub network serving the `demo` plugin at one commit: every requested URL is
+     * recorded so pinning (probe → commit-B tree/raw) is observable. The resolver itself is
+     * never mocked — only the socket is.
+     */
+    function remoteSuperskillFetch(opts: { commit: string; tree: string; skillBody: string }): {
+        fetchFn: typeof fetch;
+        urls: string[];
+    } {
+        const urls: string[] = [];
+        const tree = {
+            sha: opts.tree,
+            branch: opts.commit,
+            tree: [
+                { path: '.claude-plugin/marketplace.json', type: 'blob' as const, sha: 'm1' },
+                { path: 'plugins/demo/plugin.json', type: 'blob' as const, sha: 'p1' },
+                { path: 'plugins/demo/skills/a.md', type: 'blob' as const, sha: 's1' },
+            ],
+        };
+        const contentByPath: Record<string, string> = {
+            '.claude-plugin/marketplace.json': JSON.stringify({
+                name: 'superskill',
+                plugins: [{ name: 'demo', source: './plugins/demo', version: '1.0.0' }],
+            }),
+            'plugins/demo/plugin.json': JSON.stringify({ name: 'demo', version: '1.0.0' }),
+            'plugins/demo/skills/a.md': opts.skillBody,
+        };
+        const fetchFn = (async (url: string) => {
+            urls.push(url);
+            if (url.includes('/commits/')) return new Response(opts.commit, { status: 200 });
+            if (url.includes('/git/trees/')) {
+                return new Response(JSON.stringify(tree), {
+                    status: 200,
+                    headers: { 'Content-Type': 'application/json' },
+                });
+            }
+            for (const [path, content] of Object.entries(contentByPath)) {
+                if (url.endsWith(`/${path}`)) return new Response(content, { status: 200 });
+            }
+            return new Response('not found', { status: 404 });
+        }) as unknown as typeof fetch;
+        return { fetchFn, urls };
+    }
+
+    // AC6: --check --json observes same-version content drift through the real remote
+    // resolver — the warmed commit-A cache is refreshed to commit B, the row reports stale
+    // from that refreshed snapshot, stdout stays one parseable envelope, and installed
+    // outputs/receipts are untouched (only the acquisition cache may refresh).
+    it('reports same-version drift through the real remote resolver in --check --json without touching installed outputs (AC6)', async () => {
+        const root = workspace();
+        privateHome();
+        const cacheRoot = seedRemoteWarmCache();
+        const { manifestPath, installedSkill } = seedRemoteReceipt(root);
+        const receiptBefore = readFileSync(manifestPath, 'utf-8');
+
+        const { fetchFn, urls } = remoteSuperskillFetch({ commit: COMMIT_B, tree: TREE_B, skillBody: '# drifted\n' });
+        const stdout = spyOn(process.stdout, 'write').mockImplementation(() => true);
+        const stderr = spyOn(process.stderr, 'write').mockImplementation(() => true);
+
+        const code = await executeUpdate(
+            'demo',
+            ['codex'],
+            { check: true, json: true, global: false, outputRoot: root },
+            { fetchFn, listBundledPlugins: () => [] },
+        );
+
+        const out = stdout.mock.calls.map((c) => String(c[0])).join('');
+        const err = stderr.mock.calls.map((c) => String(c[0])).join('');
+        stdout.mockRestore();
+        stderr.mockRestore();
+
+        expect(code).toBe(1);
+        // Exactly one parseable stdout envelope; stderr carries no fallback noise because
+        // the probe succeeded (R5/R3).
+        const envelope = JSON.parse(out) as UpdateJsonEnvelope;
+        expect(envelope.check).toBe(true);
+        expect(envelope.exitCode).toBe(1);
+        expect(envelope.rows).toHaveLength(1);
+        expect(envelope.rows[0]).toMatchObject({
+            kind: 'plugin',
+            name: 'demo',
+            status: 'stale',
+            channel: 'marketplace',
+            installedVersion: '1.0.0',
+            upstreamVersion: '1.0.0',
+            locator: 'gobing-ai/superskill',
+        });
+        // Same declared version, changed bytes: the drift is named by the path list.
+        expect(envelope.rows[0]?.changedPaths).toEqual(['skills/a.md']);
+        expect(envelope.summary).toMatchObject({ stale: 1, current: 0 });
+        expect(err).not.toContain('could not verify freshness');
+        // The row was produced from the refreshed snapshot: one commit probe, then the
+        // tree/raw requests pinned to the probed commit B (AC6/AC2 semantics).
+        expect(urls.filter((url) => url.includes('/commits/'))).toHaveLength(1);
+        expect(urls.some((url) => url.includes(`/git/trees/${COMMIT_B}`))).toBe(true);
+        expect(readFileSync(join(cacheRoot, 'plugins', 'demo', 'skills', 'a.md'), 'utf-8')).toBe('# drifted\n');
+        const marker = JSON.parse(readFileSync(join(cacheRoot, '.superskill-ref.json'), 'utf-8')) as Record<
+            string,
+            string
+        >;
+        expect(marker.commitSha).toBe(COMMIT_B);
+        expect(marker.treeSha).toBe(TREE_B);
+        // --check mutates the acquisition cache only: receipt and installed outputs stay byte-identical.
+        expect(readFileSync(manifestPath, 'utf-8')).toBe(receiptBefore);
+        expect(readFileSync(installedSkill, 'utf-8')).toBe('# old\n');
+    });
+
+    // AC6: apply re-installs through the receipt's original locator and forwards the run's
+    // fetchFn into executeInstall, so the reinstall lands on the same probe-pinned snapshot.
+    it('keeps the original locator and forwards fetchFn into the reinstall on apply (AC6)', async () => {
+        const root = workspace();
+        privateHome();
+        seedRemoteWarmCache();
+        seedRemoteReceipt(root);
+
+        const { fetchFn, urls } = remoteSuperskillFetch({ commit: COMMIT_B, tree: TREE_B, skillBody: '# drifted\n' });
+        const installs: Array<{
+            name: string;
+            targets: readonly InstallTarget[];
+            options: installNs.InstallOptions;
+            deps: { fetchFn?: typeof fetch };
+        }> = [];
+        const stdout = spyOn(process.stdout, 'write').mockImplementation(() => true);
+        const code = await executeUpdate(
+            'demo',
+            ['codex'],
+            { check: false, global: false, outputRoot: root },
+            {
+                fetchFn,
+                listBundledPlugins: () => [],
+                executeInstall: async (name, targets, options, deps) => {
+                    installs.push({ name, targets, options, deps: deps ?? {} });
+                },
+            },
+        );
+        stdout.mockRestore();
+
+        expect(code).toBe(0);
+        expect(installs).toHaveLength(1);
+        expect(installs[0]?.name).toBe('demo');
+        expect(installs[0]?.targets).toEqual(['codex']);
+        // The receipt's original remote locator is passed verbatim to the reinstall.
+        expect(installs[0]?.options.marketplacePath).toBe('gobing-ai/superskill');
+        expect(installs[0]?.options.pluginPath).toBeUndefined();
+        // The run's fetchFn reaches the reinstall as the executeInstall dependencies arg.
+        expect(installs[0]?.deps.fetchFn).toBe(fetchFn);
+        // The apply run itself resolved upstream through the real resolver + injected network.
+        expect(urls.some((url) => url.includes('/commits/'))).toBe(true);
+    });
 });
 
 describe('executeUpdate - lock-tracked skills (F8 task 0135)', () => {

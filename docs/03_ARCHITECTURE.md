@@ -2,10 +2,10 @@
 doc: 03_ARCHITECTURE
 owns: HOW — module boundaries, data flow, runtime model, invariants
 authority: derived
-version: 2.18.0
+version: 2.19.0
 derived_from: [00_ADR, 01_PRD]
 owner: Robin Min
-updated_at: 2026-09-14
+updated_at: 2026-09-19
 read_before: cross-module, seam, or schema work
 edit_rules: 99 §6.4
 sync: [T1]
@@ -362,6 +362,36 @@ under `<X>`, not its parent (ADR-034).
 text cap, so binary assets land unmodified. A tree over `MAX_MATERIALIZED_FILES` (4096), or a blob
 over its cap, fails with `AcquisitionLimitError` — a tree-declared `size` is rejected before any
 download; an undeclared-size stream is rejected mid-write and its partial file removed.
+
+**Remote cache freshness (invariant 13; task 0145).** Every remote marketplace resolution first
+probes the requested ref's current commit SHA through `fetchRepoCommitSha` — a warm cache whose
+manifest merely exists is never trusted on age. The probe (and any default-ref fallback) is bounded
+by one 10-second `AbortSignal.timeout`; an explicit ref tries only itself, an undefined ref walks
+HEAD → main → master continuing on 404 only. After the probe, `resolveRemoteMarketplace`
+(`apps/cli/src/commands/install.ts`; marker schema in [04](04_DESIGN.md)) branches:
+
+- **Warm hit:** a parseable identity marker whose owner/repo/ref/normalized-subdir identity
+  matches the parsed locator and whose `commitSha` equals the probe reuses the cache byte-for-byte
+  with zero tree/blob requests and no writes. Marker fields are compared against the locator only
+  and never build filesystem destinations.
+- **Refresh:** cold, stale, legacy (markerless), corrupt-marker, and identity-mismatched caches
+  materialize the probed immutable commit into sibling staging — the tree request and raw
+  downloads are pinned to the commit SHA, so a symbolic ref advancing mid-acquisition cannot mix
+  snapshots. Staging must contain a readable `marketplace.json` before promotion; the marker
+  publishes beside its snapshot, so a completed promotion is always marker-valid. Promotion
+  replaces the cache root through a `FilesystemTransaction` (rollback on failure; a failed
+  rollback retains its backup and names both failures), so a failed refresh never destroys the
+  previous snapshot.
+- **Probe failure:** an existing manifest-bearing cache without a known identity mismatch reuses
+  its bytes after one stderr warning (freshness unverified, marker never rewritten, `resolvedRef`
+  returned only from a valid marker); cold caches and known identity mismatches fail with
+  locator/cache context.
+
+`resolvedRef` remains the materialized **tree** SHA on cold and valid-marker warm returns
+(receipt semantics, ADR-035); the probed commit SHA lives only in the marker. Both
+`executeInstall` and `update`'s marketplace lookup consume this one resolver, so an update check
+observes the same refreshed snapshot installs see before ADR-035's same-version hash comparison
+decides staleness.
 
 **Manifest shape** (verified against Claude Code docs + `cc-agents/.claude-plugin/marketplace.json`):
 
@@ -791,3 +821,4 @@ result alongside plugin-manifest rows and never writes a lock directly.
     thrown dependency/dispatch errors. Concurrent installs in the same working directory never
     share, delete, or read each other's staging, and no persistent cwd `.rulesync/` is produced.
 12. **Cross-host placement vs marketplace discovery boundary.** Marketplaces discover the installer; writers place skills; host registration and per-Bot enablement remain host responsibilities. Superskill CLI converts and places capabilities across target filesystems; native host marketplace discovery (`claude plugin marketplace add`) and installation are host-managed. Filesystem placement does not grant chat slash-menu visibility. An MCP gateway (`@gobing-ai/superskill-mcp`) is deferred until trigger conditions are met (ADR-034, task 0131; detail: `docs/help/native_cc_marketplace_pilot.md`).
+13. **Warm marketplace caches are freshness-checked, never age-trusted.** Every remote marketplace resolution probes the requested ref's current commit before reusing a matching cache; reuse additionally requires a parseable identity marker matching the locator and the probed commit. A probe failure may fall back only to a manifest-bearing cache of matching-or-unknown identity, with one stderr warning, an untouched marker, and no claimed freshness; refresh failures preserve the previous snapshot via transaction rollback.

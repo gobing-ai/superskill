@@ -257,7 +257,9 @@ export async function executeUpdate(
             const cacheKey = `${locator}::${candidate}`;
             let pending = marketplaceWork.get(cacheKey);
             if (!pending) {
-                pending = resolveMarketplaceUpstream(candidate, locator);
+                // Task 0145: the run's fetchFn reaches the marketplace resolver too, so
+                // --check observes the same refreshed upstream snapshot installs see.
+                pending = resolveMarketplaceUpstream(candidate, locator, dependencies.fetchFn);
                 marketplaceWork.set(cacheKey, pending);
             }
             const upstream = await pending;
@@ -373,15 +375,20 @@ export async function executeUpdate(
             echo(`Updating ${action.plugin}…`);
             // R13: a thrown reinstall failure keeps the existing propagation — it aborts the
             // run, is named on its own line by the command handler, and still exits 1.
-            await installImpl(action.plugin, targets, {
-                marketplacePath: pluginRootOnly ? undefined : locator,
-                pluginPath: pluginRootOnly ? locator : undefined,
-                global: options.global,
-                dryRun: false,
-                verbose: false,
-                outputRoot: options.outputRoot,
-                materialize,
-            });
+            await installImpl(
+                action.plugin,
+                targets,
+                {
+                    marketplacePath: pluginRootOnly ? undefined : locator,
+                    pluginPath: pluginRootOnly ? locator : undefined,
+                    global: options.global,
+                    dryRun: false,
+                    verbose: false,
+                    outputRoot: options.outputRoot,
+                    materialize,
+                },
+                dependencies.fetchFn ? { fetchFn: dependencies.fetchFn } : {},
+            );
             updatedCount += 1;
         }
 
@@ -522,7 +529,7 @@ interface MarketplaceInstallAction {
 /** Resolve the Sand data root for Bot receipt scans; null when this host has none. */
 function tryResolveSandRoot(): SandRootResolution | null {
     try {
-        return resolveSandRoot({ sandData: process.env.SAND_DATA, homeDir: resolveHomeDir() });
+        return resolveSandRoot({ sandData: getEnvVar('SAND_DATA'), homeDir: resolveHomeDir() });
     } catch {
         return null;
     }
@@ -599,8 +606,14 @@ function readCandidateManifests(
  * a manifest/parse failure, or a network/registry failure. The compare version keeps
  * marketplace-first precedence; when the marketplace entry and plugin.json declare
  * different versions, `versionMismatch` names both without changing which one wins.
+ * `fetchFn` (task 0145) threads the run's network seam into the remote resolver so the
+ * real probe/materialize path runs in tests instead of a mocked-away lookup.
  */
-async function resolveMarketplaceUpstream(plugin: string, locator: string): Promise<MarketplaceUpstream> {
+async function resolveMarketplaceUpstream(
+    plugin: string,
+    locator: string,
+    fetchFn?: typeof fetch,
+): Promise<MarketplaceUpstream> {
     const fail = (reason: string): FailedMarketplaceUpstream => ({ ok: false, reason });
     const cause = (err: unknown, fallback: string): string =>
         err instanceof Error && err.message.length > 0 ? err.message : fallback;
@@ -614,7 +627,7 @@ async function resolveMarketplaceUpstream(plugin: string, locator: string): Prom
         let marketplacePath = locator;
         if (isRemoteMarketplaceLocator(locator)) {
             try {
-                const remote = await resolveRemoteMarketplace(locator);
+                const remote = await resolveRemoteMarketplace(locator, fetchFn ? { fetchFn } : {});
                 marketplacePath = remote.root;
             } catch (err) {
                 return fail(cause(err, 'marketplace fetch failed'));

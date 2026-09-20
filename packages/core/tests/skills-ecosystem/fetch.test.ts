@@ -7,6 +7,7 @@ import {
     AcquisitionLimitError,
     cleanupTempDir,
     cloneRepo,
+    fetchRepoCommitSha,
     fetchRepoTree,
     findSkillMdPaths,
     GitCloneError,
@@ -350,8 +351,17 @@ describe('fetch.ts - GitHub Trees/Blob fast path and hardened git clone', () => 
             throw new Error('Authentication failed for url');
         };
 
+        // Stub the gh fallback too — without it cloneRepo shells out to real `gh auth status`
+        // and a real SSH clone, which is nondeterministic and trips the 5s test timeout.
+        const mockGhUnavailable = async () => {
+            throw new Error('gh: not available');
+        };
+
         try {
-            await cloneRepo('https://github.com/owner/repo.git', 'main', { execGit: mockAuthGit });
+            await cloneRepo('https://github.com/owner/repo.git', 'main', {
+                execGit: mockAuthGit,
+                execGh: mockGhUnavailable,
+            });
         } catch (err: unknown) {
             expect(err).toBeInstanceOf(GitCloneError);
             expect((err as GitCloneError).isAuthError).toBe(true);
@@ -607,6 +617,139 @@ describe('fetch.ts - GitHub Trees/Blob fast path and hardened git clone', () => 
         expect(failure).toBeInstanceOf(GitCloneError);
         expect((failure as GitCloneError).isAuthError).toBe(true);
         expect((failure as GitCloneError).message).toContain('git@github.com:owner/private.git');
+    });
+});
+
+describe('fetch.ts - fetchRepoCommitSha (task 0145 freshness probe)', () => {
+    const COMMIT = '0123456789abcdef0123456789abcdef01234567';
+
+    it('resolves an explicit ref to a trimmed 40-hex commit SHA via the sha media type', async () => {
+        const calls: Array<{ url: string; headers: Record<string, string> }> = [];
+        const sha = await fetchRepoCommitSha('owner/repo', 'v1.2.3', () => 'tok-123', (async (
+            url: string,
+            init?: RequestInit,
+        ) => {
+            calls.push({ url, headers: (init?.headers ?? {}) as Record<string, string> });
+            // GitHub's application/vnd.github.sha response is the bare hash; surrounding
+            // whitespace must be trimmed before validation.
+            return new Response(`  ${COMMIT}  \n`, { status: 200 });
+        }) as unknown as typeof fetch);
+        expect(sha).toBe(COMMIT);
+        expect(calls).toEqual([
+            {
+                url: 'https://api.github.com/repos/owner/repo/commits/v1.2.3',
+                headers: {
+                    Accept: 'application/vnd.github.sha',
+                    'User-Agent': 'superskill-core',
+                    Authorization: 'Bearer tok-123',
+                },
+            },
+        ]);
+    });
+
+    it('omits the Authorization header when no token is available', async () => {
+        let headers: Record<string, string> = {};
+        await fetchRepoCommitSha('owner/repo', 'main', () => null, (async (_url: string, init?: RequestInit) => {
+            headers = (init?.headers ?? {}) as Record<string, string>;
+            return new Response(COMMIT, { status: 200 });
+        }) as unknown as typeof fetch);
+        expect(headers.Authorization).toBeUndefined();
+        expect(headers.Accept).toBe('application/vnd.github.sha');
+    });
+
+    it('tries only the explicit ref: a 404 is a contextual failure, never a candidate walk', async () => {
+        const urls: string[] = [];
+        const probing = fetchRepoCommitSha('owner/repo', 'v1.2.3', undefined, (async (url: string) => {
+            urls.push(url);
+            return new Response('not found', { status: 404 });
+        }) as unknown as typeof fetch);
+        await expect(probing).rejects.toThrow('owner/repo@v1.2.3');
+        await expect(probing).rejects.toThrow('HTTP 404');
+        expect(urls).toEqual(['https://api.github.com/repos/owner/repo/commits/v1.2.3']);
+    });
+
+    it('walks HEAD, main, master in order on 404 only and returns the first hit', async () => {
+        const urls: string[] = [];
+        const sha = await fetchRepoCommitSha('owner/repo', undefined, undefined, (async (url: string) => {
+            urls.push(url);
+            if (url.endsWith('/commits/HEAD') || url.endsWith('/commits/main')) {
+                return new Response('not found', { status: 404 });
+            }
+            return new Response(COMMIT, { status: 200 });
+        }) as unknown as typeof fetch);
+        expect(sha).toBe(COMMIT);
+        expect(urls).toEqual([
+            'https://api.github.com/repos/owner/repo/commits/HEAD',
+            'https://api.github.com/repos/owner/repo/commits/main',
+            'https://api.github.com/repos/owner/repo/commits/master',
+        ]);
+    });
+
+    it('does NOT walk the default-ref candidates on a 403 rate limit (residual-proof: 404 walks, 403 must not)', async () => {
+        const urls: string[] = [];
+        const probing = fetchRepoCommitSha('owner/repo', undefined, undefined, (async (url: string) => {
+            urls.push(url);
+            return new Response('rate limited', { status: 403 });
+        }) as unknown as typeof fetch);
+        await expect(probing).rejects.toThrow('HTTP 403');
+        expect(urls).toEqual(['https://api.github.com/repos/owner/repo/commits/HEAD']);
+    });
+
+    it('does NOT walk the default-ref candidates on a thrown network error (an outage is not ref-not-found)', async () => {
+        let requests = 0;
+        const probing = fetchRepoCommitSha('owner/repo', undefined, undefined, (async () => {
+            requests += 1;
+            throw new Error('getaddrinfo ENOTFOUND');
+        }) as unknown as typeof fetch);
+        await expect(probing).rejects.toThrow(/Commit probe for owner\/repo@HEAD.*ENOTFOUND/s);
+        expect(requests).toBe(1);
+    });
+
+    it('rejects a malformed SHA body with a contextual error', async () => {
+        const probing = fetchRepoCommitSha(
+            'owner/repo',
+            'main',
+            undefined,
+            (async () =>
+                new Response('refs/heads/main does not look like a sha', { status: 200 })) as unknown as typeof fetch,
+        );
+        await expect(probing).rejects.toThrow('returned a malformed SHA');
+        await expect(probing).rejects.toThrow('owner/repo@main');
+    });
+
+    it('rejects an oversized SHA body through the bounded read cap', async () => {
+        const probing = fetchRepoCommitSha(
+            'owner/repo',
+            'main',
+            undefined,
+            (async () => new Response('a'.repeat(2048), { status: 200 })) as unknown as typeof fetch,
+        );
+        await expect(probing).rejects.toThrow(AcquisitionLimitError);
+        await expect(probing).rejects.toThrow('1024-byte read cap');
+    });
+
+    it('passes a live abort signal and turns an abort-style rejection into a contextual probe failure (no real 10 s wait)', async () => {
+        let observedSignal: AbortSignal | null | undefined;
+        const probing = fetchRepoCommitSha('owner/repo', 'main', undefined, (async (
+            _url: string,
+            init?: RequestInit,
+        ) => {
+            observedSignal = init?.signal;
+            // A timed-out fetch rejects with an abort error; simulate it immediately so the
+            // test never sleeps for the real 10-second bound.
+            throw new Error('The operation was aborted due to timeout');
+        }) as unknown as typeof fetch);
+        await expect(probing).rejects.toThrow(/Commit probe for owner\/repo@main.*aborted due to timeout/s);
+        expect(observedSignal).toBeInstanceOf(AbortSignal);
+        expect(observedSignal?.aborted).toBe(false);
+    });
+
+    it('fails naming all default candidates when every one answers 404', async () => {
+        const probing = fetchRepoCommitSha('owner/repo', undefined, undefined, (async (url: string) =>
+            url.includes('/commits/')
+                ? new Response('not found', { status: 404 })
+                : new Response('{}', { status: 200 })) as unknown as typeof fetch);
+        await expect(probing).rejects.toThrow('tried HEAD, main, master');
     });
 });
 

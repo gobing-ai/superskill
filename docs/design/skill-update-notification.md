@@ -51,7 +51,7 @@ interface InstallManifest {
   channel: 'bundled' | 'marketplace';
   upstreamVersion: string;        // marketplace entry version, else plugin.json, else cliVersion (bundled)
   marketplaceLocator?: string;    // --marketplace verbatim, else a re-resolvable absolute local root
-  resolvedRef?: string;           // GitHub Trees SHA from cold-cache materialization
+  resolvedRef?: string;           // Materialized tree SHA from cold acquisition or a valid warm-cache marker (task 0145); never a commit SHA
   installedAt: string;            // ISO-8601 UTC
   superskillVersion: string;      // writer version, for diagnostics
   installed: InstallSnapshot;     // final bytes on disk for this plugin-target

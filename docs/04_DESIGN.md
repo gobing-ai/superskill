@@ -2,10 +2,10 @@
 doc: 04_DESIGN
 owns: SURFACE — concrete shapes: every CLI command, flag, config key, env var, table, DTO
 authority: derived
-version: 2.15.0
+version: 2.16.0
 derived_from: [00_ADR, 01_PRD, 02_ROADMAP]
 owner: Robin Min
-updated_at: 2026-09-14
+updated_at: 2026-09-19
 read_before: changing a command, flag, env var, or schema
 edit_rules: 99 §6.5
 sync: [T3]
@@ -93,6 +93,66 @@ superskill update [name] [--check] [--json] [--targets <list>] [--marketplace <l
 | `plugins` | `{ name: string, path: string }[]`; matching path is used when `--marketplace` is absent |
 | `targets` | `Target[]`; an empty array means all targets |
 | `features` | Any of `skills`, `commands`, `subagents`, `hooks`, `mcp`; defaults to all five |
+
+### Remote marketplace cache freshness (task 0145)
+
+Mechanism and invariants: [03 §Plugin resolution](03_ARCHITECTURE.md#plugin-resolution). No new
+flags — this surface is the cache marker DTO, the core probe helper, and the observable
+resolver/update behavior.
+
+**Cache-freshness marker DTO** — `<cacheRoot>/.superskill-ref.json` (zod, `.passthrough()`; unknown
+fields tolerated). Missing, unreadable, or schema-invalid files mean **absent marker** (legacy
+caches keep the manifest-presence fallback); a well-formed marker whose identity disagrees with the
+parsed locator is a **known identity mismatch**, never an offline fallback:
+
+```ts
+interface RemoteMarketplaceMarker {
+    owner: string;          // locator identity; compared, never used as a filesystem destination
+    repo: string;
+    ref: string;
+    subdir: string;         // normalized: trailing slashes stripped, absent = ''
+    commitSha: string;      // 40-hex; immutable commit the snapshot was materialized from
+    treeSha: string;        // 40-hex; tree SHA returned as receipt `resolvedRef`
+    materializedAt: string; // ISO-8601; rewritten only on a completed materialization
+}
+```
+
+**Core probe helper** (`packages/core/src/skills-ecosystem/fetch.ts`, re-exported from the core
+barrel):
+
+```ts
+fetchRepoCommitSha(
+    ownerRepo: string,
+    ref?: string,
+    getToken?: () => string | null,
+    fetchFn: typeof fetch = fetch,
+): Promise<string>
+```
+
+Observable contract: `GET https://api.github.com/repos/{ownerRepo}/commits/{encodedRef}` with
+`Accept: application/vnd.github.sha`, `User-Agent: superskill-core`, and `Authorization: Bearer`
+only when the getter yields a token; explicit `ref` tries only itself, `undefined` tries
+HEAD → main → master continuing on 404 only; the whole sequence is bounded by one
+`AbortSignal.timeout(10000)`; the body must be a trimmed 40-character hexadecimal SHA — non-success
+HTTP, oversized bodies, and malformed SHAs reject with contextual errors.
+
+**Observable install behavior** (`resolveRemoteMarketplace`): every remote resolution emits exactly
+one commit probe before reuse. Warm hit (manifest + matching valid marker + equal `commitSha`) →
+existing bytes returned unchanged (no writes, `resolvedRef` = marker `treeSha`). Otherwise the
+probed commit materializes into sibling staging (tree/raw requests use the commit SHA), a readable
+`marketplace.json` is required, the marker is written into staging, and promotion runs through
+`FilesystemTransaction.replace` + `commit` with rollback — a failed promotion/rollback names both
+failures and preserves the previous cache. Probe failure with a manifest-bearing, non-mismatched
+cache → old bytes + one stderr warning (`could not verify freshness … using the cached copy`),
+marker untouched, `resolvedRef` only from a valid marker; cold or known-mismatched → rejection
+naming locator and cache path.
+
+**Observable update behavior** (`apps/cli/src/commands/update.ts`): the run's `fetchFn` reaches the
+remote marketplace resolver (`resolveMarketplaceUpstream` → `resolveRemoteMarketplace`) and the
+apply path passes it as `executeInstall`'s dependencies argument. `--check` may refresh the
+acquisition cache but never writes installed outputs or receipts; `--check --json` stdout remains
+one parseable envelope; same-version drift is detected from the refreshed snapshot via the
+existing hash compare (ADR-035).
 
 ### Update verb + provenance manifest
 

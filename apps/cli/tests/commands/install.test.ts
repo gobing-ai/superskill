@@ -11,7 +11,7 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { getEnvVar, removeEnvVar, setEnvVar } from '@gobing-ai/superskill-core';
+import { FilesystemTransaction, getEnvVar, removeEnvVar, setEnvVar } from '@gobing-ai/superskill-core';
 import type { ProcessExecutor, ProcessOptions } from '@gobing-ai/ts-runtime';
 import { Command } from 'commander';
 import {
@@ -1119,31 +1119,158 @@ describe('parseRemoteMarketplaceLocator + isRemoteMarketplaceLocator (R2 disambi
     });
 });
 
-describe('resolveRemoteMarketplace — cache + offline contract (R4/R9/AC6)', () => {
-    const savedHomeDir = process.env.HOME_DIR;
+describe('resolveRemoteMarketplace — freshness probe + cache contract (task 0145, R1-R4/R9/AC6)', () => {
+    const savedHomeDir = getEnvVar('HOME_DIR');
 
     afterEach(() => {
         if (savedHomeDir === undefined) removeEnvVar('HOME_DIR');
         else setEnvVar('HOME_DIR', savedHomeDir);
     });
 
-    it('resolves a warm cache offline with zero network calls', async () => {
-        const home = createTempWorkspace();
-        process.env.HOME_DIR = home;
-        const cacheRoot = join(marketplaceCacheRoot(), 'gobing-ai', 'superskill', 'HEAD');
+    // Deterministic fixture hashes: commit and tree SHAs differ and are valid 40-hex
+    // (marker validation rejects the legacy "abc" tree fixtures).
+    const COMMIT_A = '0123456789abcdef0123456789abcdef01234567';
+    const TREE_A = 'fedcba9876543210fedcba9876543210fedcba98';
+    const COMMIT_B = '1111222233334444555566667777888899990000';
+    const TREE_B = 'aaaabbbbccccddddeeeeffff0000111122223333';
+
+    /** Seed a manifest-bearing warm cache (optionally with body content) at `cacheRoot`. */
+    function seedWarmCache(cacheRoot: string, skillBody = '# skill a\n'): void {
         mkdirSync(join(cacheRoot, '.claude-plugin'), { recursive: true });
         writeFileSync(
             join(cacheRoot, '.claude-plugin', 'marketplace.json'),
             JSON.stringify({ name: 'superskill', plugins: [{ name: 'cc', source: './plugins/cc' }] }),
         );
+        mkdirSync(join(cacheRoot, 'plugins', 'cc', 'skills'), { recursive: true });
+        writeFileSync(join(cacheRoot, 'plugins', 'cc', 'plugin.json'), JSON.stringify({ name: 'cc' }));
+        writeFileSync(join(cacheRoot, 'plugins', 'cc', 'skills', 'a.md'), skillBody);
+    }
 
-        // A fetchFn that would throw if touched — warm cache must not call the network.
+    /** Write a cache-freshness marker; defaults describe the gobing-ai/superskill@HEAD identity at COMMIT_A. */
+    function writeMarker(
+        cacheRoot: string,
+        overrides: {
+            owner?: string;
+            repo?: string;
+            ref?: string;
+            subdir?: string;
+            commitSha?: string;
+            treeSha?: string;
+            materializedAt?: string;
+        } = {},
+    ): void {
+        writeFileSync(
+            join(cacheRoot, '.superskill-ref.json'),
+            JSON.stringify({
+                owner: 'gobing-ai',
+                repo: 'superskill',
+                ref: 'HEAD',
+                subdir: '',
+                commitSha: COMMIT_A,
+                treeSha: TREE_A,
+                materializedAt: '2026-09-19T00:00:00.000Z',
+                ...overrides,
+            }),
+        );
+    }
+
+    function markerText(cacheRoot: string): string {
+        return readFileSync(join(cacheRoot, '.superskill-ref.json'), 'utf-8');
+    }
+
+    /** Full repo fixture: commit probe + tree + raw downloads for the `cc` plugin. */
+    function ccRepoFetch(
+        opts: { commit: string; tree: string; skillBody: string } = {
+            commit: COMMIT_A,
+            tree: TREE_A,
+            skillBody: '---\nname: a\ndescription: Skill a\n---\n# skill a\n',
+        },
+    ): typeof fetch {
+        const tree = {
+            sha: opts.tree,
+            branch: opts.commit,
+            tree: [
+                { path: '.claude-plugin/marketplace.json', type: 'blob' as const, sha: 'm1' },
+                { path: 'plugins/cc/plugin.json', type: 'blob' as const, sha: 'p1' },
+                { path: 'plugins/cc/skills/a.md', type: 'blob' as const, sha: 's1' },
+            ],
+        };
+        const contentByPath: Record<string, string> = {
+            '.claude-plugin/marketplace.json': JSON.stringify({
+                name: 'superskill',
+                plugins: [{ name: 'cc', source: './plugins/cc' }],
+            }),
+            'plugins/cc/plugin.json': JSON.stringify({ name: 'cc' }),
+            'plugins/cc/skills/a.md': opts.skillBody,
+        };
+        return (async (url: string) => {
+            if (url.includes('/commits/')) return new Response(opts.commit, { status: 200 });
+            if (url.includes('/git/trees/')) {
+                return new Response(JSON.stringify(tree), {
+                    status: 200,
+                    headers: { 'Content-Type': 'application/json' },
+                });
+            }
+            for (const [path, content] of Object.entries(contentByPath)) {
+                if (url.endsWith(`/${path}`)) return new Response(content, { status: 200 });
+            }
+            return new Response('not found', { status: 404 });
+        }) as unknown as typeof fetch;
+    }
+
+    // AC1: a warm cache whose marker records the probed commit is reused byte-for-byte —
+    // exactly one commit probe, zero tree/blob requests, and no writes of any kind.
+    it('reuses warm bytes on a matching commit with exactly one probe, no tree/blob requests, and no writes (AC1)', async () => {
+        const home = createTempWorkspace();
+        setEnvVar('HOME_DIR', home);
+        const cacheRoot = join(marketplaceCacheRoot(), 'gobing-ai', 'superskill', 'HEAD');
+        seedWarmCache(cacheRoot);
+        writeMarker(cacheRoot);
+        const manifestBefore = readFileSync(join(cacheRoot, '.claude-plugin', 'marketplace.json'), 'utf-8');
+        const markerBefore = markerText(cacheRoot);
+
+        const urls: string[] = [];
         const result = await resolveRemoteMarketplace('gobing-ai/superskill', {
-            fetchFn: (async () => {
-                throw new Error('network must not be reached');
+            fetchFn: (async (url: string) => {
+                urls.push(url);
+                return new Response(COMMIT_A, { status: 200 });
             }) as unknown as typeof fetch,
         });
+
         expect(result.root).toBe(cacheRoot);
+        expect(result.resolvedRef).toBe(TREE_A);
+        expect(urls).toEqual(['https://api.github.com/repos/gobing-ai/superskill/commits/HEAD']);
+        // Bytes and the marker timestamp stay unchanged: a warm hit claims freshness
+        // without touching the cache (R1).
+        expect(readFileSync(join(cacheRoot, '.claude-plugin', 'marketplace.json'), 'utf-8')).toBe(manifestBefore);
+        expect(markerText(cacheRoot)).toBe(markerBefore);
+    });
+
+    // AC3 (tolerance): unknown marker fields never invalidate an otherwise-valid marker.
+    it('tolerates unknown marker keys on an otherwise matching marker (AC3)', async () => {
+        const home = createTempWorkspace();
+        setEnvVar('HOME_DIR', home);
+        const cacheRoot = join(marketplaceCacheRoot(), 'gobing-ai', 'superskill', 'HEAD');
+        seedWarmCache(cacheRoot);
+        writeMarker(cacheRoot);
+        writeFileSync(
+            join(cacheRoot, '.superskill-ref.json'),
+            JSON.stringify({
+                ...JSON.parse(markerText(cacheRoot)),
+                someFutureField: { nested: true },
+            }),
+        );
+
+        const urls: string[] = [];
+        const result = await resolveRemoteMarketplace('gobing-ai/superskill', {
+            fetchFn: (async (url: string) => {
+                urls.push(url);
+                return new Response(COMMIT_A, { status: 200 });
+            }) as unknown as typeof fetch,
+        });
+
+        expect(result.resolvedRef).toBe(TREE_A);
+        expect(urls).toEqual(['https://api.github.com/repos/gobing-ai/superskill/commits/HEAD']);
     });
 
     it('fails a cold cache with an actionable error naming the fetch target and cache path', async () => {
@@ -1179,39 +1306,7 @@ describe('resolveRemoteMarketplace — cache + offline contract (R4/R9/AC6)', ()
 
     // AC2 end-to-end: both locator forms must resolve the `cc` plugin with its root materialized
     // inside the cache. The parsing/disambiguation tests above cover the halves; this covers the
-    // composition (locator → cold-cache materialize → resolvePluginRoot) that AC2 actually claims.
-    function ccRepoFetch(): typeof fetch {
-        const tree = {
-            sha: 'abc',
-            branch: 'main',
-            tree: [
-                { path: '.claude-plugin/marketplace.json', type: 'blob' as const, sha: 'm1' },
-                { path: 'plugins/cc/plugin.json', type: 'blob' as const, sha: 'p1' },
-                { path: 'plugins/cc/skills/a.md', type: 'blob' as const, sha: 's1' },
-            ],
-        };
-        const contentByPath: Record<string, string> = {
-            '.claude-plugin/marketplace.json': JSON.stringify({
-                name: 'superskill',
-                plugins: [{ name: 'cc', source: './plugins/cc' }],
-            }),
-            'plugins/cc/plugin.json': JSON.stringify({ name: 'cc' }),
-            'plugins/cc/skills/a.md': '---\nname: a\ndescription: Skill a\n---\n# skill a\n',
-        };
-        return (async (url: string) => {
-            if (url.includes('/git/trees/')) {
-                return new Response(JSON.stringify(tree), {
-                    status: 200,
-                    headers: { 'Content-Type': 'application/json' },
-                });
-            }
-            for (const [path, content] of Object.entries(contentByPath)) {
-                if (url.endsWith(`/${path}`)) return new Response(content, { status: 200 });
-            }
-            return new Response('not found', { status: 404 });
-        }) as unknown as typeof fetch;
-    }
-
+    // composition (locator → probe → cold-cache materialize → resolvePluginRoot) that AC2 claims.
     it.each([
         ['GitHub URL', 'https://github.com/gobing-ai/superskill'],
         ['owner/repo shorthand', 'gobing-ai/superskill'],
@@ -1219,17 +1314,312 @@ describe('resolveRemoteMarketplace — cache + offline contract (R4/R9/AC6)', ()
         const home = createTempWorkspace();
         setEnvVar('HOME_DIR', home);
 
-        const resolved = await resolveRemoteMarketplace(locator, { fetchFn: ccRepoFetch() });
+        const resolved = await resolveRemoteMarketplace(locator, {
+            fetchFn: ccRepoFetch({
+                commit: COMMIT_A,
+                tree: TREE_A,
+                skillBody: '---\nname: a\ndescription: Skill a\n---\n# skill a\n',
+            }),
+        });
         const cacheRoot = resolved.root;
 
         expect(cacheRoot).toBe(join(marketplaceCacheRoot(), 'gobing-ai', 'superskill', 'HEAD'));
         expect(existsSync(join(cacheRoot, '.claude-plugin', 'marketplace.json'))).toBe(true);
-        expect(resolved.resolvedRef).toBe('abc');
+        expect(resolved.resolvedRef).toBe(TREE_A);
 
         // The materialized cache root feeds the unchanged local resolve flow.
         const resolution = resolvePluginRoot('cc', cacheRoot);
         expect(resolution.pluginRoot).toBe(join(cacheRoot, 'plugins', 'cc'));
         expect(existsSync(join(resolution.pluginRoot, 'skills', 'a.md'))).toBe(true);
+    });
+
+    // AC2: acquisition pins to the probed commit — a symbolic ref that advances right
+    // after the probe cannot leak a second snapshot into the same acquisition.
+    it('pins a cold acquisition to the probed commit even when the ref advances mid-flight (AC2)', async () => {
+        const home = createTempWorkspace();
+        setEnvVar('HOME_DIR', home);
+        let probes = 0;
+        const urls: string[] = [];
+        const fetchFn = (async (url: string) => {
+            urls.push(url);
+            if (url.includes('/commits/')) {
+                probes += 1;
+                return new Response(probes === 1 ? COMMIT_A : COMMIT_B, { status: 200 });
+            }
+            if (url.includes('/git/trees/')) {
+                // Only the pinned commit's tree answers; any other ref is gone.
+                if (!url.endsWith(`/git/trees/${COMMIT_A}?recursive=1`)) return new Response('moved', { status: 404 });
+                return new Response(
+                    JSON.stringify({
+                        sha: TREE_A,
+                        tree: [
+                            { path: '.claude-plugin/marketplace.json', type: 'blob', sha: 'm1' },
+                            { path: 'plugins/cc/plugin.json', type: 'blob', sha: 'p1' },
+                            { path: 'plugins/cc/skills/a.md', type: 'blob', sha: 's1' },
+                        ],
+                    }),
+                    { status: 200, headers: { 'Content-Type': 'application/json' } },
+                );
+            }
+            if (url.includes('raw.githubusercontent.com')) {
+                if (!url.includes(`/${COMMIT_A}/`)) return new Response('wrong ref', { status: 404 });
+                if (url.endsWith('/.claude-plugin/marketplace.json')) {
+                    return new Response(
+                        JSON.stringify({ name: 'superskill', plugins: [{ name: 'cc', source: './plugins/cc' }] }),
+                        { status: 200 },
+                    );
+                }
+                if (url.endsWith('/plugins/cc/plugin.json')) return new Response('"cc"', { status: 200 });
+                if (url.endsWith('/plugins/cc/skills/a.md')) return new Response('pinned-bytes', { status: 200 });
+            }
+            return new Response('not found', { status: 404 });
+        }) as unknown as typeof fetch;
+
+        const resolved = await resolveRemoteMarketplace('gobing-ai/superskill', { fetchFn });
+
+        expect(resolved.resolvedRef).toBe(TREE_A);
+        // The tree request used the probed commit, not the (advanced) symbolic ref.
+        expect(urls.filter((url) => url.includes('/git/trees/'))).toEqual([
+            `https://api.github.com/repos/gobing-ai/superskill/git/trees/${COMMIT_A}?recursive=1`,
+        ]);
+        for (const url of urls.filter((url) => url.includes('raw.githubusercontent.com'))) {
+            expect(url).toContain(`/${COMMIT_A}/`);
+        }
+        // The marker records both immutable SHAs of the completed snapshot.
+        const marker = JSON.parse(markerText(resolved.root)) as Record<string, string>;
+        expect(marker.owner).toBe('gobing-ai');
+        expect(marker.repo).toBe('superskill');
+        expect(marker.ref).toBe('HEAD');
+        expect(marker.subdir).toBe('');
+        expect(marker.commitSha).toBe(COMMIT_A);
+        expect(marker.treeSha).toBe(TREE_A);
+        expect(marker.materializedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+        expect(readFileSync(join(resolved.root, 'plugins', 'cc', 'skills', 'a.md'), 'utf-8')).toBe('pinned-bytes');
+    });
+
+    // AC2/R2: a warm cache whose marker records an older commit refreshes online and the
+    // marker is rewritten with the new commit/tree SHAs and a new timestamp.
+    it('refreshes a stale warm cache when the probed commit advanced and rewrites the marker (AC2/R2)', async () => {
+        const home = createTempWorkspace();
+        setEnvVar('HOME_DIR', home);
+        const cacheRoot = join(marketplaceCacheRoot(), 'gobing-ai', 'superskill', 'HEAD');
+        seedWarmCache(cacheRoot, '# old bytes\n');
+        writeMarker(cacheRoot);
+
+        const resolved = await resolveRemoteMarketplace('gobing-ai/superskill', {
+            fetchFn: ccRepoFetch({ commit: COMMIT_B, tree: TREE_B, skillBody: '# refreshed\n' }),
+        });
+
+        expect(resolved.root).toBe(cacheRoot);
+        expect(resolved.resolvedRef).toBe(TREE_B);
+        expect(readFileSync(join(cacheRoot, 'plugins', 'cc', 'skills', 'a.md'), 'utf-8')).toBe('# refreshed\n');
+        const marker = JSON.parse(markerText(cacheRoot)) as Record<string, string>;
+        expect(marker.commitSha).toBe(COMMIT_B);
+        expect(marker.treeSha).toBe(TREE_B);
+        expect(marker.materializedAt).not.toBe('2026-09-19T00:00:00.000Z');
+    });
+
+    // AC3: absent, malformed, invalid-field, and identity-mismatched markers all refresh
+    // online and republish a valid identity marker.
+    it.each([
+        ['absent (legacy cache)', undefined],
+        ['corrupt (invalid JSON)', '{ not json'],
+        [
+            'schema-invalid (bad treeSha)',
+            JSON.stringify({
+                owner: 'gobing-ai',
+                repo: 'superskill',
+                ref: 'HEAD',
+                subdir: '',
+                commitSha: COMMIT_A,
+                treeSha: 'abc',
+            }),
+        ],
+        ['identity-mismatched (other owner)', null],
+    ])('refreshes online when the marker is %s and writes a valid identity marker (AC3)', async (_label, markerBody) => {
+        const home = createTempWorkspace();
+        setEnvVar('HOME_DIR', home);
+        const cacheRoot = join(marketplaceCacheRoot(), 'gobing-ai', 'superskill', 'HEAD');
+        seedWarmCache(cacheRoot, '# stale\n');
+        if (typeof markerBody === 'string') {
+            writeFileSync(join(cacheRoot, '.superskill-ref.json'), markerBody);
+        } else if (markerBody === null) {
+            // The explicit identity-mismatch case: a well-formed marker for another owner.
+            writeMarker(cacheRoot, { owner: 'other-org' });
+        }
+
+        const resolved = await resolveRemoteMarketplace('gobing-ai/superskill', {
+            fetchFn: ccRepoFetch({ commit: COMMIT_A, tree: TREE_A, skillBody: '# fresh\n' }),
+        });
+
+        expect(readFileSync(join(resolved.root, 'plugins', 'cc', 'skills', 'a.md'), 'utf-8')).toBe('# fresh\n');
+        const marker = JSON.parse(markerText(resolved.root)) as Record<string, string>;
+        expect(marker.owner).toBe('gobing-ai');
+        expect(marker.repo).toBe('superskill');
+        expect(marker.ref).toBe('HEAD');
+        expect(marker.subdir).toBe('');
+        expect(marker.commitSha).toBe(COMMIT_A);
+        expect(marker.treeSha).toBe(TREE_A);
+        expect(resolved.resolvedRef).toBe(TREE_A);
+    });
+
+    // AC4/R3: probe failures reuse a manifest-bearing cache with one stderr warning —
+    // old bytes and marker stay byte-identical, freshness stays unclaimed.
+    it.each([
+        ['a thrown network error', 'throw'],
+        ['a simulated timeout abort', 'abort'],
+        ['HTTP 403', '403'],
+        ['HTTP 429', '429'],
+        ['HTTP 404', '404'],
+        ['HTTP 500', '500'],
+        ['a malformed SHA body', 'sha'],
+    ])('falls back to warm bytes with one warning when the probe fails from %s (AC4/R3)', async (_label, mode) => {
+        const home = createTempWorkspace();
+        setEnvVar('HOME_DIR', home);
+        const cacheRoot = join(marketplaceCacheRoot(), 'gobing-ai', 'superskill', 'HEAD');
+        seedWarmCache(cacheRoot, '# cached\n');
+        writeMarker(cacheRoot);
+        const manifestBefore = readFileSync(join(cacheRoot, '.claude-plugin', 'marketplace.json'), 'utf-8');
+        const markerBefore = markerText(cacheRoot);
+        const failFn = (async (url: string) => {
+            if (!url.includes('/commits/')) throw new Error('tree/blob must not be requested on a failed probe');
+            if (mode === 'throw') throw new Error('offline');
+            if (mode === 'abort') throw new Error('The operation was aborted due to timeout');
+            if (mode === 'sha') return new Response('garbage-sha', { status: 200 });
+            return new Response('nope', { status: Number(mode) });
+        }) as unknown as typeof fetch;
+
+        const stderr = spyOn(process.stderr, 'write').mockImplementation(() => true);
+        const result = await resolveRemoteMarketplace('gobing-ai/superskill', { fetchFn: failFn });
+        const errOutput = stderr.mock.calls.map((call) => String(call[0])).join('');
+        stderr.mockRestore();
+
+        expect(result.root).toBe(cacheRoot);
+        expect(result.resolvedRef).toBe(TREE_A);
+        expect(readFileSync(join(cacheRoot, 'plugins', 'cc', 'skills', 'a.md'), 'utf-8')).toBe('# cached\n');
+        expect(readFileSync(join(cacheRoot, '.claude-plugin', 'marketplace.json'), 'utf-8')).toBe(manifestBefore);
+        // Freshness stays unverified: the marker is never rewritten on fallback (R3).
+        expect(markerText(cacheRoot)).toBe(markerBefore);
+        expect(errOutput).toContain('could not verify freshness');
+        expect(errOutput).toContain('gobing-ai/superskill');
+        expect(errOutput).toContain(cacheRoot);
+    });
+
+    // AC4: a warm fallback without a usable marker must not invent a resolvedRef.
+    it.each([
+        ['absent', undefined],
+        ['corrupt', '{ not json'],
+    ])('returns no resolvedRef when falling back with an %s marker (AC4)', async (_label, markerBody) => {
+        const home = createTempWorkspace();
+        setEnvVar('HOME_DIR', home);
+        const cacheRoot = join(marketplaceCacheRoot(), 'gobing-ai', 'superskill', 'HEAD');
+        seedWarmCache(cacheRoot, '# cached\n');
+        if (markerBody !== undefined) {
+            writeFileSync(join(cacheRoot, '.superskill-ref.json'), markerBody);
+        }
+
+        const stderr = spyOn(process.stderr, 'write').mockImplementation(() => true);
+        const result = await resolveRemoteMarketplace('gobing-ai/superskill', {
+            fetchFn: (async () => {
+                throw new Error('offline');
+            }) as unknown as typeof fetch,
+        });
+        stderr.mockRestore();
+
+        expect(result.root).toBe(cacheRoot);
+        expect(result.resolvedRef).toBeUndefined();
+    });
+
+    // AC4/R3: a parseable marker for a different identity is never an offline fallback —
+    // the resolution fails with locator/cache context instead.
+    it('fails a known identity-mismatched cache on probe failure instead of falling back (AC4/R3)', async () => {
+        const home = createTempWorkspace();
+        setEnvVar('HOME_DIR', home);
+        const cacheRoot = join(marketplaceCacheRoot(), 'gobing-ai', 'superskill', 'HEAD');
+        seedWarmCache(cacheRoot);
+        writeMarker(cacheRoot, { owner: 'other-org' });
+        const markerBefore = markerText(cacheRoot);
+
+        await expect(
+            resolveRemoteMarketplace('gobing-ai/superskill', {
+                fetchFn: (async () => {
+                    throw new Error('offline');
+                }) as unknown as typeof fetch,
+            }),
+        ).rejects.toThrow(
+            new RegExp(`Failed to resolve marketplace 'gobing-ai/superskill'.*${cacheRoot.replace(/\//g, '\\/')}`),
+        );
+        expect(markerText(cacheRoot)).toBe(markerBefore);
+    });
+
+    // AC5/R4: a mid-download refresh failure keeps the previous snapshot byte-identical
+    // (marker included) and leaves no staging leftovers.
+    it('keeps the previous snapshot when the refreshed materialization fails mid-download (AC5/R4)', async () => {
+        const home = createTempWorkspace();
+        setEnvVar('HOME_DIR', home);
+        const cacheRoot = join(marketplaceCacheRoot(), 'gobing-ai', 'superskill', 'HEAD');
+        seedWarmCache(cacheRoot, '# previous\n');
+        writeMarker(cacheRoot);
+        const manifestBefore = readFileSync(join(cacheRoot, '.claude-plugin', 'marketplace.json'), 'utf-8');
+        const markerBefore = markerText(cacheRoot);
+
+        const full = ccRepoFetch({ commit: COMMIT_B, tree: TREE_B, skillBody: '# refreshed\n' });
+        const failing = (async (url: string) => {
+            if (url.endsWith('/plugins/cc/skills/a.md')) return new Response('boom', { status: 500 });
+            return full(url);
+        }) as unknown as typeof fetch;
+
+        await expect(resolveRemoteMarketplace('gobing-ai/superskill', { fetchFn: failing })).rejects.toThrow(
+            /gobing-ai\/superskill/,
+        );
+        expect(readFileSync(join(cacheRoot, 'plugins', 'cc', 'skills', 'a.md'), 'utf-8')).toBe('# previous\n');
+        expect(readFileSync(join(cacheRoot, '.claude-plugin', 'marketplace.json'), 'utf-8')).toBe(manifestBefore);
+        expect(markerText(cacheRoot)).toBe(markerBefore);
+        const cacheParent = join(marketplaceCacheRoot(), 'gobing-ai', 'superskill');
+        const leftovers = existsSync(cacheParent)
+            ? readdirSync(cacheParent).filter((entry) => entry.startsWith('HEAD.tmp-'))
+            : [];
+        expect(leftovers).toEqual([]);
+    });
+
+    // AC5/R4: a promotion failure after transaction reservation rolls back — the previous
+    // cache and marker survive, and the error names the failure (the marker-write case
+    // shares the same pre-promotion path: staging-only, old root untouched).
+    it('rolls back a failed promotion after reservation and preserves the previous cache (AC5/R4)', async () => {
+        const home = createTempWorkspace();
+        setEnvVar('HOME_DIR', home);
+        const cacheRoot = join(marketplaceCacheRoot(), 'gobing-ai', 'superskill', 'HEAD');
+        seedWarmCache(cacheRoot, '# previous\n');
+        writeMarker(cacheRoot);
+        const manifestBefore = readFileSync(join(cacheRoot, '.claude-plugin', 'marketplace.json'), 'utf-8');
+        const markerBefore = markerText(cacheRoot);
+
+        const replaceSpy = spyOn(FilesystemTransaction.prototype, 'replace').mockImplementationOnce(async function (
+            this: FilesystemTransaction,
+            destination: string,
+        ) {
+            // Exercise the real reservation so rollback restores real backup state.
+            await (this as unknown as { reserve: (destination: string) => Promise<unknown> }).reserve(destination);
+            throw new Error('simulated promotion failure');
+        });
+        try {
+            await expect(
+                resolveRemoteMarketplace('gobing-ai/superskill', {
+                    fetchFn: ccRepoFetch({ commit: COMMIT_B, tree: TREE_B, skillBody: '# refreshed\n' }),
+                }),
+            ).rejects.toThrow(/Failed to promote the refreshed marketplace cache.*previous cache was restored/s);
+        } finally {
+            replaceSpy.mockRestore();
+        }
+        expect(readFileSync(join(cacheRoot, 'plugins', 'cc', 'skills', 'a.md'), 'utf-8')).toBe('# previous\n');
+        expect(readFileSync(join(cacheRoot, '.claude-plugin', 'marketplace.json'), 'utf-8')).toBe(manifestBefore);
+        expect(markerText(cacheRoot)).toBe(markerBefore);
+        // Rollback restored the backup, so no backup directories remain.
+        const cacheParent = join(marketplaceCacheRoot(), 'gobing-ai', 'superskill');
+        const backups = existsSync(cacheParent)
+            ? readdirSync(cacheParent).filter((entry) => entry.startsWith('.superskill-backup-'))
+            : [];
+        expect(backups).toEqual([]);
     });
 
     // Regression (partial-tree poisoning): a cold-cache failure must not leave a cache root
@@ -1295,13 +1685,22 @@ describe('resolveRemoteMarketplace — cache + offline contract (R4/R9/AC6)', ()
             join(cacheRoot, '.claude-plugin', 'marketplace.json'),
             JSON.stringify({ name: 'superskill', plugins: [{ name: 'cc', source: './plugins/cc' }] }),
         );
+        // A valid matching marker makes the first resolve a true warm hit against the
+        // poisoned cache, so self-heal is what recovers it (R6).
+        writeMarker(cacheRoot);
 
         const stdout = spyOn(process.stdout, 'write').mockImplementation(() => true);
         await executeInstall(
             'cc',
             ['hermes'],
             { global: false, dryRun: true, verbose: false, marketplacePath: 'gobing-ai/superskill' },
-            { fetchFn: ccRepoFetch() },
+            {
+                fetchFn: ccRepoFetch({
+                    commit: COMMIT_A,
+                    tree: TREE_A,
+                    skillBody: '---\nname: a\ndescription: Skill a\n---\n# skill a\n',
+                }),
+            },
         );
         stdout.mockRestore();
 

@@ -103,10 +103,16 @@ export const MAX_CANDIDATE_SKILL_PATHS = 256;
 export const MAX_MATERIALIZED_FILES = 4096;
 /** Maximum concurrent outbound fetches across the blob/download/materialize fan-outs. */
 const MAX_CONCURRENT_FETCHES = 8;
-/** Hard read caps (bytes): tree JSON, raw file text, download-manifest JSON. */
+/** Hard read caps (bytes): tree JSON, raw file text, download-manifest JSON, commit-SHA probe. */
 const MAX_TREE_JSON_BYTES = 16 * 1024 * 1024;
 const MAX_RAW_FILE_BYTES = 2 * 1024 * 1024;
 const MAX_DOWNLOAD_JSON_BYTES = 32 * 1024 * 1024;
+/** The `application/vnd.github.sha` response is the bare 40-char hash alone; 1 KiB is generous. */
+const MAX_COMMIT_SHA_BYTES = 1024;
+/** Whole commit-probe sequence (including default-ref fallback candidates) is bounded once. */
+const COMMIT_PROBE_TIMEOUT_MS = 10_000;
+/** A Git object SHA: exactly 40 hexadecimal characters. */
+const COMMIT_SHA_PATTERN = /^[0-9a-f]{40}$/i;
 /**
  * Per-blob cap for a materialized repository subtree. Deliberately larger than
  * {@link MAX_RAW_FILE_BYTES}: that cap bounds text decoded into memory (SKILL.md), while a
@@ -506,6 +512,67 @@ export async function fetchRepoTree(
         }
     }
     return null;
+}
+
+/**
+ * Resolve a ref to its current immutable commit SHA via the GitHub Commits API
+ * (`Accept: application/vnd.github.sha` returns the bare hash). This is the freshness
+ * probe behind marketplace cache reuse (task 0145): compare the probed commit against a
+ * cache marker instead of trusting a warm snapshot's age.
+ *
+ * Ref semantics mirror {@link fetchRepoTree}'s candidates: an explicit ref tries only
+ * itself; an undefined ref tries HEAD, main, master in that order, continuing the walk
+ * on 404 only — rate-limit (403/429) and outage responses fail immediately rather than
+ * burning fallback candidates. Any thrown fetch error propagates (an unreachable network
+ * is not "ref not found"). One {@link AbortSignal.timeout} bounds the whole sequence.
+ *
+ * Rejects with a contextual error on non-success HTTP, an oversized body, or a body that
+ * is not a trimmed 40-character hexadecimal SHA.
+ */
+export async function fetchRepoCommitSha(
+    ownerRepo: string,
+    ref?: string,
+    getToken?: () => string | null,
+    fetchFn: typeof fetch = fetch,
+): Promise<string> {
+    const candidates = ref ? [ref] : ['HEAD', 'main', 'master'];
+    const signal = AbortSignal.timeout(COMMIT_PROBE_TIMEOUT_MS);
+    for (const candidate of candidates) {
+        const url = `https://api.github.com/repos/${ownerRepo}/commits/${encodeURIComponent(candidate)}`;
+        const headers: Record<string, string> = {
+            Accept: 'application/vnd.github.sha',
+            'User-Agent': 'superskill-core',
+        };
+        const token = getToken ? getToken() : null;
+        if (token) {
+            headers.Authorization = `Bearer ${token}`;
+        }
+        let response: Response;
+        try {
+            response = await fetchFn(url, { headers, signal });
+        } catch (error) {
+            throw new Error(
+                `Commit probe for ${ownerRepo}@${candidate} (${url}) failed: ${error instanceof Error ? error.message : String(error)}`,
+            );
+        }
+        // Only "ref not found" walks the default candidates; rate limits and outages do not.
+        if (response.status === 404 && !ref) continue;
+        if (!response.ok) {
+            throw new Error(
+                `Could not fetch commit SHA for ${ownerRepo}@${candidate} (${url}): HTTP ${response.status}`,
+            );
+        }
+        const sha = (
+            await readBodyBounded(response, MAX_COMMIT_SHA_BYTES, `commit SHA for ${ownerRepo}@${candidate}`)
+        ).trim();
+        if (!COMMIT_SHA_PATTERN.test(sha)) {
+            throw new Error(`Commit probe for ${ownerRepo}@${candidate} returned a malformed SHA`);
+        }
+        return sha;
+    }
+    throw new Error(
+        `Could not resolve ${ownerRepo} to a commit (no default ref responded: tried ${candidates.join(', ')})`,
+    );
 }
 
 /**

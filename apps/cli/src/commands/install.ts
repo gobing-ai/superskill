@@ -25,6 +25,8 @@ import {
     collectBotSkillEntries,
     createPostInstallRegistry,
     emitGrokBotInstall,
+    FilesystemTransaction,
+    fetchRepoCommitSha,
     type GrokBotSource,
     getEnvVar,
     getGitHubToken,
@@ -46,6 +48,7 @@ import {
     materializeRepoSubdir,
     parseGitHubRepoUrl,
     planGrokBotInstall,
+    type RepoTree,
     resolveMarketplaceRegistration,
     resolvePlugin,
     resolveSandRoot,
@@ -65,6 +68,7 @@ import {
 import { NodeProcessExecutor, type ProcessExecutor } from '@gobing-ai/ts-runtime';
 import { echo, echoError } from '@gobing-ai/ts-utils';
 import type { Command } from 'commander';
+import { z } from 'zod';
 import { loadConfig } from '../config';
 import {
     type EmitHooksResult,
@@ -297,12 +301,111 @@ export function marketplaceCacheRoot(): string {
     return join(resolveHomeDir(), '.cache', 'superskill', 'marketplaces');
 }
 
+// ── Marketplace cache freshness marker (task 0145) ─────────────────────────
+
+/** Marker file published beside the materialized snapshot inside the cache root. */
+const MARKETPLACE_MARKER_FILENAME = '.superskill-ref.json';
+
+/** A Git object SHA: exactly 40 hexadecimal characters. */
+const MARKETPLACE_SHA_PATTERN = /^[0-9a-f]{40}$/;
+
+/** Validated cache-freshness marker: identity + immutable SHAs of the materialized snapshot. */
+interface RemoteMarketplaceMarker {
+    owner: string;
+    repo: string;
+    ref: string;
+    /** Normalized locator subdir (trailing slashes stripped; absent is empty string). */
+    subdir: string;
+    /** Immutable commit the snapshot was materialized from. */
+    commitSha: string;
+    /** Tree SHA of that commit restricted to the locator — returned as `resolvedRef`. */
+    treeSha: string;
+    /** ISO-8601 timestamp of the materialization. */
+    materializedAt: string;
+}
+
 /**
- * Resolve a remote marketplace locator to a local cache root, materializing
- * plugin content on a cold cache (R4/R9). Warm cache resolves offline with no
- * network call; a failed cold-cache fetch throws an actionable error naming
- * the fetch target and the cache path. Every locator-derived path segment is
- * asserted before the first mkdir (AC6).
+ * Marker schema (existing zod dependency, passthrough). Missing or malformed files mean
+ * "absent marker" (legacy caches predate it); unknown fields are tolerated. Identity
+ * strings, both SHAs, and the timestamp are validated — but marker fields are only ever
+ * *compared* against the parsed locator, never used to build filesystem destinations.
+ */
+const remoteMarketplaceMarkerSchema = z
+    .object({
+        owner: z.string().min(1),
+        repo: z.string().min(1),
+        ref: z.string().min(1),
+        subdir: z.string(),
+        commitSha: z.string().regex(MARKETPLACE_SHA_PATTERN),
+        treeSha: z.string().regex(MARKETPLACE_SHA_PATTERN),
+        materializedAt: z.string().refine((value) => !Number.isNaN(Date.parse(value)), 'must be an ISO timestamp'),
+    })
+    .passthrough();
+
+/** Normalized subdir identity for marker comparison: absent is '', trailing slashes stripped. */
+function normalizeMarketplaceSubdir(subdir: string | undefined): string {
+    return (subdir ?? '').replace(/\/+$/, '');
+}
+
+/**
+ * Read the freshness marker of a materialized marketplace cache. Returns null for a
+ * missing, unreadable, or schema-invalid file — an absent marker keeps the manifest-presence
+ * compatibility rule for legacy/corrupt caches (task 0145 R3).
+ */
+function readRemoteMarketplaceMarker(cacheRoot: string): RemoteMarketplaceMarker | null {
+    const markerPath = join(cacheRoot, MARKETPLACE_MARKER_FILENAME);
+    if (!existsSync(markerPath)) return null;
+    try {
+        const parsed = remoteMarketplaceMarkerSchema.safeParse(JSON.parse(readFileSync(markerPath, 'utf-8')));
+        return parsed.success ? parsed.data : null;
+    } catch {
+        return null;
+    }
+}
+
+/** Does a parseable marker describe exactly the snapshot this locator asks for? */
+function markerIdentityMatches(marker: RemoteMarketplaceMarker, parsed: RemoteMarketplaceLocator): boolean {
+    return (
+        marker.owner === parsed.owner &&
+        marker.repo === parsed.repo &&
+        marker.ref === parsed.ref &&
+        normalizeMarketplaceSubdir(marker.subdir) === normalizeMarketplaceSubdir(parsed.subdir)
+    );
+}
+
+/** Write the freshness marker into a staging root; published atomically with its snapshot. */
+function writeRemoteMarketplaceMarker(
+    destinationRoot: string,
+    parsed: RemoteMarketplaceLocator,
+    commitSha: string,
+    treeSha: string,
+): void {
+    const marker: RemoteMarketplaceMarker = {
+        owner: parsed.owner,
+        repo: parsed.repo,
+        ref: parsed.ref,
+        subdir: normalizeMarketplaceSubdir(parsed.subdir),
+        commitSha,
+        treeSha,
+        materializedAt: new Date().toISOString(),
+    };
+    writeFileSync(join(destinationRoot, MARKETPLACE_MARKER_FILENAME), `${JSON.stringify(marker, null, 2)}\n`);
+}
+
+/**
+ * Resolve a remote marketplace locator to a local cache root (R4/R9, task 0145).
+ * Every remote resolution first probes the requested ref's current commit SHA via
+ * {@link fetchRepoCommitSha}; a cache whose marker records the same commit is reused
+ * byte-for-byte with zero tree/blob downloads, so a warm cache can never serve a stale
+ * upstream snapshot indefinitely. Cold, stale, legacy (markerless), corrupt-marker, and
+ * identity-mismatched caches re-materialize the probed immutable commit into sibling
+ * staging and publish it with a validated marker via a {@link FilesystemTransaction} —
+ * a failed refresh preserves the previous cache. A probe failure falls back to an existing
+ * manifest-bearing cache (one stderr warning; freshness stays unverified, the marker is
+ * never rewritten), while cold caches and known identity mismatches fail. `resolvedRef`
+ * remains the materialized tree SHA on cold and valid-marker warm returns (receipt
+ * semantics, ADR-035). Every locator-derived path segment is asserted before the first
+ * mkdir (AC6).
  */
 export async function resolveRemoteMarketplace(
     locator: string,
@@ -318,32 +421,75 @@ export async function resolveRemoteMarketplace(
         assertSafePathSegment(seg, 'marketplace locator');
     }
     const cacheRoot = join(marketplaceCacheRoot(), parsed.owner, parsed.repo, parsed.ref);
+    const fetchFn = deps.fetchFn ?? fetch;
 
-    // Warm cache: resolve offline, zero network calls (R9).
-    if (
+    const hasCachedManifest =
         existsSync(join(cacheRoot, 'marketplace.json')) ||
-        existsSync(join(cacheRoot, '.claude-plugin', 'marketplace.json'))
-    ) {
-        return { root: cacheRoot };
-    }
+        existsSync(join(cacheRoot, '.claude-plugin', 'marketplace.json'));
+    const marker = readRemoteMarketplaceMarker(cacheRoot);
+    // A parseable marker describing a different owner/repo/ref/subdir is a *known* identity
+    // mismatch: the bytes are a valid cache for another request, never for this one — online
+    // refresh or a hard failure, never a warned fallback.
+    const identityMismatch = marker !== null && !markerIdentityMatches(marker, parsed);
 
     const token = await getGitHubToken();
-    // Stage into a sibling temp dir and rename into place only on success: a
-    // partial materialization (transient blob fetch failure, interrupted
-    // process) must never leave a cache root whose manifest exists but whose
-    // tree is incomplete — the warm-cache check above would accept it forever
-    // and every later install would fail on the missing plugin dir.
+
+    // Freshness probe (R1): one commit request answers "is the warm cache current?".
+    let commitSha: string;
+    try {
+        commitSha = await fetchRepoCommitSha(
+            `${parsed.owner}/${parsed.repo}`,
+            parsed.ref === 'HEAD' ? undefined : parsed.ref,
+            () => token,
+            fetchFn,
+        );
+    } catch (err) {
+        const cause = err instanceof Error ? err.message : String(err);
+        if (hasCachedManifest && !identityMismatch) {
+            // Offline compatibility (R3): reuse old bytes with one warning. Freshness stays
+            // unverified — never rewrite the marker or claim the cache is current.
+            echoError(
+                `Warning: could not verify freshness of marketplace '${locator}' against ${parsed.owner}/${parsed.repo}` +
+                    ` (${cause}); using the cached copy at ${cacheRoot}.`,
+            );
+            return marker !== null ? { root: cacheRoot, resolvedRef: marker.treeSha } : { root: cacheRoot };
+        }
+        throw new Error(
+            `Failed to resolve marketplace '${locator}' from ${parsed.owner}/${parsed.repo}` +
+                `${parsed.ref !== 'HEAD' ? `@${parsed.ref}` : ''}` +
+                ` into cache ${cacheRoot}: ${cause}`,
+        );
+    }
+
+    // Warm hit (AC1): the probed commit matches the marker — existing bytes are current.
+    // No writes at all: bytes and the marker timestamp stay unchanged.
+    if (hasCachedManifest && marker !== null && !identityMismatch && marker.commitSha === commitSha) {
+        return { root: cacheRoot, resolvedRef: marker.treeSha };
+    }
+
+    // Cold, stale, legacy, or mismatched: materialize the probed immutable commit into
+    // sibling staging (R2). Pinning tree and raw downloads to the commit SHA keeps the
+    // snapshot coherent even if the symbolic ref advances mid-acquisition.
     mkdirSync(dirname(cacheRoot), { recursive: true });
     const stagingRoot = mkdtempSync(`${cacheRoot}.tmp-`);
+    let tree: RepoTree;
     try {
-        const tree = await materializeRepoSubdir(`${parsed.owner}/${parsed.repo}`, parsed.subdir ?? '', stagingRoot, {
-            ref: parsed.ref === 'HEAD' ? undefined : parsed.ref,
+        tree = await materializeRepoSubdir(`${parsed.owner}/${parsed.repo}`, parsed.subdir ?? '', stagingRoot, {
+            ref: commitSha,
             getToken: () => token,
-            fetchFn: deps.fetchFn,
+            fetchFn,
         });
-        rmSync(cacheRoot, { recursive: true, force: true });
-        renameSync(stagingRoot, cacheRoot);
-        return { root: cacheRoot, resolvedRef: tree.sha };
+        // Never promote a snapshot without a readable manifest: the warm-cache check would
+        // accept such a cache forever. Plugin/schema validation stays in resolvePlugin.
+        if (
+            !existsSync(join(stagingRoot, 'marketplace.json')) &&
+            !existsSync(join(stagingRoot, '.claude-plugin', 'marketplace.json'))
+        ) {
+            throw new Error(`materialized snapshot at ${stagingRoot} has no readable marketplace.json`);
+        }
+        // The marker publishes together with its snapshot, so a completed promotion is
+        // always marker-valid (R2).
+        writeRemoteMarketplaceMarker(stagingRoot, parsed, commitSha, tree.sha);
     } catch (err) {
         rmSync(stagingRoot, { recursive: true, force: true });
         throw new Error(
@@ -352,6 +498,34 @@ export async function resolveRemoteMarketplace(
                 ` into cache ${cacheRoot}: ${err instanceof Error ? err.message : String(err)}`,
         );
     }
+
+    // Promotion (R4): transactional replacement with rollback — a failed rename restores
+    // the previous cache; a failed rollback retains the backup and names both failures.
+    // Handled-error safety only: crash atomicity and concurrent writers stay out of scope.
+    const transaction = new FilesystemTransaction();
+    try {
+        await transaction.replace(cacheRoot, async (destination) => {
+            renameSync(stagingRoot, destination);
+        });
+        await transaction.commit();
+    } catch (promotionErr) {
+        rmSync(stagingRoot, { recursive: true, force: true });
+        const reason = promotionErr instanceof Error ? promotionErr.message : String(promotionErr);
+        try {
+            await transaction.rollback();
+        } catch (rollbackErr) {
+            throw new Error(
+                `Failed to promote the refreshed marketplace cache for '${locator}' into ${cacheRoot}: ${reason}; ` +
+                    `rollback also failed (${rollbackErr instanceof Error ? rollbackErr.message : String(rollbackErr)}); ` +
+                    `recovery data remains beside the cache under ${join(dirname(cacheRoot), '.superskill-backup-*')}.`,
+            );
+        }
+        throw new Error(
+            `Failed to promote the refreshed marketplace cache for '${locator}' into ${cacheRoot}: ${reason}; ` +
+                `the previous cache was restored.`,
+        );
+    }
+    return { root: cacheRoot, resolvedRef: tree.sha };
 }
 
 /** Execute the full install flow: resolve → map → pipeline → rulesync → dispatch. */
@@ -391,7 +565,11 @@ export async function executeInstall(
     let sandRoot = null;
     if (botRequested) {
         assertBotHostGlobal(options.global);
-        sandRoot = resolveSandRoot({ sandData: process.env.SAND_DATA, homeDir: resolveHomeDir(), createMissing: true });
+        sandRoot = resolveSandRoot({
+            sandData: getEnvVar('SAND_DATA'),
+            homeDir: resolveHomeDir(),
+            createMissing: true,
+        });
     }
 
     const incompatibleNativeTargets = execTargets.filter(

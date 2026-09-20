@@ -393,11 +393,19 @@ describe('executeInstall provenance manifest', () => {
             'plugins/demo/plugin.json': JSON.stringify({ name: 'demo', version: '0.0.1' }),
             'plugins/demo/skills/a.md': '---\nname: a\ndescription: Skill a\n---\n# skill a\n',
         };
+        const commitSha = 'abcd1234abcd1234abcd1234abcd1234abcd1234';
         globalThis.fetch = (async (url: string) => {
             if (url.includes('/git/trees/')) {
                 return new Response(JSON.stringify(tree), {
                     status: 200,
                     headers: { 'Content-Type': 'application/json' },
+                });
+            }
+            if (url.includes('/commits/')) {
+                // Accept: application/vnd.github.sha returns the bare 40-char hash, not JSON.
+                return new Response(commitSha, {
+                    status: 200,
+                    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
                 });
             }
             for (const [path, content] of Object.entries(contentByPath)) {
@@ -425,6 +433,19 @@ describe('executeInstall provenance manifest', () => {
         expect(manifest.resolvedRef).toBe(tree.sha);
         expect(manifest.upstreamVersion).toBe('8.8.8');
         expect(manifest.channel).toBe('marketplace');
+        // 0145 freshness contract: the materialized snapshot's cache marker carries the
+        // probed HEAD commit (bare vnd.github.sha body), distinct from the tree SHA.
+        const marker = JSON.parse(
+            readFileSync(
+                join(
+                    workspace,
+                    '.cache/superskill/marketplaces/gobing-ai/0123-manifest-fixture/HEAD',
+                    '.superskill-ref.json',
+                ),
+                'utf8',
+            ),
+        ) as { commitSha?: string };
+        expect(marker.commitSha).toBe(commitSha);
     });
 
     it('writes a claude provenance manifest from in-scope native dests', async () => {
