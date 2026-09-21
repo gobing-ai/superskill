@@ -11,6 +11,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 - fix(grok-bot): treat host-rewritten bridge pointers as healthy when `canonical:` still targets the owned recipe (stops 113× owned-drift after Bot `update_state` register); still refuse canonical drift, full-mode edits, and unowned extras
 - fix(grok-bot): handoff/doctor/README copy — slash fill is NOT automatic, Shell fallback for `.superskill` Read denial, soft-pedal unverified Settings > Plugins path
 
+## [0.3.29] - 2026-09-19
+
+### Added
+
+- feat(skills-ecosystem): revalidate marketplace cache freshness before warm-cache reuse (0145) (`1d85ee3`)
+
+### Fixed
+
+- fix(install): stage remote marketplace cache atomically and self-heal poisoned caches (`2cc9cdb`)
+
+### Changed
+
+- test(install): spy renameSync for AC5 promotion rollback; link task 0145 to feature B (`e9faf76`)
+- refactor(env): route env access through getEnvVar gateway + hygiene boundary rule (`6478bd8`)
+- docs(tasks): add new tasks (`759bf92`)
+
 ## [0.3.28] - 2026-09-14
 
 ### Fixed
