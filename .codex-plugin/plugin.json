@@ -1,7 +1,7 @@
 {
     "name": "cc",
     "description": "superskill - a manager for multi-agent skill, slash command, subagent, hook, MCP and etc",
-    "version": "0.3.29",
+    "version": "0.3.30",
     "author": {
         "name": "Robin Min",
         "email": "minlongbing@gmail.com"
@@ -9,5 +9,14 @@
     "homepage": "https://github.com/gobing-ai/superskill",
     "repository": "https://github.com/gobing-ai/superskill",
     "license": "Apache-2.0",
-    "keywords": ["skills", "slash-commands", "subagents", "hooks", "mcp", "agent-config", "multi-agent", "superskill"]
+    "keywords": [
+        "skills",
+        "slash-commands",
+        "subagents",
+        "hooks",
+        "mcp",
+        "agent-config",
+        "multi-agent",
+        "superskill"
+    ]
 }
