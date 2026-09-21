@@ -124,7 +124,9 @@ export const MAX_MATERIALIZED_BLOB_BYTES = 64 * 1024 * 1024;
 
 /**
  * Map over `items` with at most `limit` in-flight workers (R9). Results keep input
- * order; worker rejections propagate (already-launched workers run to their next await).
+ * order. On worker failure, all already-launched workers finish before the first
+ * rejection propagates — callers may then clean up the output directory without
+ * racing stragglers still writing into it.
  */
 async function mapWithConcurrency<T, R>(
     items: readonly T[],
@@ -140,7 +142,9 @@ async function mapWithConcurrency<T, R>(
             results[index] = await worker(items[index] as T, index);
         }
     });
-    await Promise.all(runners);
+    const settled = await Promise.allSettled(runners);
+    const firstRejection = settled.find((s): s is PromiseRejectedResult => s.status === 'rejected');
+    if (firstRejection) throw firstRejection.reason;
     return results;
 }
 
