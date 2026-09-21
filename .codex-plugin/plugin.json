@@ -9,14 +9,5 @@
     "homepage": "https://github.com/gobing-ai/superskill",
     "repository": "https://github.com/gobing-ai/superskill",
     "license": "Apache-2.0",
-    "keywords": [
-        "skills",
-        "slash-commands",
-        "subagents",
-        "hooks",
-        "mcp",
-        "agent-config",
-        "multi-agent",
-        "superskill"
-    ]
+    "keywords": ["skills", "slash-commands", "subagents", "hooks", "mcp", "agent-config", "multi-agent", "superskill"]
 }
