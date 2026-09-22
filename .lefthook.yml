@@ -19,3 +19,9 @@ pre-push:
       run: cog check --from-latest-tag
     lint:
       run: bun run lint
+    manifest:
+      # Release lockstep guard: marketplace.json plugin versions must equal
+      # apps/cli/package.json. Enforces pre-push the same gate CI's builder
+      # test enforces post-push, so a desynced release commit (marketplace
+      # bumped ahead of apps/cli) can no longer reach origin red.
+      run: bun scripts/builder.ts check-publish-manifest apps/cli/package.json

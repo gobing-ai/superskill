@@ -45,9 +45,15 @@ staging lived in `prepublishOnly`, `npm pack` packed whatever stale copies happe
    Nothing here is mechanically checkable; this step is why the checklist exists.
 
 2. **Version sync** — *guarded.* `check-publish-manifest` fails the publish when
-   `.claude-plugin/marketplace.json` plugin versions differ from `apps/cli/package.json`. To bump:
-   `bun scripts/builder.ts bump-ver <version>` (writes package + marketplace + `plugin.json`, then
-   commits and tags).
+   `.claude-plugin/marketplace.json` plugin versions differ from `apps/cli/package.json`.
+   Bump with the **atomic** release command — `spur builder bump-ver <version>` (a bare version
+   releases every released package — `packages/core` + `apps/cli` — plus marketplace, plugin
+   manifests, and adapters in **one** commit, then tags `@gobing-ai/superskill-v<version>`, the
+   `publish.yml` trigger; add `--push` to push branch and tags).
+   Never bump one package alone (`spur builder bump-ver superskill-core <version>`): a core-only
+   bump moves the marketplace ahead of `apps/cli` and every pushed commit stays CI-red until a
+   manual follow-up sync lands — the 0.3.29–0.3.31 incident. The pre-push `manifest` hook
+   (`.lefthook.yml`) now blocks such pushes before they reach origin.
 
 3. **Gates green** — `bun run lint`, `bun run test`, `bun run build`, `bun run spur-check`.
 

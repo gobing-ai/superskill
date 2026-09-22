@@ -94,8 +94,16 @@ redaction:
 # Per-platform plugin manifests are git-tracked mirrors of plugins/cc/plugin.json that
 # no marketplace entry covers — declared as plugin-manifest carriers so every release
 # commit keeps them in lockstep (they previously drifted to 0.3.1 vs marketplace 0.3.27).
+#
+# aggregatePackage: without it, the released set = workspace-pinned packages only (core),
+# so a bare `spur builder bump-ver <version>` left apps/cli desynced (0.3.29–0.3.31
+# incident), and the aggregate tag fell back to the unscoped root name (`superskill-v*`)
+# that the publish.yml trigger (`@gobing-ai/superskill-v*`) never matched — publishes
+# silently stopped after 0.3.28. Declaring the CLI as aggregate puts both packages in one
+# release commit and names the aggregate tag `@gobing-ai/superskill-v<version>`.
 builder:
   bump-ver:
+    aggregatePackage: superskill
     tagVersionSeparator: "-v"
     publishWorkflow: publish.yml
     releaseCommitType: chore
