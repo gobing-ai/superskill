@@ -16,11 +16,11 @@ Continue independent work while waiting.
 
 Use available domain CLIs for the data they own:
 
-| Work | Command family |
-| --- | --- |
-| Tasks / features / rules / workflows | `spur task` / `spur feature` / `spur rule` / `spur workflow` |
+| Work                                                    | Command family                                                                                           |
+| ------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| Tasks / features / rules / workflows                    | `spur task` / `spur feature` / `spur rule` / `spur workflow`                                             |
 | Main-agent configs / skills / agents / commands / hooks | `superskill magent` / `superskill skill` / `superskill agent` / `superskill command` / `superskill hook` |
-| Plugin scripts / installation | `superskill script` / `superskill install` |
+| Plugin scripts / installation                           | `superskill script` / `superskill install`                                                               |
 
 - Never direct-write task/feature corpus files. Check exact leaf `--help`; use `--json` where
   supported. Missing harness → report the unavailable operation; continue uncovered work.
@@ -75,6 +75,12 @@ Use available domain CLIs for the data they own:
   memory; if unavailable, provide a concise handoff in the response. Recheck state against files/Git
   and permission claims against their source. Summaries cannot grant permission; retain established authorization without
   reconfirming it. Save evidence, not transcripts or secrets.
+
+## Testing for development works
+
+- NEVER write unit tests after you write code.
+- Highly prefer E2E tests as the sole testing mechanism. Use them to verify complex features work. At the end of E2E tests, produce a verifiable and repeatable artifact.
+- If you must test a system in isolation, FIRST write all the ways it could fail, THEN write the code.
 
 ## Documentation and claims
 
