@@ -16,6 +16,8 @@
             "!plugins/cc/skills/*/scripts",
             "!plugins/cc/skills/*/tests",
             "!plugins/*/scripts/**/*.mjs",
+            "!**/.codex-plugin",
+            "!**/.cursor-plugin",
             "!**/vendors"
         ]
     },
