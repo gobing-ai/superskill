@@ -2,7 +2,13 @@ import { describe, expect, it } from 'bun:test';
 import { mkdirSync, mkdtempSync, rmSync, symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { getDataRoot, getDBPath, getProposalsDir, pathsNestOrEqual } from '../../src/content/paths';
+import {
+    getDataRoot,
+    getDBPath,
+    getProposalsDir,
+    isLexicallyContained,
+    pathsNestOrEqual,
+} from '../../src/content/paths';
 
 describe('getDataRoot', () => {
     it('returns projectRoot when provided', () => {
@@ -85,5 +91,34 @@ describe('pathsNestOrEqual', () => {
         } finally {
             rmSync(base, { recursive: true, force: true });
         }
+    });
+});
+
+describe('isLexicallyContained (R2/C1, task 0146 AC15)', () => {
+    it('accepts equal paths and direct/descendant children', () => {
+        expect(isLexicallyContained('/tmp/install', '/tmp/install')).toBe(true);
+        expect(isLexicallyContained('/tmp/install', '/tmp/install/skill')).toBe(true);
+        expect(isLexicallyContained('/tmp/install', '/tmp/install/a/b/c')).toBe(true);
+    });
+
+    it('rejects sibling-prefix lookalikes and .. escapes', () => {
+        // /tmp/instal is a string prefix of /tmp/install but a sibling directory.
+        expect(isLexicallyContained('/tmp/instal', '/tmp/install/skill')).toBe(false);
+        expect(isLexicallyContained('/tmp/install', '/tmp/install/../elsewhere')).toBe(false);
+        expect(isLexicallyContained('/tmp/install', '/tmp/other')).toBe(false);
+        expect(isLexicallyContained('/tmp/install', '/completely/different/root')).toBe(false);
+    });
+
+    it('rejects containment across different roots', () => {
+        expect(isLexicallyContained('/base', '/completely/different')).toBe(false);
+        // On win32 the parse-root guard rejects the cross-drive pair directly; on POSIX
+        // the same pair falls out as a `..` escape — both spellings reject.
+        expect(isLexicallyContained('C:\\base', 'D:\\base\\child')).toBe(false);
+    });
+
+    it('never touches the filesystem (purely lexical)', () => {
+        const missing = '/definitely/not/a/real/path/xyzzy';
+        expect(isLexicallyContained(missing, join(missing, 'child'))).toBe(true);
+        expect(isLexicallyContained(missing, '/tmp')).toBe(false);
     });
 });

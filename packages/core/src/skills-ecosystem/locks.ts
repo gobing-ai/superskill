@@ -96,24 +96,28 @@ export function getGlobalLockPath(env?: Record<string, string | undefined>, home
 /** Alias function for vendor compatibility pointing to getGlobalLockPath. */
 export const getSkillLockPath = getGlobalLockPath;
 
+/** Translated-output directory markers (R4): any of these as a segment at or below the
+ * last `.agents/skills` boundary marks a translated target, not a canonical skill folder. */
+const TRANSLATED_MARKERS = new Set(['.hermes', '.grok', 'translated']);
+
 /**
  * Validate that a directory path points to a canonical skill folder and NOT a translated target directory.
+ * Segment-aware (R4): only a translated-marker segment occurring at or below the last
+ * `.agents/skills` boundary rejects the path. The same marker higher up in the tree
+ * (e.g. `/Users/x/.grok/work/.agents/skills/foo` or `/Users/x/translated/p/.agents/skills/foo`)
+ * is an ordinary ancestor directory and stays allowed.
  */
 export function isCanonicalSkillPath(path: string): boolean {
-    const normalized = path.split('\\').join('/');
-    const translatedSegmentPatterns = [
-        '/.hermes/skills/',
-        '/.hermes/skills',
-        '/.hermes/',
-        '/.grok/skills/',
-        '/.grok/skills',
-        '/.grok/',
-        '/translated/',
-    ];
-    for (const pattern of translatedSegmentPatterns) {
-        if (normalized.includes(pattern)) {
-            return false;
+    const segments = path.split('\\').join('/').split('/').filter(Boolean);
+    let boundary = 0; // first segment index after the last `.agents/skills` pair
+    for (let i = segments.length - 2; i >= 0; i--) {
+        if (segments[i] === '.agents' && segments[i + 1] === 'skills') {
+            boundary = i + 2;
+            break;
         }
+    }
+    for (let i = boundary; i < segments.length; i++) {
+        if (TRANSLATED_MARKERS.has(segments[i] as string)) return false;
     }
     return true;
 }
@@ -329,10 +333,58 @@ async function mutationGuardOwnerIsDead(guardDir: string): Promise<boolean> {
 }
 
 /**
+ * Steal a stale mutation guard (R1/S1). The rename in the old waiter loop was
+ * unsynchronized: a waiter that had just observed a dead owner could steal the guard a
+ * still-live contender had already re-acquired and delete it under its feet. Recovery is
+ * now a two-phase, exclusive protocol:
+ * 1. `mkdir(`${guardDir}.steal`)` — atomic exclusive-create thief lock; a competing thief
+ *    sees `EEXIST` and goes back to waiting.
+ * 2. While holding it, re-probe `mutationGuardOwnerIsDead`; a live owner, unreadable
+ *    metadata, or a vanished guard returns `false`.
+ * 3. `rename(guardDir, ${guardDir}.stale-<uuid>)` is then safe — no fresh acquirer can
+ *    exist (the dead owner cannot `mkdir`; live contenders only observe `EEXIST`) — and
+ *    the stale copy is removed after the fact. The `.steal` lock is always released.
+ * Returns whether this caller performed the takeover; at most one waiter succeeds per
+ * stale guard.
+ *
+ * @internal exported for tests; not part of the supported package surface.
+ *
+ * ponytail: a thief that crashes between step 1 and the `finally` leaves a stale
+ * `.steal` directory that blocks stale recovery for that lock until removed by hand
+ * (e.g. `rm -rf '<lock>.guard.steal'`). Auto-recovery (pid/timestamp metadata, mtime
+ * reaping) is the upgrade path if that ever shows up in the wild.
+ */
+export async function tryStealStaleMutationGuard(guardDir: string): Promise<boolean> {
+    const stealDir = `${guardDir}.steal`;
+    try {
+        await mkdir(stealDir); // no recursive: EEXIST means another thief holds the steal lock
+    } catch (error) {
+        if ((error as NodeJS.ErrnoException)?.code === 'EEXIST') return false;
+        throw error;
+    }
+    try {
+        if (!(await mutationGuardOwnerIsDead(guardDir))) return false;
+        const stolen = `${guardDir}.stale-${randomUUID()}`;
+        try {
+            await rename(guardDir, stolen);
+        } catch {
+            // Guard vanished (or was re-created) between probe and rename — keep waiting.
+            return false;
+        }
+        await rm(stolen, { recursive: true, force: true }).catch(() => {});
+        return true;
+    } finally {
+        await rm(stealDir, { recursive: true, force: true }).catch(() => {});
+    }
+}
+
+/**
  * Run `fn` while holding the exclusive per-lock mutation guard (R3). Acquisition is an
- * atomic exclusive-create `mkdir`; the wait is bounded at 10 seconds; a dead owner
- * (per PID metadata) permits one atomic rename-steal takeover. Release always happens
- * in `finally`, including on rollback paths.
+ * atomic exclusive-create `mkdir`; the wait is bounded at 10 seconds; a dead owner (per
+ * PID metadata) permits one rename-steal takeover, serialized through an exclusive
+ * `${guardDir}.steal` thief lock (R1) so competing waiters can never rename away a
+ * freshly re-acquired guard. Release always happens in `finally`, including on rollback
+ * paths.
  */
 export async function withSkillMutationGuard<T>(lockPath: string, fn: () => Promise<T>): Promise<T> {
     const guardDir = mutationGuardPath(lockPath);
@@ -347,17 +399,10 @@ export async function withSkillMutationGuard<T>(lockPath: string, fn: () => Prom
             break;
         } catch (error) {
             if ((error as NodeJS.ErrnoException)?.code !== 'EEXIST') throw error;
-            if (!staleRecovered && (await mutationGuardOwnerIsDead(guardDir))) {
-                // Atomic steal: rename first so a competing waiter can never delete a
-                // freshly (re)acquired guard. One takeover attempt per waiter.
-                const stolen = `${guardDir}.stale-${randomUUID()}`;
-                try {
-                    await rename(guardDir, stolen);
-                    staleRecovered = true;
-                    await rm(stolen, { recursive: true, force: true }).catch(() => {});
-                } catch {
-                    // Another waiter won the steal (or the holder released) — keep retrying.
-                }
+            // One takeover attempt per waiter (R1); the steal lock serializes competing
+            // thieves so a live contender's fresh guard is never renamed out from under it.
+            if (!staleRecovered && (await tryStealStaleMutationGuard(guardDir))) {
+                staleRecovered = true;
                 continue;
             }
             await new Promise((resolveSleep) => setTimeout(resolveSleep, MUTATION_GUARD_RETRY_MS));
@@ -365,6 +410,10 @@ export async function withSkillMutationGuard<T>(lockPath: string, fn: () => Prom
     }
     if (!acquired) throw new SkillMutationContentionError(lockPath);
     try {
+        // ponytail: a crash between the guard mkdir and this best-effort write leaves an
+        // ownerless guard that every waiter treats as live until the deadline — clear the
+        // `<lock>.guard` directory by hand. Owner-write-in-create or mtime liveness is the
+        // upgrade path if that window ever bites.
         await writeFile(
             join(guardDir, 'owner'),
             `${JSON.stringify({ pid: process.pid, acquiredAt: new Date().toISOString() })}\n`,
@@ -516,6 +565,8 @@ export async function writeLocalLock(lock: LocalSkillLockFile, cwd?: string): Pr
 
 /**
  * Add or update a skill in the local skill lock file.
+ * Acquires the per-lock mutation guard (R6); not reentrant — never call from inside
+ * `withSkillMutationGuard` on the same lock.
  */
 export async function addSkillToLocalLock(
     skillName: string,
@@ -529,25 +580,31 @@ export async function addSkillToLocalLock(
         throw new Error('LocalSkillLockEntry requires computedHash or canonicalSkillDir');
     }
 
-    const lock = await readLocalLock(opts?.cwd);
-    lock.skills[skillName] = {
-        ...entry,
-        computedHash: hash,
-    };
-    await writeLocalLock(lock, opts?.cwd);
+    return withSkillMutationGuard(getLocalLockPath(opts?.cwd), async () => {
+        const lock = await readLocalLock(opts?.cwd);
+        lock.skills[skillName] = {
+            ...entry,
+            computedHash: hash,
+        };
+        await writeLocalLock(lock, opts?.cwd);
+    });
 }
 
 /**
  * Remove a skill from the local skill lock file.
+ * Acquires the per-lock mutation guard (R6); not reentrant — never call from inside
+ * `withSkillMutationGuard` on the same lock.
  */
 export async function removeSkillFromLocalLock(skillName: string, cwd?: string): Promise<boolean> {
-    const lock = await readLocalLock(cwd);
-    if (!(skillName in lock.skills)) {
-        return false;
-    }
-    delete lock.skills[skillName];
-    await writeLocalLock(lock, cwd);
-    return true;
+    return withSkillMutationGuard(getLocalLockPath(cwd), async () => {
+        const lock = await readLocalLock(cwd);
+        if (!(skillName in lock.skills)) {
+            return false;
+        }
+        delete lock.skills[skillName];
+        await writeLocalLock(lock, cwd);
+        return true;
+    });
 }
 
 /**
@@ -678,6 +735,9 @@ export const writeSkillLock = writeGlobalLock;
 
 /**
  * Add or update a skill in the global skill lock file.
+ * The canonical-path precondition is checked outside the guard (cheap fail-fast); the
+ * read-modify-write then runs under the per-lock mutation guard (R6). Not reentrant —
+ * never call from inside `withSkillMutationGuard` on the same lock.
  */
 export async function addSkillToGlobalLock(
     skillName: string,
@@ -690,17 +750,19 @@ export async function addSkillToGlobalLock(
         );
     }
 
-    const lock = await readGlobalLock(opts?.env, opts?.homeDir);
-    const now = new Date().toISOString();
-    const existing = lock.skills[skillName];
+    return withSkillMutationGuard(getGlobalLockPath(opts?.env, opts?.homeDir), async () => {
+        const lock = await readGlobalLock(opts?.env, opts?.homeDir);
+        const now = new Date().toISOString();
+        const existing = lock.skills[skillName];
 
-    lock.skills[skillName] = {
-        ...entry,
-        installedAt: existing?.installedAt ?? now,
-        updatedAt: now,
-    };
+        lock.skills[skillName] = {
+            ...entry,
+            installedAt: existing?.installedAt ?? now,
+            updatedAt: now,
+        };
 
-    await writeGlobalLock(lock, opts?.env, opts?.homeDir);
+        await writeGlobalLock(lock, opts?.env, opts?.homeDir);
+    });
 }
 
 /** Alias for addSkillToGlobalLock for vendor compatibility. */
@@ -708,19 +770,23 @@ export const addSkillToLock = addSkillToGlobalLock;
 
 /**
  * Remove a skill from the global skill lock file.
+ * Acquires the per-lock mutation guard (R6); not reentrant — never call from inside
+ * `withSkillMutationGuard` on the same lock.
  */
 export async function removeSkillFromGlobalLock(
     skillName: string,
     env?: Record<string, string | undefined>,
     homeDir?: string,
 ): Promise<boolean> {
-    const lock = await readGlobalLock(env, homeDir);
-    if (!(skillName in lock.skills)) {
-        return false;
-    }
-    delete lock.skills[skillName];
-    await writeGlobalLock(lock, env, homeDir);
-    return true;
+    return withSkillMutationGuard(getGlobalLockPath(env, homeDir), async () => {
+        const lock = await readGlobalLock(env, homeDir);
+        if (!(skillName in lock.skills)) {
+            return false;
+        }
+        delete lock.skills[skillName];
+        await writeGlobalLock(lock, env, homeDir);
+        return true;
+    });
 }
 
 /** Alias for removeSkillFromGlobalLock for vendor compatibility. */

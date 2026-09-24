@@ -151,6 +151,10 @@ not attempted):
 }
 ```
 
+`resources` maps relative support-file paths to **UTF-8 text content** (schemaVersion 1 is
+text-only): binary support files (images, archives) are materialized on disk but omitted from
+this map rather than corrupted.
+
 Validate before any host write:
 
 - Catch malformed JSON per file. Require an object, exact `schemaVersion: 1`,

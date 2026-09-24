@@ -166,9 +166,15 @@ describe('fetch.ts - GitHub Trees/Blob fast path and hardened git clone', () => 
                 });
             }
             if (url.includes('/api/download/')) {
+                // R14: the manifest must embed the exact raw SKILL.md bytes.
                 return new Response(
                     JSON.stringify({
-                        files: [{ path: 'SKILL.md', contents: '# Content' }],
+                        files: [
+                            {
+                                path: 'SKILL.md',
+                                contents: '---\nname: Test Skill\ndescription: A test skill\n---\n# Content',
+                            },
+                        ],
                         hash: 'snapshot-hash-123',
                     }),
                     { status: 200 },
@@ -207,9 +213,16 @@ describe('fetch.ts - GitHub Trees/Blob fast path and hardened git clone', () => 
                 );
             }
             if (url.includes('/api/download/')) {
+                // R14: the manifest must embed the exact raw SKILL.md bytes.
                 return new Response(
                     JSON.stringify({
-                        files: [{ path: 'SKILL.md', contents: '# Internal' }],
+                        files: [
+                            {
+                                path: 'SKILL.md',
+                                contents:
+                                    '---\nname: Internal Skill\ndescription: Internal\nmetadata:\n  internal: true\n---\n# Internal',
+                            },
+                        ],
                         hash: 'hash-internal',
                     }),
                     { status: 200 },
@@ -278,7 +291,11 @@ describe('fetch.ts - GitHub Trees/Blob fast path and hardened git clone', () => 
                 return new Response(
                     JSON.stringify({
                         files: [
-                            { path: 'SKILL.md', contents: '# Multi' },
+                            // R14: SKILL.md manifest entry must match the raw bytes exactly.
+                            {
+                                path: 'SKILL.md',
+                                contents: '---\nname: Multi Skill\ndescription: Multi skill desc\n---\n# Multi',
+                            },
                             { path: 'b_helper.txt', contents: 'helper b' },
                             { path: 'a_helper.txt', contents: 'helper a' },
                         ],
@@ -1025,9 +1042,18 @@ describe('fetch.ts - bounded acquisition (R9/F9)', () => {
                 return new Response(body, { status: 200 });
             }
             if (url.includes('/api/download/')) {
-                const slug = decodeURIComponent(url.split('/api/download/owner/repo/')[1] ?? '');
+                const i = Number(url.match(/\/api\/download\/owner\/repo\/skill-(\d+)$/)?.[1] ?? 0);
+                // R14: the manifest must embed the exact raw SKILL.md bytes.
                 return new Response(
-                    JSON.stringify({ files: [{ path: 'SKILL.md', contents: `# ${slug}` }], hash: `h-${slug}` }),
+                    JSON.stringify({
+                        files: [
+                            {
+                                path: 'SKILL.md',
+                                contents: `---\nname: Skill ${i}\ndescription: fixture ${i}\n---\n# Skill ${i}`,
+                            },
+                        ],
+                        hash: `h-${i}`,
+                    }),
                     { status: 200 },
                 );
             }
@@ -1116,9 +1142,12 @@ describe('fetch.ts - bounded acquisition (R9/F9)', () => {
                 return new Response(exact, { status: 200 });
             }
             if (url.includes('/api/download/')) {
+                // R14: the manifest must embed the exact raw SKILL.md bytes.
                 return new Response(
-                    JSON.stringify({ files: [{ path: 'SKILL.md', contents: '# Exact' }], hash: 'h-exact' }),
-                    { status: 200 },
+                    JSON.stringify({ files: [{ path: 'SKILL.md', contents: exact }], hash: 'h-exact' }),
+                    {
+                        status: 200,
+                    },
                 );
             }
             return new Response('not found', { status: 404 });
@@ -1160,7 +1189,8 @@ describe('fetch.ts - bounded acquisition (R9/F9)', () => {
     it('caps the download manifest: 32 MiB + 1 byte throws naming the cap, exactly 32 MiB installs', async () => {
         const tree = [{ path: 'skills/dl/SKILL.md', type: 'blob', sha: 'dl' }];
         const buildDownloadJson = (padBytes: number) => {
-            const head = '{"files":[{"path":"SKILL.md","contents":"# Dl"}],"hash":"h","pad":"';
+            const head =
+                '{"files":[{"path":"SKILL.md","contents":"---\\nname: Dl\\ndescription: dl\\n---\\n# Dl"}],"hash":"h","pad":"';
             return `${head}${'x'.repeat(padBytes)}"}`;
         };
         const base = Buffer.byteLength(buildDownloadJson(0));
@@ -1185,5 +1215,160 @@ describe('fetch.ts - bounded acquisition (R9/F9)', () => {
         expect(Buffer.byteLength(exact)).toBe(32 * 1024 * 1024);
         const result = await tryBlobInstall('owner/repo', { ref: 'main', fetchFn: fetchWith(exact) });
         expect(result?.skills.length).toBe(1);
+    });
+});
+
+describe('task 0146 regression coverage', () => {
+    it('rejects a truncated tree instead of installing a partial skill set (AC8/R3)', async () => {
+        const truncatedTree = {
+            sha: 'tree-sha',
+            branch: 'main',
+            truncated: true,
+            tree: [{ path: 'skills/one/SKILL.md', type: 'blob', sha: 'b1' }],
+        };
+        const fetchFn = (async (urlStr: string | URL | Request) => {
+            if (String(urlStr).includes('/git/trees/')) {
+                return new Response(JSON.stringify(truncatedTree), { status: 200 });
+            }
+            return new Response('not found', { status: 404 });
+        }) as unknown as typeof fetch;
+
+        await expect(fetchRepoTree('owner/repo', 'main', undefined, fetchFn)).rejects.toThrow(
+            /truncated \(repository too large for the Trees API\)/,
+        );
+        await expect(tryBlobInstall('owner/repo', { ref: 'main', fetchFn })).rejects.toThrow(AcquisitionLimitError);
+    });
+
+    it('matches SKILL.md by exact basename, never by suffix (AC13/D11)', () => {
+        const asTree = (paths: string[]) => ({
+            sha: 'root',
+            branch: 'main',
+            tree: paths.map((p) => ({ path: p, type: 'blob' as const, sha: 's' })),
+        });
+        const paths = findSkillMdPaths(
+            asTree([
+                'skills/a/SKILL.md',
+                'skills/b/skill.md',
+                'skills/c/SKILL.MD',
+                'c/myskill.md',
+                'd/reskill.md',
+                'e/SKILL.md.bak',
+            ]),
+        );
+        expect(paths).toEqual(['skills/a/SKILL.md', 'skills/b/skill.md', 'skills/c/SKILL.MD']);
+
+        // getSkillFolderHashFromTree must not slice 'c/myskill.md' into a 'c/my' folder.
+        const decoyTree = {
+            sha: 'root',
+            branch: 'main',
+            tree: [
+                { path: 'c/myskill.md', type: 'blob' as const, sha: 'b1' },
+                { path: 'c/my', type: 'tree' as const, sha: 'decoy' },
+            ],
+        };
+        expect(getSkillFolderHashFromTree(decoyTree, 'c/myskill.md')).toBeNull();
+        expect(getSkillFolderHashFromTree(asTree(['skills/x/SKILL.md']), 'skills/x/SKILL.md')).toBeNull(); // no tree entry
+    });
+
+    it('auth-failure hint names `superskill skill add` with the SSH URL and not the legacy npx command (R8)', async () => {
+        const authFail = new Error('fatal: could not read Username for https://github.com: terminal prompts disabled');
+        const failing = {
+            execGit: async () => {
+                throw authFail;
+            },
+            execGh: async () => {
+                throw new Error('gh: not logged in');
+            },
+        };
+        const error = await cloneRepo('https://github.com/owner/repo', undefined, failing).catch((e: unknown) => e);
+        expect(error).toBeInstanceOf(GitCloneError);
+        const message = (error as Error).message;
+        expect(message).toContain('superskill skill add git@github.com:owner/repo.git');
+        expect(message).not.toContain('npx skills');
+    });
+
+    it('filter matches the lock identity (my_skill), not the slug; download URL keeps the slug (AC17/R11)', async () => {
+        const skillMd = '---\nname: my_skill\ndescription: underscored\n---\n# Body';
+        let downloadUrl = '';
+        const fetchFn = (async (urlStr: string | URL | Request) => {
+            const url = String(urlStr);
+            if (url.includes('/git/trees/')) {
+                return new Response(
+                    JSON.stringify({
+                        sha: 'tree-sha',
+                        branch: 'main',
+                        tree: [{ path: 'skills/my_skill/SKILL.md', type: 'blob', sha: 'b1' }],
+                    }),
+                    { status: 200 },
+                );
+            }
+            if (url.includes('raw.githubusercontent.com')) {
+                return new Response(skillMd, { status: 200 });
+            }
+            if (url.includes('/api/download/')) {
+                downloadUrl = url;
+                return new Response(JSON.stringify({ files: [{ path: 'SKILL.md', contents: skillMd }], hash: 'h' }), {
+                    status: 200,
+                });
+            }
+            return new Response('Not found', { status: 404 });
+        }) as unknown as typeof fetch;
+
+        const selected = await tryBlobInstall('owner/repo', { ref: 'main', skillFilter: 'my_skill', fetchFn });
+        expect(selected?.skills.length).toBe(1);
+        expect(downloadUrl.endsWith('/api/download/owner/repo/my-skill')).toBe(true);
+
+        // The slug namespace must NOT satisfy the lock-identity filter.
+        const slugFiltered = await tryBlobInstall('owner/repo', { ref: 'main', skillFilter: 'my-skill', fetchFn });
+        expect(slugFiltered).toBeNull();
+    });
+
+    it('binds the download manifest to the inspected SKILL.md bytes (AC20/R14)', async () => {
+        const skillMd = '---\nname: Bound Skill\ndescription: bound\n---\n# Bound';
+        const makeFetch = (manifestFiles: Array<{ path: string; contents: string }>): typeof fetch =>
+            (async (urlStr: string | URL | Request) => {
+                const url = String(urlStr);
+                if (url.includes('/git/trees/')) {
+                    return new Response(
+                        JSON.stringify({
+                            sha: 'tree-sha',
+                            branch: 'main',
+                            tree: [{ path: 'skills/bound/SKILL.md', type: 'blob', sha: 'b1' }],
+                        }),
+                        { status: 200 },
+                    );
+                }
+                if (url.includes('raw.githubusercontent.com')) {
+                    return new Response(skillMd, { status: 200 });
+                }
+                if (url.includes('/api/download/')) {
+                    return new Response(JSON.stringify({ files: manifestFiles, hash: 'h' }), { status: 200 });
+                }
+                return new Response('Not found', { status: 404 });
+            }) as unknown as typeof fetch;
+
+        // Mismatched SKILL.md bytes → refuse the snapshot.
+        expect(
+            await tryBlobInstall('owner/repo', {
+                ref: 'main',
+                fetchFn: makeFetch([{ path: 'SKILL.md', contents: '# Different' }]),
+            }),
+        ).toBeNull();
+
+        // Manifest without a SKILL.md entry → refuse.
+        expect(
+            await tryBlobInstall('owner/repo', {
+                ref: 'main',
+                fetchFn: makeFetch([{ path: 'helper.txt', contents: 'x' }]),
+            }),
+        ).toBeNull();
+
+        // Byte-identical SKILL.md → install proceeds.
+        const ok = await tryBlobInstall('owner/repo', {
+            ref: 'main',
+            fetchFn: makeFetch([{ path: 'SKILL.md', contents: skillMd }]),
+        });
+        expect(ok?.skills.length).toBe(1);
+        expect(ok?.skills[0]?.name).toBe('Bound Skill');
     });
 });

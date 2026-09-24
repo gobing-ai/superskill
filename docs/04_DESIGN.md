@@ -50,7 +50,9 @@ installed entry: `id`, `name`, `description`, `mode`, `recipePath` (canonical SK
 workflow SKILL.md for full), `body` (bridge: instructions that explicitly read and follow the
 distinct absolute canonical SKILL.md, preserve user arguments and resolve resources beside it;
 full: the real SKILL.md content — self-referential replacement bodies are rejected),
-`frontmatter` (original metadata) and `resources` (relative path → content). Dry-run previews the
+`frontmatter` (original metadata) and `resources` (relative path → UTF-8 text content; the
+schemaVersion-1 handoff is text-only, so binary support files are omitted — they are still
+materialized on disk under their hashed paths). Dry-run previews the
 handoff path and slash caveat without writing. Success messages report the handoff as
 **prepared**, never registered; `doctor` reports `slashRegistry.status: 'unknown'` with the handoff
 directory and next steps (verified host method, per-Bot enablement) without affecting exit semantics.

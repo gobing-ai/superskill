@@ -1,5 +1,16 @@
 import { describe, expect, it } from 'bun:test';
-import { chmodSync, existsSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import {
+    chmodSync,
+    existsSync,
+    mkdirSync,
+    mkdtempSync,
+    readdirSync,
+    readFileSync,
+    rmSync,
+    statSync,
+    symlinkSync,
+    writeFileSync,
+} from 'node:fs';
 import { mkdtemp, rm, symlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -8,13 +19,14 @@ import {
     cleanAndCreateDir,
     copyDir,
     createSymlink,
+    FilesystemTransaction,
     getCanonicalSkillsDir,
     installSkillCanonical,
     isPathSafe,
     pathsOverlap,
-    sanitizeName,
     writeBlobSkill,
 } from '../../src/skills-ecosystem/installer';
+import { sanitizeName } from '../../src/skills-ecosystem/sanitize';
 
 describe('installer.ts - Canonical skill installation and security guards', () => {
     it('sanitizeName converts names to safe kebab-case slugs', () => {
@@ -223,5 +235,56 @@ describe('installer.ts - Canonical skill installation and security guards', () =
         await cleanAndCreateDir(testDir);
         expect(existsSync(testDir)).toBe(true);
         await rm(testDir, { recursive: true, force: true });
+    });
+});
+
+describe('task 0146 regression coverage', () => {
+    it('copyDir settles every sibling before rejecting a symlinked entry (AC10/C5)', async () => {
+        const testDir = mkdtempSync(join(tmpdir(), 'copydir-settle-'));
+        const srcDir = join(testDir, 'src');
+        const destDir = join(testDir, 'dest');
+        try {
+            mkdirSync(join(srcDir, 'assets'), { recursive: true });
+            for (let i = 0; i < 50; i++) {
+                writeFileSync(join(srcDir, 'assets', `f${i}.txt`), `content-${i}`);
+            }
+            symlinkSync(join(srcDir, 'assets'), join(srcDir, 'assets-link'));
+
+            await expect(copyDir(srcDir, destDir)).rejects.toThrow(/symbolic link/i);
+
+            // Every independent sibling completed before the rejection surfaced, and the
+            // destination listing is stable (no writer still racing after the throw).
+            const listing1 = readdirSync(join(destDir, 'assets')).sort();
+            await new Promise((resolveSleep) => setTimeout(resolveSleep, 50));
+            const listing2 = readdirSync(join(destDir, 'assets')).sort();
+            expect(listing1).toEqual(listing2);
+            expect(listing1).toHaveLength(50);
+        } finally {
+            rmSync(testDir, { recursive: true, force: true });
+        }
+    });
+
+    it('FilesystemTransaction.rollback restores the previous destination after a failed populate (AC11)', async () => {
+        const testDir = mkdtempSync(join(tmpdir(), 'tx-rollback-'));
+        const dest = join(testDir, 'skill');
+        try {
+            mkdirSync(dest);
+            writeFileSync(join(dest, 'SKILL.md'), 'original');
+
+            const tx = new FilesystemTransaction();
+            await expect(
+                tx.replace(dest, async (path) => {
+                    mkdirSync(path, { recursive: true });
+                    writeFileSync(join(path, 'SKILL.md'), 'replaced');
+                    throw new Error('mid-populate failure');
+                }),
+            ).rejects.toThrow(/mid-populate failure/);
+
+            await tx.rollback();
+            expect(readFileSync(join(dest, 'SKILL.md'), 'utf-8')).toBe('original');
+            expect(readdirSync(testDir).filter((name) => name.includes('.superskill-backup-'))).toEqual([]);
+        } finally {
+            rmSync(testDir, { recursive: true, force: true });
+        }
     });
 });

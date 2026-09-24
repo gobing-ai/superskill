@@ -11,7 +11,6 @@
  * instead of being overwritten.
  */
 
-import { createHash } from 'node:crypto';
 import {
     accessSync,
     existsSync,
@@ -26,6 +25,21 @@ import {
 } from 'node:fs';
 import { basename, isAbsolute, join, relative, resolve } from 'node:path';
 import { FrontmatterError, parseFrontmatter } from '../content/frontmatter';
+import {
+    buildMarker,
+    type GrokBotOriginMarker,
+    listRegularFilesRel,
+    markerHashesCurrent,
+    readOriginMarker,
+    sha256File,
+    sha256Text,
+} from './grok-bot-marker';
+
+export type { GrokBotOriginMarker } from './grok-bot-marker';
+// Marker helpers moved to ./grok-bot-marker (task 0146 R13); re-exports keep the
+// package surface (`export *` from index.ts and test imports) unchanged.
+export { markerHashesCurrent, readOriginMarker, sha256File } from './grok-bot-marker';
+
 import { assertSafePathSegment } from '../content/identity';
 import { FilesystemTransaction } from '../skills-ecosystem/installer';
 import { type InstallSnapshot, snapshotFiles } from './install-manifest.js';
@@ -54,21 +68,6 @@ export class GrokBotPreflightError extends Error {}
 export interface GrokBotSource {
     channel: 'bundled' | 'marketplace';
     locator: string;
-}
-
-/** Per-workflow ownership marker (`.superskill-origin.json`) gating overwrite decisions. */
-export interface GrokBotOriginMarker {
-    schemaVersion: 1;
-    target: 'grok-bot';
-    plugin: string;
-    source: GrokBotSource;
-    mode: GrokBotMaterialize;
-    /** Absolute canonical SKILL.md path (bridge) or null (full materialization). */
-    canonicalPath: string | null;
-    superskillVersion: string;
-    installedAt: string;
-    /** Basename → SHA-256 over the owned skill files (marker excluded). */
-    hashes: Record<string, string>;
 }
 
 /** Result of resolving the Sand data root for this host. */
@@ -247,15 +246,6 @@ export function assertBotHostGlobal(global: boolean): void {
     }
 }
 
-/** SHA-256 hex over file bytes. */
-export function sha256File(path: string): string {
-    return createHash('sha256').update(readFileSync(path)).digest('hex');
-}
-
-function sha256Text(text: string): string {
-    return createHash('sha256').update(text, 'utf-8').digest('hex');
-}
-
 /** One flat-catalog skill discovered in a plugin's staged skills/ root. */
 export interface BotSkillEntry {
     /** Flat catalog id (directory name under the staging skills/ root). */
@@ -263,8 +253,9 @@ export interface BotSkillEntry {
     description: string;
     /** Adapted SKILL.md content (dialect-applied, marker-free). */
     skillMd: string;
-    /** Support files relative to the skill dir (SKILL.md excluded). */
-    files: Map<string, string>;
+    /** Support files relative to the skill dir (SKILL.md excluded), kept as raw bytes so
+     * binary assets (PNG icons, gz blobs) survive parse → write round-trips byte-identical (R2/S2). */
+    files: Map<string, Buffer>;
 }
 
 /** Rewrite Bot-foreign invocation prefixes: `/skill:<id>` → `/<id>`. */
@@ -303,28 +294,13 @@ export function parseBotSkillEntry(skillDir: string): BotSkillEntry {
     if (description.length === 0) {
         throw new GrokBotPreflightError(`Skill '${id}' has an empty description — the Bot catalog requires one`);
     }
-    const files = new Map<string, string>();
+    const files = new Map<string, Buffer>();
     for (const rel of listRegularFilesRel(skillDir)) {
         if (rel === 'SKILL.md') continue;
-        files.set(rel, readFileSync(join(skillDir, rel), 'utf-8'));
+        // Raw bytes (no encoding): UTF-8 round-trips unchanged, binary files stay intact (R2).
+        files.set(rel, readFileSync(join(skillDir, rel)));
     }
     return { id, description, skillMd: applyGrokBotDialect(raw), files };
-}
-
-function listRegularFilesRel(root: string): string[] {
-    const out: string[] = [];
-    const walk = (dir: string, prefix: string): void => {
-        for (const entry of readdirSync(dir, { withFileTypes: true })) {
-            if (entry.isSymbolicLink()) continue;
-            if (entry.isDirectory()) {
-                walk(join(dir, entry.name), `${prefix}${entry.name}/`);
-            } else if (entry.isFile()) {
-                out.push(`${prefix}${entry.name}`);
-            }
-        }
-    };
-    walk(root, '');
-    return out.sort();
 }
 
 /** Collect + validate every staged skill before any write (fail before mutating). */
@@ -471,6 +447,27 @@ function bridgeRecordBody(recipePath: string): string {
 }
 
 /**
+ * Decode raw support files to UTF-8 text for the handoff's `resources` map (R15). The
+ * handoff schema (v1) is text-only; files that are not valid UTF-8 (binary assets such
+ * as PNG icons) are skipped rather than mojibake-corrupted.
+ *
+ * ponytail: handoff stays schemaVersion 1 with text-only `resources`; a schemaVersion 2
+ * with base64 file entries is the upgrade path if a host ever needs binary resources.
+ */
+function textResources(files: Map<string, Buffer>): Record<string, string> {
+    const decoder = new TextDecoder('utf-8', { fatal: true });
+    const out: Record<string, string> = {};
+    for (const [rel, bytes] of files) {
+        try {
+            out[rel] = decoder.decode(bytes);
+        } catch {
+            // Binary asset: representable on disk, not in a text-only handoff.
+        }
+    }
+    return out;
+}
+
+/**
  * Build the deterministic registration handoff for one committed install
  * batch (this batch's entries only — never retained obsolete workflows).
  * Throws on content that could not round-trip a preserving host write.
@@ -510,7 +507,7 @@ export function buildBotRegisterHandoff(args: {
             recipePath,
             body: isBridge ? bridgeRecordBody(recipePath) : entry.skillMd,
             frontmatter: parsed.data,
-            resources: Object.fromEntries(entry.files),
+            resources: textResources(entry.files),
         };
     });
     return {
@@ -527,100 +524,6 @@ export function buildBotRegisterHandoff(args: {
 /** Deterministic serialization: stable key order, 2-space indent, trailing newline. */
 export function serializeBotRegisterHandoff(handoff: BotRegisterHandoff): string {
     return `${JSON.stringify(handoff, null, 2)}\n`;
-}
-
-function hashEntry(entry: BotSkillEntry): Record<string, string> {
-    const hashes: Record<string, string> = { 'SKILL.md': sha256Text(entry.skillMd) };
-    for (const [rel, content] of entry.files) hashes[rel] = sha256Text(content);
-    return hashes;
-}
-
-function buildMarker(args: {
-    plugin: string;
-    source: GrokBotSource;
-    mode: GrokBotMaterialize;
-    canonicalPath: string | null;
-    superskillVersion: string;
-    nowIso: string;
-    entry: BotSkillEntry;
-}): string {
-    const marker: GrokBotOriginMarker = {
-        schemaVersion: BOT_MARKER_SCHEMA_VERSION,
-        target: GROK_BOT_TARGET,
-        plugin: args.plugin,
-        source: args.source,
-        mode: args.mode,
-        canonicalPath: args.canonicalPath,
-        superskillVersion: args.superskillVersion,
-        installedAt: args.nowIso,
-        hashes: hashEntry(args.entry),
-    };
-    return `${JSON.stringify(marker, null, 2)}\n`;
-}
-
-/**
- * Read + validate an existing ownership marker. Returns null when absent.
- * Throws {@link GrokBotPreflightError} when present but malformed (R4: fail,
- * never overwrite) or owned by a foreign target/plugin.
- */
-export function readOriginMarker(
-    workflowDir: string,
-    plugin: string,
-    options?: { anyPlugin?: boolean },
-): GrokBotOriginMarker | null {
-    const markerPath = join(workflowDir, BOT_ORIGIN_MARKER);
-    if (!existsSync(markerPath)) return null;
-    let parsed: unknown;
-    try {
-        parsed = JSON.parse(readFileSync(markerPath, 'utf-8'));
-    } catch (error) {
-        throw new GrokBotPreflightError(
-            `Workflow '${basename(workflowDir)}' has a malformed ${BOT_ORIGIN_MARKER}: ${String(error)} — ` +
-                'remove it manually if it is no longer wanted; superskill will not overwrite it',
-        );
-    }
-    const rec = parsed as Partial<GrokBotOriginMarker> | null;
-    if (
-        !rec ||
-        rec.schemaVersion !== BOT_MARKER_SCHEMA_VERSION ||
-        rec.target !== GROK_BOT_TARGET ||
-        typeof rec.plugin !== 'string' ||
-        rec.plugin.length === 0 ||
-        !rec.source ||
-        typeof rec.source !== 'object' ||
-        (rec.source.channel !== 'bundled' && rec.source.channel !== 'marketplace') ||
-        typeof rec.source.locator !== 'string' ||
-        (rec.mode !== 'bridge' && rec.mode !== 'full') ||
-        typeof rec.installedAt !== 'string' ||
-        typeof rec.hashes !== 'object' ||
-        rec.hashes === null
-    ) {
-        throw new GrokBotPreflightError(
-            `Workflow '${basename(workflowDir)}' has an unsupported ${BOT_ORIGIN_MARKER} shape — ` +
-                'remove it manually if it is no longer wanted; superskill will not overwrite it',
-        );
-    }
-    if (options?.anyPlugin !== true && rec.plugin !== plugin) {
-        throw new GrokBotPreflightError(
-            `Workflow '${basename(workflowDir)}' is owned by plugin '${rec.plugin}', not '${plugin}' — ` +
-                'superskill will not replace another plugin’s workflow',
-        );
-    }
-    return rec as GrokBotOriginMarker;
-}
-
-/** True when every marker hash matches current file bytes (marker excluded). */
-export function markerHashesCurrent(marker: GrokBotOriginMarker, dir: string): boolean {
-    for (const [rel, expected] of Object.entries(marker.hashes)) {
-        const abs = join(dir, rel);
-        if (!existsSync(abs) || sha256File(abs) !== expected) return false;
-    }
-    // Extra untracked files also count as drift for doctor; replacement ignores them.
-    for (const rel of listRegularFilesRel(dir)) {
-        if (rel === BOT_ORIGIN_MARKER) continue;
-        if (!(rel in marker.hashes)) return false;
-    }
-    return true;
 }
 
 /** Materialized install plan for the grok-bot target (paths + per-skill actions). */
@@ -839,7 +742,7 @@ function writeTree(dir: string, entry: BotSkillEntry, skillMd: string, extraMark
     for (const [rel, content] of entry.files) {
         const abs = join(dir, rel);
         mkdirSync(resolve(abs, '..'), { recursive: true });
-        writeFileSync(abs, content, 'utf-8');
+        writeFileSync(abs, content); // raw bytes — no encoding arg (R2)
     }
     writeFileSync(join(dir, BOT_ORIGIN_MARKER), extraMarker, 'utf-8');
 }

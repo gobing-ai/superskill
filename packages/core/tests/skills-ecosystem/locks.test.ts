@@ -17,6 +17,7 @@ import {
     removeSkillFromGlobalLock,
     removeSkillFromLocalLock,
     SkillMutationContentionError,
+    tryStealStaleMutationGuard,
     withSkillMutationGuard,
     writeGlobalLock,
     writeLocalLock,
@@ -463,26 +464,16 @@ describe('locks.ts - per-scope mutation guard (R3/F3)', () => {
     // interleaves from the same base snapshot and loses one mutation.
     it('keeps the union of a concurrent add and remove under the guard composition', async () => {
         const dir = mkdtempSync(join(tmpdir(), 'guard-union-'));
-        const lockPath = join(dir, 'skills-lock.json');
         try {
             await addSkillToLocalLock('alpha', localEntry, { cwd: dir });
 
-            let releaseHeld!: () => void;
-            const held = new Promise<void>((resolve) => {
-                releaseHeld = resolve;
-            });
-            const first = withSkillMutationGuard(lockPath, async () => {
-                await held;
-                await addSkillToLocalLock('beta', localEntry, { cwd: dir });
-            });
-            const second = withSkillMutationGuard(lockPath, async () => {
-                await removeSkillFromLocalLock('alpha', dir);
-            });
-
-            await new Promise((resolve) => setTimeout(resolve, 300));
-            releaseHeld();
-            await first;
-            await second;
+            // Since R6 the mutators are self-guarding, so the guard composition is simply
+            // running them concurrently: the per-lock guard serializes them, and either
+            // order leaves the same union { beta }.
+            await Promise.all([
+                addSkillToLocalLock('beta', localEntry, { cwd: dir }),
+                removeSkillFromLocalLock('alpha', dir),
+            ]);
 
             const finalLock = await readLocalLock(dir);
             expect(Object.keys(finalLock.skills).sort()).toEqual(['beta']);
@@ -776,6 +767,141 @@ describe('locks.ts - prototype-safe skill records (R5/F5)', () => {
             expect(Object.keys(lock.skills)).toEqual([]);
         } finally {
             rmSync(dir, { recursive: true, force: true });
+        }
+    });
+});
+
+describe('mutation guard steal race (R1/AC1/AC2)', () => {
+    it('steals only a dead-owner guard and leaves a live-pid guard byte-identical (residual-proof, AC1)', async () => {
+        const dir = mkdtempSync(join(tmpdir(), 'steal-race-'));
+        const guardDir = join(dir, 'skills-lock.json.mutation-lock');
+        try {
+            // Compound trigger half: a real dead pid captured from an exited process.
+            const dead = Bun.spawnSync(['true']);
+            mkdirSync(guardDir, { recursive: true });
+            const deadOwner = `${JSON.stringify({ pid: dead.pid, acquiredAt: 'stale' })}\n`;
+            writeFileSync(join(guardDir, 'owner'), deadOwner);
+            expect(await tryStealStaleMutationGuard(guardDir)).toBe(true);
+            expect(existsSync(guardDir)).toBe(false);
+
+            // Negative half carrying every other trigger: guard exists, thief lock free,
+            // stale timestamp — but the pid is this live process, so the guard must
+            // survive untouched.
+            mkdirSync(guardDir, { recursive: true });
+            const liveOwner = `${JSON.stringify({ pid: process.pid, acquiredAt: 'stale' })}\n`;
+            writeFileSync(join(guardDir, 'owner'), liveOwner);
+            expect(await tryStealStaleMutationGuard(guardDir)).toBe(false);
+            expect(existsSync(guardDir)).toBe(true);
+            expect(readFileSync(join(guardDir, 'owner'), 'utf-8')).toBe(liveOwner);
+            expect(existsSync(`${guardDir}.steal`)).toBe(false);
+        } finally {
+            rmSync(dir, { recursive: true, force: true });
+        }
+    });
+
+    it('serializes 8 concurrent waiters through one stolen stale guard with no .steal residue (AC2)', async () => {
+        const dir = mkdtempSync(join(tmpdir(), 'steal-8-'));
+        const lockPath = join(dir, 'skills-lock.json');
+        const guardDir = `${lockPath}.mutation-lock`;
+        try {
+            const dead = Bun.spawnSync(['true']);
+            mkdirSync(guardDir, { recursive: true });
+            writeFileSync(join(guardDir, 'owner'), `${JSON.stringify({ pid: dead.pid, acquiredAt: 'stale' })}\n`);
+
+            let active = 0;
+            let maxActive = 0;
+            const results = await Promise.all(
+                Array.from({ length: 8 }, () =>
+                    withSkillMutationGuard(lockPath, async () => {
+                        active++;
+                        maxActive = Math.max(maxActive, active);
+                        await new Promise((resolveSleep) => setTimeout(resolveSleep, 20));
+                        active--;
+                        return 'ran';
+                    }),
+                ),
+            );
+            expect(results).toEqual(Array.from({ length: 8 }, () => 'ran'));
+            expect(maxActive).toBe(1);
+            expect(existsSync(guardDir)).toBe(false); // released by the last holder
+            expect(existsSync(`${guardDir}.steal`)).toBe(false); // thief lock always cleaned up
+        } finally {
+            rmSync(dir, { recursive: true, force: true });
+        }
+    });
+});
+
+describe('segment-aware canonical path gate (R4/AC9)', () => {
+    it('markers above the last .agents/skills boundary stay canonical, below it reject', () => {
+        expect(isCanonicalSkillPath('/Users/x/translated/proj/.agents/skills/foo')).toBe(true);
+        expect(isCanonicalSkillPath('/Users/x/.grok/work/.agents/skills/foo')).toBe(true);
+        expect(isCanonicalSkillPath('C:\\Users\\x\\translated\\p\\.agents\\skills\\foo')).toBe(true);
+        expect(isCanonicalSkillPath('/p/.agents/skills/translated/foo')).toBe(false);
+        expect(isCanonicalSkillPath('/p/.agents/skills/foo/.hermes/bar')).toBe(false);
+        expect(isCanonicalSkillPath('/p/.grok/skills/foo')).toBe(false);
+    });
+
+    it('hashes a canonical folder under a translated-marker ancestor without SkillPathUnsafeError', async () => {
+        const stateHome = mkdtempSync(join(tmpdir(), 'marker-ancestor-'));
+        const env = { XDG_STATE_HOME: stateHome };
+        const canonicalSkillDir = join(stateHome, '.grok', 'work', '.agents', 'skills', 'foo');
+        mkdirSync(canonicalSkillDir, { recursive: true });
+        writeFileSync(join(canonicalSkillDir, 'SKILL.md'), '---\nname: foo\ndescription: foo\n---\n# Foo\n');
+        try {
+            const hash = await computeCanonicalSkillFolderHash(canonicalSkillDir);
+            expect(typeof hash).toBe('string');
+            expect(hash.length).toBe(64);
+            await expect(
+                addSkillToGlobalLock(
+                    'foo',
+                    {
+                        source: 'o/r',
+                        sourceType: 'github',
+                        sourceUrl: 'https://github.com/o/r',
+                        skillFolderHash: hash,
+                    },
+                    { env, canonicalSkillDir },
+                ),
+            ).resolves.toBeUndefined();
+        } finally {
+            rmSync(stateHome, { recursive: true, force: true });
+        }
+    });
+});
+
+describe('concurrent mutator consistency (R6/AC12)', () => {
+    const entry = { source: 'x', sourceType: 'local', computedHash: 'h' } as const;
+    const globalEntry = {
+        source: 'o/r',
+        sourceType: 'github',
+        sourceUrl: 'https://github.com/o/r',
+        skillFolderHash: 'h',
+    } as const;
+
+    it('20 concurrent local adds all land in the lock', async () => {
+        const dir = mkdtempSync(join(tmpdir(), 'concurrent-20-'));
+        try {
+            await Promise.all(
+                Array.from({ length: 20 }, (_, i) => addSkillToLocalLock(`skill-${i}`, entry, { cwd: dir })),
+            );
+            const lock = await readLocalLock(dir);
+            expect(Object.keys(lock.skills)).toHaveLength(20);
+        } finally {
+            rmSync(dir, { recursive: true, force: true });
+        }
+    });
+
+    it('20 concurrent global adds all land in the lock', async () => {
+        const stateHome = mkdtempSync(join(tmpdir(), 'concurrent-20-global-'));
+        const env = { XDG_STATE_HOME: stateHome };
+        try {
+            await Promise.all(
+                Array.from({ length: 20 }, (_, i) => addSkillToGlobalLock(`skill-${i}`, globalEntry, { env })),
+            );
+            const lock = await readGlobalLock(env);
+            expect(Object.keys(lock.skills)).toHaveLength(20);
+        } finally {
+            rmSync(stateHome, { recursive: true, force: true });
         }
     });
 });

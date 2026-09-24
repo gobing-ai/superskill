@@ -6,14 +6,7 @@ import { TARGETS, type Target } from '../targets';
 import { discoverSkills, type Skill } from './discovery';
 import { emitSkillForTargets, removeSkillFromTargets, resolveSkillsToRemove } from './emit';
 import { type BlobSkill, cleanupTempDir, cloneRepo, tryBlobInstall } from './fetch';
-import {
-    EXCLUDE_DIRS,
-    EXCLUDE_FILES,
-    FilesystemTransaction,
-    getCanonicalSkillsDir,
-    isPathSafe,
-    sanitizeName,
-} from './installer';
+import { EXCLUDE_DIRS, EXCLUDE_FILES, FilesystemTransaction, getCanonicalSkillsDir, isPathSafe } from './installer';
 import {
     computeCanonicalSkillFolderHash,
     getGlobalLockPath,
@@ -24,6 +17,7 @@ import {
     writeGlobalLock,
     writeLocalLock,
 } from './locks';
+import { sanitizeName } from './sanitize';
 import { getOwnerRepo, parseSource } from './source-parser';
 import type { ParsedSource } from './types';
 

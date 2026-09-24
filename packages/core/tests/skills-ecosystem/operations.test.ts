@@ -49,7 +49,11 @@ function mockGitHubFetch(
             return new Response(frontmatter, { status: 200 });
         }
         if (url.includes('/api/download/')) {
-            return new Response(JSON.stringify({ files }), { status: 200 });
+            // R14: the manifest's SKILL.md must mirror the raw bytes served above.
+            const manifest = files.filter((f) => f.path.toLowerCase() !== 'skill.md');
+            return new Response(JSON.stringify({ files: [...manifest, { path: 'SKILL.md', contents: frontmatter }] }), {
+                status: 200,
+            });
         }
         return new Response('Not found', { status: 404 });
     }) as unknown as typeof fetch;

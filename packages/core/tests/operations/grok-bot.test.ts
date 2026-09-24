@@ -13,6 +13,7 @@ import {
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { getEnvVar, removeEnvVar, setEnvVar } from '@gobing-ai/superskill-core';
+import type { SandRootResolution } from '../../src/operations/grok-bot';
 import {
     applyGrokBotDialect,
     BOT_ORIGIN_MARKER,
@@ -32,6 +33,7 @@ import {
     readOriginMarker,
     renderBridgePointer,
     resolveSandRoot,
+    sha256File,
 } from '../../src/operations/grok-bot';
 import { installManifestPath, readInstallManifest, writeInstallManifest } from '../../src/operations/install-manifest';
 
@@ -52,7 +54,7 @@ const SOURCE = { channel: 'bundled' as const, locator: '@gobing-ai/superskill' }
 function entry(
     id: string,
     description = 'does things',
-    files: Map<string, string> = new Map([['ref.md', '# ref\n']]),
+    files: Map<string, Buffer> = new Map([['ref.md', Buffer.from('# ref\n', 'utf-8')]]),
 ): ReturnType<typeof collectBotSkillEntries>[number] {
     return { id, description, skillMd: `---\nname: ${id}\ndescription: ${description}\n---\n\nBody.\n`, files };
 }
@@ -167,7 +169,7 @@ describe('parseBotSkillEntry / collectBotSkillEntries (R4)', () => {
         writeSkill(skills, 'demo-a');
         const e = parseBotSkillEntry(join(skills, 'demo-a'));
         expect(e.id).toBe('demo-a');
-        expect(e.files.get('ref.md')).toBe('# ref\n');
+        expect(e.files.get('ref.md')?.equals(Buffer.from('# ref\n', 'utf-8'))).toBe(true);
         expect(e.skillMd).toContain('/demo-a now');
         expect(e.skillMd).not.toContain('/skill:demo-a');
     });
@@ -668,7 +670,7 @@ describe('emission rollback (R6/R8)', () => {
         // Simulate an updated recipe whose receipt write fails mid-install.
         await expect(
             emitGrokBotInstall({
-                entries: [entry('w1', 'updated', new Map([['ref.md', '# v2\n']]))],
+                entries: [entry('w1', 'updated', new Map([['ref.md', Buffer.from('# v2\n', 'utf-8')]]))],
                 resolution: res,
                 plugin: 'sp',
                 source: SOURCE,
@@ -1100,5 +1102,76 @@ describe('botBootstrapMessages (task 0132 R3/R10)', () => {
         expect(() => resolveSandRoot({ sandData: join(tmp, 'definitely-gone'), homeDir: tmp })).toThrow(
             /does not exist/,
         );
+    });
+});
+
+describe('binary fidelity + marker anchoring + text-only handoff (R15, AC4/AC5/AC6)', () => {
+    const LOGO = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0xff, 0xfe, 0x80]);
+
+    function writeBinarySkill(dir: string, id: string): string {
+        const skillDir = writeSkill(dir, id);
+        mkdirSync(join(skillDir, 'assets'), { recursive: true });
+        writeFileSync(join(skillDir, 'assets', 'logo.png'), LOGO);
+        return skillDir;
+    }
+
+    async function install(materialize: 'bridge' | 'full', id: string): Promise<SandRootResolution> {
+        const dataRoot = join(tmp, `binary-${materialize}-${id}`);
+        mkdirSync(dataRoot, { recursive: true });
+        const entries = [parseBotSkillEntry(writeBinarySkill(join(tmp, 'skills'), id))];
+        const res = resolveSandRoot({ sandData: dataRoot, homeDir: tmp });
+        planGrokBotInstall({ entries, resolution: res, plugin: 'sp', source: SOURCE, prune: false, materialize });
+        await emitGrokBotInstall({
+            entries,
+            resolution: res,
+            plugin: 'sp',
+            source: SOURCE,
+            materialize,
+            superskillVersion: '0.0.0-test',
+            nowIso: '2026-01-01T00:00:00Z',
+            prune: false,
+            pruneCandidates: [],
+        });
+        return res;
+    }
+
+    it('round-trips binary skill bytes exactly through bridge and full materialization (AC4)', async () => {
+        const bridge = await install('bridge', 'binw');
+        const canonicalLogo = join(botCanonicalSkillDir(bridge.dataRoot, 'binw'), 'assets', 'logo.png');
+        expect(Buffer.compare(readFileSync(canonicalLogo), LOGO)).toBe(0);
+
+        const full = await install('full', 'binf');
+        const workflowLogo = join(full.workflowsDir, 'binf', 'assets', 'logo.png');
+        expect(Buffer.compare(readFileSync(workflowLogo), LOGO)).toBe(0);
+    });
+
+    it('marker hash anchors the exact installed bytes and freshness passes (AC5)', async () => {
+        const res = await install('bridge', 'binm');
+        const canonicalDir = botCanonicalSkillDir(res.dataRoot, 'binm');
+        const marker = readOriginMarker(join(res.workflowsDir, 'binm'), 'sp');
+        expect(marker).not.toBeNull();
+        expect(marker?.hashes['assets/logo.png']).toBe(sha256File(join(canonicalDir, 'assets', 'logo.png')));
+        expect(markerHashesCurrent(marker as NonNullable<typeof marker>, canonicalDir)).toBe(true);
+    });
+
+    it('handoff resources are UTF-8 text only; binary assets are omitted; schemaVersion stays 1 (AC6/D8)', () => {
+        const skillDir = writeSkill(join(tmp, 'skills'), 'handoffx');
+        writeFileSync(join(skillDir, 'notes.txt'), 'café résumé');
+        writeFileSync(join(skillDir, 'logo.png'), LOGO);
+
+        const entry = parseBotSkillEntry(skillDir);
+        const handoff = buildBotRegisterHandoff({
+            plugin: 'sp',
+            entries: [entry],
+            source: SOURCE,
+            materialize: 'full',
+            dataRoot: join(tmp, 'handoff-root'),
+        });
+
+        expect(handoff.schemaVersion).toBe(1);
+        const resources = handoff.skills[0]?.resources ?? {};
+        expect(Object.keys(resources).sort()).toEqual(['notes.txt', 'ref.md']);
+        expect(resources['notes.txt']).toBe('café résumé'); // é survives as text, not base64
+        expect('logo.png' in resources).toBe(false);
     });
 });

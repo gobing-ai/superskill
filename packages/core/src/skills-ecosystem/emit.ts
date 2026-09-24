@@ -12,8 +12,8 @@ import {
     getCanonicalSkillsDir,
     installSkillCanonical,
     pathsOverlap,
-    sanitizeName,
 } from './installer';
+import { sanitizeName } from './sanitize';
 
 /** Options controlling per-target skill emission. */
 export interface EmitOptions {

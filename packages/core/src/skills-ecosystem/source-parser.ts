@@ -8,7 +8,8 @@
  * Copyright (c) 2026 Vercel, Inc. MIT License — see vendors/skills/LICENSE.
  * Modifications: Biome formatting, `node:path` imports, no behavior change.
  */
-import { isAbsolute, join, normalize, resolve, sep } from 'node:path';
+import { isAbsolute, join, resolve } from 'node:path';
+import { isLexicallyContained } from '../content/paths';
 import { getGitHubHost, isGitHubHost } from './github-host';
 import type { ParsedSource } from './types';
 
@@ -135,12 +136,10 @@ export function sanitizeSubpath(subpath: string): string {
  * Validates that a resolved subpath stays within the base directory.
  * Prevents path traversal attacks where subpath contains ".." segments
  * that would escape the cloned repository directory.
+ * Delegates to the shared lexical containment predicate (R2/C1).
  */
 export function isSubpathSafe(basePath: string, subpath: string): boolean {
-    const normalizedBase = normalize(resolve(basePath));
-    const normalizedTarget = normalize(resolve(join(basePath, subpath)));
-
-    return normalizedTarget.startsWith(normalizedBase + sep) || normalizedTarget === normalizedBase;
+    return isLexicallyContained(basePath, join(basePath, subpath));
 }
 
 /**

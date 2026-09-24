@@ -14,8 +14,10 @@ import {
     writeFile,
 } from 'node:fs/promises';
 import { homedir, platform } from 'node:os';
-import { basename, dirname, join, normalize, relative, resolve, sep } from 'node:path';
+import { basename, dirname, join, relative, resolve } from 'node:path';
+import { isLexicallyContained } from '../content/paths';
 import type { BlobSkill } from './fetch';
+import { sanitizeName } from './sanitize';
 
 /** File names excluded when copying a skill directory into the canonical store. */
 export const EXCLUDE_FILES = new Set(['metadata.json']);
@@ -23,26 +25,12 @@ export const EXCLUDE_FILES = new Set(['metadata.json']);
 export const EXCLUDE_DIRS = new Set(['.git', '__pycache__', '__pypackages__', 'node_modules', 'dist', 'build']);
 
 /**
- * Sanitize a skill or directory name to prevent path traversal attacks
- * and ensure it follows kebab-case naming convention.
- */
-export function sanitizeName(name: string): string {
-    const sanitized = name
-        .toLowerCase()
-        .replace(/[^a-z0-9._]+/g, '-')
-        .replace(/^[.-]+|[.-]+$/g, '');
-
-    return sanitized.substring(0, 255) || 'unnamed-skill';
-}
-
-/**
  * Validate that targetPath remains strictly within basePath (prevents path traversal).
+ * Delegates to the shared lexical containment predicate (R2/C1) so installer, source
+ * parser, and fetch agree on one containment definition.
  */
 export function isPathSafe(basePath: string, targetPath: string): boolean {
-    const normalizedBase = normalize(resolve(basePath));
-    const normalizedTarget = normalize(resolve(targetPath));
-
-    return normalizedTarget.startsWith(normalizedBase + sep) || normalizedTarget === normalizedBase;
+    return isLexicallyContained(basePath, targetPath);
 }
 
 /**
@@ -158,7 +146,11 @@ export async function copyDir(src: string, dest: string): Promise<void> {
     await mkdir(dest, { recursive: true });
     const entries = await readdir(src, { withFileTypes: true });
 
-    await Promise.all(
+    // C5/R5: settle every sibling entry before failing. `Promise.all` left earlier
+    // rejections racing against sibling copies still in flight — a caller rolling back
+    // the destination could race a writer still mid-copy. Same failure, deterministic
+    // teardown: every child has finished or failed before the first error is thrown.
+    const results = await Promise.allSettled(
         entries.map(async (entry) => {
             if (EXCLUDE_FILES.has(entry.name) || (entry.isDirectory() && EXCLUDE_DIRS.has(entry.name))) {
                 return;
@@ -192,6 +184,10 @@ export async function copyDir(src: string, dest: string): Promise<void> {
             }
         }),
     );
+    const failed = results.find((r) => r.status === 'rejected');
+    if (failed && failed.status === 'rejected') {
+        throw failed.reason;
+    }
     await chmod(dest, sourceRootStats.mode & 0o777);
 }
 

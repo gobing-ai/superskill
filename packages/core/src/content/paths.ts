@@ -77,6 +77,20 @@ export function pathIsOrUnder(root: string, candidate: string): boolean {
 }
 
 /**
+ * Purely lexical directed containment (R2/C1): true when `target` equals `base` or lies
+ * beneath it after `resolve()`, with no filesystem access — unlike {@link pathIsOrUnder},
+ * it never realpaths, so an existing symlinked `/var` → `/private/var` ancestor cannot
+ * flip the verdict. Use for string-supplied boundaries (install targets, subpaths,
+ * temp-dir guards); use {@link pathIsOrUnder} when real filesystem identity matters.
+ */
+export function isLexicallyContained(base: string, target: string): boolean {
+    const rb = resolve(base);
+    const rt = resolve(target);
+    if (parse(rb).root !== parse(rt).root) return false;
+    return isContainedRelative(relative(rb, rt));
+}
+
+/**
  * Component-aware containment predicate over a `relative()` result: contained only
  * when empty (equal), not absolute, not exactly `..`, and not prefixed by `..` plus
  * the platform separator. A raw `startsWith('..')` misreads legitimate children such
