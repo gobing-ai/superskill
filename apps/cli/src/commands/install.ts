@@ -989,7 +989,7 @@ export async function executeInstall(
                     );
                     addReceiptFiles(
                         target,
-                        copied.filter((file) => isPluginOwnedPath(file, plugin)),
+                        copied.filter((file) => isPluginOwnedPath(file, plugin, dest)),
                     );
                 }
                 // Rung (c): copy-step — hermes hooks via canonical hooks.json copy (design §1.2, §2.1).
@@ -2380,11 +2380,16 @@ function expandInstallPaths(scopeRoot: string, paths: readonly string[]): string
     return files;
 }
 
-function isPluginOwnedPath(absPath: string, plugin: string): boolean {
-    const base = basename(absPath);
-    if (base === plugin || base.startsWith(`${plugin}-`)) return true;
-    const parts = absPath.split(/[/\\]/);
-    return parts.some((part) => part === plugin || part.startsWith(`${plugin}-`));
+/**
+ * True when the first path segment of `absPath` under `skillsRoot` is `plugin`
+ * or starts with `plugin-`. Ancestors of `skillsRoot` do not count. A path that
+ * escapes `skillsRoot` is not owned.
+ */
+export function isPluginOwnedPath(absPath: string, plugin: string, skillsRoot: string): boolean {
+    const rel = relative(skillsRoot, absPath);
+    if (rel === '' || rel.startsWith('..') || isAbsolute(rel)) return false;
+    const name = rel.split(/[/\\]/).filter((segment) => segment.length > 0)[0] ?? '';
+    return name === plugin || name.startsWith(`${plugin}-`);
 }
 
 function enumeratePluginOwnedDests(

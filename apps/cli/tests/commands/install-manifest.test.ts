@@ -23,7 +23,7 @@ import {
 } from '@gobing-ai/superskill-core';
 import type { ProcessExecutor, ProcessOptions } from '@gobing-ai/ts-runtime';
 import type { GenerateResult } from 'rulesync';
-import { executeInstall } from '../../src/commands/install';
+import { executeInstall, isPluginOwnedPath } from '../../src/commands/install';
 import { cliVersion } from '../../src/version';
 
 const originalCwd = process.cwd();
@@ -918,5 +918,32 @@ describe('executeInstall provenance manifest', () => {
             rmSync(resolvedHome, { recursive: true, force: true });
             rmSync(realHome, { recursive: true, force: true });
         }
+    });
+});
+
+describe('isPluginOwnedPath (skills-root ownership)', () => {
+    const skillsRoot = '/tmp/work/.hermes/skills';
+
+    it('an ancestor named <plugin>-… does not own a foreign skill', () => {
+        expect(
+            isPluginOwnedPath('/tmp/cc-work/.hermes/skills/other-plugin/SKILL.md', 'cc', '/tmp/cc-work/.hermes/skills'),
+        ).toBe(false);
+        expect(isPluginOwnedPath('/tmp/work/.hermes/skills/other-plugin/SKILL.md', 'cc', skillsRoot)).toBe(false);
+    });
+
+    it('a path escaping the skills root is not owned', () => {
+        expect(
+            isPluginOwnedPath('/tmp/cc-work/.hermes/skills/../outside/cc-foo.md', 'cc', '/tmp/cc-work/.hermes/skills'),
+        ).toBe(false);
+    });
+
+    it('first-segment names under the skills root count', () => {
+        expect(isPluginOwnedPath('/tmp/work/.hermes/skills/demo-a/SKILL.md', 'demo', skillsRoot)).toBe(true);
+        expect(isPluginOwnedPath('/tmp/work/.hermes/skills/demo-notes.md', 'demo', skillsRoot)).toBe(true);
+        expect(isPluginOwnedPath('/tmp/work/.hermes/skills/demo/SKILL.md', 'demo', skillsRoot)).toBe(true);
+        // The first segment wins, not the basename deeper in another skill's directory.
+        expect(isPluginOwnedPath('/tmp/work/.hermes/skills/other-plugin/demo-notes.md', 'demo', skillsRoot)).toBe(
+            false,
+        );
     });
 });
