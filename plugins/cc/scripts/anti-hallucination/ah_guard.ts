@@ -24,7 +24,7 @@
  *     {"decision":"block","reason":"…","hookSpecificOutput":{"hookEventName":"Stop"}}  # Block stop (clean feedback)
  */
 
-import { readFileSync } from 'node:fs';
+import { closeSync, openSync, readFileSync, readSync, statSync } from 'node:fs';
 import { getEnvVar } from './lib/env';
 import { logger } from './logger';
 
@@ -226,6 +226,36 @@ export interface ResolvedStopContext {
     allowReason?: string;
 }
 
+/** Byte cap for the Stop-hook transcript read (0147 R7). 1 MiB holds the last few turns. */
+export const TRANSCRIPT_TAIL_BYTES = 1_048_576;
+
+/**
+ * Read a transcript for the Stop guard, bounded and regular-file-only (0147 F7).
+ *
+ * A directory, fifo or device is refused with a throw (the caller maps it to a fail-open
+ * `transcript unavailable`). A file at or under `maxBytes` is read whole; a larger one yields
+ * only its last `maxBytes`, cut back to the first complete line so a partial JSONL record can
+ * never be parsed as a truncated one.
+ *
+ * ponytail: a single JSONL record larger than `maxBytes` has no complete line in the tail and
+ * fail-opens (returns `''`); raise `maxBytes` if transcripts ever carry records that big.
+ */
+export function readTranscriptForStop(filePath: string, maxBytes = TRANSCRIPT_TAIL_BYTES): string {
+    const st = statSync(filePath);
+    if (!st.isFile()) throw new Error(`transcript is not a regular file: ${filePath}`);
+    if (st.size <= maxBytes) return readFileSync(filePath, 'utf-8');
+    const buf = Buffer.alloc(maxBytes);
+    const fd = openSync(filePath, 'r');
+    try {
+        readSync(fd, buf, 0, maxBytes, st.size - maxBytes);
+    } finally {
+        closeSync(fd);
+    }
+    const text = buf.toString('utf-8');
+    const newline = text.indexOf('\n');
+    return newline === -1 ? '' : text.slice(newline + 1);
+}
+
 /**
  * Resolve the Stop-hook payload from whichever channel the host used.
  *
@@ -238,7 +268,7 @@ export interface ResolvedStopContext {
 export function resolveStopContext(
     argumentsJson: string | undefined,
     stdinText: string,
-    readTranscript: (path: string) => string = (path) => readFileSync(path, 'utf-8'),
+    readTranscript: (path: string) => string = readTranscriptForStop,
 ): ResolvedStopContext {
     if (argumentsJson) {
         try {

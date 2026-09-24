@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
@@ -12,6 +12,7 @@ import {
     hasToolUsageEvidence,
     main,
     readPipedStdin,
+    readTranscriptForStop,
     requiresExternalVerification,
     resolveStopContext,
     runStopGuard,
@@ -934,5 +935,60 @@ describe('R6: confidence words are whole words', () => {
         );
         expect(result.ok).toBe(false);
         expect(result.issues).toContain('confidence level (HIGH/MEDIUM/LOW)');
+    });
+});
+
+describe('R7: the transcript reader is bounded and refuses non-regular files', () => {
+    // WHY (0147 F7): `resolveStopContext` used a bare `readFileSync(path)`, so a directory, a fifo
+    // or a multi-hundred-megabyte transcript could stall inside the 10 s hook budget. The reader
+    // must refuse non-regular files and read only the tail of a large one.
+    const PRIOR = 'The library version 2.3.1 is required and the API returns paginated lists from the public endpoint.';
+
+    let dir: string;
+    beforeEach(() => {
+        dir = mkdtempSync(join(tmpdir(), 'ah-guard-tail-'));
+    });
+    afterEach(() => {
+        rmSync(dir, { recursive: true, force: true });
+    });
+
+    it('a directory transcript_path fails open as transcript unavailable', () => {
+        const resolved = resolveStopContext(undefined, JSON.stringify({ transcript_path: dir }));
+        expect(resolved.content).toBeUndefined();
+        expect(resolved.allowReason).toContain('transcript unavailable');
+    });
+
+    it('a symlink to a regular transcript is still read', () => {
+        const real = join(dir, 'real.jsonl');
+        writeFileSync(
+            real,
+            `${JSON.stringify({ type: 'assistant', message: { role: 'assistant', content: PRIOR } })}\n`,
+        );
+        const link = join(dir, 'link.jsonl');
+        symlinkSync(real, link);
+        const resolved = resolveStopContext(undefined, JSON.stringify({ transcript_path: link }));
+        expect(resolved.content).toBe(PRIOR);
+    });
+
+    it('reads only the tail of a file larger than the cap', () => {
+        const line = JSON.stringify({ type: 'assistant', message: { role: 'assistant', content: 'tail-claim' } });
+        const path = join(dir, 'big.jsonl');
+        writeFileSync(path, `${'X'.repeat(200)}\n${line}\n`);
+        const tail = readTranscriptForStop(path, 80);
+        expect(tail).not.toContain('X');
+        expect(JSON.parse(tail).message.content).toBe('tail-claim');
+        expect(extractLastAssistantFromTranscript(tail)).toBe('tail-claim');
+    });
+
+    it('returns a small file unchanged under the default cap', () => {
+        const path = join(dir, 'small.jsonl');
+        writeFileSync(path, '{"ok":true}\n');
+        expect(readTranscriptForStop(path)).toBe('{"ok":true}\n');
+    });
+
+    it('returns empty when the tail contains no complete line', () => {
+        const path = join(dir, 'noline.txt');
+        writeFileSync(path, 'no-newline-at-all');
+        expect(readTranscriptForStop(path, 16)).toBe('');
     });
 });
