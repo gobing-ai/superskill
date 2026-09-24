@@ -134,7 +134,9 @@ export function buildStopOutput(result: VerificationResult, profile: StopProfile
 
 interface Message {
     role: string;
-    content: string | Array<{ type: string; text?: string }>;
+    // Optional and nullable: a real host may send a trailing assistant turn with no content
+    // field, or with `content: null` (0147 F1).
+    content?: string | Array<{ type: string; text?: string }> | null;
 }
 
 interface HookContext {
@@ -147,7 +149,7 @@ interface HookContext {
 // =============================================================================
 
 /** Extract the text of a message body (string, or joined text parts of mixed content). */
-function messageText(content: Message['content']): string {
+function messageText(content: Message['content'] | null | undefined): string {
     if (Array.isArray(content)) {
         // Handle mixed content (text + tool_use)
         const textParts: string[] = [];
@@ -158,24 +160,28 @@ function messageText(content: Message['content']): string {
         }
         return textParts.join('\n');
     }
-    return String(content);
+    // A missing/`null`/non-string body has no text. Never `String()` it: `String(undefined)` and
+    // `String(null)` are non-empty, so a blank trailing turn would hide the real claim (0147 F1).
+    return typeof content === 'string' ? content : '';
 }
 
 export function extractLastAssistantMessage(context: HookContext): string | undefined {
     const messages = context.messages ?? [];
 
-    // Find the last assistant message in messages array
+    // Walk from the end and skip assistant turns whose text is blank, mirroring the transcript
+    // scanner: a trailing blank/tool_use-only turn must not hide the last textual claim (0147 F1).
     for (let i = messages.length - 1; i >= 0; i--) {
         const message = messages[i];
-        if (message?.role === 'assistant') {
-            return messageText(message.content);
-        }
+        if (message?.role !== 'assistant') continue;
+        const text = messageText(message.content);
+        if (text.trim().length > 0) return text;
     }
 
-    // Fallback to last_message if provided
+    // Fallback to last_message only when no assistant turn had text. A non-blank string is real
+    // payload — even the literal words `undefined`/`null` (0147 Q1).
     const lastMsg = context.last_message;
-    if (lastMsg) {
-        return String(lastMsg);
+    if (typeof lastMsg === 'string' && lastMsg.trim().length > 0) {
+        return lastMsg;
     }
 
     return undefined;

@@ -1,4 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import {
     buildStopOutput,
     extractLastAssistantFromTranscript,
@@ -11,6 +14,7 @@ import {
     readPipedStdin,
     requiresExternalVerification,
     resolveStopContext,
+    runStopGuard,
     verifyAntiHallucinationProtocol,
 } from '../ah_guard';
 import { getEnvVar, setEnvVar } from '../lib/env';
@@ -708,6 +712,111 @@ describe('extractLastAssistantFromTranscript', () => {
                 JSON.stringify({ type: 'user', message: { role: 'user', content: 'q' } }),
             ),
         ).toBeUndefined();
+    });
+});
+
+describe('R1: blank assistant turns are skipped on both channels', () => {
+    // WHY (0147 F1): `String(undefined)` and `String(null)` are non-empty words, so a trailing
+    // assistant turn with no `content` field (or `content: null`) was returned as the message and
+    // hid the previous real claim. Both channels must skip blank turns and keep scanning.
+    const PRIOR = 'The library version 2.3.1 is required and the API returns paginated lists from the public endpoint.';
+
+    let dir: string;
+    let transcriptPath: string;
+
+    beforeEach(() => {
+        dir = mkdtempSync(join(tmpdir(), 'ah-guard-'));
+        transcriptPath = join(dir, 'transcript.jsonl');
+    });
+
+    afterEach(() => {
+        rmSync(dir, { recursive: true, force: true });
+    });
+
+    const withTempTranscript = (lines: string[]): string => {
+        writeFileSync(transcriptPath, `${lines.join('\n')}\n`);
+        return transcriptPath;
+    };
+
+    const priorTurn = JSON.stringify({
+        type: 'assistant',
+        message: { role: 'assistant', content: [{ type: 'text', text: PRIOR }] },
+    });
+
+    it('omitted-content regression: a trailing assistant with no content field does not hide the claim', () => {
+        const path = withTempTranscript([
+            priorTurn,
+            JSON.stringify({ type: 'assistant', message: { role: 'assistant' } }),
+        ]);
+        const result = runStopGuard(undefined, JSON.stringify({ transcript_path: path, stop_hook_active: false }));
+        const parsed = JSON.parse(result.output);
+        expect(parsed.decision).toBe('block');
+        expect(parsed.reason).toContain('source citations');
+    });
+
+    it('null-content regression: `content: null` does not hide the claim', () => {
+        const path = withTempTranscript([
+            priorTurn,
+            JSON.stringify({ type: 'assistant', message: { role: 'assistant', content: null } }),
+        ]);
+        const result = runStopGuard(undefined, JSON.stringify({ transcript_path: path, stop_hook_active: false }));
+        const parsed = JSON.parse(result.output);
+        expect(parsed.decision).toBe('block');
+        expect(parsed.reason).toContain('source citations');
+    });
+
+    it('messages channel: skips a trailing blank assistant and returns the prior claim', () => {
+        expect(
+            extractLastAssistantMessage({ messages: [{ role: 'assistant', content: PRIOR }, { role: 'assistant' }] }),
+        ).toBe(PRIOR);
+        expect(
+            extractLastAssistantMessage({
+                messages: [
+                    { role: 'assistant', content: PRIOR },
+                    { role: 'assistant', content: null },
+                ],
+            }),
+        ).toBe(PRIOR);
+        expect(
+            extractLastAssistantMessage({
+                messages: [
+                    { role: 'assistant', content: PRIOR },
+                    { role: 'assistant', content: '' },
+                ],
+            }),
+        ).toBe(PRIOR);
+        expect(
+            extractLastAssistantMessage({
+                messages: [
+                    { role: 'assistant', content: PRIOR },
+                    { role: 'assistant', content: [{ type: 'tool_use' }] },
+                ],
+            }),
+        ).toBe(PRIOR);
+    });
+
+    it('returns undefined when no assistant has text, and honors a non-blank last_message then', () => {
+        expect(extractLastAssistantMessage({ messages: [{ role: 'assistant', content: null }] })).toBeUndefined();
+        expect(
+            extractLastAssistantMessage({ messages: [{ role: 'assistant', content: null }], last_message: PRIOR }),
+        ).toBe(PRIOR);
+    });
+
+    it('treats the literal string `undefined` as real payload, not a missing field', () => {
+        expect(extractLastAssistantMessage({ last_message: 'undefined' })).toBe('undefined');
+    });
+
+    it('yields undefined for a blank last_message', () => {
+        expect(extractLastAssistantMessage({ last_message: '   ' })).toBeUndefined();
+    });
+
+    it('tool_use-only transcript regression: the last textual turn still blocks', () => {
+        const path = withTempTranscript([
+            priorTurn,
+            JSON.stringify({ type: 'assistant', message: { role: 'assistant', content: [{ type: 'tool_use' }] } }),
+        ]);
+        const result = runStopGuard(undefined, JSON.stringify({ transcript_path: path, stop_hook_active: false }));
+        expect(JSON.parse(result.output).decision).toBe('block');
     });
 });
 
