@@ -244,7 +244,7 @@ Bot receipt without the field skips the Bot reinstall and prints explicit reinst
 | `hook emit <name>` | `-t, --target <agent>`, `--global`, `--dry-run` |
 | `hook run <plugin> <hook-id>` | `--profile <block\|deny>` |
 | `magent evaluate <nameOrPath>` | `--target <agent>`, `--json`, `--save`, `--rubric <file>`, `--ingest <file>`, `--base-path <dir>` |
-| `script path <plugin> <rel>` | `--json`, `--global`, `--project` |
+| `script path <plugin> <rel>` | `--json`, `--global`, `--project`; the global root is `resolveHomeDir()` (`HOME_DIR` when set, otherwise the OS home — the same home `superskill install` uses), and only a non-symlink regular file counts as a hit |
 | `script convert <plugin> <rel>` | `--out <path>`, `--dry-run`, `--json` |
 
 `agent|skill|command|hook|magent evaluate <nameOrPath>` share `--target <agent>`, `--json`, `--save`,
