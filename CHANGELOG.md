@@ -11,6 +11,36 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 - fix(grok-bot): treat host-rewritten bridge pointers as healthy when `canonical:` still targets the owned recipe (stops 113× owned-drift after Bot `update_state` register); still refuse canonical drift, full-mode edits, and unowned extras
 - fix(grok-bot): handoff/doctor/README copy — slash fill is NOT automatic, Shell fallback for `.superskill` Read denial, soft-pedal unverified Settings > Plugins path
 
+## [0.3.32] - 2026-09-24
+
+### Added
+
+- feat(cli): local-npm-first resolution for owner/repo locators (`1fa27fc`)
+
+### Fixed
+
+- fix(cli): skip symlinks in script path lookup and skill counts (`416c494`)
+- fix(cli): judge hermes ownership under the skills root (`dc81097`)
+- fix(cli): resolve script path and update home through resolveHomeDir (`5231f90`)
+- fix(core): harden skill locks, fetch integrity, and grok-bot binary safety (`c5117fc`)
+- fix(cc): let expert agent, command, and hook run their cli (`905b2d0`)
+- fix(cc): align the staged stdin reader with the cli idle contract (`40b336b`)
+- fix(cc): read only the tail of a regular stop transcript (`53dc722`)
+- fix(cc): keep filename dots in-sentence and widen stop-guard claim and confidence matches (`9b4f95a`)
+- fix(cc): skip blank assistant turns in the stop guard (`076d486`)
+- fix(release): atomic bump-ver via aggregatePackage + pre-push manifest gate (`4e20344`)
+
+### Changed
+
+- docs(wrapup): repair manifest-path home drift and advance H1 to verifying (`2210eaa`)
+- chore(task): record 0148 pipeline results and sync feature H1 status (`b24f11f`)
+- docs(cli): document script path home and regular-file rule (`928a51c`)
+- chore(project): update the project dependency (`792f821`)
+- docs(tasks): record 0147 solution, verify, and review evidence; close task (`742cc55`)
+- docs(features): sync task status rows and reopen H2 for review findings (`6219250`)
+- docs(tasks): add review-findings tasks 0146-0148 from advisory dev-review (`d6682a9`)
+- docs(AGENTS.md): add rules for unit tests (`09ad0cd`)
+
 ## [0.3.29] - 2026-09-19
 
 ### Added
