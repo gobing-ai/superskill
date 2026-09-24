@@ -1,5 +1,4 @@
 import { existsSync, readdirSync, statSync } from 'node:fs';
-import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
 import {
     aggregateUpdateExit,
@@ -41,6 +40,7 @@ import {
     isRemoteMarketplaceLocator,
     readMarketplacePluginVersion,
     readPluginJsonVersion,
+    resolveHomeDir,
     resolveInstalledPackageRoot,
     resolveInstallTargets,
     resolveRemoteMarketplace,
@@ -802,8 +802,4 @@ function isTarget(value: string): value is Target {
 
 function utf8Sort(a: string, b: string): number {
     return Buffer.compare(Buffer.from(a, 'utf-8'), Buffer.from(b, 'utf-8'));
-}
-
-function resolveHomeDir(): string {
-    return getEnvVar('HOME_DIR') ?? homedir();
 }

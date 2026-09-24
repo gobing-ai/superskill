@@ -1,9 +1,9 @@
 import { existsSync, statSync } from 'node:fs';
-import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { assertSafePathSegment } from '@gobing-ai/superskill-core';
 import { echo, echoError } from '@gobing-ai/ts-utils';
 import type { Command } from 'commander';
+import { resolveHomeDir } from './install';
 
 /**
  * `superskill script path <plugin> <rel>` — resolve a staged plugin entrypoint to an absolute
@@ -88,7 +88,7 @@ export function assertScriptLocator(plugin: string, rel: string): void {
 export function resolveScriptPath(opts: ScriptPathOptions): ResolvedScriptPath | null {
     assertScriptLocator(opts.plugin, opts.rel);
 
-    const home = opts.home ?? homedir();
+    const home = opts.home ?? resolveHomeDir();
     const projectRoot = opts.projectRoot ?? process.cwd();
 
     const candidates: Array<{ path: string; source: ScriptSource }> = [];

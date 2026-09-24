@@ -1,6 +1,7 @@
-import { afterEach, describe, expect, it, spyOn } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, it, spyOn } from 'bun:test';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { getEnvVar, removeEnvVar, setEnvVar } from '@gobing-ai/superskill-core';
 import { Command } from 'commander';
 import { registerScriptPath, resolveScriptPath, runScriptPathAction, UsageError } from '../../src/commands/script-path';
 
@@ -141,6 +142,77 @@ describe('resolveScriptPath', () => {
         // candidate is the directory itself (rel points at a dir, not a file)
         const result = resolveScriptPath({ plugin: 'cc', rel: 'cmd', projectRoot });
         expect(result).toBeNull();
+    });
+});
+describe('resolveScriptPath home resolution', () => {
+    let tmpDir: string;
+    let savedHomeDir: string | undefined;
+
+    beforeEach(() => {
+        savedHomeDir = getEnvVar('HOME_DIR');
+    });
+
+    afterEach(() => {
+        // Restore the previous HOME_DIR, including removing it when it was unset.
+        if (savedHomeDir === undefined) removeEnvVar('HOME_DIR');
+        else setEnvVar('HOME_DIR', savedHomeDir);
+        if (tmpDir) rmSync(tmpDir, { recursive: true, force: true });
+    });
+
+    function setupHomeAndProject(opts: { globalScript?: string }) {
+        tmpDir = mkdtempSync('superskill-script-path-home-');
+        const home = join(tmpDir, 'home');
+        const projectRoot = join(tmpDir, 'project');
+        mkdirSync(home, { recursive: true });
+        mkdirSync(projectRoot, { recursive: true });
+        if (opts.globalScript) {
+            const p = join(home, '.agents', 'scripts', 'cc', opts.globalScript);
+            mkdirSync(join(p, '..'), { recursive: true });
+            writeFileSync(p, 'ok');
+        }
+        return { home, projectRoot };
+    }
+
+    it('uses HOME_DIR as the global root when home is omitted', () => {
+        const { home, projectRoot } = setupHomeAndProject({ globalScript: 'only-home-dir.mjs' });
+        setEnvVar('HOME_DIR', home);
+        const result = resolveScriptPath({ plugin: 'cc', rel: 'only-home-dir.mjs', projectRoot, forceGlobal: true });
+        expect(result).not.toBeNull();
+        if (!result) throw new Error('null result');
+        expect(result.path).toBe(join(home, '.agents', 'scripts', 'cc', 'only-home-dir.mjs'));
+        expect(result.source).toBe('global');
+    });
+
+    it('an explicit home beats HOME_DIR', () => {
+        // Both halves present: HOME_DIR points at env-home, the home option at opt-home.
+        tmpDir = mkdtempSync('superskill-script-path-home-');
+        const envHome = join(tmpDir, 'env-home');
+        const optHome = join(tmpDir, 'opt-home');
+        const projectRoot = join(tmpDir, 'project');
+        for (const dir of [envHome, optHome, projectRoot]) mkdirSync(dir, { recursive: true });
+        const envFile = join(envHome, '.agents', 'scripts', 'cc', 'from-env.mjs');
+        mkdirSync(join(envFile, '..'), { recursive: true });
+        writeFileSync(envFile, 'ok');
+        const optFile = join(optHome, '.agents', 'scripts', 'cc', 'from-opt.mjs');
+        mkdirSync(join(optFile, '..'), { recursive: true });
+        writeFileSync(optFile, 'ok');
+        setEnvVar('HOME_DIR', envHome);
+
+        const fromOpt = resolveScriptPath({
+            plugin: 'cc',
+            rel: 'from-opt.mjs',
+            home: optHome,
+            projectRoot,
+            forceGlobal: true,
+        });
+        expect(fromOpt).not.toBeNull();
+        if (!fromOpt) throw new Error('null result');
+        expect(fromOpt.path).toBe(optFile);
+        expect(fromOpt.source).toBe('global');
+
+        expect(
+            resolveScriptPath({ plugin: 'cc', rel: 'from-env.mjs', home: optHome, projectRoot, forceGlobal: true }),
+        ).toBeNull();
     });
 });
 describe('runScriptPathAction', () => {
