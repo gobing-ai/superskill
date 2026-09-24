@@ -2,10 +2,10 @@
 doc: 04_DESIGN
 owns: SURFACE — concrete shapes: every CLI command, flag, config key, env var, table, DTO
 authority: derived
-version: 2.16.0
+version: 2.17.0
 derived_from: [00_ADR, 01_PRD, 02_ROADMAP]
 owner: Robin Min
-updated_at: 2026-09-19
+updated_at: 2026-09-24
 read_before: changing a command, flag, env var, or schema
 edit_rules: 99 §6.5
 sync: [T3]
@@ -168,7 +168,7 @@ existing hash compare (ADR-035).
 | `--targets` / `--marketplace` | Same semantics as install; **plugins only** — skill rows ignore both. `--marketplace` overrides the recorded locator |
 | `--no-global` | Selects the project scope for **both kinds**: project manifests plus `./skills-lock.json` (default reads user-level manifests plus `~/.agents/.skill-lock.json`) (task 0135 R4) |
 
-Manifest path: `<scopeRoot>/.superskill/manifests/<target>/<plugin>/.superskill-manifest.json` (`scopeRoot` = `outputRoot`, else `$HOME` global / cwd project). Schema v1 records plugin, target, channel (`bundled` \| `marketplace`), `upstreamVersion`, optional locator/tree SHA, `installedAt`, `superskillVersion`, and two snapshots (`installed` + `upstream`) of per-file SHA-256 maps plus ADR-031 `canonicalHash`. A receipt whose host install tree lives under the user home at project scope carries the optional `installedRoot: 'home'` field (native host targets `claude` / `omp` / `grok`, task 0140) instead of the `scopeRoot`-relative meaning: `installed.files` keys are then relative to the user home, and a receipt without the field keeps its existing meaning.
+Manifest path: `<scopeRoot>/.superskill/manifests/<target>/<plugin>/.superskill-manifest.json` (`scopeRoot` = `outputRoot`, else the resolved home (`resolveHomeDir()`: `HOME_DIR` when set, otherwise the OS home) for global / cwd for project). Schema v1 records plugin, target, channel (`bundled` \| `marketplace`), `upstreamVersion`, optional locator/tree SHA, `installedAt`, `superskillVersion`, and two snapshots (`installed` + `upstream`) of per-file SHA-256 maps plus ADR-031 `canonicalHash`. A receipt whose host install tree lives under the user home at project scope carries the optional `installedRoot: 'home'` field (native host targets `claude` / `omp` / `grok`, task 0140) instead of the `scopeRoot`-relative meaning: `installed.files` keys are then relative to the user home, and a receipt without the field keeps its existing meaning.
 
 | Result row | Meaning | Exit |
 | --- | --- | --- |

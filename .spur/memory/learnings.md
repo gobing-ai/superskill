@@ -425,3 +425,73 @@ Repaired drift across key architectural and design documentation following `docs
 **Corpus note (not written this run — corpus writes were out of scope)**
 
 - `docs/features/F_cli-surface.md`'s auto-generated task table still lists 0141 as `testing`; the feature refresh ran before the final `testing → done` transition. Re-run `spur feature refresh` after the last status change, not before it.
+Done. Corpus untouched, docs-only diff, artifact written.
+
+## Drift report — task 0148 (wrapup, `sp-doc-evolve`)
+
+Checks run (deterministic detection): real CLI verb set vs `docs/04_DESIGN.md`/`docs/design/*`; `03` module tree vs `apps/cli/src/commands/`; ADR numbering/`00` recency; `AGENTS.md` doc map vs §4.1; §4.3 frontmatter contracts + `git log` recency across `00`–`05`; `rg` of the home-resolution mechanism token across `00`/`03`/`04`/`design/*` vs `resolveHomeDir()`/`runRulesync`/rulesync's `getHomeDirectory()`.
+
+| # | Doc | Code says | Doc said | Authority | Repair |
+|---|---|---|---|---|---|
+| 1 | `docs/04_DESIGN.md` frontmatter | edited 09-23 ×2, 09-24 | `version: 2.16.0`, `updated_at: 2026-09-19` | §4.3 r3 (T3) | **bumped** `2.17.0` / `2026-09-24` |
+| 2 | `docs/04_DESIGN.md:171` | `scopeRoot` = `resolveHomeDir()` = `HOME_DIR` ?? OS home | `$HOME` global | §6.5 | **repaired** to resolved-home form |
+| 3 | `docs/design/skill-update-notification.md:39` | same as above | `$HOME` | §7 step 2 (derived) | **repaired** to resolved-home form |
+| 4 | `docs/00_ADR.md` | no decision reversed | ADR-010 `[os.homedir()]` | §5 T1/T2 carve-out | **no delta** — no ADR (0148 Q8) |
+| 5 | `docs/03_ARCHITECTURE.md` | `runRulesync` passes `outputRoots: [os.homedir()]` | same; OMP lexicographic rule intact | derived | **no delta** — literally true, and 0148 forbade editing `03` |
+| 6 | `docs/design/design-doc-phase1.md:254,262` | `outputRoots: [os.homedir()]` | same | derived | **no delta** — verified accurate |
+| 7 | `AGENTS.md` | doc map + surface block | matches §4.1; no new command/flag | §4.4 | **no delta** |
+
+Evidence for #2: `04:247` (fixed by 0148 itself) already names `resolveHomeDir()` for the sibling `script path` row, so `04` was internally inconsistent; `resolveHomeDir`'s own comment states it mirrors rulesync's `getHomeDirectory()`, confirmed at `vendors/rulesync/src/utils/file.ts:300` (`HOME_DIR` → throw-in-test → `os.homedir()`).
+
+Not repaired (reported, not drift): `hook.ts:84` and `skill.ts` global roots still fall back to `homedir()` — a product inconsistency; `04:381` describes the accessor default accurately.
+
+Verification: `git status` shows only the two intended doc files; `docs/tasks/` + `docs/features/` untouched (no corpus writes); residual `$HOME`-as-global-root grep returns none; `04_DESIGN` recency now consistent with its last commit. Code gates unaffected — no code changed.
+
+Artifact: `/Users/robin/xprojects/superskill/.spur/run/909f6e54-bf31-4ff3-af22-cc855dd783de-wrapup-learnings.md` (6,143 B).
+
+## 2026-09-23 — 0148 (review origin → task)
+
+- Convention — path-mode `/sp-dev-review` writes no verdict artifact and applies no fixes; `--fix` on that command is a deprecated no-op. A review run yields a findings list; a separate task carries the repairs.
+- Convention — re-read every finding anchor on the current HEAD (`main@09ad0cd`) before writing the task. A review quote is not evidence until re-verified against the tree.
+- Pattern — reproduce CLI findings with one `bun -e` process that imports the function under test and evaluates the predicate, instead of re-running the app suite. Cheap, isolated, and it proves the finding rather than restating it.
+
+## 2026-09-24 — 0148 (fix batch: script path home, hermes ownership, symlinks, skill counts)
+
+### Conventions
+- One home authority: `resolveHomeDir()` (`HOME_DIR` ?? OS home) is the single definition, exported from `apps/cli/src/commands/install.ts` and imported by `script-path.ts` / `update.ts`. No per-command local copy — 0148 deleted `update.ts`'s duplicate.
+- Mirror the upstream library you depend on: `resolveHomeDir()` deliberately mirrors rulesync's `getHomeDirectory()` (`vendors/rulesync/src/utils/file.ts:300`), which prefers `HOME_DIR`, then throws in a test env without it, then falls back to `os.homedir()`. That is why honoring `HOME_DIR` beats calling `node:os.homedir()` directly (which reads `HOME`, not `HOME_DIR`).
+- Judge plugin ownership by the FIRST path segment under the known skills root, never by any ancestor segment.
+- Use `lstatSync`, not `statSync`, for "is this a real hit / a real skill dir": a symlink is not a script hit, and a dangling symlink must not throw out of a directory count.
+- Same-commit doc sync (§5 T3): a command-behavior change keeps `docs/04_DESIGN.md` plus the owning help guide in the same commit. 0148 shipped code first, then a dedicated `docs(cli): document script path home and regular-file rule` commit carrying the post-edit line range in the help citation.
+
+### Errors fixed
+- Global-root divergence — `script path --global` and `update --global` resolved the home with `node:os.homedir()` while `install` used `resolveHomeDir()`, so the roots differed whenever `HOME_DIR` was set. Fixed by importing the single helper.
+- Hermes ownership false-positive — ownership was judged against any ancestor segment, so a path like `~/cc-work/...` claimed `cc`'s skills. Fixed by requiring the first segment under the skills root to equal the plugin (or `<plugin>-…` / `<plugin>.…`).
+- Symlink false hit — a symlinked staged file satisfied `script path` because the resolver used `statSync`, which follows links. Fixed with `lstatSync` plus `isSymbolicLink()` rejection; no `realpathSync` added.
+- Skill-count crash/miscount — `countSkillsInDir` called `statSync` on every entry, so a dangling symlink threw. Now a per-entry `lstat` inside a try/catch, skipping links.
+
+### Gotchas
+- Collapsing a duplicate helper is safe only after proving identity: `update.ts`'s local `resolveHomeDir` was byte-identical to install's, so removing it changed no behavior. Verify before deduping.
+- A green gate plus a done task does not prove doc sync. Frontmatter bookkeeping (`version`, `updated_at`, §4.3 rule 3) is a separate obligation from the prose edit and was missed in this batch — see the wrapup entry below.
+- Test-suite facts from the task record: gate PASS at 2497 tests / 0 fail, coverage 99.58% funcs / 98.92% lines, 35 pre-check + 3 post-check rules green.
+
+## 2026-09-24 — 0148 (wrapup doc-evolve: drift repair in 00/03/04/docs-design)
+
+### Conventions
+- §4.3 rule 3 is a hard obligation, not bookkeeping: every substantive edit bumps `version` (minor) AND refreshes `updated_at` in the same edit. `docs/04_DESIGN.md` took three substantive edits (`40b336b`, `c5117fc`, `928a51c` across 09-23/09-24) while its frontmatter stayed at `2.16.0` / `2026-09-19`.
+- §7 repair order: authoritative doc first, then the derived docs that restate it, then `AGENTS.md`.
+- A doc's `updated_at` is deterministically checkable — compare `git log -1 --format=%cs -- <doc>` against the frontmatter field. No judgment needed to detect it.
+
+### Patterns
+- Run the §7 frontmatter-recency check as a loop over the doc set, never by eye.
+- For a mechanism claim, grep the mechanism token across the whole doc set and diff it against the code's real resolution path — that is what surfaced the `$HOME` vs `resolveHomeDir()` split.
+
+### Gotchas
+- `rg -rn` is a trap: `-r` is `--replace`, so `rg -rn "pattern"` silently rewrites every match to `n` and mangles the output into plausible-looking nonsense. Use `rg -n`. This cost two misread greps in this session.
+- A doc statement can be literally true and still mislead. `docs/03_ARCHITECTURE.md:464` correctly reports that `runRulesync` passes `outputRoots: [os.homedir()]`, but rulesync's own `global: true` ignores that argument and applies `getHomeDirectory()` — so the EFFECTIVE global root honors `HOME_DIR`. Document the effective root, not just the argument.
+- `$HOME` is drift once `HOME_DIR` is honored: it silently omits the override. `docs/04_DESIGN.md:171` and `docs/design/skill-update-notification.md:39` both said `$HOME`; both now name `resolveHomeDir()`.
+- Do not invent drift. `docs/03_ARCHITECTURE.md`'s `os.homedir()` claims and `docs/design/design-doc-phase1.md`'s `outputRoots: [os.homedir()]` were verified against `runRulesync` and are accurate — left unchanged. Task 0148 also explicitly forbade editing `03`.
+- No ADR was required: §5's T1/T2 carve-out excludes a bugfix that restores an existing contract, and 0148's own Q8 confirmed nothing in `docs/00_ADR.md` was superseded.
+
+### Residual (left open, not doc drift)
+- Same-class risk 0148 did not close: `hook.ts:84` still roots `hook emit --global` at `homedir()`, and `skill.ts` passes `opts.homeDir` (undefined → `homedir()`), so those two global roots can still diverge from `resolveHomeDir()`. `docs/04_DESIGN.md:381`'s "defaults to `os.homedir()`" is accurate for the accessor, so this is a product inconsistency, not a documentation one — a follow-up candidate.

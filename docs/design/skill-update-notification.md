@@ -36,7 +36,7 @@ Pull model v1 (per brainstorm Approach A). Two pieces:
 
 File: `<scopeRoot>/.superskill/manifests/<target>/<plugin>/.superskill-manifest.json`
 
-`scopeRoot` is the explicit `outputRoot`, otherwise `$HOME` for global installs or cwd for project installs. The registry is plugin-keyed so two plugins sharing a target cannot overwrite each other, and one plugin can span skills/commands/agents/hooks without a singleton beside a skills root.
+`scopeRoot` is the explicit `outputRoot`, otherwise the resolved home (`resolveHomeDir()`: `HOME_DIR` when set, otherwise the OS home) for global installs or cwd for project installs. The registry is plugin-keyed so two plugins sharing a target cannot overwrite each other, and one plugin can span skills/commands/agents/hooks without a singleton beside a skills root.
 
 ```ts
 interface InstallSnapshot {
