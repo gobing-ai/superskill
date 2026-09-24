@@ -2,11 +2,11 @@
 schema_version: 1
 id: "H2"
 name: "CC plugin security and contract integrity"
-status: done
+status: active
 priority: P2
 tags: []
 created_at: "2026-07-26T19:01:26.703Z"
-updated_at: "2026-08-12T14:22:41.999Z"
+updated_at: "2026-09-24T01:14:01.540Z"
 ---
 
 # C: CC plugin security and contract integrity
@@ -78,6 +78,7 @@ Feature: CC plugin security and contract integrity
 | WBS | Task | Status |
 | --- | ---- | ------ |
 | 0108 | Fix cc plugin security, contract drift, and structural review findings | done |
+| 0147 | Fix cc plugin review findings across Stop-guard blanks, sentence dots, couplers, stdin twin, expert tools, confidence, and transcript tail | todo |
 <!-- END AUTO-GENERATED -->
 
 ## Notes
@@ -88,3 +89,5 @@ Feature: CC plugin security and contract integrity
 - 2026-08-12T14:22:41.678Z backlog → active (system)
 - 2026-08-12T14:22:41.824Z active → verifying (system)
 - 2026-08-12T14:22:41.999Z verifying → done (system)
+- 2026-09-24T01:14:01.540Z done → active (system)
+

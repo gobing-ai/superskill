@@ -43,7 +43,7 @@
         └── [done] **G43**: Confirm/close the adapt gap inside install ([G43_confirm-close-the-adapt-gap-inside-install.md](./G43_confirm-close-the-adapt-gap-inside-install.md))
 [backlog] **H**: Plugin CC ([H_plugin-cc.md](./H_plugin-cc.md))
     ├── [backlog] **H1**: Portable plugin scripts via install-time staging ([H1_portable-plugin-scripts-via-install-time-staging.md](./H1_portable-plugin-scripts-via-install-time-staging.md))
-    ├── [done] **H2**: CC plugin security and contract integrity ([H2_cc-plugin-security-and-contract-integrity.md](./H2_cc-plugin-security-and-contract-integrity.md))
+    ├── [active] **H2**: CC plugin security and contract integrity ([H2_cc-plugin-security-and-contract-integrity.md](./H2_cc-plugin-security-and-contract-integrity.md))
     ├── [done] **H3**: Namespace migration (rd3 → cc) + companion configs ([H3_namespace-migration-rd3-cc-companion-configs.md](./H3_namespace-migration-rd3-cc-companion-configs.md))
     ├── [done] **H4**: Skill + expert-subagent rewrite → superskill ([H4_skill-expert-subagent-rewrite-superskill.md](./H4_skill-expert-subagent-rewrite-superskill.md))
     ├── [done] **H5**: Slash-command disposition + hooks.json fix ([H5_slash-command-disposition-hooks-json-fix.md](./H5_slash-command-disposition-hooks-json-fix.md))
