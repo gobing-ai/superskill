@@ -101,7 +101,8 @@ Each command file contains:
 | `expert-skill` | `cc:cc-skills` | teal | "create a skill", "scaffold a skill" |
 
 Each agent has:
-- `tools: [Read, Glob]` — minimal, read-only tool access
+- `tools: [Read, Glob, Bash, Skill]` — `expert-agent`, `expert-command` and `expert-hook` run the `superskill <noun>` CLI and `Skill(...)`, so they need Bash and Skill beyond read-only access
+- `tools: [Read, Write, Edit, Glob, Grep, Bash, WebFetch, WebSearch]` — `expert-skill` and `expert-magent`, which also write and edit the files they generate
 - `skills: [cc:cc-XXX]` — bound to exactly one skill
 - `model: inherit` — inherits the parent session's model
 

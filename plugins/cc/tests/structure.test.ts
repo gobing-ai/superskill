@@ -302,4 +302,27 @@ describe('cc plugin structure', () => {
             expect(`${file}:cc-tasks:${/\bcc:tasks\b/.test(content)}`).toBe(`${file}:cc-tasks:false`);
         }
     });
+
+    it('expert agent, command and hook allowlists can run their CLI (0147 R5)', () => {
+        // WHY (0147 F5): those three bodies instruct the agent to run `superskill agent|command|hook`
+        // and `Skill(...)`, but their frontmatter allowed only Read and Glob — the CLI could never
+        // run. The allowlists and the README drifted because nothing asserted they agree.
+        const CLI_TOOLS = 'tools: [Read, Glob, Bash, Skill]';
+        const FULL_TOOLS = 'tools: [Read, Write, Edit, Glob, Grep, Bash, WebFetch, WebSearch]';
+
+        for (const file of ['expert-agent.md', 'expert-command.md', 'expert-hook.md']) {
+            const content = readFileSync(join(PLUGIN_ROOT, 'agents', file), 'utf-8');
+            expect(`${file}:${content.match(/^tools:.*$/m)?.[0] ?? ''}`).toBe(`${file}:${CLI_TOOLS}`);
+        }
+        for (const file of ['expert-skill.md', 'expert-magent.md']) {
+            expect(`${file}:${readFileSync(join(PLUGIN_ROOT, 'agents', file), 'utf-8').includes(FULL_TOOLS)}`).toBe(
+                `${file}:true`,
+            );
+        }
+
+        const readme = readFileSync(join(PLUGIN_ROOT, 'README.md'), 'utf-8');
+        expect(readme).not.toContain('`tools: [Read, Glob]` — minimal, read-only tool access');
+        expect(readme).toContain(CLI_TOOLS);
+        expect(readme).toContain(FULL_TOOLS);
+    });
 });

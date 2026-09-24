@@ -7,7 +7,7 @@ description: |
   user: "I need hooks for my project across Claude Code and Pi"
   assistant: "Delegating to superskill hook validate for abstract hook config review (hooks are authored by hand in hooks.json)..."
   </example>
-tools: [Read, Glob]
+tools: [Read, Glob, Bash, Skill]
 model: inherit
 color: crimson
 skills: [cc:cc-hooks]
