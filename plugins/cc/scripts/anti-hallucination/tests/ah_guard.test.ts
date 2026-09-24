@@ -2,8 +2,15 @@ import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
 import { mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+// The CLI twin is imported by this test only (0147 R4); production must not import `apps/cli`
+// from a staged plugin script (ADR-024).
+import {
+    DEFAULT_STDIN_TIMEOUT_MS as CLI_DEFAULT_STDIN_TIMEOUT_MS,
+    resolveStdinTimeoutMs as resolveStdinTimeoutMsFromCli,
+} from '../../../../../apps/cli/src/stdin.ts';
 import {
     buildStopOutput,
+    DEFAULT_STDIN_TIMEOUT_MS,
     extractLastAssistantFromTranscript,
     extractLastAssistantMessage,
     hasConfidenceLevel,
@@ -14,6 +21,7 @@ import {
     readPipedStdin,
     readTranscriptForStop,
     requiresExternalVerification,
+    resolveStdinTimeoutMs,
     resolveStopContext,
     runStopGuard,
     verifyAntiHallucinationProtocol,
@@ -829,10 +837,13 @@ describe('R1: blank assistant turns are skipped on both channels', () => {
  */
 describe('readPipedStdin', () => {
     const origTty = process.stdin.isTTY;
+    const origTimeout = getEnvVar('SUPERSKILL_STDIN_TIMEOUT_MS');
     const setTty = (value: boolean) => Object.defineProperty(process.stdin, 'isTTY', { value, configurable: true });
 
     afterEach(() => {
         Object.defineProperty(process.stdin, 'isTTY', { value: origTty, configurable: true });
+        // Restores absence when the var was unset (`setEnvVar(k, undefined)` deletes it).
+        setEnvVar('SUPERSKILL_STDIN_TIMEOUT_MS', origTimeout);
         process.stdin.pause();
     });
 
@@ -869,6 +880,46 @@ describe('readPipedStdin', () => {
         const res = await promise;
         expect(res).toBe(chunks.join(''));
         expect(() => JSON.parse(res)).not.toThrow();
+    });
+
+    it('discards a partial buffer when the stream errors', async () => {
+        // A stream error can mean the payload is truncated; verify nothing rather than half.
+        setTty(false);
+        const promise = readPipedStdin(500);
+        process.stdin.emit('data', Buffer.from('PARTIAL'));
+        process.stdin.emit('error', new Error('boom'));
+        expect(await promise).toBe('');
+    });
+
+    it('reads whitespace-only input as empty', async () => {
+        setTty(false);
+        const promise = readPipedStdin(500);
+        process.stdin.emit('data', Buffer.from('   \n  '));
+        process.stdin.emit('end');
+        expect(await promise).toBe('');
+    });
+
+    it('defaults the idle budget from SUPERSKILL_STDIN_TIMEOUT_MS', async () => {
+        setTty(false);
+        setEnvVar('SUPERSKILL_STDIN_TIMEOUT_MS', '80');
+        const started = Date.now();
+        expect(await readPipedStdin()).toBe('');
+        expect(Date.now() - started).toBeLessThan(1000);
+    });
+});
+
+describe('R4: the staged stdin timeout resolver matches the CLI twin', () => {
+    // WHY (0147 F4): `readPipedStdin` is a deliberate copy of the CLI reader; the CLI later gained
+    // `resolveStdinTimeoutMs`, so the copy's hard-coded 250 drifted. This locks the two together.
+    it('shares the default and resolves the same number for one env record', () => {
+        expect(DEFAULT_STDIN_TIMEOUT_MS).toBe(CLI_DEFAULT_STDIN_TIMEOUT_MS);
+        for (const raw of ['', '0', '-1', 'foo', '400', '250']) {
+            const env = { SUPERSKILL_STDIN_TIMEOUT_MS: raw };
+            expect(resolveStdinTimeoutMs(env)).toBe(resolveStdinTimeoutMsFromCli(env));
+        }
+        expect(resolveStdinTimeoutMs({ SUPERSKILL_STDIN_TIMEOUT_MS: '400' })).toBe(400);
+        expect(resolveStdinTimeoutMs({ SUPERSKILL_STDIN_TIMEOUT_MS: '250' })).toBe(250);
+        expect(resolveStdinTimeoutMs({ SUPERSKILL_STDIN_TIMEOUT_MS: 'foo' })).toBe(DEFAULT_STDIN_TIMEOUT_MS);
     });
 });
 

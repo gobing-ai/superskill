@@ -550,46 +550,79 @@ export function main(stdinText = ''): number {
     return result.exitCode;
 }
 
+/** Default idle budget, in ms, for the Stop-hook stdin read (mirrors the CLI default). */
+export const DEFAULT_STDIN_TIMEOUT_MS = 250;
+
+/**
+ * Resolve the default stdin idle budget, honoring `SUPERSKILL_STDIN_TIMEOUT_MS` so a host with
+ * unusual piping latency can be tuned without a code change. Non-numeric or non-positive values
+ * fall back to {@link DEFAULT_STDIN_TIMEOUT_MS}. Mirrors `apps/cli/src/stdin.ts`; keep in sync.
+ */
+export function resolveStdinTimeoutMs(
+    env: Record<string, string | undefined> = {
+        SUPERSKILL_STDIN_TIMEOUT_MS: getEnvVar('SUPERSKILL_STDIN_TIMEOUT_MS'),
+    },
+): number {
+    const parsed = Number.parseInt(env.SUPERSKILL_STDIN_TIMEOUT_MS ?? '', 10);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_STDIN_TIMEOUT_MS;
+}
+
 /**
  * Read a piped Stop payload without blocking indefinitely.
  *
- * Mirrors `apps/cli/src/stdin.ts` `readStdinNonBlocking`, deliberately duplicated: this
- * script is staged and invoked by path on non-Claude targets (ADR-024), so it must stay
- * self-contained — a plugin script may not import from `apps/cli`. Keep the two in sync.
+ * Mirrors `apps/cli/src/stdin.ts` `readStdinNonBlocking`, deliberately duplicated: this script is
+ * staged and invoked by path on non-Claude targets (ADR-024), so it must stay self-contained — a
+ * plugin script may not import from `apps/cli`. Keep the two in sync, including the default budget
+ * (`SUPERSKILL_STDIN_TIMEOUT_MS`).
  *
- * A TTY means no host piped a payload (manual invocation). Otherwise the read is bounded
- * by `idleMs` of silence, **re-armed on every chunk**, so a host that holds fd 0 open
- * without writing cannot hang the agent and a multi-write payload is never truncated.
+ * Contract difference from the CLI twin: this reader resolves `''` where `readStdinNonBlocking`
+ * resolves `undefined`. The Stop guard distinguishes "no payload" from "no content" by the empty
+ * string, and `resolveStopContext` already treats a blank payload as nothing to verify. A TTY, a
+ * whitespace-only payload, a stream error and an idle timeout all yield `''`. A stream error
+ * discards any partial buffer rather than verifying half a payload.
+ *
+ * Otherwise the read is bounded by `idleMs` of silence, **re-armed on every chunk**, so a host that
+ * holds fd 0 open without writing cannot hang the agent and a multi-write payload is never truncated.
  */
-export function readPipedStdin(idleMs = 250): Promise<string> {
+export function readPipedStdin(idleMs = resolveStdinTimeoutMs()): Promise<string> {
     if (process.stdin.isTTY) return Promise.resolve('');
     return new Promise((resolve) => {
         let data = '';
         let settled = false;
         let timer: ReturnType<typeof setTimeout> | undefined;
 
-        const settle = () => {
-            if (settled) return;
-            settled = true;
+        const cleanup = () => {
             if (timer !== undefined) clearTimeout(timer);
             process.stdin.removeListener('data', onData);
-            process.stdin.removeListener('end', settle);
-            process.stdin.removeListener('error', settle);
-            resolve(data);
+            process.stdin.removeListener('end', onEnd);
+            process.stdin.removeListener('error', onError);
+        };
+        const finish = (value: string) => {
+            if (settled) return;
+            settled = true;
+            cleanup();
+            resolve(value.trim().length > 0 ? value : '');
         };
         const arm = () => {
             if (timer !== undefined) clearTimeout(timer);
-            timer = setTimeout(settle, idleMs);
+            timer = setTimeout(() => finish(data), idleMs);
         };
         function onData(chunk: string | Buffer) {
             data += chunk.toString();
             arm();
         }
+        function onEnd() {
+            finish(data);
+        }
+        function onError() {
+            // Discard the partial buffer: a truncated payload must fail open, never half-verify.
+            finish('');
+        }
 
         process.stdin.setEncoding('utf-8');
         process.stdin.on('data', onData);
-        process.stdin.on('end', settle);
-        process.stdin.on('error', settle);
+        process.stdin.on('end', onEnd);
+        process.stdin.on('error', onError);
         process.stdin.resume();
         arm();
     });

@@ -1,6 +1,12 @@
 #!/usr/bin/env node
 // @bun
 
+// plugins/cc/scripts/anti-hallucination/lib/env.ts
+function getEnvVar(name, fallback) {
+  const raw = process.env[name];
+  return raw === undefined ? fallback : raw;
+}
+
 // plugins/cc/scripts/anti-hallucination/ah_guard.ts
 var SOURCE_PATTERNS = [
   /\[Source:\s*[^\]]+\]/i,
@@ -14,9 +20,9 @@ var SOURCE_PATTERNS = [
   /\b\d+\s+pass(?:ed)?\s+(?:\/|and)\s+\d+\s+fail(?:ed)?\b/i
 ];
 var CONFIDENCE_PATTERNS = [
-  /Confidence:\s*\**(?:HIGH|MEDIUM|LOW)\**/i,
-  /\*\*Confidence\*\*:\s*(HIGH|MEDIUM|LOW)/i,
-  /### Confidence/i
+  /Confidence:\s*\**\b(?:HIGH|MEDIUM|LOW)(?![\w-])\**/i,
+  /\*\*Confidence\*\*:\s*\**\b(?:HIGH|MEDIUM|LOW)(?![\w-])\**/i,
+  /### Confidence\b[\s\S]{0,80}?\b(?:HIGH|MEDIUM|LOW)(?![\w-])/i
 ];
 var TOOL_PATTERNS = [
   /ref_search_documentation/,
@@ -86,11 +92,12 @@ var STRONG_CLAIM_PATTERNS = [
   /\bdocumentation\s+(?:says|states|shows|confirms)\b/i
 ];
 var WEAK_KEYWORD_PATTERN = /\b(?:api|library|framework|sdk|package|endpoint|documentation)\b/i;
-var CLAIM_COUPLER_PATTERN = /\b(?:returns|accepts|expects|supports|requires|provides|exposes|takes|emits|throws|defaults? to)\b/i;
+var CLAIM_COUPLER_PATTERN = /\b(?:returns|returned|accepts|accepted|expects|expected|supports|supported|requires|required|provides|provided|exposes|exposed|takes|took|emits|emitted|throws|threw|defaults? to|defaulted to)\b/i;
+var MODAL_COUPLER_PATTERN = /\b(?:will|would|can|could|did|does)\s+(?:return|accept|expect|support|require|provide|expose|take|emit|throw|default to)\b/i;
 var LIFECYCLE_VERB_PATTERN = /\b(?:was|were|is|are)\s+(?:introduced|added|deprecated|removed|renamed|released)\b/i;
 function hasWeakExternalClaim(text) {
-  const sentences = text.split(/(?<=[.!?])(?:\s+|(?=\S))|\n+/);
-  return sentences.some((sentence) => WEAK_KEYWORD_PATTERN.test(sentence) && (CLAIM_COUPLER_PATTERN.test(sentence) || LIFECYCLE_VERB_PATTERN.test(sentence)));
+  const sentences = text.split(/(?<=[.!?])(?:\s+|(?=[A-Z]))|\n+/);
+  return sentences.some((sentence) => WEAK_KEYWORD_PATTERN.test(sentence) && (CLAIM_COUPLER_PATTERN.test(sentence) || MODAL_COUPLER_PATTERN.test(sentence) || LIFECYCLE_VERB_PATTERN.test(sentence)));
 }
 function requiresExternalVerification(text) {
   if (!text)
@@ -133,37 +140,53 @@ function verifyAntiHallucinationProtocol(text) {
   }
   return { ok: true, reason: "Task is complete" };
 }
-function readPipedStdin(idleMs = 250) {
+var DEFAULT_STDIN_TIMEOUT_MS = 250;
+function resolveStdinTimeoutMs(env = {
+  SUPERSKILL_STDIN_TIMEOUT_MS: getEnvVar("SUPERSKILL_STDIN_TIMEOUT_MS")
+}) {
+  const parsed = Number.parseInt(env.SUPERSKILL_STDIN_TIMEOUT_MS ?? "", 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_STDIN_TIMEOUT_MS;
+}
+function readPipedStdin(idleMs = resolveStdinTimeoutMs()) {
   if (process.stdin.isTTY)
     return Promise.resolve("");
   return new Promise((resolve) => {
     let data = "";
     let settled = false;
     let timer;
-    const settle = () => {
-      if (settled)
-        return;
-      settled = true;
+    const cleanup = () => {
       if (timer !== undefined)
         clearTimeout(timer);
       process.stdin.removeListener("data", onData);
-      process.stdin.removeListener("end", settle);
-      process.stdin.removeListener("error", settle);
-      resolve(data);
+      process.stdin.removeListener("end", onEnd);
+      process.stdin.removeListener("error", onError);
+    };
+    const finish = (value) => {
+      if (settled)
+        return;
+      settled = true;
+      cleanup();
+      resolve(value.trim().length > 0 ? value : "");
     };
     const arm = () => {
       if (timer !== undefined)
         clearTimeout(timer);
-      timer = setTimeout(settle, idleMs);
+      timer = setTimeout(() => finish(data), idleMs);
     };
     function onData(chunk) {
       data += chunk.toString();
       arm();
     }
+    function onEnd() {
+      finish(data);
+    }
+    function onError() {
+      finish("");
+    }
     process.stdin.setEncoding("utf-8");
     process.stdin.on("data", onData);
-    process.stdin.on("end", settle);
-    process.stdin.on("error", settle);
+    process.stdin.on("end", onEnd);
+    process.stdin.on("error", onError);
     process.stdin.resume();
     arm();
   });

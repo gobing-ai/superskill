@@ -337,7 +337,11 @@ dropped and the runner fails open. Real hosts write at spawn and the payload is 
 the time the runtime boots, so the budget is generous in practice — raise
 `SUPERSKILL_STDIN_TIMEOUT_MS` for a host that genuinely writes late. `plugins/cc/scripts/anti-hallucination/ah_guard.ts`
 carries a deliberate duplicate (`readPipedStdin`) for its staged direct-invocation path, which may
-not import from `apps/cli`; keep the two in sync.
+not import from `apps/cli`; keep the two in sync. The duplicate resolves `''` where this reader
+resolves `undefined` — the Stop guard separates "no payload" from "no content" by the empty string
+— and it honors the same `SUPERSKILL_STDIN_TIMEOUT_MS` default. Its transcript read is separately
+bounded: `readTranscriptForStop` refuses a non-regular file (a directory, fifo or device) and reads
+only the last `1 MiB` (`1048576` bytes) of a larger transcript, cut back to a whole line.
 
 Skill folders are prose-only: `plugins/cc/skills/anti-hallucination/` holds `SKILL.md`, `references/*.md`, `agents/openai.yaml`, `metadata.openclaw` — no `.ts` runtime.
 
