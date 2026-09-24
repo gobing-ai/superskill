@@ -62,9 +62,16 @@ const SOURCE_PATTERNS = [
 const CONFIDENCE_PATTERNS = [
     // Allow optional markdown bold around the value (e.g. `Confidence: **HIGH**`),
     // not just around the label — both bold-on-value and bold-on-label are valid.
-    /Confidence:\s*\**(?:HIGH|MEDIUM|LOW)\**/i,
-    /\*\*Confidence\*\*:\s*(HIGH|MEDIUM|LOW)/i,
-    /### Confidence/i,
+    // (0147 F6) The level must be a whole word. A trailing `\b` is not enough: `-` is a
+    // non-word character, so `Confidence: MEDIUM-rare` would match (`M`→`-` is a boundary).
+    // `(?!\w)` alone is not enough either, because `-` is not `\w`. `(?![\w-])` rejects a
+    // following letter, digit, `_` or `-`, which is what closes HIGHWAY / HIGHly / LOWER /
+    // MEDIUM-rare without narrowing the leading boundary.
+    /Confidence:\s*\**\b(?:HIGH|MEDIUM|LOW)(?![\w-])\**/i,
+    /\*\*Confidence\*\*:\s*\**\b(?:HIGH|MEDIUM|LOW)(?![\w-])\**/i,
+    // A bare `### Confidence` heading only declares a level when a level appears within the
+    // next 80 characters; otherwise the heading alone satisfied the protocol.
+    /### Confidence\b[\s\S]{0,80}?\b(?:HIGH|MEDIUM|LOW)(?![\w-])/i,
 ];
 
 // Verification tool usage patterns (evidence tools)
@@ -345,8 +352,18 @@ const WEAK_KEYWORD_PATTERN = /\b(?:api|library|framework|sdk|package|endpoint|do
 
 // Capability couplers: a weak keyword only becomes a claim when the text asserts what the
 // external thing does/has ("the API returns…", "this framework exposes…").
+// (0147 F3) Past tense included: a reply that reports what an external thing *did*
+// ("the library returned a Buffer") asserts the same fact as the present-tense form and
+// must not slip through. Kept as an explicit alternation so each tense is auditable —
+// optional-s forms like `returns?` are rejected because they also match nouns.
 const CLAIM_COUPLER_PATTERN =
-    /\b(?:returns|accepts|expects|supports|requires|provides|exposes|takes|emits|throws|defaults? to)\b/i;
+    /\b(?:returns|returned|accepts|accepted|expects|expected|supports|supported|requires|required|provides|provided|exposes|exposed|takes|took|emits|emitted|throws|threw|defaults? to|defaulted to)\b/i;
+
+// (0147 F3) Modal + base verb: "the API will return…" is a claim about the external world
+// just like "the API returns…", but the base verb carries no tense suffix, so the explicit
+// alternation above never sees it. Only the modal half is coupled here.
+const MODAL_COUPLER_PATTERN =
+    /\b(?:will|would|can|could|did|does)\s+(?:return|accept|expect|support|require|provide|expose|take|emit|throw|default to)\b/i;
 
 // Lifecycle verbs ("was removed", "were added") assert an external fact only when the subject is an
 // external artifact. Bare, they are the single most common shape in a coding summary — "a regression
@@ -357,11 +374,18 @@ const LIFECYCLE_VERB_PATTERN = /\b(?:was|were|is|are)\s+(?:introduced|added|depr
 
 /** Weak vocabulary and its assertion must occur in the same sentence. */
 function hasWeakExternalClaim(text: string): boolean {
-    const sentences = text.split(/(?<=[.!?])(?:\s+|(?=\S))|\n+/);
+    // (0147 F2) Split after `.`/`!`/`?` only at whitespace or before a capital letter. The
+    // previous `(?=\S)` alternative also split before a lowercase letter or digit, so a
+    // filename dot (`readme.md`, `lodash.js`, `service.ts`) severed the weak keyword from its
+    // coupler and the claim was allowed. A new sentence after a dot starts with a capital;
+    // `local.The helper …` still splits, `readme.md` (one sentence) does not.
+    const sentences = text.split(/(?<=[.!?])(?:\s+|(?=[A-Z]))|\n+/);
     return sentences.some(
         (sentence) =>
             WEAK_KEYWORD_PATTERN.test(sentence) &&
-            (CLAIM_COUPLER_PATTERN.test(sentence) || LIFECYCLE_VERB_PATTERN.test(sentence)),
+            (CLAIM_COUPLER_PATTERN.test(sentence) ||
+                MODAL_COUPLER_PATTERN.test(sentence) ||
+                LIFECYCLE_VERB_PATTERN.test(sentence)),
     );
 }
 

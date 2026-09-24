@@ -870,3 +870,69 @@ describe('readPipedStdin', () => {
         expect(() => JSON.parse(res)).not.toThrow();
     });
 });
+
+describe('R2: a filename dot does not end the sentence', () => {
+    // WHY (0147 F2): the splitter's `(?=\S)` alternative fired on the `m` in `readme.md`,
+    // the `j` in `lodash.js` and the `t` in `service.ts`, so the weak keyword and its
+    // coupler landed in different fragments and the claim was allowed. These three are
+    // each ONE grammatical sentence and must demand verification.
+    const FILENAME_CLAIMS = [
+        'The API documented in readme.md returns a paginated list.',
+        'The library (see lodash.js) returns a Buffer.',
+        'The endpoint in service.ts returns 404 for unknown ids.',
+    ];
+
+    it('keeps filename dots inside one grammatical sentence', () => {
+        for (const claim of FILENAME_CLAIMS) {
+            expect(requiresExternalVerification(claim)).toBe(true);
+        }
+    });
+
+    it('blocks each filename claim when it carries no citation and no confidence line', () => {
+        for (const claim of FILENAME_CLAIMS) {
+            expect(verifyAntiHallucinationProtocol(claim).ok).toBe(false);
+        }
+    });
+});
+
+describe('R3: past-tense and modal capability couplers', () => {
+    // WHY (0147 F3): couplers were present tense only, so `returned`, `accepted`,
+    // `exposed`, and `will return` never fired and the claim passed unverified.
+    it('fires on past-tense and modal assertions about an external artifact', () => {
+        expect(requiresExternalVerification('The library returned a Buffer from decode.')).toBe(true);
+        expect(requiresExternalVerification('The API accepted a null body and returned 204.')).toBe(true);
+        expect(requiresExternalVerification('The framework exposed a helper for retries.')).toBe(true);
+        expect(requiresExternalVerification('The API will return a paginated list of users.')).toBe(true);
+    });
+
+    it('residual-proof: passes past-tense local-code talk (coupler, no external keyword)', () => {
+        // RESIDUAL-PROOF (compound-carrying): the sentence carries the new past-tense coupler
+        // (`returned`) — the half that used to be missing — and still must not fire, because
+        // `function` is not a weak keyword. Guards against re-adding `function`/`method`.
+        expect(requiresExternalVerification('The function returned early when the list was empty.')).toBe(false);
+    });
+});
+
+describe('R6: confidence words are whole words', () => {
+    // WHY (0147 F6): the old patterns matched a level as a prefix, so `HIGHWAY`,
+    // `HIGHly uncertain`, `LOWER` and `MEDIUM-rare` all read as a declared confidence
+    // level and silently satisfied the protocol.
+    it('rejects a level that is only a word prefix', () => {
+        expect(hasConfidenceLevel('Confidence: HIGHWAY')).toBe(false);
+        expect(hasConfidenceLevel('Confidence: HIGHly uncertain')).toBe(false);
+        expect(hasConfidenceLevel('Confidence: LOWER')).toBe(false);
+        expect(hasConfidenceLevel('Confidence: MEDIUM-rare')).toBe(false);
+    });
+
+    it('rejects a `### Confidence` heading with no level nearby', () => {
+        expect(hasConfidenceLevel('### Confidence\n\nI am unsure about the API.')).toBe(false);
+    });
+
+    it('still blocks a bogus confidence word on a real claim', () => {
+        const result = verifyAntiHallucinationProtocol(
+            'Confidence: HIGHWAY\nThe API returns a paginated list.\nplugins/cc/plugin.json:1',
+        );
+        expect(result.ok).toBe(false);
+        expect(result.issues).toContain('confidence level (HIGH/MEDIUM/LOW)');
+    });
+});
