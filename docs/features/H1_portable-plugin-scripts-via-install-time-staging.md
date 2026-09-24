@@ -2,11 +2,11 @@
 schema_version: 1
 id: "H1"
 name: "Portable plugin scripts via install-time staging"
-status: backlog
+status: active
 priority: P2
 tags: []
 created_at: "2026-07-17T06:13:24.436Z"
-updated_at: "2026-08-25T18:53:10.823Z"
+updated_at: "2026-09-24T06:59:00.880Z"
 ---
 
 # A: Portable plugin scripts via install-time staging
@@ -87,7 +87,7 @@ Feature: Portable plugin scripts via install-time staging
 | 0105 | anti-hallucination guard: lifecycle-verb pattern fires on local-change talk, blocking nearly every Stop | done |
 | 0121 | Harden script convert against Bun globals and document the script run contract limits | done |
 | 0122 | Standardize plugin-skill script authoring (path contract, cc-skills, validate layout gate) | done |
-| 0148 | Fix apps CLI review findings across script-path home, hermes ownership, symlink hits, and skill counts | todo |
+| 0148 | Fix apps CLI review findings across script-path home, hermes ownership, symlink hits, and skill counts | testing |
 <!-- END AUTO-GENERATED -->
 
 ## Notes
@@ -159,3 +159,5 @@ Every agent-skill-related plugin script is delivered by `superskill install` sta
 ## History
 
 - 2026-08-01T00:24:29.745Z moved A → H1 (system)
+- 2026-09-24T06:59:00.880Z backlog → active (system)
+
