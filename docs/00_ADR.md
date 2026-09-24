@@ -571,6 +571,24 @@ data, repo-foreign content, credentials — an explicit pre-publish step.
 
 **Amendment (2026-09-10, task 0131).** The native Claude Code marketplace route (`claude plugin marketplace add gobing-ai/superskill` / `claude plugin install cc@superskill`) was verified end-to-end against the published bundled marketplace manifest. Proposed MCP gateway (`@gobing-ai/superskill-mcp`) is deferred with trigger conditions; CLI remains the cross-host conversion and placement mechanism. Detail: `docs/help/native_cc_marketplace_pilot.md`.
 
+**Amendment (2026-09-24, local npm package precedence).** A plain `owner/repo`
+shorthand locator gains a resolution rung **ahead of the cache and the remote
+flow**: a globally installed bun/npm package matching the locator name (scoped
+`@owner/repo`, then the bare repo name) whose root carries a marketplace
+manifest (`marketplace.json` or `.claude-plugin/marketplace.json`) is served
+directly — no cache write, no marker, no commit probe, no network;
+`resolvedRef` stays unset. Explicit GitHub URLs (even without `/tree/`) and
+ref/subdir locators always go remote. bun's global root only
+(`$BUN_INSTALL/install/global`, default `~/.bun`); npm/pnpm roots need a
+subprocess probe and stay deferred. Safety: `executeInstall`'s poisoned-cache
+self-heal now wipes only cache-owned roots (under
+`~/.cache/superskill/marketplaces/`) — a locally installed package that lacks
+the plugin is a real resolution error, never deleted. Accepted tradeoff: the
+npm tarball's embedded manifest can lag the repo (observed: `0.0.21` inside
+the `0.0.22` tarball vs `0.0.22` at HEAD); freshness is owned by the package
+manager upgrade, and `update` reconciles through the same local-first
+resolution.
+
 ---
 
 ## ADR-035: Pull-model update visibility via install-time provenance manifest

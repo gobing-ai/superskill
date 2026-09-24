@@ -13,7 +13,7 @@ import {
     writeFileSync,
 } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
-import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path';
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import {
     adaptMagentForTarget,
     adaptSubagentToCodex,
@@ -30,6 +30,7 @@ import {
     type GrokBotSource,
     getEnvVar,
     getGitHubToken,
+    ghAuthTokenFromCli,
     INSTALL_TARGETS,
     type InstallManifestV1,
     type InstallTarget,
@@ -301,6 +302,18 @@ export function marketplaceCacheRoot(): string {
     return join(resolveHomeDir(), '.cache', 'superskill', 'marketplaces');
 }
 
+/**
+ * Global bun/npm roots that may carry a marketplace manifest for an `owner/repo`
+ * locator (ADR-034 amendment 2026-09-24): scoped `@owner/repo` first, then the
+ * bare repo name. bun global installs only (`$BUN_INSTALL/install/global`);
+ * npm/pnpm roots need a subprocess probe — add when a user needs them.
+ */
+function candidateNpmMarketplaceRoots(owner: string, repo: string): string[] {
+    const bunInstall = getEnvVar('BUN_INSTALL') ?? join(homedir(), '.bun');
+    const globalNodeModules = join(bunInstall, 'install', 'global', 'node_modules');
+    return [join(globalNodeModules, `@${owner}`, repo), join(globalNodeModules, repo)];
+}
+
 // ── Marketplace cache freshness marker (task 0145) ─────────────────────────
 
 /** Marker file published beside the materialized snapshot inside the cache root. */
@@ -409,7 +422,7 @@ function writeRemoteMarketplaceMarker(
  */
 export async function resolveRemoteMarketplace(
     locator: string,
-    deps: { fetchFn?: typeof fetch } = {},
+    deps: { fetchFn?: typeof fetch; ghTokenRunner?: () => Promise<string | null> } = {},
 ): Promise<RemoteMarketplaceResolution> {
     const parsed = parseRemoteMarketplaceLocator(locator);
     if (!parsed) {
@@ -419,6 +432,18 @@ export async function resolveRemoteMarketplace(
     }
     for (const seg of [parsed.owner, parsed.repo, parsed.ref]) {
         assertSafePathSegment(seg, 'marketplace locator');
+    }
+    // Local-npm-first (ADR-034 amendment 2026-09-24): a plain `owner/repo` shorthand
+    // already downloaded as a global bun/npm package that ships a marketplace manifest
+    // is served directly — no cache, no marker, no commit probe, no network. Explicit
+    // GitHub URLs (even without /tree/) and ref/subdir locators always go remote.
+    if (parsed.ref === 'HEAD' && !parsed.subdir && /^[\w.-]+\/[\w.-]+$/.test(locator)) {
+        const localPkg = candidateNpmMarketplaceRoots(parsed.owner, parsed.repo).find(
+            (root) =>
+                existsSync(join(root, 'marketplace.json')) ||
+                existsSync(join(root, '.claude-plugin', 'marketplace.json')),
+        );
+        if (localPkg) return { root: localPkg };
     }
     const cacheRoot = join(marketplaceCacheRoot(), parsed.owner, parsed.repo, parsed.ref);
     const fetchFn = deps.fetchFn ?? fetch;
@@ -432,7 +457,9 @@ export async function resolveRemoteMarketplace(
     // refresh or a hard failure, never a warned fallback.
     const identityMismatch = marker !== null && !markerIdentityMatches(marker, parsed);
 
-    const token = await getGitHubToken();
+    // Lazy `gh auth token` fallback: private marketplaces 404 unauthenticated, which the
+    // commit probe reads as "ref not found" and walks every default ref before failing.
+    const token = await getGitHubToken(undefined, deps.ghTokenRunner ?? (() => ghAuthTokenFromCli()));
 
     // Freshness probe (R1): one commit request answers "is the warm cache current?".
     let commitSha: string;
@@ -614,6 +641,10 @@ export async function executeInstall(
         ) {
             throw err;
         }
+        // Only cache-owned roots may be wiped: a locally installed npm package that
+        // lacks the plugin (local-npm rung, ADR-034 amendment) is a real resolution
+        // failure — its bytes are user-owned, never self-heal-deletable.
+        if (!remoteCacheRoot.startsWith(marketplaceCacheRoot() + sep)) throw err;
         if (options.verbose)
             echo(`Remote marketplace cache incomplete — re-materializing '${originalMarketplaceLocator}'...`);
         rmSync(remoteCacheRoot, { recursive: true, force: true });

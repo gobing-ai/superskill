@@ -33,8 +33,13 @@ import { cliVersion } from '../../src/version';
 
 const originalCwd = process.cwd();
 const savedHomeDir = getEnvVar('HOME_DIR');
+const savedBunInstall = getEnvVar('BUN_INSTALL');
 let tempDir: string | undefined;
 let fileLevelHome: string | undefined;
+// ADR-034 amendment: the local-npm rung must never see the developer machine's real
+// global packages (@gobing-ai/superskill IS globally installed here) — pin an empty
+// BUN_INSTALL for every test.
+let moduleBunInstall = '';
 
 function createTempWorkspace(): string {
     tempDir = mkdtempSync(join(tmpdir(), 'superskill-install-test-'));
@@ -64,12 +69,20 @@ function createPlugin(root: string, pluginName = 'demo'): string {
 beforeEach(() => {
     fileLevelHome = mkdtempSync(join(tmpdir(), 'superskill-install-test-home-'));
     setEnvVar('HOME_DIR', fileLevelHome);
+    moduleBunInstall = mkdtempSync(join(tmpdir(), 'superskill-install-test-bun-'));
+    setEnvVar('BUN_INSTALL', moduleBunInstall);
 });
 
 afterEach(() => {
     process.chdir(originalCwd);
     if (savedHomeDir === undefined) removeEnvVar('HOME_DIR');
     else setEnvVar('HOME_DIR', savedHomeDir);
+    if (savedBunInstall === undefined) removeEnvVar('BUN_INSTALL');
+    else setEnvVar('BUN_INSTALL', savedBunInstall);
+    if (moduleBunInstall) {
+        rmSync(moduleBunInstall, { recursive: true, force: true });
+        moduleBunInstall = '';
+    }
     if (tempDir) {
         rmSync(tempDir, { recursive: true, force: true });
         tempDir = undefined;
@@ -1123,10 +1136,16 @@ describe('parseRemoteMarketplaceLocator + isRemoteMarketplaceLocator (R2 disambi
 
 describe('resolveRemoteMarketplace — freshness probe + cache contract (task 0145, R1-R4/R9/AC6)', () => {
     const savedHomeDir = getEnvVar('HOME_DIR');
+    const savedGithubToken = getEnvVar('GITHUB_TOKEN');
+    // Hermetic token acquisition: pin a token so the lazy `gh auth token` fallback in
+    // resolveRemoteMarketplace never spawns a real subprocess during tests.
+    setEnvVar('GITHUB_TOKEN', 'test-token-superskill');
 
     afterEach(() => {
         if (savedHomeDir === undefined) removeEnvVar('HOME_DIR');
         else setEnvVar('HOME_DIR', savedHomeDir);
+        if (savedGithubToken === undefined) removeEnvVar('GITHUB_TOKEN');
+        else setEnvVar('GITHUB_TOKEN', savedGithubToken);
     });
 
     // Deterministic fixture hashes: commit and tree SHAs differ and are valid 40-hex
@@ -1672,6 +1691,94 @@ describe('resolveRemoteMarketplace — freshness probe + cache contract (task 01
         // Retry materializes the full tree.
         const retried = await resolveRemoteMarketplace('gobing-ai/superskill', { fetchFn: flaky });
         expect(existsSync(join(retried.root, 'plugins', 'cc', 'skills', 'a.md'))).toBe(true);
+    });
+
+    // ADR-034 amendment (2026-09-24): a plain owner/repo locator first resolves from a
+    // globally installed bun/npm package carrying a marketplace manifest — zero probes,
+    // zero cache writes, zero network. The module-level beforeEach pins an empty
+    // BUN_INSTALL, so each test seeds its own package roots.
+
+    /** Seed a manifest-bearing global npm package under the pinned BUN_INSTALL root. */
+    function seedNpmPackage(pkgPath: string, pluginName = 'cc', materializePlugin = true): string {
+        const root = join(moduleBunInstall, 'install', 'global', 'node_modules', ...pkgPath.split('/'));
+        mkdirSync(join(root, '.claude-plugin'), { recursive: true });
+        writeFileSync(
+            join(root, '.claude-plugin', 'marketplace.json'),
+            JSON.stringify({ name: 'superskill', plugins: [{ name: pluginName, source: `./plugins/${pluginName}` }] }),
+        );
+        if (materializePlugin) {
+            mkdirSync(join(root, 'plugins', pluginName, 'skills'), { recursive: true });
+            writeFileSync(join(root, 'plugins', pluginName, 'plugin.json'), JSON.stringify({ name: pluginName }));
+        }
+        return root;
+    }
+
+    const neverFetch = (async () => {
+        throw new Error('network must not be reached');
+    }) as unknown as typeof fetch;
+
+    it('resolves owner/repo from the globally installed @owner/repo package with zero fetches', async () => {
+        const home = createTempWorkspace();
+        setEnvVar('HOME_DIR', home);
+        const pkgRoot = seedNpmPackage('@gobing-ai/superskill');
+
+        const resolved = await resolveRemoteMarketplace('gobing-ai/superskill', { fetchFn: neverFetch });
+
+        expect(resolved.root).toBe(pkgRoot);
+        expect(resolved.resolvedRef).toBeUndefined();
+    });
+
+    it('prefers the globally installed package over a manifest-bearing warm cache', async () => {
+        const home = createTempWorkspace();
+        setEnvVar('HOME_DIR', home);
+        const cacheRoot = join(marketplaceCacheRoot(), 'gobing-ai', 'superskill', 'HEAD');
+        seedWarmCache(cacheRoot);
+        writeMarker(cacheRoot);
+        const pkgRoot = seedNpmPackage('@gobing-ai/superskill');
+
+        const resolved = await resolveRemoteMarketplace('gobing-ai/superskill', { fetchFn: neverFetch });
+
+        expect(resolved.root).toBe(pkgRoot);
+    });
+
+    it('falls back to the unscoped <repo> global package when no @owner/repo package exists', async () => {
+        const home = createTempWorkspace();
+        setEnvVar('HOME_DIR', home);
+        const pkgRoot = seedNpmPackage('superskill');
+
+        const resolved = await resolveRemoteMarketplace('gobing-ai/superskill', { fetchFn: neverFetch });
+
+        expect(resolved.root).toBe(pkgRoot);
+    });
+
+    it('skips the local-npm rung for an explicit GitHub URL even when the package is installed', async () => {
+        const home = createTempWorkspace();
+        setEnvVar('HOME_DIR', home);
+        seedNpmPackage('@gobing-ai/superskill');
+
+        await expect(
+            resolveRemoteMarketplace('https://github.com/gobing-ai/superskill/tree/main', { fetchFn: neverFetch }),
+        ).rejects.toThrow('network must not be reached');
+    });
+
+    it('executeInstall never wipes a globally installed package whose manifest lacks the plugin', async () => {
+        const home = createTempWorkspace();
+        setEnvVar('HOME_DIR', home);
+        // Manifest declares 'cc' but plugins/cc is not materialized — the same
+        // 'Plugin root not found' shape the poisoned-cache self-heal reacts to.
+        const pkgRoot = seedNpmPackage('@gobing-ai/superskill', 'cc', false);
+
+        const stdout = spyOn(process.stdout, 'write').mockImplementation(() => true);
+        await expect(
+            executeInstall(
+                'cc',
+                ['hermes'],
+                { global: false, dryRun: true, verbose: false, marketplacePath: 'gobing-ai/superskill' },
+                { fetchFn: neverFetch },
+            ),
+        ).rejects.toThrow('Plugin root not found');
+        stdout.mockRestore();
+        expect(existsSync(pkgRoot)).toBe(true);
     });
 
     // Regression (self-heal): caches poisoned before the staging fix still exist in the wild —

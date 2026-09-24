@@ -28,8 +28,12 @@ import {
 const originalCwd = process.cwd();
 const originalHomeDir = getEnvVar('HOME_DIR');
 const originalXdgStateHome = getEnvVar('XDG_STATE_HOME');
+const savedBunInstall = getEnvVar('BUN_INSTALL');
 let tempDir: string | undefined;
 let testHome: string | undefined;
+// ADR-034 amendment: the local-npm rung must never see the developer machine's real
+// global packages — pin an empty BUN_INSTALL for every test.
+let moduleBunInstall = '';
 
 function workspace(): string {
     tempDir = mkdtempSync(join(tmpdir(), 'superskill-update-test-'));
@@ -37,12 +41,23 @@ function workspace(): string {
     return tempDir;
 }
 
+beforeEach(() => {
+    moduleBunInstall = mkdtempSync(join(tmpdir(), 'superskill-update-test-bun-'));
+    setEnvVar('BUN_INSTALL', moduleBunInstall);
+});
+
 afterEach(() => {
     mock.restore();
     if (originalHomeDir === undefined) removeEnvVar('HOME_DIR');
     else setEnvVar('HOME_DIR', originalHomeDir);
     if (originalXdgStateHome === undefined) removeEnvVar('XDG_STATE_HOME');
     else setEnvVar('XDG_STATE_HOME', originalXdgStateHome);
+    if (savedBunInstall === undefined) removeEnvVar('BUN_INSTALL');
+    else setEnvVar('BUN_INSTALL', savedBunInstall);
+    if (moduleBunInstall) {
+        rmSync(moduleBunInstall, { recursive: true, force: true });
+        moduleBunInstall = '';
+    }
     process.chdir(originalCwd);
     if (tempDir) {
         rmSync(tempDir, { recursive: true, force: true });
