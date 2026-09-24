@@ -1,7 +1,7 @@
 {
     "name": "cc",
     "description": "superskill - a manager for multi-agent skill, slash command, subagent, hook, MCP and etc",
-    "version": "0.3.31",
+    "version": "0.3.32",
     "author": {
         "name": "Robin Min",
         "email": "minlongbing@gmail.com"
