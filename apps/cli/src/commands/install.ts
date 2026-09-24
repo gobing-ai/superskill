@@ -2565,13 +2565,23 @@ export function resolveHomeDir(): string {
     return getEnvVar('HOME_DIR') ?? homedir();
 }
 
-/** Count skill directories (dirs containing `SKILL.md`) under `skillsDir`. */
-function countSkillsInDir(skillsDir: string): number {
+/**
+ * Count real child directories of `skillsDir` that contain `SKILL.md`.
+ * Symlinks are skipped. A stat failure on one entry is skipped. A missing
+ * `skillsDir` returns 0.
+ */
+export function countSkillsInDir(skillsDir: string): number {
     if (!existsSync(skillsDir)) return 0;
     let count = 0;
     for (const entry of readdirSync(skillsDir)) {
-        if (!statSync(join(skillsDir, entry)).isDirectory()) continue;
-        if (existsSync(join(skillsDir, entry, 'SKILL.md'))) count++;
+        const entryPath = join(skillsDir, entry);
+        try {
+            const st = lstatSync(entryPath);
+            if (!st.isDirectory()) continue;
+        } catch {
+            continue;
+        }
+        if (existsSync(join(entryPath, 'SKILL.md'))) count++;
     }
     return count;
 }

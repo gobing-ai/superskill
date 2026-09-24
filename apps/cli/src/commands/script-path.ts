@@ -1,4 +1,4 @@
-import { existsSync, statSync } from 'node:fs';
+import { lstatSync } from 'node:fs';
 import { join } from 'node:path';
 import { assertSafePathSegment } from '@gobing-ai/superskill-core';
 import { echo, echoError } from '@gobing-ai/ts-utils';
@@ -108,16 +108,15 @@ export function resolveScriptPath(opts: ScriptPathOptions): ResolvedScriptPath |
     }
 
     for (const candidate of candidates) {
-        // R6: only a regular file counts as "found" — directories must not win resolution.
-        if (existsSync(candidate.path)) {
-            try {
-                if (statSync(candidate.path).isFile()) {
-                    return candidate;
-                }
-            } catch {
-                // Race / permission: treat as miss and continue search
-            }
+        // R6: only a regular file counts as "found" — directories and symlinks must not win resolution.
+        let st: ReturnType<typeof lstatSync>;
+        try {
+            st = lstatSync(candidate.path);
+        } catch {
+            continue;
         }
+        if (st.isSymbolicLink() || !st.isFile()) continue;
+        return candidate;
     }
 
     return null;

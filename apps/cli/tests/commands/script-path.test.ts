@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, spyOn } from 'bun:test';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { getEnvVar, removeEnvVar, setEnvVar } from '@gobing-ai/superskill-core';
 import { Command } from 'commander';
@@ -132,6 +132,33 @@ describe('resolveScriptPath', () => {
         const result = resolveScriptPath({ plugin: 'cc', rel: 'file..ts', projectRoot });
         expect(result).not.toBeNull();
         expect(result?.path).toContain('file..ts');
+    });
+
+    it('skips a symlinked project candidate and falls through to the global root', () => {
+        tmpDir = mkdtempSync('superskill-script-path-');
+        const projectRoot = join(tmpDir, 'project');
+        const home = join(tmpDir, 'home');
+        const outside = join(tmpDir, 'outside');
+        mkdirSync(join(projectRoot, '.agents', 'scripts', 'cc'), { recursive: true });
+        mkdirSync(join(home, '.agents', 'scripts', 'cc'), { recursive: true });
+        mkdirSync(outside, { recursive: true });
+        const target = join(outside, 'real.mjs');
+        writeFileSync(target, 'ok');
+        symlinkSync(target, join(projectRoot, '.agents', 'scripts', 'cc', 'linked.mjs'));
+
+        // The link itself is not a regular file; with no other candidate the lookup misses.
+        expect(
+            resolveScriptPath({ plugin: 'cc', rel: 'linked.mjs', home, projectRoot, forceProject: true }),
+        ).toBeNull();
+
+        // With a regular global file for the same rel, the skipped project link falls through to it.
+        const globalFile = join(home, '.agents', 'scripts', 'cc', 'linked.mjs');
+        writeFileSync(globalFile, 'ok');
+        const result = resolveScriptPath({ plugin: 'cc', rel: 'linked.mjs', home, projectRoot });
+        expect(result).not.toBeNull();
+        if (!result) throw new Error('null result');
+        expect(result.path).toBe(globalFile);
+        expect(result.source).toBe('global');
     });
 
     it('returns null when the candidate path is a directory, not a file', () => {

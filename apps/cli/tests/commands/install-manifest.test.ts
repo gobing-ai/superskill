@@ -23,7 +23,7 @@ import {
 } from '@gobing-ai/superskill-core';
 import type { ProcessExecutor, ProcessOptions } from '@gobing-ai/ts-runtime';
 import type { GenerateResult } from 'rulesync';
-import { executeInstall, isPluginOwnedPath } from '../../src/commands/install';
+import { countSkillsInDir, executeInstall, isPluginOwnedPath } from '../../src/commands/install';
 import { cliVersion } from '../../src/version';
 
 const originalCwd = process.cwd();
@@ -945,5 +945,25 @@ describe('isPluginOwnedPath (skills-root ownership)', () => {
         expect(isPluginOwnedPath('/tmp/work/.hermes/skills/other-plugin/demo-notes.md', 'demo', skillsRoot)).toBe(
             false,
         );
+    });
+});
+
+describe('countSkillsInDir', () => {
+    it('counts real skill directories and survives symlinks', () => {
+        const dir = mkdtempSync(join(tmpdir(), 'superskill-count-skills-'));
+        try {
+            const real = join(dir, 'real-skill');
+            mkdirSync(real, { recursive: true });
+            writeFileSync(join(real, 'SKILL.md'), '# skill\n');
+            symlinkSync(real, join(dir, 'link-to-skill'));
+            symlinkSync(join(dir, 'does-not-exist'), join(dir, 'dangling'));
+            mkdirSync(join(dir, 'empty'), { recursive: true });
+
+            expect(countSkillsInDir(dir)).toBe(1);
+            expect(countSkillsInDir(join(dir, 'empty'))).toBe(0);
+            expect(countSkillsInDir(join(dir, 'missing'))).toBe(0);
+        } finally {
+            rmSync(dir, { recursive: true, force: true });
+        }
     });
 });
