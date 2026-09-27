@@ -143,7 +143,10 @@ export function stampMetadata(stamp: ScriptStampV1): ScriptStampMetadata {
 
 /**
  * Snapshot the regular files of a plugin script root, excluding the root stamp and the paths
- * `snapshotFiles` already excludes (`.superskill/`, `.superskill-manifest.json`).
+ * `snapshotFiles` already excludes (`.superskill/`, `.superskill-manifest.json`). The underlying
+ * walker also skips `.git`, `node_modules`, `.rulesync`, and `.targets` directories
+ * (`DEFAULT_SKIP_DIR_NAMES`, packages/core/src/operations/install-manifest.ts:17) — shared with
+ * the per-target receipt inventory, so those trees are outside the integrity baseline by design.
  *
  * Install writes the stamp from this map and `script verify` recomputes it, so "clean" can never
  * mean two different inventories.
