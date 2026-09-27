@@ -2,10 +2,10 @@
 doc: 04_DESIGN
 owns: SURFACE — concrete shapes: every CLI command, flag, config key, env var, table, DTO
 authority: derived
-version: 2.17.0
+version: 2.18.0
 derived_from: [00_ADR, 01_PRD, 02_ROADMAP]
 owner: Robin Min
-updated_at: 2026-09-24
+updated_at: 2026-09-27
 read_before: changing a command, flag, env var, or schema
 edit_rules: 99 §6.5
 sync: [T3]
@@ -239,7 +239,7 @@ Bot receipt without the field skips the Bot reinstall and prints explicit reinst
 | `superskill command` | `scaffold`, `validate`, `evaluate`, `refine`, `evolve` | Slash-command authoring lifecycle |
 | `superskill hook` | `validate`, `evaluate`, `refine`, `evolve`, `emit <name>`, `run <plugin> <hook-id>` | No scaffold; refine is suggest-only and evolve is analyze-only |
 | `superskill magent` | `scaffold`, `validate`, `evaluate`, `refine`, `evolve` | Main-agent config authoring lifecycle |
-| `superskill script` | `run <plugin> <script-id>`, `path <plugin> <rel>`, `convert <plugin> <rel>` | Registered runtime dispatch, installed-path resolution, and portable `.mjs` conversion |
+| `superskill script` | `run <plugin> <script-id>`, `path <plugin> <rel>`, `verify <plugin>`, `convert <plugin> <rel>` | Registered runtime dispatch, installed-path resolution, shared-root stamp verification, and portable `.mjs` conversion |
 
 | Additional signature | Flags |
 | ---------------------- | ------- |
@@ -250,7 +250,8 @@ Bot receipt without the field skips the Bot reinstall and prints explicit reinst
 | `hook emit <name>` | `-t, --target <agent>`, `--global`, `--dry-run` |
 | `hook run <plugin> <hook-id>` | `--profile <block\|deny>` |
 | `magent evaluate <nameOrPath>` | `--target <agent>`, `--json`, `--save`, `--rubric <file>`, `--ingest <file>`, `--base-path <dir>` |
-| `script path <plugin> <rel>` | `--json`, `--global`, `--project`; the global root is `resolveHomeDir()` (`HOME_DIR` when set, otherwise the OS home — the same home `superskill install` uses), and only a non-symlink regular file counts as a hit |
+| `script path <plugin> <rel>` | `--json`, `--global`, `--project`; the global root is `resolveHomeDir()` (`HOME_DIR` when set, otherwise the OS home — the same home `superskill install` uses), and only a non-symlink regular file counts as a hit. `--json` adds `stamp: {upstreamVersion, resolvedRef?, installedAt} | null`, read from the root that supplied the file; `.superskill-stamp.json` is rejected as a usage error (exit 1) |
+| `script verify <plugin>` | `--json`, `--global`, `--project` (mutually exclusive); exit 0 clean, 2 drift/`missing_root`/`missing_stamp`/`invalid_stamp`/`unreadable`, 1 usage error (`{error:'invalid_args', message}` on `--json`) |
 | `script convert <plugin> <rel>` | `--out <path>`, `--dry-run`, `--json` |
 
 `agent|skill|command|hook|magent evaluate <nameOrPath>` share `--target <agent>`, `--json`, `--save`,
@@ -304,7 +305,7 @@ Context hook sessions use `.session-<sha256-prefix>.json`, keyed by payload `ses
 Executable logic a skill invokes at the user's install site lives in `plugins/<plugin>/scripts/<feature>/` (shared across the plugin's skills). NOT per-skill `scripts/` (reintroduces duplication); NOT `packages/*` (not part of the plugin install payload). Per ADR-023, delivery follows a **dual contract**:
 
 - **Native marketplace installs** (Claude/OMP/Grok): full plugin tree ships in the cache, including `scripts/`.
-- **Rulesync/Hermes class**: install stages scripts to `~/.agents/scripts/<plugin>/<feature>/` (tree shape preserved; fail-closed if absent). Staging entrypoint: `stagePluginScripts` in `apps/cli/src/commands/install.ts`; native-class skip gate: `needsSharedScriptsRoot`.
+- **Rulesync/Hermes class**: install stages scripts to `~/.agents/scripts/<plugin>/<feature>/` (tree shape preserved; fail-closed if absent) and writes the reserved root stamp beside them (see [Shared script-root stamp](#shared-script-root-stamp-task-0149--implemented) below). Staging entrypoint: `stagePluginScripts` in `apps/cli/src/commands/install.ts`; native-class skip gate: `needsSharedScriptsRoot`.
 
 **Invocation standard** for skill docs and other non-hook callers is the Entrypoint Contract v1 form `node "$(superskill script path <plugin> <feature>/<file>.mjs)" [args]` (portable Node `.js`/`.mjs` + POSIX `.sh`, no Bun-on-target; `script convert` emits `.mjs`). **Optional invocation** for engines the CLI deep-imports: `superskill script run <plugin> <id>` / `superskill hook run <plugin> <id>` (ADR-022, amended by ADR-024). Build-time conversion uses `superskill script convert <plugin> <relative.ts> [--out <path>]` to produce the portable `.mjs` twin consumed by installed targets (convert rejects sources whose bundle still references `Bun.*`, writing nothing). See the [plugin-scripts author guide](help/how_to_organize_scripts_for_plugin_development.md) for the dual contract.
 
@@ -317,6 +318,26 @@ Executable logic a skill invokes at the user's install site lives in `plugins/<p
 | Engine tests | `plugins/cc/scripts/anti-hallucination/tests/` | 2 test files (ah_guard, validate_response); counted in coverage gate |
 | Layout gate | `packages/core/src/operations/validate.ts` (`checkPluginSkillLayout`) | `skill validate` errors (`field: _layout`) when a plugin skill (`plugins/<plugin>/skills/<name>/SKILL.md`) contains `scripts/` or `extensions/`. Standalone skills are not flagged. |
 | Stdin reader | `apps/cli/src/stdin.ts` | `readStdinNonBlocking(firstByteMs, idleMs)` — the payload channel for `script run` / `hook run`. See the stdin contract below. |
+
+### Shared script-root stamp (task 0149 — implemented)
+
+The filename `<scopeRoot>/.agents/scripts/<plugin>/.superskill-stamp.json` is **reserved**: it is install metadata, never script content. `script path` cannot resolve it in any normalized spelling, install rejects a source script that would occupy it (before the destructive plugin-dir replace), and neither the stamp nor the mapper-reported script count includes it.
+
+Schema version 1 (written by `stagePluginScripts` in `apps/cli/src/commands/install.ts`; reader/writer/compare in `apps/cli/src/script-stamp.ts`):
+
+| Field | Shape |
+| --- | --- |
+| `schemaVersion` | `1` |
+| `plugin` | Plugin id, one path segment |
+| `upstreamVersion` | Resolved plugin/marketplace version |
+| `marketplaceLocator`, `resolvedRef` | Optional strings; same resolution metadata as the target receipts |
+| `superskillVersion` | Installing CLI version |
+| `installedAt` | ISO-8601 UTC; the install's single instant, shared with every target receipt of that install |
+| `files` | Slash-normalized script path → lowercase SHA-256 hex of the staged bytes; sorted; never contains the stamp itself |
+
+Written after the copy (atomic temp + rename), only when at least one regular file was staged: `--dry-run`, native-only target sets, and zero-script plugins leave the shared root unstamped. Per-target receipts under `.superskill/manifests/` still include the finished stamp — the stamp is an adjacent shared-root receipt, not a replacement for them.
+
+`script verify <plugin>` selects **one** scripts root — project first by directory existence, else global; explicit `--project`/`--global` never falls back — reads that root's stamp, and compares it with a fresh regular-file snapshot excluding the stamp. Every result is `{plugin, source, status, added, removed, changed}` with `source` ∈ `project | global | null` and `status` ∈ `ok | drift | missing_root | missing_stamp | invalid_stamp | unreadable`; the arrays are sorted and empty unless a valid baseline was read. `unreadable` means the baseline is valid but a staged file could not be read (the snapshot is wrapped, so a filesystem failure is a verification outcome, never an escaping error) and adds `error: <filesystem message naming the file>`. Failure diagnostics name each differing path and give reinstall guidance; stdout keeps the JSON result in `--json` mode and stderr carries the diagnostics.
 
 ### Stdin payload contract (`script run` / `hook run`)
 

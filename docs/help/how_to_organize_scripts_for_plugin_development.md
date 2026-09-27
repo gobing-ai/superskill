@@ -48,7 +48,7 @@ Only **portable runtimes** are useful on targets: Node `.js`/`.mjs` and POSIX `.
 
 ### Resolve the staged entrypoint
 
-`superskill script path <plugin> <rel>` resolves a staged entrypoint by search order (`apps/cli/src/commands/script-path.ts:88-123`):
+`superskill script path <plugin> <rel>` resolves a staged entrypoint by search order (`apps/cli/src/commands/script-path.ts:104-142`):
 
 1. **Project agents root:** `<project>/.agents/scripts/<plugin>/<rel>`
 2. **Global agents root:** `<home>/.agents/scripts/<plugin>/<rel>` — the same home `superskill install` uses: `HOME_DIR` when set, otherwise the OS home (`resolveHomeDir()`)
@@ -60,8 +60,8 @@ Exit codes:
 | Outcome | Exit | Notes |
 | --- | --- | --- |
 | Found | `0` | Prints the absolute path (or JSON with `--json`). |
-| Not found | `2` | **Fail-closed.** A missing staged script is a deployment/setup error, not a graceful-degradation case (`script-path.ts:164-174`). |
-| Invalid args | `1` | Unknown flag, missing plugin/rel, or `rel` with `..` / absolute / Windows-drive segments (`isUnsafeRel`, `script-path.ts:47-53`). |
+| Not found | `2` | **Fail-closed.** A missing staged script is a deployment/setup error, not a graceful-degradation case (`script-path.ts:183-193`). |
+| Invalid args | `1` | Unknown flag, missing plugin/rel, or `rel` with `..` / absolute / Windows-drive segments (`isUnsafeRel`, `script-path.ts:63-69`). |
 
 ### Invoke from a skill doc
 

@@ -163,6 +163,37 @@ describe('executeInstall provenance manifest', () => {
         expect(existsSync(installManifestPath(workspace, 'codex', 'demo'))).toBe(true);
     });
 
+    it('0149 R1: a scripts-bearing install shares one stamp instant and version with the target receipt', async () => {
+        const workspace = createTempWorkspace();
+        const pluginRoot = createPlugin(workspace, 'demo', '0.1.0');
+        mkdirSync(join(pluginRoot, 'scripts', 'util'), { recursive: true });
+        writeFileSync(join(pluginRoot, 'scripts', 'util', 'helper.js'), '// helper');
+        const marketplacePath = writeMarketplace(workspace, 'demo', '4.5.6');
+        seedInstalledSkill(workspace, 'demo');
+        spyOn(process.stdout, 'write').mockImplementation(() => true);
+
+        await executeInstall(
+            'demo',
+            ['codex'],
+            { marketplacePath, global: false, dryRun: false, verbose: false, outputRoot: workspace },
+            { runRulesync: async () => emptyRulesync(), nowIso: '2026-08-31T18:00:00.000Z' },
+        );
+
+        const stampRel = '.agents/scripts/demo/.superskill-stamp.json';
+        const stamp = JSON.parse(readFileSync(join(workspace, stampRel), 'utf-8'));
+        const receipt = readInstallManifest(installManifestPath(workspace, 'codex', 'demo'));
+        expect(stamp.installedAt).toBe(receipt.installedAt);
+        expect(stamp.installedAt).toBe('2026-08-31T18:00:00.000Z');
+        expect(stamp.upstreamVersion).toBe(receipt.upstreamVersion);
+        expect(stamp.superskillVersion).toBe(cliVersion);
+        expect(stamp.files['util/helper.js']).toBe(
+            computeContentHash(readFileSync(join(workspace, '.agents', 'scripts', 'demo', 'util', 'helper.js'))),
+        );
+        // The stamp never hashes itself; the per-target receipt still inventories it.
+        expect(Object.keys(stamp.files)).not.toContain('.superskill-stamp.json');
+        expect(receipt.installed.files[stampRel]).toBe(computeContentHash(readFileSync(join(workspace, stampRel))));
+    });
+
     it('preserves the first plugin manifest when a second plugin is installed to the same target', async () => {
         const workspace = createTempWorkspace();
         createPlugin(workspace, 'alpha', '1.0.0');

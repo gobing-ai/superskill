@@ -3,6 +3,13 @@ import { join } from 'node:path';
 import { assertSafePathSegment } from '@gobing-ai/superskill-core';
 import { echo, echoError } from '@gobing-ai/ts-utils';
 import type { Command } from 'commander';
+import {
+    isReservedStampRel,
+    readScriptStamp,
+    SCRIPT_STAMP_FILENAME,
+    type ScriptStampMetadata,
+    stampMetadata,
+} from '../script-stamp';
 import { resolveHomeDir } from './install';
 
 /**
@@ -14,8 +21,11 @@ import { resolveHomeDir } from './install';
  * directly via shebang. Resolution searches project `.agents/scripts/<plugin>/` first, then
  * global `~/.agents/scripts/<plugin>/`. Staging (task 0090) puts the files at these roots.
  *
+ * `--json` also reports the stamp metadata of the root that supplied the file (task 0149 R2).
+ *
  * Fail-closed: unlike `script run` (which fails open on unknown ids — version skew), a missing
- * staged path breaks the caller's next step so we exit 2. Usage errors exit 1.
+ * staged path breaks the caller's next step so we exit 2. Usage errors exit 1 (including the
+ * reserved `.superskill-stamp.json` name, which is install metadata and never resolvable).
  */
 
 /** Describes where a resolved script path was found. */
@@ -25,6 +35,12 @@ type ScriptSource = 'project' | 'global';
 export interface ResolvedScriptPath {
     path: string;
     source: ScriptSource;
+    /**
+     * The plugin script root that supplied `path` (`<scopeRoot>/.agents/scripts/<plugin>`).
+     * Recorded per candidate, never re-derived from the project root: the project root can lack
+     * this `rel` while the global root supplies it (task 0149 R2).
+     */
+    root: string;
 }
 
 /** Options controlling resolution. */
@@ -79,32 +95,35 @@ export function assertScriptLocator(plugin: string, rel: string): void {
  * treated as misses.
  *
  * Throws `UsageError` for unsafe `rel` (absolute path, empty, or `..`
- * segment). Returns null when no candidate file exists — callers should
- * surface this as exit 2 (fail-closed).
+ * segment) and for the reserved root stamp filename. Returns null when no
+ * candidate file exists — callers should surface this as exit 2 (fail-closed).
  *
  * @param opts Plugin name, relative script path, and search flags.
- * @returns The first regular-file candidate with its source, or null.
+ * @returns The first regular-file candidate with its source and root, or null.
  */
 export function resolveScriptPath(opts: ScriptPathOptions): ResolvedScriptPath | null {
     assertScriptLocator(opts.plugin, opts.rel);
+    // R4: the root stamp is install metadata, not a script. Rejected before any probing so
+    // normalized `./` spellings cannot reach `lstatSync` either.
+    if (isReservedStampRel(opts.rel)) {
+        throw new UsageError(
+            `Invalid relative path: "${opts.rel}". "${SCRIPT_STAMP_FILENAME}" is reserved for install metadata.`,
+        );
+    }
 
     const home = opts.home ?? resolveHomeDir();
     const projectRoot = opts.projectRoot ?? process.cwd();
 
-    const candidates: Array<{ path: string; source: ScriptSource }> = [];
+    const candidates: Array<{ path: string; source: ScriptSource; root: string }> = [];
 
     if (!opts.forceGlobal) {
-        candidates.push({
-            path: join(projectRoot, '.agents', 'scripts', opts.plugin, opts.rel),
-            source: 'project',
-        });
+        const root = join(projectRoot, '.agents', 'scripts', opts.plugin);
+        candidates.push({ path: join(root, opts.rel), source: 'project', root });
     }
 
     if (!opts.forceProject) {
-        candidates.push({
-            path: join(home, '.agents', 'scripts', opts.plugin, opts.rel),
-            source: 'global',
-        });
+        const root = join(home, '.agents', 'scripts', opts.plugin);
+        candidates.push({ path: join(root, opts.rel), source: 'global', root });
     }
 
     for (const candidate of candidates) {
@@ -174,7 +193,13 @@ export function runScriptPathAction(
     }
 
     if (options.json) {
-        echo(JSON.stringify({ plugin, rel, path: result.path, source: result.source }));
+        // R2: metadata read from the root that supplied this file — a project/global version skew
+        // must never report the other root's version. An absent, unreadable, malformed,
+        // wrong-plugin, or unsupported-schema stamp is simply `null`; it never becomes an
+        // alternate-root search signal, and it never changes path/source or the exit code.
+        const read = readScriptStamp(result.root, plugin);
+        const stamp: ScriptStampMetadata | null = read.status === 'ok' ? stampMetadata(read.stamp) : null;
+        echo(JSON.stringify({ plugin, rel, path: result.path, source: result.source, stamp }));
     } else {
         echo(result.path);
     }
@@ -191,7 +216,7 @@ export function registerScriptPath(program: Command, ci?: { exit(code: number): 
     // Look up the existing `script` group or create it if `registerScriptRun` wasn't called.
     let group = program.commands.find((c) => c.name() === 'script');
     if (!group) {
-        group = program.command('script').description('Plugin script utilities (run, path)');
+        group = program.command('script').description('Plugin script utilities (run, path, verify)');
     }
 
     group

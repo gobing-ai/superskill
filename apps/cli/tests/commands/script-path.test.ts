@@ -344,6 +344,119 @@ describe('runScriptPathAction', () => {
         expect(parsed.searched.length).toBeGreaterThan(0);
     });
 
+    // ── 0149 R2/R4: stamp metadata + reserved filename ──
+
+    const STAMP = '.superskill-stamp.json';
+
+    /** Write a stamp beside a plugin script root, as install does. */
+    function writeStamp(scriptRoot: string, body: unknown): void {
+        writeFileSync(join(scriptRoot, STAMP), `${JSON.stringify(body)}\n`);
+    }
+
+    function stampBody(plugin: string, upstreamVersion: string): Record<string, unknown> {
+        return {
+            schemaVersion: 1,
+            plugin,
+            upstreamVersion,
+            superskillVersion: '9.9.9',
+            installedAt: '2026-09-27T00:00:00.000Z',
+            files: { 'validate.js': 'a'.repeat(64) },
+        };
+    }
+
+    it('0149 AC2: reports stamp metadata from the root that supplied the file (project wins)', () => {
+        const projectRoot = fixture('validate.js');
+        const home = join(projectRoot, '..', 'home');
+        const globalRoot = join(home, '.agents', 'scripts', 'cc');
+        mkdirSync(globalRoot, { recursive: true });
+        writeFileSync(join(globalRoot, 'validate.js'), '#!/usr/bin/env node\n// global');
+        // Two roots, two versions: only the supplying root's metadata may be reported.
+        writeStamp(join(projectRoot, '.agents', 'scripts', 'cc'), stampBody('cc', '1.2.3'));
+        writeStamp(globalRoot, stampBody('cc', '9.9.9'));
+
+        const { exits, lines } = invoke('cc', 'validate.js', { json: true }, { home, projectRoot });
+        expect(exits).toEqual([0]);
+        expect(JSON.parse(lines[0] ?? '{}').stamp).toEqual({
+            upstreamVersion: '1.2.3',
+            installedAt: '2026-09-27T00:00:00.000Z',
+        });
+    });
+
+    it('0149 AC2: reads metadata beside the returned file when only the global root has it', () => {
+        const projectRoot = fixture('other.js');
+        const home = join(projectRoot, '..', 'home');
+        const globalRoot = join(home, '.agents', 'scripts', 'cc');
+        mkdirSync(globalRoot, { recursive: true });
+        writeFileSync(join(globalRoot, 'validate.js'), '#!/usr/bin/env node\n// global');
+        writeStamp(globalRoot, { ...stampBody('cc', '2.0.0'), resolvedRef: 'deadbeef' });
+
+        const { exits, lines } = invoke('cc', 'validate.js', { json: true }, { home, projectRoot });
+        expect(exits).toEqual([0]);
+        const parsed = JSON.parse(lines[0] ?? '{}');
+        expect(parsed.source).toBe('global');
+        expect(parsed.stamp).toEqual({
+            upstreamVersion: '2.0.0',
+            resolvedRef: 'deadbeef',
+            installedAt: '2026-09-27T00:00:00.000Z',
+        });
+    });
+
+    it('0149 AC2: a pre-stamp or malformed stamp reports stamp null without changing path/source/exit', () => {
+        const projectRoot = fixture('validate.js');
+        const scriptRoot = join(projectRoot, '.agents', 'scripts', 'cc');
+        const expectedPath = join(scriptRoot, 'validate.js');
+
+        const preStamp = invoke('cc', 'validate.js', { json: true }, { projectRoot });
+        expect(preStamp.exits).toEqual([0]);
+        const preStampJson = JSON.parse(preStamp.lines[0] ?? '{}');
+        expect(preStampJson.stamp).toBeNull();
+        expect(preStampJson.path).toBe(expectedPath);
+        expect(preStampJson.source).toBe('project');
+
+        writeFileSync(join(scriptRoot, STAMP), '{ not json');
+        const malformed = invoke('cc', 'validate.js', { json: true }, { projectRoot });
+        expect(malformed.exits).toEqual([0]);
+        expect(JSON.parse(malformed.lines[0] ?? '{}').stamp).toBeNull();
+
+        // Unsupported schema and a wrong-plugin stamp are equally unusable, never a reroute signal.
+        writeStamp(scriptRoot, { ...stampBody('cc', '1.0.0'), schemaVersion: 2 });
+        expect(
+            JSON.parse(invoke('cc', 'validate.js', { json: true }, { projectRoot }).lines[0] ?? '{}').stamp,
+        ).toBeNull();
+        writeStamp(scriptRoot, stampBody('other-plugin', '1.0.0'));
+        expect(
+            JSON.parse(invoke('cc', 'validate.js', { json: true }, { projectRoot }).lines[0] ?? '{}').stamp,
+        ).toBeNull();
+    });
+
+    it('0149 AC2: plain output stays the bare path even when a stamp exists', () => {
+        const projectRoot = fixture('validate.js');
+        const scriptRoot = join(projectRoot, '.agents', 'scripts', 'cc');
+        writeStamp(scriptRoot, stampBody('cc', '1.0.0'));
+
+        const { exits, lines } = invoke('cc', 'validate.js', {}, { projectRoot });
+        expect(exits).toEqual([0]);
+        expect(lines[0]?.trim()).toBe(join(scriptRoot, 'validate.js'));
+        expect(lines[0]).not.toContain(STAMP);
+    });
+
+    it('0149 AC4: the reserved stamp filename never resolves, including the ./-normalized spelling', () => {
+        const projectRoot = fixture('validate.js');
+        const scriptRoot = join(projectRoot, '.agents', 'scripts', 'cc');
+        // The file genuinely exists at that path — rejection must not depend on absence.
+        writeStamp(scriptRoot, stampBody('cc', '1.0.0'));
+
+        for (const rel of [STAMP, `./${STAMP}`, '././' + STAMP]) {
+            const { exits, lines } = invoke('cc', rel, { json: true }, { projectRoot });
+            expect(exits).toEqual([1]);
+            const parsed = JSON.parse(lines[0] ?? '{}');
+            expect(parsed.error).toBe('invalid_args');
+            expect(parsed.message).toContain('reserved');
+        }
+        // Ordinary scripts beside it are unaffected.
+        expect(invoke('cc', 'validate.js', { json: true }, { projectRoot }).exits).toEqual([0]);
+    });
+
     it('--global flag skips project root', () => {
         const t = mkdtempSync('superskill-spa-');
         tmpDir = t;

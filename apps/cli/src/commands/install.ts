@@ -79,6 +79,7 @@ import {
     writeHooksForTarget,
 } from '../hooks';
 import { generateOmpHookModules, type OmpHookResult } from '../omp-hooks';
+import { SCRIPT_STAMP_FILENAME, snapshotScriptRootFiles, writeScriptStamp } from '../script-stamp';
 import { cliVersion } from '../version';
 import { createGrokBotRegisterAction, type GrokBotRegisterActionArgs } from './install-post-actions';
 
@@ -658,6 +659,9 @@ export async function executeInstall(
     }
     const pluginRoot = resolution.pluginRoot;
     const outputRoot = options.outputRoot ?? (options.global ? resolveHomeDir() : process.cwd());
+    // One instant for the shared-root stamp and every target receipt (task 0149 R1): a consumer
+    // comparing stamp metadata with a receipt must not see two clocks disagree.
+    const installedAt = dependencies.nowIso ?? new Date().toISOString();
     const receipts = new Map<Target, TargetInstallReceipt>();
     const addReceiptFiles = (target: Target, files: readonly string[]): void => {
         let receipt = receipts.get(target);
@@ -1251,7 +1255,11 @@ export async function executeInstall(
         // do not invent ~/.agents/scripts as a required second tree for native-only installs (AC5).
         const needsSharedScriptsRoot = execTargets.some((t) => t !== 'claude' && t !== 'omp' && t !== 'grok');
         if (needsSharedScriptsRoot) {
-            const scriptCount = stagePluginScripts(outputDir, plugin, outputRoot, options, mapResult.scripts);
+            const scriptCount = stagePluginScripts(outputDir, plugin, outputRoot, options, mapResult.scripts, {
+                resolution,
+                resolvedRef,
+                installedAt,
+            });
             if (scriptCount > 0 && !options.dryRun) {
                 const scriptDest = join(outputRoot, '.agents', 'scripts', plugin);
                 const scriptFiles = listRegularFilesUnder(scriptDest);
@@ -1293,7 +1301,7 @@ export async function executeInstall(
                 mappedSkillNames,
                 useGlobalSkillsLayout: options.global && options.outputRoot === undefined,
                 writer: dependencies.writeInstallManifest ?? writeInstallManifest,
-                nowIso: dependencies.nowIso ?? new Date().toISOString(),
+                nowIso: installedAt,
             });
             echo(`Installed '${plugin}' to ${targets.length} target(s).`);
         }
@@ -1896,11 +1904,17 @@ export function emitPluginRules(
  * (caller gates on target class). File count comes from {@link MapResult.scripts} so
  * we do not re-walk the tree (mapper already counted).
  *
+ * After the copy the shared root carries a schema-v1 stamp (task 0149 R1) built from the same
+ * resolved source metadata and `installedAt` instant as the target receipts. The stamp is
+ * metadata, not script content: it is never part of the returned/reported count, and a source
+ * file that would occupy its reserved path is rejected before the destructive replace (R4).
+ *
  * @param outputDir  The .rulesync/ staging root produced by {@link mapPluginToRulesync}.
  * @param pluginName The plugin prefix (e.g. "cc").
  * @param outputRoot The global home dir or project cwd/outputRoot override.
  * @param options    Install options for dryRun/verbose gating.
  * @param stagedFileCount Mapper-reported file count for verbose logging.
+ * @param provenance Resolved source metadata plus the install's single `installedAt` instant.
  * @returns Number of files staged, or 0 when no plugin-level scripts exist.
  */
 function stagePluginScripts(
@@ -1909,11 +1923,22 @@ function stagePluginScripts(
     outputRoot: string,
     options: InstallOptions,
     stagedFileCount: number,
+    provenance: { resolution: PluginResolution; resolvedRef?: string; installedAt: string },
 ): number {
     // pluginName is the leaf of a recursive rmSync target under .agents/scripts/.
     assertSafePathSegment(pluginName, 'plugin name');
     const stagedSource = join(outputDir, 'scripts', pluginName);
     if (!existsSync(stagedSource)) return 0;
+
+    // R4: fail before the replace below. The stamp is install metadata living at the root of the
+    // same directory, so a colliding source script would be erased (or worse, silently overwritten)
+    // by the stamp write that follows the copy.
+    if (existsSync(join(stagedSource, SCRIPT_STAMP_FILENAME))) {
+        throw new Error(
+            `Plugin '${pluginName}' ships a script at the reserved stamp path '${SCRIPT_STAMP_FILENAME}'. ` +
+                `Rename the source script; '${SCRIPT_STAMP_FILENAME}' is reserved for install metadata.`,
+        );
+    }
 
     const dest = join(outputRoot, '.agents', 'scripts', pluginName);
 
@@ -1928,6 +1953,23 @@ function stagePluginScripts(
         rmSync(dest, { recursive: true, force: true });
     }
     copyDirectory(stagedSource, dest);
+
+    // Snapshot before writing, so the stamp can never hash itself. No staged regular file → no
+    // stamp (R1: only an install that actually stages a script gets a shared-root receipt).
+    const files = snapshotScriptRootFiles(dest);
+    if (Object.keys(files).length > 0) {
+        writeScriptStamp(dest, {
+            plugin: pluginName,
+            upstreamVersion: provenance.resolution.upstreamVersion,
+            ...(provenance.resolution.marketplaceLocator !== undefined
+                ? { marketplaceLocator: provenance.resolution.marketplaceLocator }
+                : {}),
+            ...(provenance.resolvedRef !== undefined ? { resolvedRef: provenance.resolvedRef } : {}),
+            superskillVersion: cliVersion,
+            installedAt: provenance.installedAt,
+            files,
+        });
+    }
 
     return stagedFileCount;
 }

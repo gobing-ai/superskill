@@ -12,8 +12,16 @@ import {
 } from 'node:fs';
 import { join } from 'node:path';
 import type { RulesyncOptions, Target } from '@gobing-ai/superskill-core';
-import { getEnvVar, removeEnvVar, setEnvVar } from '@gobing-ai/superskill-core';
+import {
+    computeContentHash,
+    getEnvVar,
+    installManifestPath,
+    readInstallManifest,
+    removeEnvVar,
+    setEnvVar,
+} from '@gobing-ai/superskill-core';
 import { executeInstall } from '../../src/commands/install';
+import { cliVersion } from '../../src/version';
 
 const FIXTURE_DIR = join(import.meta.dir, '..', 'fixtures', 'plugin-min');
 
@@ -952,6 +960,140 @@ describe('executeInstall', () => {
             hasDiff: false,
         };
     }
+    // ── Shared script-root stamp (task 0149 R1/R4) ──
+
+    const STAMP_FILENAME = '.superskill-stamp.json';
+
+    it('0149 AC1: project-scope install writes one stamp matching the target receipt and the staged bytes', async () => {
+        const { marketplacePath, pluginDir } = setupPluginDir();
+        const scriptsDir = join(pluginDir, 'scripts', 'util');
+        mkdirSync(scriptsDir, { recursive: true });
+        writeFileSync(join(scriptsDir, 'helper.js'), '// stamped');
+
+        const outRoot = join(tmpDir, 'out-stamp');
+        mkdirSync(outRoot, { recursive: true });
+        const captured: string[] = [];
+        const spy = spyOn(process.stdout, 'write').mockImplementation((data) => {
+            captured.push(typeof data === 'string' ? data : data.toString());
+            return true;
+        });
+
+        await executeInstall(
+            'demo',
+            ['codex'],
+            { marketplacePath, global: false, dryRun: false, verbose: true, outputRoot: outRoot },
+            { runRulesync: async () => mockEmptyRulesyncResult(), nowIso: '2026-09-27T01:02:03.000Z' },
+        );
+        spy.mockRestore();
+
+        const scriptsDest = join(outRoot, '.agents', 'scripts', 'demo');
+        const stamp = JSON.parse(readFileSync(join(scriptsDest, STAMP_FILENAME), 'utf-8'));
+        const receipt = readInstallManifest(installManifestPath(outRoot, 'codex', 'demo'));
+
+        expect(stamp.schemaVersion).toBe(1);
+        expect(stamp.plugin).toBe('demo');
+        expect(stamp.upstreamVersion).toBe(receipt.upstreamVersion);
+        expect(stamp.marketplaceLocator).toBe(receipt.marketplaceLocator);
+        expect(stamp.installedAt).toBe(receipt.installedAt);
+        expect(stamp.installedAt).toBe('2026-09-27T01:02:03.000Z');
+        expect(stamp.superskillVersion).toBe(cliVersion);
+        // Hashes equal the staged bytes, not the upstream source bytes.
+        expect(stamp.files).toEqual({
+            'util/helper.js': computeContentHash(readFileSync(join(scriptsDest, 'util', 'helper.js'))),
+        });
+        // The stamp never hashes itself, and the reported script count stays the mapper's count.
+        expect(Object.keys(stamp.files)).not.toContain(STAMP_FILENAME);
+        expect(captured.join('')).toMatch(/Plugin scripts: staging 1 file\(s\)/);
+        // The adjacent per-target receipt does include the finished stamp (intentional).
+        expect(receipt.installed.files['.agents/scripts/demo/util/helper.js']).toBe(stamp.files['util/helper.js']);
+        expect(receipt.installed.files['.agents/scripts/demo/.superskill-stamp.json']).toBe(
+            computeContentHash(readFileSync(join(scriptsDest, STAMP_FILENAME))),
+        );
+    });
+
+    it('0149 AC1: global-scope install with scripts writes the stamp under the global root', async () => {
+        const { marketplacePath, pluginDir } = setupPluginDir();
+        const scriptsDir = join(pluginDir, 'scripts', 'util');
+        mkdirSync(scriptsDir, { recursive: true });
+        writeFileSync(join(scriptsDir, 'helper.js'), '// global stamp');
+
+        const globalRoot = join(tmpDir, 'home-sandbox');
+        mkdirSync(globalRoot, { recursive: true });
+
+        await executeInstall(
+            'demo',
+            ['codex'],
+            { marketplacePath, global: true, dryRun: false, verbose: false, outputRoot: globalRoot },
+            { runRulesync: async () => mockEmptyRulesyncResult(), nowIso: '2026-09-27T02:00:00.000Z' },
+        );
+
+        const stamp = JSON.parse(readFileSync(join(globalRoot, '.agents', 'scripts', 'demo', STAMP_FILENAME), 'utf-8'));
+        const receipt = readInstallManifest(installManifestPath(globalRoot, 'codex', 'demo'));
+        expect(stamp.installedAt).toBe(receipt.installedAt);
+        expect(stamp.upstreamVersion).toBe(receipt.upstreamVersion);
+    });
+
+    it('0149 AC1: --dry-run leaves any pre-existing stamp untouched', async () => {
+        const { marketplacePath, pluginDir } = setupPluginDir();
+        const scriptsDir = join(pluginDir, 'scripts', 'util');
+        mkdirSync(scriptsDir, { recursive: true });
+        writeFileSync(join(scriptsDir, 'helper.js'), '// dry-run stamp');
+
+        const outRoot = join(tmpDir, 'out-stamp-dry');
+        const scriptsDest = join(outRoot, '.agents', 'scripts', 'demo');
+        mkdirSync(scriptsDest, { recursive: true });
+        const sentinel = '{"schemaVersion":1,"plugin":"demo","sentinel":true}';
+        writeFileSync(join(scriptsDest, STAMP_FILENAME), sentinel);
+
+        await executeInstall(
+            'demo',
+            ['codex'],
+            { marketplacePath, global: false, dryRun: true, verbose: false, outputRoot: outRoot },
+            { runRulesync: async () => mockEmptyRulesyncResult() },
+        );
+
+        expect(readFileSync(join(scriptsDest, STAMP_FILENAME), 'utf-8')).toBe(sentinel);
+    });
+
+    it('0149 AC1: no-scripts install writes no stamp', async () => {
+        const { marketplacePath } = setupPluginDir();
+        const outRoot = join(tmpDir, 'out-stamp-empty');
+        mkdirSync(outRoot, { recursive: true });
+
+        await executeInstall(
+            'demo',
+            ['codex'],
+            { marketplacePath, global: false, dryRun: false, verbose: false, outputRoot: outRoot },
+            { runRulesync: async () => mockEmptyRulesyncResult() },
+        );
+
+        expect(existsSync(join(outRoot, '.agents', 'scripts', 'demo', STAMP_FILENAME))).toBe(false);
+    });
+
+    it('0149 AC4: a source script at the reserved stamp path fails before the installed tree is deleted', async () => {
+        const { marketplacePath, pluginDir } = setupPluginDir();
+        const scriptsDir = join(pluginDir, 'scripts');
+        mkdirSync(scriptsDir, { recursive: true });
+        writeFileSync(join(scriptsDir, STAMP_FILENAME), '{"schemaVersion":1,"source":"collision"}');
+        writeFileSync(join(scriptsDir, 'keep.js'), '// keep');
+
+        const outRoot = join(tmpDir, 'out-stamp-collision');
+        const installedDest = join(outRoot, '.agents', 'scripts', 'demo');
+        mkdirSync(installedDest, { recursive: true });
+        writeFileSync(join(installedDest, 'installed.js'), '// previously installed');
+
+        await expect(
+            executeInstall(
+                'demo',
+                ['codex'],
+                { marketplacePath, global: false, dryRun: false, verbose: false, outputRoot: outRoot },
+                { runRulesync: async () => mockEmptyRulesyncResult() },
+            ),
+        ).rejects.toThrow(/reserved stamp path/);
+
+        expect(readFileSync(join(installedDest, 'installed.js'), 'utf-8')).toBe('// previously installed');
+    });
+
     it('stages plugin-level scripts/ to .agents/scripts/<plugin>/ on rulesync targets', async () => {
         const { marketplacePath, pluginDir } = setupPluginDir();
         // Add a scripts/ directory to the fixture
@@ -1042,6 +1184,7 @@ describe('executeInstall', () => {
         spy.mockRestore();
 
         expect(existsSync(join(outRoot, '.agents', 'scripts', 'demo'))).toBe(false);
+        expect(existsSync(join(outRoot, '.agents', 'scripts', 'demo', STAMP_FILENAME))).toBe(false);
         expect(captured.join('')).toMatch(/native targets include scripts\/ via host plugin install/);
     });
 

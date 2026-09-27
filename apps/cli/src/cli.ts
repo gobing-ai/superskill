@@ -8,6 +8,7 @@ import { registerMagent } from './commands/magent';
 import { registerScriptConvert } from './commands/script-convert';
 import { registerScriptPath } from './commands/script-path';
 import { registerScriptRun } from './commands/script-run';
+import { registerScriptVerify } from './commands/script-verify';
 import { registerSkill } from './commands/skill';
 import { registerUpdate } from './commands/update';
 import { cliVersion } from './version';
@@ -30,6 +31,7 @@ export function createProgram(): Command {
     registerMagent(program);
     registerScriptRun(program);
     registerScriptPath(program);
+    registerScriptVerify(program);
     registerScriptConvert(program);
 
     return program;
