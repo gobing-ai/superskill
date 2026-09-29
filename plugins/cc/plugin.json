@@ -26,7 +26,7 @@
                     "Distribute coding-agent workflows"
                 ],
                 "websiteURL": "https://gobing.ai/prod-superskill",
-                "supportURL": "https://github.com/gobing-ai/superskill/issues",
+                "supportURL": "https://gobing.ai/#contact",
                 "defaultPrompt": [
                     "Create and validate a new agent skill with Superskill.",
                     "Review this agent skill and suggest specific improvements.",

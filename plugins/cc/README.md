@@ -26,21 +26,23 @@ deterministic operations. Run `superskill install cc --targets codex` when you a
 adapted commands and subagents in Codex. Start a new Codex thread after installation to load the
 skills.
 
-- **Marketplace entry:** `name: "cc"`, `version: "0.3.3"`, `source: "./plugins/cc"` (`.claude-plugin/marketplace.json`)
+- **Marketplace entry:** `name: "cc"`, `source: "./plugins/cc"` (`.claude-plugin/marketplace.json`; version follows `plugins/cc/plugin.json`)
 - **CLI floor:** hooks run via `superskill hook run cc anti-hallucination`; the canonical `hooks.json` declares `minCliVersion: "0.2.19"`. Older CLIs fail open (skip hook emission rather than install broken guards).
 - **Owner:** Robin Min
+- **Support:** [Contact Gobing](https://gobing.ai/#contact)
 
 ## Directory Layout
 
 ```
 plugins/cc/
-├── skills/                          # Domain knowledge + workflow documentation (6 skills)
+├── skills/                          # Domain knowledge + workflow documentation (7 skills)
 │   ├── anti-hallucination/          # Zero-trust verification protocol (v3.0.0)
 │   ├── cc-agents/                   # Subagent lifecycle (v3.0.0, 6 platforms)
 │   ├── cc-commands/                 # Slash command lifecycle (v3.0.0, 6 platforms)
 │   ├── cc-hooks/                    # Multi-agent hook system (v3.0.0, 6 platforms)
 │   ├── cc-magents/                  # Main-agent config (v5.0.0, 15 platforms)
-│   └── cc-skills/                   # Skill lifecycle
+│   ├── cc-skills/                   # Skill lifecycle
+│   └── grok-bot-register/           # Grok Bot registration recovery
 ├── commands/                        # Slash command definitions (17)
 ├── agents/                          # Expert subagent definitions (5)
 ├── rules/                           # Plugin always-on rules → target rules dirs
@@ -76,7 +78,8 @@ plugin tree. Install: `superskill install cc --magent team-stark-children` (see
 | `cc-commands` | 3.0.0 | claude-code, codex, gemini, openclaw, opencode, antigravity | Slash command lifecycle — scaffold / validate / evaluate / refine / evolve slash commands across platforms |
 | `cc-hooks` | 3.0.0 | claude-code, codex, opencode, pi, openclaw, gemini | Multi-agent hook system — author hooks once in rulesync-canonical `hooks.json` (`HookDefinitionSchema`), deploy to 5+ agents |
 | `cc-magents` | 5.0.0 | 15 platforms (agents-md, codex, claude-code, gemini-cli, opencode, cursor, copilot, windsurf, cline, zed, amp, aider, openclaw, antigravity, pi) | Main-agent config — manage `AGENTS.md`, `CLAUDE.md`, `GEMINI.md`, `.cursor/rules`, etc. (not subagents) |
-| `cc-skills` | 3.0.0 | claude-code, codex, antigravity, opencode, openclaw | Skill lifecycle — scaffold / validate / evaluate / refine / evolve agent skills across platforms |
+| `cc-skills` | 3.2.0 | claude-code, codex, antigravity, opencode, openclaw | Skill lifecycle — scaffold / validate / evaluate / refine / evolve agent skills across platforms |
+| `grok-bot-register` | — | grok-bot | Recover registration after a Grok Bot install/update handoff |
 
 Each skill directory contains:
 
