@@ -4,6 +4,28 @@
 
 The `cc` plugin is the canonical Claude Code plugin for the superskill ecosystem. It provides a full lifecycle toolkit (scaffold → validate → evaluate → refine → evolve) for every entity type superskill manages — skills, slash commands, subagents, hooks, and main-agent configs — and ships an anti-hallucination guard that enforces verification-before-generation at the `Stop` hook.
 
+## Codex local plugin
+
+The same `cc` source can be installed as a Codex plugin. Install [Bun](https://bun.sh/) 1.3.0 or
+later and the published CLI first:
+
+```bash
+bun add -g @gobing-ai/superskill
+superskill --version
+```
+
+From this repository, register its marketplace and install the plugin:
+
+```bash
+codex plugin marketplace add .
+codex plugin add cc@superskill
+```
+
+Codex loads the skills from this plugin. The CLI is a separate local prerequisite for their
+deterministic operations. Run `superskill install cc --targets codex` when you also want the CLI's
+adapted commands and subagents in Codex. Start a new Codex thread after installation to load the
+skills.
+
 - **Marketplace entry:** `name: "cc"`, `version: "0.3.3"`, `source: "./plugins/cc"` (`.claude-plugin/marketplace.json`)
 - **CLI floor:** hooks run via `superskill hook run cc anti-hallucination`; the canonical `hooks.json` declares `minCliVersion: "0.2.19"`. Older CLIs fail open (skip hook emission rather than install broken guards).
 - **Owner:** Robin Min

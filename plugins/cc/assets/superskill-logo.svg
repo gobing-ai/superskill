@@ -1,0 +1,46 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512" role="img" aria-labelledby="ssIconTitle ssIconDesc">
+  <title id="ssIconTitle">superskill — app icon</title>
+  <desc id="ssIconDesc">A hexagonal six-node agent nexus enclosing a 60-degree skill vector rendered as an S-shaped bolt.</desc>
+  <defs>
+    <linearGradient id="ssObsidian" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#141c33"/>
+      <stop offset=".55" stop-color="#0f172a"/>
+      <stop offset="1" stop-color="#090d19"/>
+    </linearGradient>
+    <radialGradient id="ssCore" cx=".5" cy=".5" r=".5">
+      <stop offset="0" stop-color="#00d4ff" stop-opacity=".30"/>
+      <stop offset=".5" stop-color="#6366f1" stop-opacity=".14"/>
+      <stop offset="1" stop-color="#6366f1" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="ssRing" x1="103.58" y1="80" x2="408.42" y2="432" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#38bdf8"/>
+      <stop offset="1" stop-color="#6366f1"/>
+    </linearGradient>
+    <linearGradient id="ssBolt" x1="156.61" y1="158" x2="355.39" y2="354" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#00d4ff"/>
+      <stop offset=".45" stop-color="#38bdf8"/>
+      <stop offset="1" stop-color="#6366f1"/>
+    </linearGradient>
+    <filter id="ssBlurS" x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="9"/></filter>
+    <filter id="ssBlurL" x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="22"/></filter>
+  </defs>
+  <rect width="512" height="512" rx="112" fill="url(#ssObsidian)"/>
+  <circle cx="256" cy="256" r="232" fill="url(#ssCore)"/>
+  <g filter="url(#ssBlurL)" opacity=".6">
+    <path d="M334.61 158L178.63 158L271.01 318L156.61 318L177.39 354L333.37 354L240.99 194L355.39 194Z" fill="#00d4ff"/>
+  </g>
+  <g filter="url(#ssBlurS)" opacity=".38">
+    <path d="M256 80L408.42 168L408.42 344L256 432L103.58 344L103.58 168Z" fill="none" stroke="#38bdf8" stroke-width="12"/>
+  </g>
+  <path d="M256 80L408.42 168L408.42 344L256 432L103.58 344L103.58 168Z" fill="none" stroke="url(#ssRing)" stroke-width="12" stroke-linejoin="round"/>
+  <g fill="url(#ssRing)">
+    <circle cx="256" cy="80" r="16"/>
+    <circle cx="408.42" cy="168" r="16"/>
+    <circle cx="408.42" cy="344" r="16"/>
+    <circle cx="256" cy="432" r="16"/>
+    <circle cx="103.58" cy="344" r="16"/>
+    <circle cx="103.58" cy="168" r="16"/>
+  </g>
+  <path d="M334.61 158L178.63 158L271.01 318L156.61 318L177.39 354L333.37 354L240.99 194L355.39 194Z" fill="url(#ssBolt)"/>
+  <rect x="1" y="1" width="510" height="510" rx="111" fill="none" stroke="#ffffff" stroke-opacity=".09" stroke-width="2"/>
+</svg>

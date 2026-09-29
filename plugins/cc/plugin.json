@@ -1,5 +1,40 @@
 {
+    "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
     "name": "cc",
     "version": "0.3.32",
-    "description": "superskill - a manager for multi-agent skill, slash command, subagent, hook, MCP and etc"
+    "description": "Superskill CLI workflows for agent skills and coding-agent configuration.",
+    "author": {
+        "name": "Robin Min",
+        "email": "minlongbing@gmail.com",
+        "url": "https://gobing.ai/"
+    },
+    "homepage": "https://gobing.ai/prod-superskill",
+    "repository": "https://github.com/gobing-ai/superskill",
+    "license": "Apache-2.0",
+    "keywords": ["agent-skills", "codex", "developer-tools", "superskill"],
+    "extensions": {
+        "com.openai": {
+            "interface": {
+                "displayName": "Superskill",
+                "shortDescription": "Author skills with Superskill",
+                "longDescription": "Use the Superskill CLI in a local Codex project to create, validate, evaluate, refine, and evolve agent skills, commands, subagents, hooks, and main-agent configurations. Seven bundled skills guide those workflows. Bun and the Superskill CLI are separate local prerequisites.",
+                "developerName": "Robin Min",
+                "category": "Developer Tools",
+                "capabilities": [
+                    "Author agent skills",
+                    "Review agent configurations",
+                    "Distribute coding-agent workflows"
+                ],
+                "websiteURL": "https://gobing.ai/prod-superskill",
+                "supportURL": "https://github.com/gobing-ai/superskill/issues",
+                "defaultPrompt": [
+                    "Create and validate a new agent skill with Superskill.",
+                    "Review this agent skill and suggest specific improvements.",
+                    "Review a coding-agent hook with Superskill."
+                ],
+                "logo": "./assets/superskill-logo.svg",
+                "composerIcon": "./assets/superskill-logo.svg"
+            }
+        }
+    }
 }
