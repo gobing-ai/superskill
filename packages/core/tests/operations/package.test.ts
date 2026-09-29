@@ -25,7 +25,7 @@ const REF_CONTENT = '# Reference\n\nSome reference content.\n';
 const OPENCLAW_META = JSON.stringify({ id: 'test-skill', version: '1.0.0' });
 
 /** Fixture: an OpenAI agent config. */
-const OPENAI_YAML = 'model: gpt-4\nsystem: You are a test agent.\n';
+const OPENAI_YAML = 'interface:\n  display_name: "Test Skill"\n  short_description: "Package a test skill"\n';
 
 describe('packageSkill', () => {
     let tmpDir: string;

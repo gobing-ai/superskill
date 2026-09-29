@@ -43,6 +43,10 @@ superskill skill evaluate deploy-worker --save
 superskill skill refine deploy-worker --auto --save
 ```
 
+With `skill scaffold --target codex`, the scaffold also writes
+`<name>/agents/openai.yaml` using Codex's nested `interface` metadata. Other targets get only
+`SKILL.md`. Use `--force` to replace either existing Codex scaffold file.
+
 ### `package` — bundle a skill for distribution (skill-only)
 
 ```bash

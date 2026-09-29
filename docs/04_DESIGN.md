@@ -2,10 +2,10 @@
 doc: 04_DESIGN
 owns: SURFACE — concrete shapes: every CLI command, flag, config key, env var, table, DTO
 authority: derived
-version: 2.18.0
+version: 2.19.0
 derived_from: [00_ADR, 01_PRD, 02_ROADMAP]
 owner: Robin Min
-updated_at: 2026-09-27
+updated_at: 2026-09-29
 read_before: changing a command, flag, env var, or schema
 edit_rules: 99 §6.5
 sync: [T3]
@@ -267,6 +267,10 @@ For `agent|skill|command|magent`, scaffold shares `--description`, `--target`, `
 files or creating backups.
 Only `skill scaffold` exposes `--invocation-mode <user|model>`; the other scaffold families do not
 accept it because their output contracts have no invocation-mode field.
+`skill scaffold --target codex` writes `<output>/<name>/SKILL.md` and
+`<output>/<name>/agents/openai.yaml` with `interface.display_name` and
+`interface.short_description`. Other targets write only `SKILL.md`; `--force` replaces both Codex
+files, while an existing companion blocks an unforced scaffold before `SKILL.md` is written.
 
 `agent|command|magent|skill evolve` share the evolve surface from phase 2, including `--eval-gate`.
 `--margin` must be a finite number in `[0, 1]`; invalid `--from` dates and unsafe proposal IDs are

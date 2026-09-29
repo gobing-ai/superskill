@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { getEnvVar, removeEnvVar, setEnvVar } from '@gobing-ai/superskill-core';
+import { parse as parseYaml } from 'yaml';
 import { scaffold } from '../../src/operations/scaffold';
 import { evaluateMagent } from '../../src/quality/magent';
 
@@ -33,6 +34,44 @@ describe('scaffold', () => {
         expect(content).toContain('# my-skill');
         // Verify <!-- NAME --> was replaced
         expect(content).not.toContain('<!-- NAME -->');
+        expect(existsSync(join(tmpDir, 'my-skill', 'agents', 'openai.yaml'))).toBe(false);
+    });
+
+    it('creates Codex skill metadata with the OpenAI interface schema', async () => {
+        await scaffold('skill', 'api-review', {
+            description: 'Review "API" changes',
+            target: 'codex',
+            output: tmpDir,
+        });
+
+        const agentYaml = readFileSync(join(tmpDir, 'api-review', 'agents', 'openai.yaml'), 'utf-8');
+        expect(parseYaml(agentYaml)).toEqual({
+            interface: {
+                display_name: 'api-review',
+                short_description: 'Review "API" changes',
+            },
+        });
+    });
+
+    it('keeps a hand-authored Codex companion when scaffold is not forced', async () => {
+        const agentDir = join(tmpDir, 'api-review', 'agents');
+        mkdirSync(agentDir, { recursive: true });
+        const agentPath = join(agentDir, 'openai.yaml');
+        writeFileSync(agentPath, 'hand-authored');
+
+        await expect(scaffold('skill', 'api-review', { target: 'codex', output: tmpDir })).rejects.toThrow(
+            'already exists',
+        );
+        expect(readFileSync(agentPath, 'utf-8')).toBe('hand-authored');
+        expect(existsSync(join(tmpDir, 'api-review', 'SKILL.md'))).toBe(false);
+
+        await scaffold('skill', 'api-review', { target: 'codex', output: tmpDir, force: true });
+        expect(parseYaml(readFileSync(agentPath, 'utf-8'))).toEqual({
+            interface: {
+                display_name: 'api-review',
+                short_description: 'Use api-review in Codex',
+            },
+        });
     });
 
     it('creates a command file with target substitution', async () => {

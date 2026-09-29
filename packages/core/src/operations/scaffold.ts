@@ -5,6 +5,7 @@ import { cwd } from 'node:process';
 import { assertSafePathSegment } from '../content/identity';
 import type { ContentType } from '../content/types';
 import { getEnvVar } from '../env';
+import { quoteYaml } from '../pipeline/yaml-utils';
 import agentDefaultTemplate from '../templates/agent/default.md' with { type: 'text' };
 import agentMinimalTemplate from '../templates/agent/minimal.md' with { type: 'text' };
 import agentSpecialistTemplate from '../templates/agent/specialist.md' with { type: 'text' };
@@ -273,6 +274,8 @@ export async function scaffold(type: ContentType, name: string, opts: ScaffoldOp
     // Skills are directory-based: write <name>/SKILL.md inside a directory.
     // All other types remain flat <name>.md files.
     const filePath = type === 'skill' ? join(outDir, name, 'SKILL.md') : join(outDir, `${name}.md`);
+    const openaiPath =
+        type === 'skill' && opts.target === 'codex' ? join(outDir, name, 'agents', 'openai.yaml') : undefined;
     if (type === 'skill') {
         mkdirSync(join(outDir, name), { recursive: true });
     }
@@ -280,7 +283,19 @@ export async function scaffold(type: ContentType, name: string, opts: ScaffoldOp
     if (existsSync(filePath) && !opts.force) {
         throw new Error(`${filePath} already exists — pass --force to overwrite`);
     }
+    if (openaiPath && existsSync(openaiPath) && !opts.force) {
+        throw new Error(`${openaiPath} already exists — pass --force to overwrite`);
+    }
 
     writeFileSync(filePath, content, 'utf-8');
+    if (openaiPath) {
+        mkdirSync(join(outDir, name, 'agents'), { recursive: true });
+        const shortDescription = opts.description?.trim() || `Use ${name} in Codex`;
+        writeFileSync(
+            openaiPath,
+            `interface:\n  display_name: ${quoteYaml(name)}\n  short_description: ${quoteYaml(shortDescription)}\n`,
+            'utf-8',
+        );
+    }
     return filePath;
 }
