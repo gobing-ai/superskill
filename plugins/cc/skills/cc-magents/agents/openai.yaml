@@ -1,9 +1,3 @@
-name: cc-magents
-description: Create, validate, evaluate, refine, and evolve main-agent instructions;
-  verify the actual loading behavior of each requested target.
-version: 5.0.0
-icon: 🛠️
-category: debugging
-tags:
-  - code
-  - workflow
+interface:
+  display_name: "Main-Agent Config Lifecycle"
+  short_description: "Create and review agent instructions"

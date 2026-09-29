@@ -1,9 +1,3 @@
-name: anti-hallucination
-description: Use when a task depends on external APIs, libraries, frameworks,
-  versions, recent events, factual claims, or security and integration guidance.
-  Apply evidence-first verification with the host's available tools.
-version: 3.0.0
-icon: 🛠️
-category: testing
-tags:
-  - code
+interface:
+  display_name: "Evidence-First Verification"
+  short_description: "Check external claims against sources"
