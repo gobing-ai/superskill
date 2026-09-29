@@ -46,8 +46,8 @@ Use an asset only when the output needs a template and the distribution includes
 Reuse the existing parser/report tool before adding a script.
 
 For standalone skills, local scripts are allowed by the shared format. For superskill plugin skills,
-follow [scripts-and-install.md](scripts-and-install.md). Scaffolding does not create these resources
-or generate native companions automatically.
+follow [scripts-and-install.md](scripts-and-install.md). Scaffolding does not create these resources.
+For `--target codex`, it creates only the optional `agents/openai.yaml` UI companion.
 
 ## Check the contribution
 

@@ -48,8 +48,10 @@ superskill skill validate ./skills/my-skill --json
    For a new skill, a no-skill baseline is useful; for encoded preferences, also check fidelity
    to the requested process even if the base model can complete the underlying task.
 
-Scaffold writes `<output>/<name>/SKILL.md`. It does not generate native companions, tests,
-references, or a finished skill. Template resolution is implemented by `resolveTemplate` in
+Scaffold writes `<output>/<name>/SKILL.md`. With `--target codex`, it also writes
+`<output>/<name>/agents/openai.yaml` in the nested `interface` schema; other targets get no
+native companion. It does not generate tests, references, or a finished skill. Template resolution
+is implemented by `resolveTemplate` in
 `packages/core/src/operations/scaffold.ts`: user overrides live at
 `~/.superskill/templates/skill/<tier>.md`, with bundled tiers as fallback. Do not invent an
 `assets/templates/*/config.json` discovery convention. A worked example is in

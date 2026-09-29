@@ -70,7 +70,8 @@ lost behavior is essential before claiming a migration works.
 5. Report compatibility for the tested configuration. Mark other hosts untested; a shared Markdown
    source does not establish that all hosts loaded or executed it equivalently.
 
-Scaffold writes the entry file; refine does not automatically regenerate native companions.
+Scaffold writes the entry file and, for `--target codex`, a matching `agents/openai.yaml`.
+Refine does not automatically regenerate native companions.
 There is no universal `--platform all` or `--target all` workflow. Packaging can omit required
 resources; its precise limits are in [workflows.md](workflows.md#package).
 
