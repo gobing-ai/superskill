@@ -446,7 +446,7 @@ describe('runScriptPathAction', () => {
         // The file genuinely exists at that path — rejection must not depend on absence.
         writeStamp(scriptRoot, stampBody('cc', '1.0.0'));
 
-        for (const rel of [STAMP, `./${STAMP}`, '././' + STAMP]) {
+        for (const rel of [STAMP, `./${STAMP}`, `././${STAMP}`]) {
             const { exits, lines } = invoke('cc', rel, { json: true }, { projectRoot });
             expect(exits).toEqual([1]);
             const parsed = JSON.parse(lines[0] ?? '{}');

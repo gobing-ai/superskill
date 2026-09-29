@@ -190,7 +190,7 @@ describe('script stamp reader/writer', () => {
     it('reserves only the root-level stamp filename, including ./-normalized spellings', () => {
         expect(isReservedStampRel(SCRIPT_STAMP_FILENAME)).toBe(true);
         expect(isReservedStampRel(`./${SCRIPT_STAMP_FILENAME}`)).toBe(true);
-        expect(isReservedStampRel('.\\' + SCRIPT_STAMP_FILENAME)).toBe(true);
+        expect(isReservedStampRel(`.\\${SCRIPT_STAMP_FILENAME}`)).toBe(true);
         expect(isReservedStampRel(`nested/${SCRIPT_STAMP_FILENAME}`)).toBe(false);
         expect(isReservedStampRel('util/a.js')).toBe(false);
     });
