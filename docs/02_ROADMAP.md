@@ -2,10 +2,10 @@
 doc: 02_ROADMAP
 owns: WHEN — phases, current vs deferred, sequencing
 authority: derived
-version: 3.8.1
+version: 3.9.0
 derived_from: [00_ADR, 01_PRD]
 owner: Robin Min
-updated_at: 2026-09-10
+updated_at: 2026-09-29
 read_before: placing work in a phase; edit when phase status changes
 edit_rules: 99 §6.3
 sync: [T5]
@@ -22,6 +22,7 @@ sync: [T5]
 - [x] Foundation: scaffold, gates green, ts-base artifacts removed, docs 00–05 ready
 - [x] Target taxonomy + live `superskill.jsonc` defaults
 - [x] Marketplace manifest resolver — `--marketplace` local/GitHub locator (ADR-011, ADR-034)
+- [x] Codex skills-only plugin ZIP emitted by root build (ADR-038)
 - [x] `superskill install <plugin>` — plugin → `.rulesync/` → `rulesync.generate()` → targets
 - [x] Install provenance manifest + `superskill update [--check]` (ADR-035, feature B)
 - [x] Conversion pipeline: slash dialect, colon→hyphen, frontmatter normalization

@@ -2,6 +2,14 @@
 
 What ships, what gates it, and what a human still has to look at before `npm publish`.
 
+## Codex plugin upload ZIP
+
+`bun run build` also writes `dist/superskill-codex-plugin-<plugins/cc/plugin.json version>.zip`
+for OpenAI's skills-only upload. It uses the system `zip` utility, checks that the plugin and CLI
+versions match, and replaces any archive at that path. The ZIP contains `cc/plugin.json`,
+`cc/assets/`, `cc/skills/`, and `cc/README.md`; inspect it before uploading. It is separate from
+the npm tarball described below.
+
 ## The published surface
 
 `apps/cli/package.json` `files` decides what reaches npm:

@@ -2,16 +2,26 @@
 doc: 03_ARCHITECTURE
 owns: HOW — module boundaries, data flow, runtime model, invariants
 authority: derived
-version: 2.19.0
+version: 2.20.0
 derived_from: [00_ADR, 01_PRD]
 owner: Robin Min
-updated_at: 2026-09-19
+updated_at: 2026-09-29
 read_before: cross-module, seam, or schema work
 edit_rules: 99 §6.4
 sync: [T1]
 ---
 
 # Architecture
+
+## Codex plugin archive build (ADR-038)
+
+Root `bun run build` cleans `dist/`, builds the standalone CLI, then runs
+`scripts/build-plugin-zip.ts`. The archive builder reads the `cc` manifest version, rejects drift
+from the CLI package version, and invokes the system `zip` utility from `plugins/` with an explicit
+skills-only file list: `cc/plugin.json`, `cc/assets`, `cc/skills`, and `cc/README.md`. It removes an
+existing archive before writing the same version again, so removed source files cannot survive in
+the ZIP. The result is `dist/superskill-codex-plugin-<version>.zip`; npm `prepack` still stages its
+own CLI package separately.
 
 ## Target post-install actions (ADR-037; task 0130 — implemented)
 

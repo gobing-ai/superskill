@@ -2,9 +2,9 @@
 doc: 00_ADR
 owns: WHY — which cross-cutting decision was made, and the one-line reason
 authority: authoritative
-version: 1.15.0
+version: 1.16.0
 owner: Robin Min
-updated_at: 2026-09-14
+updated_at: 2026-09-29
 read_before: any structural change; add a dated entry before diverging from a decision
 edit_rules: 99 §6.1
 sync: [T1, T2]
@@ -753,3 +753,13 @@ serialized by the operator.
 **Why.** Target-specific customization needs one consistent lifecycle and extension point rather than accumulating independent installer branches.
 
 **Detail:** `03_ARCHITECTURE.md` §Target post-install actions; `04_DESIGN.md` §Internal post-install action contract; task 0130.
+
+## ADR-038: Build a versioned Codex plugin ZIP with the CLI
+
+**Status:** Accepted · **Date:** 2026-09-29
+
+**Decision.** Root `bun run build` also produces a skills-only `cc` plugin ZIP in `dist/`, named from the plugin manifest version and replacing any existing archive at that path. The npm `prepack` distribution remains separate.
+
+**Why.** One build should yield the reviewed plugin upload from the same source and version as the CLI.
+
+**Detail:** see 03 §Codex plugin archive build.

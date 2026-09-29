@@ -2,10 +2,10 @@
 doc: 05_FEATURES
 owns: STATUS — feature decomposition + state (✅ done / 🔶 partial / ⏳ planned / 💤 deferred)
 authority: derived
-version: 6.3.2
+version: 6.4.0
 derived_from: [01_PRD, 02_ROADMAP]
 owner: Robin Min
-updated_at: 2026-09-10
+updated_at: 2026-09-29
 read_before: finding a feature's state; edit when a feature's status changes
 edit_rules: 99 §6.6
 sync: [T4]
@@ -53,6 +53,7 @@ Design: [design-doc-phase1.md](design/design-doc-phase1.md)
 | Item | Status |
 | ------ | -------- |
 | Project scaffold | ✅ |
+| Codex skills-only plugin ZIP in root build (ADR-038) | ✅ |
 | Biome + TypeScript gates | ✅ |
 | bun:test suite (2 tests, 100%) | ✅ |
 | Spur recommended rule catalog (33 pre-check + 3 post-check rules) | ✅ |

@@ -2,10 +2,10 @@
 doc: 01_PRD
 owns: WHAT — product vision, users, scope (in / out / deferred)
 authority: authoritative-on-scope
-version: 3.5.2
+version: 3.6.0
 derived_from: [00_ADR]
 owner: Robin Min
-updated_at: 2026-09-10
+updated_at: 2026-09-29
 read_before: adding a command or feature; edit when scope changes
 edit_rules: 99 §6.2
 sync: [T1, T4, T6]
@@ -91,6 +91,7 @@ The `agent`, `command`, `magent`, and `skill` authoring lifecycles support five 
 | Item | Description |
 |------|-------------|
 | Claude Code marketplace | Direct `claude` CLI plugin marketplace update for install |
+| Codex plugin upload | Root build produces a versioned skills-only `cc` ZIP for OpenAI plugin submission (ADR-038) |
 
 ### Deprecated / removed
 
