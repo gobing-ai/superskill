@@ -11,6 +11,28 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 - fix(grok-bot): treat host-rewritten bridge pointers as healthy when `canonical:` still targets the owned recipe (stops 113× owned-drift after Bot `update_state` register); still refuse canonical drift, full-mode edits, and unowned extras
 - fix(grok-bot): handoff/doctor/README copy — slash fill is NOT automatic, Shell fallback for `.superskill` Read denial, soft-pedal unverified Settings > Plugins path
 
+## [0.3.33] - 2026-09-29
+
+### Added
+
+- feat(build): emit versioned Codex plugin ZIP from root build (`fcc4df5`)
+- feat(cc): package the plugin for Codex with marketplace metadata (`bbf690c`)
+- feat(core): write Codex openai.yaml companion on skill scaffold (`5652f96`)
+- feat(cli): stamp staged plugin scripts with version and per-file hashes (`ab61cde`)
+
+### Changed
+
+- docs(cc): refresh plugin README and point support at gobing.ai (`b3c258e`)
+- docs: record ADR-038 and sync numbered docs for the plugin ZIP build (`5a3ad59`)
+- style(cli): prefer template literals over concatenation in tests (`521f4ca`)
+- refactor(cc): migrate skill companions to the Codex interface schema (`119c246`)
+- docs(cc): describe the Codex scaffold companion in skill references (`63fe06f`)
+- docs(tasks): condense task 0149 evidence rows to file-line citations (`45a179c`)
+- docs(cli): note walker skip dirs excluded from stamp integrity baseline (`95512b7`)
+- chore(task): record 0149 pipeline evidence and close the task (`a4b1c16`)
+- docs(tasks): refine 0149 requirements, AC, design, and plan (`af67637`)
+- docs(tasks): add new tasks (`5209d38`)
+
 ## [0.3.32] - 2026-09-24
 
 ### Added
