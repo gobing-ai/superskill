@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it } from 'bun:test';
 import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { computeContentHash } from '@gobing-ai/superskill-core';
 import {
@@ -26,7 +27,7 @@ interface Fixture {
 
 /** Sandbox with a project root and a fake home; both plugin script roots exist as paths only. */
 function setup(): Fixture {
-    tmpDir = mkdtempSync('superskill-script-verify-');
+    tmpDir = mkdtempSync(join(tmpdir(), 'superskill-script-stamp-'));
     const projectRoot = join(tmpDir, 'project');
     const home = join(tmpDir, 'home');
     return {

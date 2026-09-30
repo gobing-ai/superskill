@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, spyOn } from 'bun:test';
 import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { computeContentHash } from '@gobing-ai/superskill-core';
 import { Command } from 'commander';
@@ -11,10 +12,10 @@ import {
 } from '../../src/commands/script-verify';
 import { SCRIPT_STAMP_FILENAME, writeScriptStamp } from '../../src/script-stamp';
 
-let tmpDir: string;
+const tmpDirs: string[] = [];
 
 afterEach(() => {
-    if (tmpDir) rmSync(tmpDir, { recursive: true, force: true });
+    for (const dir of tmpDirs.splice(0)) rmSync(dir, { recursive: true, force: true });
 });
 
 interface Fixture {
@@ -26,7 +27,8 @@ interface Fixture {
 
 /** Sandbox with a project root and a fake home; both plugin script roots exist as paths only. */
 function setup(): Fixture {
-    tmpDir = mkdtempSync('superskill-script-verify-');
+    const tmpDir = mkdtempSync(join(tmpdir(), 'superskill-script-verify-'));
+    tmpDirs.push(tmpDir);
     const projectRoot = join(tmpDir, 'project');
     const home = join(tmpDir, 'home');
     return {
