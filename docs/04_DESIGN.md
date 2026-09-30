@@ -319,7 +319,8 @@ Executable logic a skill invokes at the user's install site lives in `plugins/<p
 | Validate adapter | `plugins/cc/scripts/anti-hallucination/validate_response.ts` | Thin wrapper: `RESPONSE_TEXT`/stdin → verify → exit 0/1 (CLI semantics, **not** the hook block signal) |
 | Shared logger | `plugins/cc/scripts/anti-hallucination/logger.ts` | Single shared copy (dedup'd from per-skill copies) |
 | Stop-hook config | `plugins/cc/hooks/hooks.json` | `Stop` command hook → `superskill hook run cc anti-hallucination` (portable PATH command; the dispatcher `apps/cli/src/commands/hook-run.ts` routes to the guard engine). Declares `minCliVersion` so an older CLI cannot install a contract it does not implement. |
-| Engine tests | `plugins/cc/scripts/anti-hallucination/tests/` | 2 test files (ah_guard, validate_response); counted in coverage gate |
+| Engine tests | `plugins/cc/scripts/anti-hallucination/tests/` | Guard, validate adapter and Pi native guard; counted in coverage gate |
+| Pi native guard | `plugins/cc/scripts/anti-hallucination/pi-stop.ts` | Pi **0.99.1+**; installed through `extensions.pi`. `agent_before_settle` checks projected assistant text through the shared engine; failed verification appends a visible `custom_message` to existing drafts and requests `continue:true`, at most once per user input. Aborted/error outcomes and pending messages skip the guard. `session_start` and non-extension `input` reset the cap. Pi's declarative command hook remains excluded. |
 | Layout gate | `packages/core/src/operations/validate.ts` (`checkPluginSkillLayout`) | `skill validate` errors (`field: _layout`) when a plugin skill (`plugins/<plugin>/skills/<name>/SKILL.md`) contains `scripts/` or `extensions/`. Standalone skills are not flagged. |
 | Stdin reader | `apps/cli/src/stdin.ts` | `readStdinNonBlocking(firstByteMs, idleMs)` — the payload channel for `script run` / `hook run`. See the stdin contract below. |
 

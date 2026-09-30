@@ -142,8 +142,9 @@ export function readCanonicalHooks(rulesyncDir: string): CanonicalHooksConfig | 
  * that read `hooks/hooks.json` verbatim never see an unknown field.
  */
 export const HOOK_TARGET_POLICY: Record<string, Record<string, { profile: StopProfile }>> = {
-    // cc/anti-hallucination (Stop): only targets that can prevent stop. OpenCode/omp/pi/Grok
-    // cannot (architectural), so they are absent and emit nothing. Antigravity/Gemini use
+    // cc/anti-hallucination (Stop): only command transports that can prevent stop.
+    // Pi uses the plugin's native settlement extension; its declarative hooks, like
+    // OpenCode/omp/Grok, cannot request continuation. Antigravity/Gemini use
     // `decision:"deny"` (AfterAgent); Claude/Codex/Hermes use `decision:"block"`.
     'cc/anti-hallucination': {
         claude: { profile: 'block' },

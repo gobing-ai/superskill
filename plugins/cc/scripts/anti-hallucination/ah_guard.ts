@@ -114,7 +114,8 @@ interface VerificationResult {
  *   exit 0; `decision:"deny"` rejects the response and feeds `reason` back as a new prompt.
  *   Allow omits `decision` so the turn completes.
  *
- * OpenCode / omp / pi / Grok cannot prevent stop — install gates them out, so they have no profile.
+ * OpenCode / omp / Pi / Grok command hooks cannot prevent stop — install gates them out.
+ * Pi's native settlement extension reuses this engine independently of command-hook profiles.
  */
 export type StopProfile = 'block' | 'deny';
 
