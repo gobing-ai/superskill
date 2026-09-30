@@ -12,7 +12,7 @@
     },
     "apps/cli": {
       "name": "@gobing-ai/superskill",
-      "version": "0.3.31",
+      "version": "0.3.33",
       "bin": {
         "superskill": "dist/index.js",
       },
@@ -35,7 +35,7 @@
     },
     "packages/core": {
       "name": "@gobing-ai/superskill-core",
-      "version": "0.3.31",
+      "version": "0.3.33",
       "dependencies": {
         "@gobing-ai/ts-ai-runner": "catalog:",
         "@gobing-ai/ts-runtime": "catalog:",
@@ -49,11 +49,11 @@
     },
   },
   "catalog": {
-    "@gobing-ai/ts-ai-runner": "^0.5.5",
-    "@gobing-ai/ts-db": "^0.5.5",
-    "@gobing-ai/ts-infra": "^0.5.5",
-    "@gobing-ai/ts-runtime": "^0.5.5",
-    "@gobing-ai/ts-utils": "^0.5.5",
+    "@gobing-ai/ts-ai-runner": "^0.5.11",
+    "@gobing-ai/ts-db": "^0.5.11",
+    "@gobing-ai/ts-infra": "^0.5.11",
+    "@gobing-ai/ts-runtime": "^0.5.11",
+    "@gobing-ai/ts-utils": "^0.5.11",
   },
   "packages": {
     "@biomejs/biome": ["@biomejs/biome@2.4.16", "", { "optionalDependencies": { "@biomejs/cli-darwin-arm64": "2.4.16", "@biomejs/cli-darwin-x64": "2.4.16", "@biomejs/cli-linux-arm64": "2.4.16", "@biomejs/cli-linux-arm64-musl": "2.4.16", "@biomejs/cli-linux-x64": "2.4.16", "@biomejs/cli-linux-x64-musl": "2.4.16", "@biomejs/cli-win32-arm64": "2.4.16", "@biomejs/cli-win32-x64": "2.4.16" }, "bin": { "biome": "bin/biome" } }, "sha512-x9ajFh1zChVybCiM3TN6OD4phAqLgtPZjFrZF+aTMYCPjwBO+k529TX7PPsAqtGNLeV4UgzwQnowEgS7bGmzcA=="],
@@ -80,15 +80,15 @@
 
     "@gobing-ai/superskill-core": ["@gobing-ai/superskill-core@workspace:packages/core"],
 
-    "@gobing-ai/ts-ai-runner": ["@gobing-ai/ts-ai-runner@0.5.5", "", { "dependencies": { "@gobing-ai/ts-infra": "^0.5.5", "@gobing-ai/ts-runtime": "^0.5.5", "@typesafe-ai/sdk": "0.6.0" } }, "sha512-poNXIARnUjVp2B/taWt4Iszm3AFrSf7BFpB2wx8ebEUqqlaCn6D2idffsJogYtolFHOAZVpWddEwQGNbOPK6Yw=="],
+    "@gobing-ai/ts-ai-runner": ["@gobing-ai/ts-ai-runner@0.5.11", "", { "dependencies": { "@gobing-ai/ts-infra": "^0.5.11", "@gobing-ai/ts-runtime": "^0.5.11", "@typesafe-ai/sdk": "0.6.0" } }, "sha512-fhdhSfpbC5PlY5/pj4zD/KppDsonru0VQYLM496Q7e7lFUhtiodBBeX0YBT0TOJNOZTrw//Vwy5qTIs3BRni9A=="],
 
-    "@gobing-ai/ts-db": ["@gobing-ai/ts-db@0.5.5", "", { "dependencies": { "@gobing-ai/ts-runtime": "^0.5.5", "@gobing-ai/ts-utils": "^0.5.5" }, "peerDependencies": { "drizzle-orm": ">=0.38.0", "drizzle-zod": ">=0.5.0", "zod": ">=3.23.0" }, "optionalPeers": ["drizzle-zod", "zod"] }, "sha512-Fvi0X9j9OQgS9p8QhFl3/MA0ryZtL0BIrFyww1KG84q+KslOnzOGG8JwVoUjsKcfvtTII09MIl3TCtjxQ9zMZA=="],
+    "@gobing-ai/ts-db": ["@gobing-ai/ts-db@0.5.11", "", { "dependencies": { "@gobing-ai/ts-runtime": "^0.5.11", "@gobing-ai/ts-utils": "^0.5.11" }, "peerDependencies": { "drizzle-orm": ">=0.38.0", "drizzle-zod": ">=0.5.0", "zod": ">=3.23.0" }, "optionalPeers": ["drizzle-zod", "zod"] }, "sha512-xGHXl/zMvN8brglwJ1Yk8SLk++p2JkGkzcIfAkvg54Q2s4RfJGD5yTabAcgWaSl1aN1Qtg1iMNZnUUSXqwAheA=="],
 
-    "@gobing-ai/ts-infra": ["@gobing-ai/ts-infra@0.5.5", "", { "dependencies": { "@gobing-ai/ts-utils": "^0.5.5", "@logtape/logtape": "^2.0.0" }, "peerDependencies": { "@gobing-ai/ts-db": "^0.5.5", "@gobing-ai/ts-runtime": "^0.5.5", "@opentelemetry/api": "^1.9.0", "@opentelemetry/exporter-metrics-otlp-http": ">=0.200.0", "@opentelemetry/exporter-trace-otlp-http": ">=0.200.0", "@opentelemetry/resources": "^2.0.0", "@opentelemetry/sdk-metrics": "^2.0.0", "@opentelemetry/sdk-trace-node": "^2.0.0", "@opentelemetry/semantic-conventions": "^1.30.0" }, "optionalPeers": ["@gobing-ai/ts-db", "@gobing-ai/ts-runtime", "@opentelemetry/exporter-metrics-otlp-http", "@opentelemetry/exporter-trace-otlp-http", "@opentelemetry/resources", "@opentelemetry/sdk-metrics", "@opentelemetry/sdk-trace-node"] }, "sha512-irZpp1dJSB2wgigonwQ3vzLe5AikjdzdTsq2+eIEmxnbpBscS6xlneSMG0TJlSjaAhVsrbHd5SqE4D3iz5j7Vg=="],
+    "@gobing-ai/ts-infra": ["@gobing-ai/ts-infra@0.5.11", "", { "dependencies": { "@gobing-ai/ts-utils": "^0.5.11", "@logtape/logtape": "^2.0.0" }, "peerDependencies": { "@gobing-ai/ts-db": "^0.5.11", "@gobing-ai/ts-runtime": "^0.5.11", "@opentelemetry/api": "^1.9.0", "@opentelemetry/exporter-metrics-otlp-http": ">=0.200.0", "@opentelemetry/exporter-trace-otlp-http": ">=0.200.0", "@opentelemetry/resources": "^2.0.0", "@opentelemetry/sdk-metrics": "^2.0.0", "@opentelemetry/sdk-trace-node": "^2.0.0", "@opentelemetry/semantic-conventions": "^1.30.0" }, "optionalPeers": ["@gobing-ai/ts-db", "@gobing-ai/ts-runtime", "@opentelemetry/exporter-metrics-otlp-http", "@opentelemetry/exporter-trace-otlp-http", "@opentelemetry/resources", "@opentelemetry/sdk-metrics", "@opentelemetry/sdk-trace-node"] }, "sha512-gHMoTCl/jU21rXtL73yaP3xMINRceYvCCeDYCQ8tXEAjdVc2eCbElnCgXHjZ5a6sg2O3j6UTfagvjKmnbP+9pw=="],
 
-    "@gobing-ai/ts-runtime": ["@gobing-ai/ts-runtime@0.5.5", "", { "dependencies": { "@gobing-ai/ts-utils": "^0.5.5", "execa": "^9.5.0", "yaml": "^2.7.0", "zod": "^4.1.0" }, "peerDependencies": { "@gobing-ai/ts-db": "^0.5.5" }, "optionalPeers": ["@gobing-ai/ts-db"] }, "sha512-A+r+SaZDN6TV8M48o9qvNyeW6iwdkjfyWwLDdhwOMis4+7xip6QgJ5UVhr8FmUfaWockySUgIDuui4k8YvYHjg=="],
+    "@gobing-ai/ts-runtime": ["@gobing-ai/ts-runtime@0.5.11", "", { "dependencies": { "@gobing-ai/ts-utils": "^0.5.11", "execa": "^9.5.0", "yaml": "^2.7.0", "zod": "^4.1.0" }, "peerDependencies": { "@gobing-ai/ts-db": "^0.5.11" }, "optionalPeers": ["@gobing-ai/ts-db"] }, "sha512-gOBCu8Ngq0ZgH6P7c1+9T5KYZ7cRFFQL98HkFohnV9Wy76s4+6fwZ12RIhtwNO7pbBes27S8mWMEOpNN3ykZPg=="],
 
-    "@gobing-ai/ts-utils": ["@gobing-ai/ts-utils@0.5.5", "", {}, "sha512-Ij3bvzIJpZIs1uKCGwAyuAME2+NIoVMCewGEggwG7oVmyrcbY0u7syczPOi3s5ChuR7Ervy5ZZiQKRKGdNMG6w=="],
+    "@gobing-ai/ts-utils": ["@gobing-ai/ts-utils@0.5.11", "", {}, "sha512-IZAhvCgrvmi9GuCMXkSV/pNnaRg08xwS1LiMGMh7YcTzkHracoiC+hhWpgghuuBwtLqPvggh2tIoy/1AxCtLLw=="],
 
     "@hono/node-server": ["@hono/node-server@1.19.14", "", { "peerDependencies": { "hono": "^4" } }, "sha512-GwtvgtXxnWsucXvbQXkRgqksiH2Qed37H9xHZocE5sA3N8O8O8/8FA3uclQXxXVzc9XBZuEOMK7+r02FmSpHtw=="],
 
