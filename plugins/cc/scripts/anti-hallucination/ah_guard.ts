@@ -9,8 +9,8 @@
  * Input channels (first non-empty wins — see {@link resolveStopContext}):
  *     ARGUMENTS env - legacy/test channel: JSON with `messages` / `last_message`
  *     stdin         - what real hosts deliver:
- *                     - Claude Code Stop payload: `{transcript_path, stop_hook_active, ...}`
- *                       (the last assistant message is read from the transcript JSONL;
+ *                     - Claude/Codex Stop payload: `{last_assistant_message, stop_hook_active, ...}`
+ *                       (older Claude payloads fall back to `transcript_path` JSONL;
  *                       `stop_hook_active: true` allows immediately to prevent block loops)
  *                     - omp agent_end event: `{type: "agent_end", messages: [...]}`
  *
@@ -20,8 +20,8 @@
  *         `decision` field in the output JSON is the sole block/allow signal.
  *
  * Output Format (stdout) — host-canonical prevent-stop JSON:
- *     {"hookSpecificOutput":{"hookEventName":"Stop"}}                          # Allow stop (no feedback)
- *     {"decision":"block","reason":"…","hookSpecificOutput":{"hookEventName":"Stop"}}  # Block stop (clean feedback)
+ *     {}                                       # Allow stop (block profile)
+ *     {"decision":"block","reason":"…"}        # Block stop (block profile)
  */
 
 import { closeSync, openSync, readFileSync, readSync, statSync } from 'node:fs';
@@ -120,18 +120,21 @@ export type StopProfile = 'block' | 'deny';
 
 /**
  * Build the host-canonical prevent-stop JSON for a verification result under the given profile.
- * `block` uses `decision:"block"` + `hookEventName:"Stop"`; `deny` uses `decision:"deny"` +
- * `hookEventName:"AfterAgent"` (Gemini/Antigravity). An allow omits `decision` (the turn completes)
- * and carries only the bare `hookSpecificOutput` envelope for the host's event. The exit code stays
+ * `block` uses only top-level `decision:"block"` + `reason`, or `{}` to allow: Codex rejects
+ * `hookSpecificOutput` on Stop, while Claude/Hermes accept the same minimal shape.
+ * `deny` retains `decision:"deny"` + `hookEventName:"AfterAgent"` (Gemini/Antigravity). The exit code stays
  * 0 — the `decision` field is the block/allow signal (Claude Code honors stdout JSON only at exit 0;
  * Codex/Gemini/Antigravity/Hermes likewise read the JSON at exit 0).
  */
 export function buildStopOutput(result: VerificationResult, profile: StopProfile = 'block'): string {
-    const hookEventName = profile === 'deny' ? 'AfterAgent' : 'Stop';
+    if (profile === 'block') {
+        return JSON.stringify(result.ok ? {} : { decision: 'block', reason: result.reason });
+    }
+    const hookEventName = 'AfterAgent';
     if (result.ok) {
         return JSON.stringify({ hookSpecificOutput: { hookEventName } });
     }
-    const decision = profile === 'deny' ? 'deny' : 'block';
+    const decision = 'deny';
     return JSON.stringify({
         decision,
         reason: result.reason,
@@ -280,7 +283,11 @@ export function resolveStopContext(
 
     if (!stdinText || stdinText.trim().length === 0) return {};
 
-    let payload: HookContext & { transcript_path?: string; stop_hook_active?: boolean };
+    let payload: HookContext & {
+        transcript_path?: string;
+        stop_hook_active?: boolean;
+        last_assistant_message?: unknown;
+    };
     try {
         payload = JSON.parse(stdinText);
     } catch {
@@ -292,6 +299,10 @@ export function resolveStopContext(
 
     if (payload.stop_hook_active === true) {
         return { allowReason: 'Task is complete (stop already processed — loop guard)' };
+    }
+
+    if (typeof payload.last_assistant_message === 'string' && payload.last_assistant_message.trim().length > 0) {
+        return { content: payload.last_assistant_message };
     }
 
     if (payload.messages || payload.last_message) {

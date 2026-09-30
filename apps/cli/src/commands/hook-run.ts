@@ -24,7 +24,7 @@ import { cliVersion } from '../version';
  *
  * Runners signal: allow → exit 0 (PreToolUse with empty stdout, Stop with its canonical JSON). A
  * deny takes the channel each host renders cleanly: Stop → `decision:"block"` JSON at exit 0 (clean
- * feedback; the cc/anti-hallucination hook is Claude-Code-only); PreToolUse → `permissionDecision:
+ * feedback for Claude/Codex/Hermes; Gemini/Antigravity use `decision:"deny"`); PreToolUse → `permissionDecision:
  * "deny"` JSON at exit 0 when Claude Code is the host (`CLAUDE_PROJECT_DIR` set), else exit 2 + stderr
  * for cross-agent hosts (Codex/omp) that don't parse that JSON. Claude Code treats exit 1 as a
  * non-blocking error, so 1 never blocks; and it honors stdout JSON only at exit 0, so a deny that
@@ -203,9 +203,9 @@ const spTaskWriteGuard: HookRunner = {
  * A thin adapter over {@link runStopGuard}: the Stop branch table (payload resolution → allow on
  * loop guard / unreadable input → verify → allow / block) lives there, single-sourced; this runner
  * only maps its {@link StopGuardResult} to a {@link HookRunResult} (`output` to stdout at exit 0 —
- * the `decision` field in that JSON is the allow/block signal; no stderr, no exit 2: this hook is
- * Claude-Code-only, and Claude Code discards stdout JSON at exit 2). Payload channels
- * (Claude Code `transcript_path` + `stop_hook_active` loop guard; omp `agent_end` `messages`; the
+ * the `decision` field in that JSON is the allow/block signal; no stderr, no exit 2).
+ * Payload channels (Claude/Codex `last_assistant_message`, legacy Claude `transcript_path`,
+ * `stop_hook_active` loop guard; omp `agent_end` `messages`; the
  * `ARGUMENTS` legacy/test channel) are resolved inside `runStopGuard` via `resolveStopContext`.
  * Fails open (allow stop) on empty/invalid payloads or missing content.
  */

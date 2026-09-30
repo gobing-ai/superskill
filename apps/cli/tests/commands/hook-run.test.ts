@@ -361,21 +361,14 @@ describe('resolveSpurTaskOwnership — subprocess contract', () => {
 });
 
 describe('hook run — cc/anti-hallucination (Stop, canonical output contract)', () => {
-    it('emits a bare Claude Stop allow shape (hookEventName only, no feedback) on a passing message', async () => {
+    it('emits an empty shared Stop allow object on a passing message', async () => {
         const args = JSON.stringify({
             messages: [{ role: 'assistant', content: 'Done. Refactored the helper; all tests green.' }],
         });
         const { code, out } = await capture('cc', 'anti-hallucination', { ARGUMENTS: args }, '');
         const parsed = JSON.parse(out);
-        // WHY: Claude validates Stop output against a fixed schema — the allow path must carry
-        // `hookSpecificOutput.hookEventName: "Stop"` (required) and must NOT use the invented
-        // `allowStop`/`feedback` fields that fail validation. It also omits `additionalContext`:
-        // a permitted stop has nothing for the model to act on, so surfacing the allow reason
-        // would only add per-turn chat noise.
-        expect(parsed.hookSpecificOutput.hookEventName).toBe('Stop');
-        expect(parsed.hookSpecificOutput.additionalContext).toBeUndefined();
-        expect(parsed.allowStop).toBeUndefined();
-        expect(parsed.decision).toBeUndefined();
+        // Codex rejects unknown Stop fields; Claude and Hermes also accept this allow shape.
+        expect(parsed).toEqual({});
         expect(code).toBe(0);
     });
 
@@ -397,7 +390,7 @@ describe('hook run — cc/anti-hallucination (Stop, canonical output contract)',
         // error" (the misrendering this test pins as fixed). stderr stays empty.
         expect(parsed.decision).toBe('block');
         expect(parsed.reason).toContain('Add verification');
-        expect(parsed.hookSpecificOutput.hookEventName).toBe('Stop');
+        expect(Object.keys(parsed).sort()).toEqual(['decision', 'reason']);
         expect(code).toBe(0);
         expect(err).toBe('');
     });
@@ -426,15 +419,37 @@ describe('hook run — cc/anti-hallucination (Stop, canonical output contract)',
     it('fails open with a valid allow shape on empty/invalid ARGUMENTS', async () => {
         const empty = await capture('cc', 'anti-hallucination', {}, '');
         const emptyParsed = JSON.parse(empty.out);
-        expect(emptyParsed.hookSpecificOutput.hookEventName).toBe('Stop');
-        expect(emptyParsed.decision).toBeUndefined();
+        expect(emptyParsed).toEqual({});
         expect(empty.code).toBe(0);
 
         const invalid = await capture('cc', 'anti-hallucination', { ARGUMENTS: 'not json' }, '');
         const invalidParsed = JSON.parse(invalid.out);
-        expect(invalidParsed.hookSpecificOutput.hookEventName).toBe('Stop');
-        expect(invalidParsed.decision).toBeUndefined();
+        expect(invalidParsed).toEqual({});
         expect(invalid.code).toBe(0);
+    });
+
+    it('verifies current Codex/Claude assistant text delivered on stdin and honors the loop guard', async () => {
+        const payload = {
+            hook_event_name: 'Stop',
+            last_assistant_message: 'The library version 2.3.1 API should probably work.',
+            stop_hook_active: false,
+        };
+        const blocked = await capture('cc', 'anti-hallucination', {}, JSON.stringify(payload));
+        expect(JSON.parse(blocked.out).decision).toBe('block');
+        expect(Object.keys(JSON.parse(blocked.out)).sort()).toEqual(['decision', 'reason']);
+        expect(blocked.code).toBe(0);
+        expect(blocked.err).toBe('');
+        const allowed = await capture(
+            'cc',
+            'anti-hallucination',
+            {},
+            JSON.stringify({
+                ...payload,
+                stop_hook_active: true,
+            }),
+        );
+        expect(JSON.parse(allowed.out)).toEqual({});
+        expect(allowed.code).toBe(0);
     });
 
     it('verifies the omp agent_end event delivered on stdin (no ARGUMENTS set)', async () => {

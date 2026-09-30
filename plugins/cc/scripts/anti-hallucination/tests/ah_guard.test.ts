@@ -375,17 +375,17 @@ This uses the requests library, which supports automatic connection pooling.
 describe('buildStopOutput — prevent-stop profiles', () => {
     const fail = { ok: false, reason: 'Add verification for: x' };
 
-    it('block profile: block → decision:block + hookEventName:Stop', () => {
+    it('block profile: block uses only shared Claude/Codex/Hermes decision fields', () => {
         const parsed = JSON.parse(buildStopOutput(fail, 'block'));
         expect(parsed.decision).toBe('block');
         expect(parsed.reason).toBe('Add verification for: x');
-        expect(parsed.hookSpecificOutput.hookEventName).toBe('Stop');
+        expect(parsed).toEqual({ decision: 'block', reason: fail.reason });
     });
 
-    it('block profile: allow → bare Stop envelope, no decision', () => {
+    it('block profile: allow is an empty JSON object accepted by strict Codex Stop parsing', () => {
         const parsed = JSON.parse(buildStopOutput({ ok: true, reason: 'Task is complete' }, 'block'));
         expect(parsed.decision).toBeUndefined();
-        expect(parsed.hookSpecificOutput.hookEventName).toBe('Stop');
+        expect(parsed).toEqual({});
     });
 
     it('deny profile: block → decision:deny + hookEventName:AfterAgent (Gemini/Antigravity)', () => {
@@ -403,7 +403,7 @@ describe('buildStopOutput — prevent-stop profiles', () => {
 
     it('defaults to the block profile', () => {
         expect(JSON.parse(buildStopOutput(fail)).decision).toBe('block');
-        expect(JSON.parse(buildStopOutput(fail)).hookSpecificOutput.hookEventName).toBe('Stop');
+        expect(JSON.parse(buildStopOutput(fail))).toEqual({ decision: 'block', reason: fail.reason });
     });
 });
 
@@ -531,6 +531,49 @@ describe('main', () => {
 describe('resolveStopContext', () => {
     const failingClaim =
         'The library version 2.3.1 API method should probably work — I believe the framework function handles it.';
+
+    it('prefers the current Claude/Codex assistant text over a stale transcript', () => {
+        expect(
+            resolveStopContext(
+                undefined,
+                JSON.stringify({
+                    last_assistant_message: failingClaim,
+                    transcript_path: '/stale.jsonl',
+                }),
+                () => {
+                    throw new Error('must not read stale transcript');
+                },
+            ).content,
+        ).toBe(failingClaim);
+    });
+
+    it('preserves legacy fallback for blank and non-string direct assistant fields', () => {
+        for (const last_assistant_message of ['', '  ', null, 42]) {
+            expect(
+                resolveStopContext(
+                    undefined,
+                    JSON.stringify({
+                        last_assistant_message,
+                        last_message: failingClaim,
+                    }),
+                ).content,
+            ).toBe(failingClaim);
+        }
+    });
+
+    it('preserves ARGUMENTS precedence and the stop loop guard with direct assistant text', () => {
+        const stdin = JSON.stringify({ last_assistant_message: failingClaim });
+        expect(resolveStopContext(JSON.stringify({ last_message: 'legacy' }), stdin).content).toBe('legacy');
+        expect(
+            resolveStopContext(
+                undefined,
+                JSON.stringify({
+                    last_assistant_message: failingClaim,
+                    stop_hook_active: true,
+                }),
+            ).allowReason,
+        ).toContain('loop guard');
+    });
 
     it('prefers the ARGUMENTS channel when set (legacy/test contract)', () => {
         const args = JSON.stringify({ messages: [{ role: 'assistant', content: 'from arguments' }] });

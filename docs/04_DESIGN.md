@@ -315,7 +315,7 @@ Executable logic a skill invokes at the user's install site lives in `plugins/<p
 
 | Surface | Path | Purpose |
 | --------- | ------ | --------- |
-| Guard engine | `plugins/cc/scripts/anti-hallucination/ah_guard.ts` | Pure `verifyAntiHallucinationProtocol(text)` + direct-invocation `main()`; payload resolved by `resolveStopContext` (stdin first — Claude Code `transcript_path` / omp `agent_end`; `$ARGUMENTS` is the legacy/test channel) |
+| Guard engine | `plugins/cc/scripts/anti-hallucination/ah_guard.ts` | Pure `verifyAntiHallucinationProtocol(text)` + direct-invocation `main()`; `resolveStopContext` prefers legacy `$ARGUMENTS`, then stdin: loop guard → nonblank Claude/Codex `last_assistant_message` → legacy `messages`/`last_message` → Claude `transcript_path`. `block` emits `{}` or top-level `decision:"block"` + `reason`; `deny` retains the `AfterAgent` envelope. |
 | Validate adapter | `plugins/cc/scripts/anti-hallucination/validate_response.ts` | Thin wrapper: `RESPONSE_TEXT`/stdin → verify → exit 0/1 (CLI semantics, **not** the hook block signal) |
 | Shared logger | `plugins/cc/scripts/anti-hallucination/logger.ts` | Single shared copy (dedup'd from per-skill copies) |
 | Stop-hook config | `plugins/cc/hooks/hooks.json` | `Stop` command hook → `superskill hook run cc anti-hallucination` (portable PATH command; the dispatcher `apps/cli/src/commands/hook-run.ts` routes to the guard engine). Declares `minCliVersion` so an older CLI cannot install a contract it does not implement. |
