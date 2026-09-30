@@ -1,7 +1,7 @@
 {
     "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
     "name": "cc",
-    "version": "0.3.32",
+    "version": "0.3.33",
     "description": "Superskill CLI workflows for agent skills and coding-agent configuration.",
     "author": {
         "name": "Robin Min",
@@ -11,7 +11,12 @@
     "homepage": "https://gobing.ai/prod-superskill",
     "repository": "https://github.com/gobing-ai/superskill",
     "license": "Apache-2.0",
-    "keywords": ["agent-skills", "codex", "developer-tools", "superskill"],
+    "keywords": [
+        "agent-skills",
+        "codex",
+        "developer-tools",
+        "superskill"
+    ],
     "extensions": {
         "com.openai": {
             "interface": {
