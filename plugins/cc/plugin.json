@@ -11,12 +11,7 @@
     "homepage": "https://gobing.ai/prod-superskill",
     "repository": "https://github.com/gobing-ai/superskill",
     "license": "Apache-2.0",
-    "keywords": [
-        "agent-skills",
-        "codex",
-        "developer-tools",
-        "superskill"
-    ],
+    "keywords": ["agent-skills", "codex", "developer-tools", "superskill"],
     "extensions": {
         "com.openai": {
             "interface": {
