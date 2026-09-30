@@ -9,6 +9,7 @@ pre-commit:
     format:
       glob: "*.{js,ts,tsx,jsx,json}"
       run: bun run format
+      stage_fixed: true
 
 pre-push:
   commands:
