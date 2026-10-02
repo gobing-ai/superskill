@@ -11,6 +11,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 - fix(grok-bot): treat host-rewritten bridge pointers as healthy when `canonical:` still targets the owned recipe (stops 113× owned-drift after Bot `update_state` register); still refuse canonical drift, full-mode edits, and unowned extras
 - fix(grok-bot): handoff/doctor/README copy — slash fill is NOT automatic, Shell fallback for `.superskill` Read denial, soft-pedal unverified Settings > Plugins path
 
+## [0.3.35] - 2026-10-02
+
+### Added
+
+- feat(cc): add openai publication workflow and listing metadata (`663d460`)
+
+### Fixed
+
+- fix(hooks): add bounded native Pi verification continuation (`cb5346b`)
+- fix(hooks): preserve shared Stop contract across coding agents (`cd624ab`)
+
+### Changed
+
+- chore: switch public contact email to support@gobing.ai (`5ae1c46`)
+
 ## [0.3.33] - 2026-09-29
 
 ### Added
