@@ -15,7 +15,7 @@
         "type": "git",
         "url": "git+https://github.com/gobing-ai/superskill.git"
     },
-    "author": "Robin Min <minlongbing@gmail.com>",
+    "author": "Robin Min <support@gobing.ai>",
     "license": "Apache-2.0",
     "bin": {
         "superskill": "dist/index.js"
