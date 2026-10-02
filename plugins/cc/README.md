@@ -35,14 +35,15 @@ skills.
 
 ```
 plugins/cc/
-├── skills/                          # Domain knowledge + workflow documentation (7 skills)
+├── skills/                          # Domain knowledge + workflow documentation (8 skills)
 │   ├── anti-hallucination/          # Zero-trust verification protocol (v3.0.0)
 │   ├── cc-agents/                   # Subagent lifecycle (v3.0.0, 6 platforms)
 │   ├── cc-commands/                 # Slash command lifecycle (v3.0.0, 6 platforms)
 │   ├── cc-hooks/                    # Multi-agent hook system (v3.0.0, 6 platforms)
 │   ├── cc-magents/                  # Main-agent config (v5.0.0, 15 platforms)
 │   ├── cc-skills/                   # Skill lifecycle
-│   └── grok-bot-register/           # Grok Bot registration recovery
+│   ├── grok-bot-register/           # Grok Bot registration recovery
+│   └── openai-publish-plugin/       # OpenAI submission and publication workflow
 ├── commands/                        # Slash command definitions (17)
 ├── agents/                          # Expert subagent definitions (5)
 ├── rules/                           # Plugin always-on rules → target rules dirs
@@ -80,6 +81,7 @@ plugin tree. Install: `superskill install cc --magent team-stark-children` (see
 | `cc-magents` | 5.0.0 | 15 platforms (agents-md, codex, claude-code, gemini-cli, opencode, cursor, copilot, windsurf, cline, zed, amp, aider, openclaw, antigravity, pi) | Main-agent config — manage `AGENTS.md`, `CLAUDE.md`, `GEMINI.md`, `.cursor/rules`, etc. (not subagents) |
 | `cc-skills` | 3.2.0 | claude-code, codex, antigravity, opencode, openclaw | Skill lifecycle — scaffold / validate / evaluate / refine / evolve agent skills across platforms |
 | `grok-bot-register` | — | grok-bot | Recover registration after a Grok Bot install/update handoff |
+| `openai-publish-plugin` | — | Hosts with skills and browser or manual portal access | Prepare OpenAI plugin releases, verify submission checks, hand off legal attestations, and publish approved versions |
 
 Each skill directory contains:
 

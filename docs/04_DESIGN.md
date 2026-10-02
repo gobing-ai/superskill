@@ -2,16 +2,20 @@
 doc: 04_DESIGN
 owns: SURFACE — concrete shapes: every CLI command, flag, config key, env var, table, DTO
 authority: derived
-version: 2.19.0
+version: 2.20.0
 derived_from: [00_ADR, 01_PRD, 02_ROADMAP]
 owner: Robin Min
-updated_at: 2026-09-29
+updated_at: 2026-10-01
 read_before: changing a command, flag, env var, or schema
 edit_rules: 99 §6.5
 sync: [T3]
 ---
 
 # Design — Surface Reference
+
+## OpenAI listing metadata
+
+`plugins/cc/plugin.json` → `extensions.com.openai`: `interface.developerName` is `Gobing AI`; public contact email is `support@gobing.ai`; `interface.privacyPolicyURL` is `https://gobing.ai/privacy`; `interface.termsOfServiceURL` is `https://gobing.ai/terms`; `review.commerce` is `false`; `publication.countries` is `[]` (all supported countries). Legal pages must be deployed and accessible before re-uploading the ZIP for review.
 
 - Phase 1 — Distribution: [design-doc-phase1.md](design/design-doc-phase1.md) — `superskill install` and supporting commands.
 - Phase 2 — Authoring + quality: [design-doc-phase2.md](design/design-doc-phase2.md) — artifact-specific `superskill agent|skill|command|hook|magent` lifecycles.

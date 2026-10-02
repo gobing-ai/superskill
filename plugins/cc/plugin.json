@@ -4,8 +4,8 @@
     "version": "0.3.34",
     "description": "Superskill CLI workflows for agent skills and coding-agent configuration.",
     "author": {
-        "name": "Robin Min",
-        "email": "minlongbing@gmail.com",
+        "name": "Gobing AI",
+        "email": "support@gobing.ai",
         "url": "https://gobing.ai/"
     },
     "homepage": "https://gobing.ai/prod-superskill",
@@ -18,8 +18,8 @@
             "interface": {
                 "displayName": "Superskill",
                 "shortDescription": "Author skills with Superskill",
-                "longDescription": "Use the Superskill CLI in a local Codex project to create, validate, evaluate, refine, and evolve agent skills, commands, subagents, hooks, and main-agent configurations. Seven bundled skills guide those workflows. Bun and the Superskill CLI are separate local prerequisites.",
-                "developerName": "Robin Min",
+                "longDescription": "Use the Superskill CLI in a local Codex project to create, validate, evaluate, refine, and evolve agent skills, commands, subagents, hooks, and main-agent configurations. Bundled skills guide those workflows and OpenAI plugin publication. Bun and the Superskill CLI are separate local prerequisites.",
+                "developerName": "Gobing AI",
                 "category": "Developer Tools",
                 "capabilities": [
                     "Author agent skills",
@@ -28,6 +28,8 @@
                 ],
                 "websiteURL": "https://gobing.ai/prod-superskill",
                 "supportURL": "https://gobing.ai/#contact",
+                "privacyPolicyURL": "https://gobing.ai/privacy",
+                "termsOfServiceURL": "https://gobing.ai/terms",
                 "defaultPrompt": [
                     "Create and validate a new agent skill with Superskill.",
                     "Review this agent skill and suggest specific improvements.",
@@ -35,6 +37,12 @@
                 ],
                 "logo": "./assets/superskill-logo.svg",
                 "composerIcon": "./assets/superskill-logo.svg"
+            },
+            "review": {
+                "commerce": false
+            },
+            "publication": {
+                "countries": []
             }
         }
     }
