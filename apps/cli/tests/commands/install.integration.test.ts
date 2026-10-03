@@ -1122,6 +1122,33 @@ describe('executeInstall', () => {
         );
     });
 
+    it('stages a plugin lib/ sibling to .agents/scripts/lib/, overwriting stale content and preserving foreign files', async () => {
+        const { marketplacePath, pluginDir } = setupPluginDir();
+        mkdirSync(join(pluginDir, 'scripts'), { recursive: true });
+        writeFileSync(join(pluginDir, 'scripts', 'entry.mjs'), 'import "../lib/run.generated.mjs";');
+        mkdirSync(join(pluginDir, 'lib'), { recursive: true });
+        writeFileSync(join(pluginDir, 'lib', 'run.generated.mjs'), 'export const v = "fresh";');
+
+        const outRoot = join(tmpDir, 'out');
+        // Pre-seed the shared lib root: a stale same-name file (the defect shape) and a
+        // foreign file the overlay must not remove.
+        const sharedLib = join(outRoot, '.agents', 'scripts', 'lib');
+        mkdirSync(sharedLib, { recursive: true });
+        writeFileSync(join(sharedLib, 'run.generated.mjs'), 'export const v = "stale";');
+        writeFileSync(join(sharedLib, 'other-plugin.mjs'), 'export const v = "foreign";');
+
+        await executeInstall(
+            'demo',
+            ['codex'],
+            { marketplacePath, global: false, dryRun: false, verbose: false, outputRoot: outRoot },
+            { runRulesync: async () => mockEmptyRulesyncResult() },
+        );
+
+        // Stale same-name content overwritten; foreign file preserved (overlay, never rm).
+        expect(readFileSync(join(sharedLib, 'run.generated.mjs'), 'utf-8')).toBe('export const v = "fresh";');
+        expect(readFileSync(join(sharedLib, 'other-plugin.mjs'), 'utf-8')).toBe('export const v = "foreign";');
+    });
+
     it('skips scripts staging when plugin has no scripts/ directory', async () => {
         const { marketplacePath } = setupPluginDir();
         const outRoot = join(tmpDir, 'out');

@@ -1,5 +1,6 @@
 import {
     copyFileSync,
+    cpSync,
     existsSync,
     lstatSync,
     mkdirSync,
@@ -1928,7 +1929,8 @@ function stagePluginScripts(
     // pluginName is the leaf of a recursive rmSync target under .agents/scripts/.
     assertSafePathSegment(pluginName, 'plugin name');
     const stagedSource = join(outputDir, 'scripts', pluginName);
-    if (!existsSync(stagedSource)) return 0;
+    const stagedLib = join(outputDir, 'scripts', 'lib');
+    if (!existsSync(stagedSource) && !existsSync(stagedLib)) return 0;
 
     // R4: fail before the replace below. The stamp is install metadata living at the root of the
     // same directory, so a colliding source script would be erased (or worse, silently overwritten)
@@ -1949,10 +1951,21 @@ function stagePluginScripts(
     if (options.dryRun) return stagedFileCount;
 
     // Replace only <plugin>/ subdir — never the entire .agents/scripts/ tree (other plugins).
-    if (existsSync(dest)) {
-        rmSync(dest, { recursive: true, force: true });
+    if (existsSync(stagedSource)) {
+        if (existsSync(dest)) {
+            rmSync(dest, { recursive: true, force: true });
+        }
+        copyDirectory(stagedSource, dest);
     }
-    copyDirectory(stagedSource, dest);
+
+    // Sibling runtime library (mapper stages <plugin>/lib → .rulesync/scripts/lib).
+    // Entrypoints import it as `../lib/<file>` from the staged scripts root, so it must
+    // land beside <plugin>/. Overlay copy, never rm — the dir is shared across plugins.
+    // ponytail: overlay can leave a removed lib file behind; full replace needs
+    // per-plugin ownership tracking if a second lib-shipping plugin appears.
+    if (existsSync(stagedLib)) {
+        cpSync(stagedLib, join(outputRoot, '.agents', 'scripts', 'lib'), { recursive: true });
+    }
 
     // Snapshot before writing, so the stamp can never hash itself. No staged regular file → no
     // stamp (R1: only an install that actually stages a script gets a shared-root receipt).

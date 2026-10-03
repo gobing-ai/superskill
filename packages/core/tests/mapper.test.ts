@@ -473,6 +473,25 @@ describe('mapPluginToRulesync', () => {
         expect(existsSync(join(outDir, 'skills', 'cc-anti-hallucination'))).toBe(false);
     });
 
+    it('stages a plugin-level lib/ sibling verbatim into .rulesync/scripts/lib/', () => {
+        tmpDir = mkdtempSync('superskill-mapper-');
+        const pluginDir = join(tmpDir, 'plugin');
+        mkdirSync(join(pluginDir, 'scripts'), { recursive: true });
+        writeFileSync(join(pluginDir, 'scripts', 'entry.mjs'), 'import "../lib/run.generated.mjs";');
+        // Content a skill-reference rewrite would alter if the copy were not verbatim.
+        const libBody = 'export const ref = "cc:cc-hooks stays untouched";\n';
+        mkdirSync(join(pluginDir, 'lib'), { recursive: true });
+        writeFileSync(join(pluginDir, 'lib', 'run.generated.mjs'), libBody);
+
+        const outDir = join(tmpDir, '.rulesync');
+        const result = mapPluginToRulesync(pluginDir, 'sp', outDir);
+
+        expect(result.scripts).toBe(1);
+        expect(result.scriptLibs).toBe(1);
+        // Staged beside <plugin>/ so a staged `../lib/` import resolves.
+        expect(readFileSync(join(outDir, 'scripts', 'lib', 'run.generated.mjs'), 'utf-8')).toBe(libBody);
+    });
+
     it('returns scripts: 0 when plugin has no scripts/ directory', () => {
         tmpDir = mkdtempSync('superskill-mapper-');
         const pluginDir = join(tmpDir, 'plugin');
@@ -483,6 +502,7 @@ describe('mapPluginToRulesync', () => {
         const result = mapPluginToRulesync(pluginDir, 'cc', outDir);
 
         expect(result.scripts).toBe(0);
+        expect(result.scriptLibs).toBe(0);
         // No scripts/ dir created in output
         expect(existsSync(join(outDir, 'scripts'))).toBe(false);
     });

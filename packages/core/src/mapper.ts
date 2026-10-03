@@ -1,4 +1,5 @@
 import {
+    cpSync,
     existsSync,
     lstatSync,
     mkdirSync,
@@ -31,6 +32,8 @@ export interface MapResult {
     mcp: boolean;
     /** Number of files staged from the plugin-level scripts/ tree. */
     scripts: number;
+    /** Number of files staged from the plugin-level lib/ sibling (runtime assets). */
+    scriptLibs: number;
 }
 
 /** Configurable plugin artifact classes accepted by `superskill.jsonc`. */
@@ -168,6 +171,7 @@ export function mapPluginToRulesync(
         hooks: false,
         mcp: false,
         scripts: 0,
+        scriptLibs: 0,
     };
     const features = new Set<MapFeature>(options.features ?? ['skills', 'commands', 'subagents', 'hooks', 'mcp']);
 
@@ -292,6 +296,18 @@ export function mapPluginToRulesync(
         const scriptsOut = join(outputDir, 'scripts', pluginName);
         copyAndRewriteDirectory(pluginScriptsDir, scriptsOut, pluginName);
         result.scripts = countFilesInDir(scriptsOut);
+    }
+
+    // Plugin-level runtime library — a plugin may ship a `lib/` sibling next to
+    // `scripts/` whose staged entrypoints import it as `../lib/<file>` from the
+    // shared scripts root (sp plugin). Stage it at the same relative position or
+    // the staged entrypoints load a stale/absent lib. Verbatim copy: lib output is
+    // generated, and the skill-reference rewrite could corrupt bundle content.
+    const pluginLibDir = join(pluginPath, 'lib');
+    if (existsSync(pluginLibDir)) {
+        const libOut = join(outputDir, 'scripts', 'lib');
+        cpSync(pluginLibDir, libOut, { recursive: true });
+        result.scriptLibs = countFilesInDir(libOut);
     }
 
     return result;
