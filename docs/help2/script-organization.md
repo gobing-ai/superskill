@@ -67,6 +67,17 @@ file wins. Exit codes are fail-closed: `0` found, `2` not found (a deployment er
 graceful-degradation case), `1` invalid arguments (including any `rel` with traversal, absolute, or
 drive-letter segments).
 
+### Verify staged entrypoints — `script verify`
+
+```bash
+superskill script verify <plugin>           # verify staged scripts against their install stamp
+superskill script verify <plugin> --json    # JSON output envelope
+superskill script verify <plugin> --global  # verify only the global scripts root (~/.agents/scripts/)
+superskill script verify <plugin> --project # verify only the project scripts root
+```
+
+`script verify` validates staged plugin scripts against the `.superskill-stamp.json` manifest recorded at install time (upstream plugin version and sorted SHA-256 hashes of each staged file). Exits `0` when all hashes match, `1` on hash drift, missing files, or an unreadable stamp.
+
 ### Entrypoint contract (portable runtimes)
 
 Staged entrypoints must run on a target host without Bun:
@@ -106,7 +117,8 @@ runner's canonical hook JSON to stdout; unknown ids exit `2` (a config bug, neve
 - **Rulesync and surrogate targets** (`codex`, `pi`, `opencode`, `antigravity-cli`,
   `antigravity-ide`, `hermes`) — install stages the tree once to the shared agents scripts root
   (`~/.agents/scripts/<plugin>/` global, or the project equivalent), regardless of how many targets
-  an install touches. Re-install replaces only that plugin's subtree.
+  an install touches. Sibling `lib/` dependencies are staged alongside (`.agents/scripts/lib/`).
+  Re-install replaces only that plugin's subtree while keeping shared dependencies intact.
 
 ## Anti-patterns
 

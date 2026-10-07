@@ -47,9 +47,9 @@ New to superskill? Follow the [quick start](./quick-start.md). Installing on a n
 | `superskill hook` | [hook](./hook.md) | Hook definitions, emit, and the runtime dispatcher |
 | `superskill magent` | [magent](./magent.md) | Main-agent configurations |
 
-Three more top-level commands round out the CLI: `update` (re-install stale plugins),
-`doctor` (read-only inspection of the opt-in Sand-host layout), and `script`
-(`path`, `run`, `convert` — the plugin-script invocation surfaces, documented in
+Three more top-level commands round out the CLI: `update` (re-install stale plugins and apply
+stale lock-tracked skills), `doctor` (read-only inspection of the opt-in Sand-host layout), and `script`
+(`path`, `run`, `convert`, `verify` — the plugin-script invocation and verification surfaces, documented in
 [plugin script organization](./script-organization.md)).
 
 ## The shape of the CLI
@@ -57,14 +57,14 @@ Three more top-level commands round out the CLI: `update` (re-install stale plug
 ```
 superskill
 ├── install <plugin>            # distribute a plugin to target agents
-├── update [plugin]             # re-install stale marketplace plugins
+├── update [name]               # re-install stale marketplace plugins and skills
 ├── doctor                      # read-only target inspection
 ├── agent <op> <name>           # subagent definitions
 ├── skill <op> <name>           # skill definitions (+ add/list/remove/update/package/migrate)
 ├── command <op> <name>         # slash command definitions
 ├── hook <op> <name>            # hook definitions (+ emit/run)
 ├── magent <op> <name>          # main-agent configs
-└── script <op>                 # plugin script path/run/convert
+└── script <op>                 # plugin script path/run/convert/verify
 ```
 
 The five type commands share one quality lifecycle:
