@@ -1,6 +1,8 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { homedir } from 'node:os';
 import { join } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { getEnvVar, getEnvVars } from '@gobing-ai/superskill-core';
 import { NodeProcessExecutor, type ProcessExecutor } from '@gobing-ai/ts-runtime';
 import { echo, echoError } from '@gobing-ai/ts-utils';
@@ -229,6 +231,107 @@ function spurContextDir(env: NodeJS.ProcessEnv): string {
     return join(env.CLAUDE_PROJECT_DIR ?? process.cwd(), '.spur', 'context');
 }
 
+// ── sp/context-* plugin delegation (spur task 1166) ─────────────────────────
+//
+// The sp plugin ships self-contained hook scripts (spur tasks 0232/1159) that are the
+// single source of truth for session ownership, session reuse and token recording. The
+// in-CLI runners below are a fallback and have drifted from them (no owner gating, a
+// different pointer scheme, fewer recorded tools). When the plugin's scripts resolve,
+// import them in-process — superskill runs under Bun, which loads their dependency-free
+// TypeScript directly — and delegate. Delegation is all-or-nothing across the three
+// hooks: a plugin too old to export the payload adapters falls back to the in-CLI
+// runners for every hook, never a mixed pointer scheme. Every resolution, import or
+// call failure fails open to the in-CLI runner the same way.
+
+interface SpPluginContextDelegate {
+    start: (text: string, env: NodeJS.ProcessEnv) => unknown;
+    stop: (text: string, env: NodeJS.ProcessEnv) => unknown;
+    postTool: (contextDir: string, payload: unknown) => unknown;
+}
+
+/** Numeric compare for cache version dirs like `0.4.1` (non-numeric segments sort last). */
+function compareVersionDirs(a: string, b: string): number {
+    const pa = a.split('.').map((p) => Number.parseInt(p, 10));
+    const pb = b.split('.').map((p) => Number.parseInt(p, 10));
+    for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+        const na = pa[i];
+        const nb = pb[i];
+        const va = na === undefined || Number.isNaN(na) ? -1 : na;
+        const vb = nb === undefined || Number.isNaN(nb) ? -1 : nb;
+        if (va !== vb) return va - vb;
+    }
+    return 0;
+}
+
+/** Resolve `<root>/hooks/<name>.ts` when the file exists, else null. */
+function scriptUnder(root: string | undefined, name: string): string | null {
+    if (!root) return null;
+    const script = join(root, 'hooks', `${name}.ts`);
+    return existsSync(script) ? script : null;
+}
+
+/**
+ * Resolve the plugin's `<name>` hook script. Order: explicit `SPUR_PLUGIN_ROOT`, then
+ * `CLAUDE_PLUGIN_ROOT` (set by Claude Code for plugin hook commands), then the newest
+ * version under Claude's plugin cache (`<CLAUDE_CONFIG_DIR|~/.claude>/plugins/cache/<mkt>/sp/<ver>`).
+ */
+export function resolveSpPluginScript(env: NodeJS.ProcessEnv, name: string): string | null {
+    const explicit = scriptUnder(env.SPUR_PLUGIN_ROOT, name) ?? scriptUnder(env.CLAUDE_PLUGIN_ROOT, name);
+    if (explicit) return explicit;
+
+    const cacheRoot = join(env.CLAUDE_CONFIG_DIR ?? join(homedir(), '.claude'), 'plugins', 'cache');
+    const candidates: { version: string; script: string }[] = [];
+    try {
+        for (const marketplace of readdirSync(cacheRoot)) {
+            let versions: string[];
+            try {
+                versions = readdirSync(join(cacheRoot, marketplace, 'sp'));
+            } catch {
+                continue; // marketplace without an sp plugin
+            }
+            for (const version of versions) {
+                const script = scriptUnder(join(cacheRoot, marketplace, 'sp', version), name);
+                if (script) candidates.push({ version, script });
+            }
+        }
+    } catch {
+        return null;
+    }
+    candidates.sort((a, b) => compareVersionDirs(b.version, a.version));
+    return candidates[0]?.script ?? null;
+}
+
+/**
+ * Load the plugin's context-hook delegate, or null when any of the three scripts or
+ * adapter exports is missing/unloadable (old plugin, partial install). All-or-nothing:
+ * start/stop/post-tool must come from one scheme, so a partial delegate never activates.
+ */
+async function loadSpPluginDelegate(env: NodeJS.ProcessEnv): Promise<SpPluginContextDelegate | null> {
+    const startScript = resolveSpPluginScript(env, 'context-session-start');
+    const stopScript = resolveSpPluginScript(env, 'context-session-stop');
+    const postToolScript = resolveSpPluginScript(env, 'context-post-tool');
+    if (!startScript || !stopScript || !postToolScript) return null;
+    try {
+        const start = (await import(pathToFileURL(startScript).href)) as Record<string, unknown>;
+        const stop = (await import(pathToFileURL(stopScript).href)) as Record<string, unknown>;
+        const post = (await import(pathToFileURL(postToolScript).href)) as Record<string, unknown>;
+        if (
+            typeof start.recordSessionStartFromPayloadText !== 'function' ||
+            typeof stop.recordSessionEndFromPayloadText !== 'function' ||
+            typeof post.recordToolUseEvent !== 'function'
+        ) {
+            return null;
+        }
+        return {
+            start: start.recordSessionStartFromPayloadText as SpPluginContextDelegate['start'],
+            stop: stop.recordSessionEndFromPayloadText as SpPluginContextDelegate['stop'],
+            postTool: post.recordToolUseEvent as SpPluginContextDelegate['postTool'],
+        };
+    } catch {
+        return null;
+    }
+}
+
 interface SpurSession {
     id: string;
     path: string;
@@ -284,6 +387,15 @@ function readSpurSession(dir: string, stdinText: string): SpurSession | null {
 /** PostToolUse (matcher Read|Write|Edit): append one token-estimate event to the ledger. */
 const spContextPostTool: HookRunner = {
     async run(env, stdinText) {
+        const delegate = await loadSpPluginDelegate(env);
+        if (delegate) {
+            try {
+                delegate.postTool(spurContextDir(env), JSON.parse(stdinText));
+            } catch {
+                // fail-open: delegation errors (incl. malformed payload) never wedge the agent
+            }
+            return OK;
+        }
         const dir = spurContextDir(env);
         let payload: unknown;
         try {
@@ -342,6 +454,15 @@ const spContextPostTool: HookRunner = {
 /** SessionStart: create a payload-scoped session file and append `session_start`. */
 const spContextSessionStart: HookRunner = {
     async run(env, stdinText) {
+        const delegate = await loadSpPluginDelegate(env);
+        if (delegate) {
+            try {
+                delegate.start(stdinText, env);
+            } catch {
+                // fail-open
+            }
+            return OK;
+        }
         const dir = spurContextDir(env);
         try {
             mkdirSync(dir, { recursive: true });
@@ -381,6 +502,15 @@ const spContextSessionStart: HookRunner = {
 /** Stop: aggregate totals from the append-only ledger, append `session_end`, then clean up. */
 const spContextSessionStop: HookRunner = {
     async run(env, stdinText) {
+        const delegate = await loadSpPluginDelegate(env);
+        if (delegate) {
+            try {
+                delegate.stop(stdinText, env);
+            } catch {
+                // fail-open
+            }
+            return OK;
+        }
         const dir = spurContextDir(env);
         const session = readSpurSession(dir, stdinText);
         if (!session) return OK;

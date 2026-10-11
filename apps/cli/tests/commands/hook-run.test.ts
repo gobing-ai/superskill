@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, mock, spyOn } from 'bun:test';
-import { existsSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { getEnvVar, removeEnvVar, setEnvVar } from '@gobing-ai/superskill-core';
@@ -10,6 +10,7 @@ import {
     hookRun,
     parseSpurBinSpec,
     registerHookRun,
+    resolveSpPluginScript,
     resolveSpurTaskOwnership,
     runSpTaskWriteGuard,
 } from '../../src/commands/hook-run';
@@ -531,6 +532,12 @@ describe('hook run — sp/context-* (indexed-context token ledger, all fail-open
     // missing session, bad JSON, wrong tool), plus a golden-path ledger write.
     let tmpRoot: string;
 
+    // Hermeticity (spur#1166): the runners may delegate to the sp plugin's own hook scripts
+    // resolved via SPUR_PLUGIN_ROOT / CLAUDE_PLUGIN_ROOT / the Claude plugin cache. Pin the
+    // config dir to the temp root so the machine's real plugin cache never leaks in — these
+    // tests exercise the in-CLI fallback. Delegation has its own describe below.
+    const ctxEnv = (): NodeJS.ProcessEnv => ({ CLAUDE_PROJECT_DIR: tmpRoot, CLAUDE_CONFIG_DIR: tmpRoot });
+
     function sessionPaths(): string[] {
         const ctxDir = join(tmpRoot, '.spur', 'context');
         if (!existsSync(ctxDir)) return [];
@@ -553,7 +560,7 @@ describe('hook run — sp/context-* (indexed-context token ledger, all fail-open
     });
 
     it('context-session-start: creates an isolated session file + session_start event and exits 0', async () => {
-        const { code, out } = await capture('sp', 'context-session-start', { CLAUDE_PROJECT_DIR: tmpRoot }, '');
+        const { code, out } = await capture('sp', 'context-session-start', ctxEnv(), '');
         expect(code).toBe(0);
         expect(out).toBe('');
         const ctxDir = join(tmpRoot, '.spur', 'context');
@@ -571,13 +578,13 @@ describe('hook run — sp/context-* (indexed-context token ledger, all fail-open
     });
 
     it('context-post-tool: appends a read event and exits 0', async () => {
-        capture('sp', 'context-session-start', { CLAUDE_PROJECT_DIR: tmpRoot }, '');
+        await capture('sp', 'context-session-start', ctxEnv(), '');
         const payload = JSON.stringify({
             tool_name: 'Read',
             tool_input: { file_path: '/tmp/x.md' },
             tool_response: { content: 'hello world' },
         });
-        const { code, out } = await capture('sp', 'context-post-tool', { CLAUDE_PROJECT_DIR: tmpRoot }, payload);
+        const { code, out } = await capture('sp', 'context-post-tool', ctxEnv(), payload);
         expect(code).toBe(0);
         expect(out).toBe('');
         const ledger = readFileSync(join(tmpRoot, '.spur', 'context', 'token-ledger.jsonl'), 'utf-8')
@@ -604,24 +611,24 @@ describe('hook run — sp/context-* (indexed-context token ledger, all fail-open
             tool_input: { file_path: '/tmp/x.md' },
             tool_response: { content: 'hello' },
         });
-        const { code, out } = await capture('sp', 'context-post-tool', { CLAUDE_PROJECT_DIR: tmpRoot }, payload);
+        const { code, out } = await capture('sp', 'context-post-tool', ctxEnv(), payload);
         expect(code).toBe(0);
         expect(out).toBe('');
     });
 
     it('context-post-tool: fails open on malformed JSON', async () => {
-        capture('sp', 'context-session-start', { CLAUDE_PROJECT_DIR: tmpRoot }, '');
-        const { code, out } = await capture('sp', 'context-post-tool', { CLAUDE_PROJECT_DIR: tmpRoot }, 'not json');
+        await capture('sp', 'context-session-start', ctxEnv(), '');
+        const { code, out } = await capture('sp', 'context-post-tool', ctxEnv(), 'not json');
         expect(code).toBe(0);
         expect(out).toBe('');
     });
 
     it('context-post-tool: ignores non-Read/Write/Edit tools (matcher contract)', async () => {
-        capture('sp', 'context-session-start', { CLAUDE_PROJECT_DIR: tmpRoot }, '');
+        await capture('sp', 'context-session-start', ctxEnv(), '');
         const { code, out } = await capture(
             'sp',
             'context-post-tool',
-            { CLAUDE_PROJECT_DIR: tmpRoot },
+            ctxEnv(),
             JSON.stringify({ tool_name: 'Bash', tool_input: { file_path: '/tmp/x' } }),
         );
         expect(code).toBe(0);
@@ -634,21 +641,21 @@ describe('hook run — sp/context-* (indexed-context token ledger, all fail-open
     });
 
     it('context-session-stop: appends session_end with totals and removes its session file', async () => {
-        capture('sp', 'context-session-start', { CLAUDE_PROJECT_DIR: tmpRoot }, '');
-        capture(
+        await capture('sp', 'context-session-start', ctxEnv(), '');
+        await capture(
             'sp',
             'context-post-tool',
-            { CLAUDE_PROJECT_DIR: tmpRoot },
+            ctxEnv(),
             JSON.stringify({
                 tool_name: 'Read',
                 tool_input: { file_path: '/a.md' },
                 tool_response: { content: 'aaaa' },
             }),
         );
-        capture(
+        await capture(
             'sp',
             'context-post-tool',
-            { CLAUDE_PROJECT_DIR: tmpRoot },
+            ctxEnv(),
             JSON.stringify({
                 tool_name: 'Write',
                 tool_input: { file_path: '/b.md' },
@@ -656,7 +663,7 @@ describe('hook run — sp/context-* (indexed-context token ledger, all fail-open
             }),
         );
 
-        const { code, out } = await capture('sp', 'context-session-stop', { CLAUDE_PROJECT_DIR: tmpRoot }, '');
+        const { code, out } = await capture('sp', 'context-session-stop', ctxEnv(), '');
         expect(code).toBe(0);
         expect(out).toBe('');
 
@@ -674,20 +681,20 @@ describe('hook run — sp/context-* (indexed-context token ledger, all fail-open
     });
 
     it('context-session-stop: fails open when no session exists', async () => {
-        const { code, out } = await capture('sp', 'context-session-stop', { CLAUDE_PROJECT_DIR: tmpRoot }, '');
+        const { code, out } = await capture('sp', 'context-session-stop', ctxEnv(), '');
         expect(code).toBe(0);
         expect(out).toBe('');
     });
 
     it('isolates interleaved concurrent sessions by payload session_id', async () => {
-        const env = { CLAUDE_PROJECT_DIR: tmpRoot };
+        const env = ctxEnv();
         const sessionA = JSON.stringify({ session_id: 'session-a' });
         const sessionB = JSON.stringify({ session_id: 'session-b' });
-        capture('sp', 'context-session-start', env, sessionA);
-        capture('sp', 'context-session-start', env, sessionB);
+        await capture('sp', 'context-session-start', env, sessionA);
+        await capture('sp', 'context-session-start', env, sessionB);
         expect(sessionPaths()).toHaveLength(2);
 
-        capture(
+        await capture(
             'sp',
             'context-post-tool',
             env,
@@ -699,7 +706,7 @@ describe('hook run — sp/context-* (indexed-context token ledger, all fail-open
             }),
         );
         for (const file of ['/b.md', '/c.md']) {
-            capture(
+            await capture(
                 'sp',
                 'context-post-tool',
                 env,
@@ -712,7 +719,7 @@ describe('hook run — sp/context-* (indexed-context token ledger, all fail-open
             );
         }
 
-        capture('sp', 'context-session-stop', env, sessionA);
+        await capture('sp', 'context-session-stop', env, sessionA);
         expect(sessionPaths()).toHaveLength(1);
         const remaining = JSON.parse(readFileSync(onlySessionPath(), 'utf-8'));
         expect(remaining.session).toBe('session-b');
@@ -720,7 +727,7 @@ describe('hook run — sp/context-* (indexed-context token ledger, all fail-open
         expect(remaining.reads).toBeUndefined();
         expect(remaining.writes).toBeUndefined();
 
-        capture('sp', 'context-session-stop', env, sessionB);
+        await capture('sp', 'context-session-stop', env, sessionB);
         expect(sessionPaths()).toHaveLength(0);
         const events = readFileSync(join(tmpRoot, '.spur', 'context', 'token-ledger.jsonl'), 'utf-8')
             .trim()
@@ -743,10 +750,10 @@ describe('hook run — sp/context-* (indexed-context token ledger, all fail-open
         // leave unreadable counters. Stop must ignore any present counters and always aggregate
         // the append-only ledger: only parseable read/write events whose session exactly
         // matches count; malformed lines and foreign sessions are skipped.
-        const env = { CLAUDE_PROJECT_DIR: tmpRoot };
+        const env = ctxEnv();
         const sessionId = 'ledger-wins';
         const sessionPayload = JSON.stringify({ session_id: sessionId });
-        capture('sp', 'context-session-start', env, sessionPayload);
+        await capture('sp', 'context-session-start', env, sessionPayload);
         const ctxDir = join(tmpRoot, '.spur', 'context');
         const sessionFile = onlySessionPath();
         const started = JSON.parse(readFileSync(sessionFile, 'utf-8'));
@@ -792,9 +799,9 @@ describe('hook run — sp/context-* (indexed-context token ledger, all fail-open
         // WHY: a corrupted/truncated session file (e.g. {reads:0} with no session id) must not
         // crash Stop. The guard reads the id, finds it missing, and returns OK without writing
         // a bogus session_end event.
-        const env = { CLAUDE_PROJECT_DIR: tmpRoot };
+        const env = ctxEnv();
         const sessionPayload = JSON.stringify({ session_id: 'corrupt' });
-        capture('sp', 'context-session-start', env, sessionPayload);
+        await capture('sp', 'context-session-start', env, sessionPayload);
         const sessionFile = onlySessionPath();
         writeFileSync(sessionFile, JSON.stringify({ reads: 0, writes: 0 })); // no "session" field
 
@@ -813,15 +820,159 @@ describe('hook run — sp/context-* (indexed-context token ledger, all fail-open
         // WHY: Claude Code Stop payloads carry transcript_path (not session_id). The context hooks
         // must key the session file off transcript_path so a Stop without session_id still resolves
         // to the same session the SessionStart/PostToolUse hooks created from that transcript.
-        const env = { CLAUDE_PROJECT_DIR: tmpRoot };
+        const env = ctxEnv();
         const transcript = '/tmp/session-xyz.jsonl';
         const startPayload = JSON.stringify({ transcript_path: transcript });
-        capture('sp', 'context-session-start', env, startPayload);
+        await capture('sp', 'context-session-start', env, startPayload);
         expect(sessionPaths()).toHaveLength(1);
 
         // A Stop with the SAME transcript_path must resolve to that session and clean it up.
         const { code } = await capture('sp', 'context-session-stop', env, startPayload);
         expect(code).toBe(0);
         expect(sessionPaths()).toHaveLength(0);
+    });
+});
+
+describe('hook run — sp/context-* plugin delegation (spur#1166)', () => {
+    // The in-CLI sp/context-* runners are a fallback for the plugin's self-contained hook
+    // scripts. When the scripts resolve (SPUR_PLUGIN_ROOT / CLAUDE_PLUGIN_ROOT / Claude plugin
+    // cache) and export the payload adapters, all three hooks delegate so ownership gating
+    // (spur#1159) and the plugin's pointer scheme apply on the installed Claude path.
+    let tmpRoot: string;
+    let pluginRoot: string;
+
+    const FIXTURES: Record<string, string> = {
+        'context-session-start.ts': `import { appendFileSync, mkdirSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+export function recordSessionStartFromPayloadText(text: string, env: Record<string, string | undefined>) {
+    const dir = join(env.CLAUDE_PROJECT_DIR ?? process.cwd(), '.spur', 'context');
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, '.session.json'), JSON.stringify({ session: 'fixture-session', owner: { host: 'claude', sessionId: 'fixture-owner' } }));
+    appendFileSync(join(dir, 'token-ledger.jsonl'), JSON.stringify({ marker: 'delegated-start', payload: text }) + '\\n');
+}
+`,
+        'context-session-stop.ts': `import { appendFileSync, rmSync } from 'node:fs';
+import { join } from 'node:path';
+export function recordSessionEndFromPayloadText(text: string, env: Record<string, string | undefined>) {
+    const dir = join(env.CLAUDE_PROJECT_DIR ?? process.cwd(), '.spur', 'context');
+    appendFileSync(join(dir, 'token-ledger.jsonl'), JSON.stringify({ marker: 'delegated-stop' }) + '\\n');
+    rmSync(join(dir, '.session.json'), { force: true });
+}
+`,
+        'context-post-tool.ts': `import { appendFileSync } from 'node:fs';
+import { join } from 'node:path';
+export function recordToolUseEvent(dir: string, payload: unknown) {
+    appendFileSync(join(dir, 'token-ledger.jsonl'), JSON.stringify({ marker: 'delegated-post-tool', tool: (payload as { tool_name?: string }).tool_name }) + '\\n');
+}
+`,
+    };
+
+    function writeFixture(files: string[]): void {
+        for (const name of files) {
+            writeFileSync(join(pluginRoot, 'hooks', name), FIXTURES[name] ?? '');
+        }
+    }
+
+    function ledgerMarkers(): Array<Record<string, unknown>> {
+        const ledger = join(tmpRoot, '.spur', 'context', 'token-ledger.jsonl');
+        if (!existsSync(ledger)) return [];
+        return readFileSync(ledger, 'utf-8')
+            .trim()
+            .split('\n')
+            .filter((l) => l.trim())
+            .map((l) => JSON.parse(l) as Record<string, unknown>);
+    }
+
+    function shaSessionCount(): number {
+        const ctxDir = join(tmpRoot, '.spur', 'context');
+        if (!existsSync(ctxDir)) return 0;
+        return readdirSync(ctxDir).filter((n) => /^\.session-[a-f0-9]{16}\.json$/.test(n)).length;
+    }
+
+    beforeEach(() => {
+        tmpRoot = mkdtempSync(join(tmpdir(), 'hook-run-delegate-'));
+        pluginRoot = mkdtempSync(join(tmpdir(), 'hook-run-plugin-'));
+        mkdirSync(join(pluginRoot, 'hooks'), { recursive: true });
+    });
+    afterEach(() => {
+        mock.restore();
+    });
+
+    it('resolveSpPluginScript: SPUR_PLUGIN_ROOT wins, then CLAUDE_PLUGIN_ROOT, then newest cache version', () => {
+        writeFixture(['context-session-start.ts']);
+        const byOverride = resolveSpPluginScript({ SPUR_PLUGIN_ROOT: pluginRoot }, 'context-session-start');
+        expect(byOverride).toBe(join(pluginRoot, 'hooks', 'context-session-start.ts'));
+
+        const claudeRoot = mkdtempSync(join(tmpdir(), 'hook-run-claude-'));
+        const byPluginRoot = resolveSpPluginScript(
+            { CLAUDE_PLUGIN_ROOT: claudeRoot, CLAUDE_CONFIG_DIR: tmpRoot },
+            'context-session-start',
+        );
+        expect(byPluginRoot).toBeNull(); // no hooks/ script under CLAUDE_PLUGIN_ROOT, empty cache
+
+        // Cache scan picks the numerically newest version across marketplaces.
+        const configDir = mkdtempSync(join(tmpdir(), 'hook-run-cache-'));
+        for (const [marketplace, version] of [
+            ['mkt-a', '0.4.1'],
+            ['mkt-b', '0.10.0'],
+        ] as const) {
+            const dir = join(configDir, 'plugins', 'cache', marketplace, 'sp', version, 'hooks');
+            mkdirSync(dir, { recursive: true });
+            writeFileSync(join(dir, 'context-session-start.ts'), FIXTURES['context-session-start.ts'] ?? '');
+        }
+        const byCache = resolveSpPluginScript({ CLAUDE_CONFIG_DIR: configDir }, 'context-session-start');
+        expect(byCache).toBe(
+            join(configDir, 'plugins', 'cache', 'mkt-b', 'sp', '0.10.0', 'hooks', 'context-session-start.ts'),
+        );
+    });
+
+    it('delegates start/post-tool/stop to the plugin scripts and never touches the in-CLI scheme', async () => {
+        writeFixture(['context-session-start.ts', 'context-session-stop.ts', 'context-post-tool.ts']);
+        const env = { CLAUDE_PROJECT_DIR: tmpRoot, CLAUDE_CONFIG_DIR: tmpRoot, SPUR_PLUGIN_ROOT: pluginRoot };
+
+        const start = await capture('sp', 'context-session-start', env, JSON.stringify({ session_id: 'native-1' }));
+        expect(start.code).toBe(0);
+        const ctxDir = join(tmpRoot, '.spur', 'context');
+        const pointer = JSON.parse(readFileSync(join(ctxDir, '.session.json'), 'utf-8'));
+        expect(pointer.session).toBe('fixture-session');
+        expect(shaSessionCount()).toBe(0);
+
+        await capture(
+            'sp',
+            'context-post-tool',
+            env,
+            JSON.stringify({ tool_name: 'Bash', tool_input: { command: 'ls' } }),
+        );
+        const stop = await capture('sp', 'context-session-stop', env, JSON.stringify({ session_id: 'native-1' }));
+        expect(stop.code).toBe(0);
+        expect(existsSync(join(ctxDir, '.session.json'))).toBe(false);
+
+        expect(ledgerMarkers().map((e) => e.marker)).toEqual([
+            'delegated-start',
+            'delegated-post-tool',
+            'delegated-stop',
+        ]);
+    });
+
+    it('falls back to the in-CLI runners when the plugin lacks an adapter export (all-or-nothing)', async () => {
+        // Stop adapter missing → delegation must not activate for ANY of the three hooks.
+        writeFixture(['context-session-start.ts', 'context-post-tool.ts']);
+        const env = { CLAUDE_PROJECT_DIR: tmpRoot, CLAUDE_CONFIG_DIR: tmpRoot, SPUR_PLUGIN_ROOT: pluginRoot };
+
+        const { code } = await capture('sp', 'context-session-start', env, '');
+        expect(code).toBe(0);
+        expect(shaSessionCount()).toBe(1); // in-CLI .session-<sha16>.json scheme
+        expect(existsSync(join(tmpRoot, '.spur', 'context', '.session.json'))).toBe(false);
+    });
+
+    it('falls back when the plugin script is unloadable', async () => {
+        writeFileSync(join(pluginRoot, 'hooks', 'context-session-start.ts'), 'export const broken = ;');
+        writeFixture(['context-session-stop.ts', 'context-post-tool.ts']);
+        const env = { CLAUDE_PROJECT_DIR: tmpRoot, CLAUDE_CONFIG_DIR: tmpRoot, SPUR_PLUGIN_ROOT: pluginRoot };
+
+        const { code, out } = await capture('sp', 'context-session-start', env, '');
+        expect(code).toBe(0);
+        expect(out).toBe('');
+        expect(shaSessionCount()).toBe(1);
     });
 });
