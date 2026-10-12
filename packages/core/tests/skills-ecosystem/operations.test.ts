@@ -753,6 +753,70 @@ describe('operations.ts - checkSkills read-only check (F8 task 0134)', () => {
         await rm(testHome, { recursive: true, force: true });
     });
 
+    it('returns a structured failure instead of throwing for a malformed local lock (AC3)', async () => {
+        const projectDir = await makeHome('ops-check-malformed-local-');
+        const lockPath = join(projectDir, 'skills-lock.json');
+        const original = `{"version":1,"skills":{"bad":"invalid-entry","good":{"source":"x","sourceType":"local","computedHash":"h"}}}`;
+        writeFileSync(lockPath, original);
+
+        const res = await checkSkills(undefined, { cwd: projectDir });
+
+        expect(res.success).toBe(false);
+        expect(res.rows).toEqual([]);
+        expect(res.error).toContain('malformed skill entry');
+        expect(readFileSync(lockPath, 'utf-8')).toBe(original);
+
+        await rm(projectDir, { recursive: true, force: true });
+    });
+
+    it('returns a structured failure instead of throwing for a malformed global lock (AC3)', async () => {
+        const testHome = await makeHome('ops-check-malformed-global-');
+        await mkdir(join(testHome, '.agents'), { recursive: true });
+        const lockPath = getGlobalLockPath({}, testHome);
+        const original = JSON.stringify({ version: 3, skills: { bad: [1] } });
+        writeFileSync(lockPath, original);
+
+        const res = await checkSkills(undefined, { global: true, homeDir: testHome, env: {} });
+
+        expect(res.success).toBe(false);
+        expect(res.rows).toEqual([]);
+        expect(res.error).toContain('malformed skill entry');
+        expect(readFileSync(lockPath, 'utf-8')).toBe(original);
+
+        await rm(testHome, { recursive: true, force: true });
+    });
+
+    it('add/remove/update refuse a lock with malformed entries without touching installed skills (AC2)', async () => {
+        const testHome = await makeHome('ops-mutate-malformed-');
+        const sourceDir = join(testHome, 'sentinel-src');
+        await makeSource(sourceDir, skillMd('sentinel-skill'));
+        expect((await addSkills(sourceDir, { global: true, homeDir: testHome, env: {} })).success).toBe(true);
+
+        const lockPath = getGlobalLockPath({}, testHome);
+        const sentinelPath = join(testHome, '.agents/skills/sentinel-skill/SKILL.md');
+        expect(existsSync(sentinelPath)).toBe(true);
+        const sentinelBefore = readFileSync(sentinelPath, 'utf-8');
+        // Corrupt one entry while the valid one and the installed skill stay in place.
+        const valid = JSON.parse(readFileSync(lockPath, 'utf-8')) as { skills: Record<string, unknown> };
+        writeFileSync(lockPath, JSON.stringify({ version: 3, skills: { ...valid.skills, bad: 'invalid-entry' } }));
+        const lockBefore = readFileSync(lockPath, 'utf-8');
+
+        const addRes = await addSkills(sourceDir, { global: true, homeDir: testHome, env: {} });
+        expect(addRes.success).toBe(false);
+        expect(addRes.error).toContain('malformed skill entry');
+        const removeRes = await removeSkills(['sentinel-skill'], { global: true, homeDir: testHome, env: {} });
+        expect(removeRes.success).toBe(false);
+        expect(removeRes.removed).toEqual([]);
+        const updateRes = await updateSkills(['sentinel-skill'], { global: true, homeDir: testHome, env: {} });
+        expect(updateRes.success).toBe(false);
+        expect(updateRes.updated).toEqual([]);
+
+        expect(readFileSync(lockPath, 'utf-8')).toBe(lockBefore);
+        expect(readFileSync(sentinelPath, 'utf-8')).toBe(sentinelBefore);
+
+        await rm(testHome, { recursive: true, force: true });
+    });
+
     it('updateSkills honors precheck rows without recomputing or reclassifying', async () => {
         const testHome = await makeHome('ops-precheck-');
         const sourceDir = join(testHome, 'pc-src');

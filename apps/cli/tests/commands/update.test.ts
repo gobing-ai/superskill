@@ -1498,6 +1498,54 @@ describe('executeUpdate - lock-tracked skills (F8 task 0135)', () => {
         expect(output).toContain('Skills:');
         expect(output).toContain('last30days: unavailable: Failed to fetch source tree');
     });
+    it('emits one exit-2 JSON envelope for a malformed lock entry and preserves every byte (AC3)', async () => {
+        workspace();
+        const home = testHome as string;
+        const now = new Date().toISOString();
+        writeGlobalSkillsLock({
+            'bad-entry': 'invalid-entry',
+            last30days: {
+                source: 'owner/repo',
+                sourceType: 'github',
+                sourceUrl: 'https://github.com/owner/repo',
+                skillFolderHash: 'stored-hash',
+                installedAt: now,
+                updatedAt: now,
+            },
+        });
+        const lockPath = join(home, '.agents', '.skill-lock.json');
+        const lockBefore = readFileSync(lockPath, 'utf-8');
+        // Installed-skill sentinel: the refusal must not touch installed files either.
+        const canonicalPath = join(home, '.agents', 'skills', 'last30days', 'SKILL.md');
+        mkdirSync(join(home, '.agents', 'skills', 'last30days'), { recursive: true });
+        writeFileSync(canonicalPath, 'sentinel bytes\n');
+        const stdout = spyOn(process.stdout, 'write').mockImplementation(() => true);
+        const stderr = spyOn(process.stderr, 'write').mockImplementation(() => true);
+
+        const code = await executeUpdate(
+            undefined,
+            ['codex'],
+            { check: true, global: true, json: true },
+            {
+                listBundledPlugins: () => [],
+            },
+        );
+
+        const output = drain(stdout);
+        const errors = drain(stderr);
+        stdout.mockRestore();
+        stderr.mockRestore();
+        expect(code).toBe(2);
+        // Exactly one JSON document on stdout — parsing the whole stream proves it.
+        const envelope = JSON.parse(output) as UpdateJsonEnvelope;
+        expect(envelope.check).toBe(true);
+        expect(envelope.rows).toEqual([]);
+        expect(envelope.summary).toEqual({ stale: 0, current: 0, unchecked: 0, legacy: 0, unavailable: 0 });
+        expect(envelope.exitCode).toBe(2);
+        expect(errors).toContain('malformed skill entry');
+        expect(readFileSync(lockPath, 'utf-8')).toBe(lockBefore);
+        expect(readFileSync(canonicalPath, 'utf-8')).toBe('sentinel bytes\n');
+    });
 });
 
 describe('executeUpdate - apply progress lines and JSON envelope (F8 task 0137)', () => {

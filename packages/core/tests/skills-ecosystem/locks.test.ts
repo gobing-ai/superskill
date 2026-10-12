@@ -9,9 +9,11 @@ import {
     computeCanonicalSkillFolderHash,
     computeContentHash,
     computeStructuredContentHash,
+    type GlobalSkillLockFile,
     getGlobalLockPath,
     getLocalLockPath,
     isCanonicalSkillPath,
+    type LocalSkillLockFile,
     readGlobalLock,
     readLocalLock,
     removeSkillFromGlobalLock,
@@ -404,9 +406,10 @@ describe('locks.ts - Dual lock read/writers & hash invariant', () => {
 
         const lock = await readGlobalLock(env);
         expect(lock.version).toBe(3);
-        // Field-wise assertions: the vendor sample legitimately omits `sourceUrl` (runtime
-        // JSON is not interface-validated — the vendor's own interface also marks it
-        // required, so this documents the tolerated real-world shape).
+        // Field-wise assertions: the vendor sample legitimately omits `sourceUrl`, which the
+        // runtime entry schema treats as optional for both kinds — `GlobalSkillLockEntry`
+        // still declares it required (as does the vendor's own interface), so this documents
+        // the tolerated real-world shape rather than a relaxation of the published type.
         expect(lock.skills['skill-a']?.source).toBe('owner/repo');
         expect(lock.skills['skill-a']?.skillPath).toBe('skills/skill-a/SKILL.md');
         expect(lock.skills['skill-a']?.sourceType).toBe('github');
@@ -701,6 +704,247 @@ describe('locks.ts - corrupt lock preservation (R4/F4)', () => {
             const lock = await readLocalLock(dir);
             expect(lock.warning).toBeUndefined();
             expect(lock.skills.a?.source).toBe('s');
+        } finally {
+            rmSync(dir, { recursive: true, force: true });
+        }
+    });
+});
+
+describe('locks.ts - entry validation before consumers or mutations (R1/R2)', () => {
+    const validLocalEntry = { source: 'x', sourceType: 'local', computedHash: 'h' };
+    const validGlobalEntry = {
+        source: 'o/r',
+        sourceType: 'github',
+        sourceUrl: 'https://github.com/o/r',
+        skillFolderHash: 'h',
+        installedAt: '',
+        updatedAt: '',
+    };
+
+    // AC1: every shape that previously reached consumers as a typed entry. The case name is
+    // the JSON key so the failing row names its own shape in the assertion output.
+    const localInvalidEntries: Array<[string, unknown]> = [
+        ['primitive', 'invalid-entry'],
+        ['null', null],
+        ['array', [1, 2]],
+        ['missingComputedHash', { source: 'x', sourceType: 'local' }],
+        ['nonStringSource', { source: 42, sourceType: 'local', computedHash: 'h' }],
+        ['nonStringSourceUrl', { ...validLocalEntry, sourceUrl: 7 }],
+        ['nonStringRef', { ...validLocalEntry, ref: 7 }],
+        ['nonArraySubagents', { ...validLocalEntry, subagents: 'not-an-array' }],
+        ['nonStringSubagent', { ...validLocalEntry, subagents: [1] }],
+    ];
+    const globalInvalidEntries: Array<[string, unknown]> = [
+        ['primitive', 'invalid-entry'],
+        ['null', null],
+        ['array', [1, 2]],
+        ['missingSkillFolderHash', { source: 'o/r', sourceType: 'github', installedAt: '', updatedAt: '' }],
+        ['nonStringSource', { ...validGlobalEntry, source: 42 }],
+        ['nonStringUpdatedAt', { ...validGlobalEntry, updatedAt: 0 }],
+        ['nonStringSourceUrl', { ...validGlobalEntry, sourceUrl: 7 }],
+        ['nonStringPluginName', { ...validGlobalEntry, pluginName: 7 }],
+    ];
+
+    /** One malformed entry beside a valid sibling: warning + empty skills + identical bytes. */
+    async function expectMalformedEntriesRejected(
+        kind: 'local' | 'global',
+        cases: Array<[string, unknown]>,
+        validEntry: unknown,
+    ): Promise<void> {
+        const dir = mkdtempSync(join(tmpdir(), `lock-entry-${kind}-`));
+        const env = { XDG_STATE_HOME: dir };
+        if (kind === 'global') mkdirSync(join(dir, 'skills'), { recursive: true });
+        const lockPath = kind === 'local' ? join(dir, 'skills-lock.json') : getGlobalLockPath(env);
+        try {
+            for (const [key, value] of cases) {
+                const original = `{"version":${kind === 'local' ? 1 : 3},"skills":{${JSON.stringify(key)}:${JSON.stringify(value)},"good":${JSON.stringify(validEntry)}}}`;
+                writeFileSync(lockPath, original);
+
+                const lock = kind === 'local' ? await readLocalLock(dir) : await readGlobalLock(env);
+                expect(lock.warning).toContain('malformed skill entry');
+                expect(lock.warning).toContain(key);
+                // Whole-lock corruption: the valid sibling is never partially exposed.
+                expect(Object.keys(lock.skills)).toEqual([]);
+                expect(readFileSync(lockPath, 'utf-8')).toBe(original);
+            }
+        } finally {
+            rmSync(dir, { recursive: true, force: true });
+        }
+    }
+
+    it('readLocalLock rejects every malformed local entry shape and preserves the bytes (AC1)', async () => {
+        await expectMalformedEntriesRejected('local', localInvalidEntries, validLocalEntry);
+    });
+
+    it('readGlobalLock rejects every malformed global entry shape and preserves the bytes (AC1)', async () => {
+        await expectMalformedEntriesRejected('global', globalInvalidEntries, validGlobalEntry);
+    });
+
+    it('accepts empty strings, unknown sourceType/entry fields and own special-name keys (AC1)', async () => {
+        const dir = mkdtempSync(join(tmpdir(), 'lock-entry-valid-'));
+        const env = { XDG_STATE_HOME: dir };
+        mkdirSync(join(dir, 'skills'), { recursive: true });
+        const lockPath = getGlobalLockPath(env);
+        const localPath = join(dir, 'skills-lock.json');
+        try {
+            const localOriginal = `{"version":1,"skills":{"empty-strings":${JSON.stringify({ source: '', sourceType: '', computedHash: '', futureField: true })}}}`;
+            writeFileSync(localPath, localOriginal);
+            const localLock = await readLocalLock(dir);
+            expect(localLock.warning).toBeUndefined();
+            expect(Object.keys(localLock.skills)).toEqual(['empty-strings']);
+
+            const vendorShape = {
+                source: '',
+                sourceType: 'gitlab',
+                skillFolderHash: '',
+                installedAt: '',
+                updatedAt: '',
+                futureField: { nested: true },
+            };
+            const original = `{"version":3,"skills":{"empty-strings":${JSON.stringify(vendorShape)},"__proto__":${JSON.stringify(validGlobalEntry)},"constructor":${JSON.stringify(validGlobalEntry)}}}`;
+            writeFileSync(lockPath, original);
+
+            const lock = await readGlobalLock(env);
+            expect(lock.warning).toBeUndefined();
+            expect(Object.keys(lock.skills).sort()).toEqual(['__proto__', 'constructor', 'empty-strings']);
+            expect(lock.skills['empty-strings']?.source).toBe('');
+            expect((lock.skills['empty-strings'] as { futureField?: unknown })?.futureField).toEqual({ nested: true });
+
+            // Round-trip proves the unknown field survived instead of being filtered out.
+            await writeGlobalLock(lock, env);
+            const reread = JSON.parse(readFileSync(lockPath, 'utf-8')) as {
+                skills: Record<string, Record<string, unknown>>;
+            };
+            expect(reread.skills['empty-strings']).toEqual(vendorShape);
+            expect(Object.keys(reread.skills).sort()).toEqual(['__proto__', 'constructor', 'empty-strings']);
+        } finally {
+            rmSync(dir, { recursive: true, force: true });
+        }
+    });
+
+    it('keeps the version-mismatch contract for unsupported versions with malformed entries (AC2)', async () => {
+        const dir = mkdtempSync(join(tmpdir(), 'lock-entry-version-'));
+        const lockPath = join(dir, 'skills-lock.json');
+        try {
+            const original = '{"version":4,"skills":{"bad":"invalid-entry"}}';
+            writeFileSync(lockPath, original);
+
+            const lock = await readLocalLock(dir);
+            expect(lock.warning).toContain('newer than supported version');
+            expect(lock.warning).not.toContain('malformed skill entry');
+            expect(readFileSync(lockPath, 'utf-8')).toBe(original);
+        } finally {
+            rmSync(dir, { recursive: true, force: true });
+        }
+    });
+
+    it('raw writers refuse malformed caller input without creating or changing lock bytes (AC2)', async () => {
+        const dir = mkdtempSync(join(tmpdir(), 'lock-writer-entry-'));
+        const env = { XDG_STATE_HOME: dir };
+        const localPath = join(dir, 'skills-lock.json');
+        const globalPath = getGlobalLockPath(env);
+        try {
+            // Absent local lock: refusal must not create the file.
+            await expect(
+                writeLocalLock({ version: 1, skills: { bad: 'nope' } } as unknown as LocalSkillLockFile, dir),
+            ).rejects.toThrow(/malformed skill entry/);
+            expect(existsSync(localPath)).toBe(false);
+
+            // Valid local lock on disk: refusal leaves the bytes identical.
+            const localOriginal = `{"version":1,"skills":{"good":${JSON.stringify(validLocalEntry)}}}`;
+            writeFileSync(localPath, localOriginal);
+            await expect(
+                writeLocalLock({ version: 1, skills: { bad: [1] } } as unknown as LocalSkillLockFile, dir),
+            ).rejects.toThrow(/malformed skill entry/);
+            expect(readFileSync(localPath, 'utf-8')).toBe(localOriginal);
+
+            // Global mirror: absent, then valid on disk.
+            mkdirSync(join(dir, 'skills'), { recursive: true });
+            await expect(
+                writeGlobalLock(
+                    {
+                        version: 3,
+                        skills: { bad: { ...validGlobalEntry, skillFolderHash: 5 } },
+                    } as unknown as GlobalSkillLockFile,
+                    env,
+                ),
+            ).rejects.toThrow(/malformed skill entry/);
+            expect(existsSync(globalPath)).toBe(false);
+
+            const globalOriginal = `{"version":3,"skills":{"good":${JSON.stringify(validGlobalEntry)}}}`;
+            writeFileSync(globalPath, globalOriginal);
+            await expect(
+                writeGlobalLock({ version: 3, skills: { bad: null } } as unknown as GlobalSkillLockFile, env),
+            ).rejects.toThrow(/malformed skill entry/);
+            expect(readFileSync(globalPath, 'utf-8')).toBe(globalOriginal);
+
+            // Absent locks still initialize normally once the input is valid.
+            await writeGlobalLock({ version: 3, skills: { good: validGlobalEntry } }, env);
+            expect((await readGlobalLock(env)).skills.good?.source).toBe('o/r');
+        } finally {
+            rmSync(dir, { recursive: true, force: true });
+        }
+    });
+
+    it('raw writers refuse to replace a supported lock whose entries are malformed (AC2)', async () => {
+        const dir = mkdtempSync(join(tmpdir(), 'lock-writer-disk-'));
+        const env = { XDG_STATE_HOME: dir };
+        mkdirSync(join(dir, 'skills'), { recursive: true });
+        const localPath = join(dir, 'skills-lock.json');
+        const globalPath = getGlobalLockPath(env);
+        try {
+            const localOriginal = `{"version":1,"skills":{"bad":"invalid-entry","good":${JSON.stringify(validLocalEntry)}}}`;
+            writeFileSync(localPath, localOriginal);
+            await expect(writeLocalLock({ version: 1, skills: { fresh: validLocalEntry } }, dir)).rejects.toThrow(
+                /malformed skill entries/,
+            );
+            expect(readFileSync(localPath, 'utf-8')).toBe(localOriginal);
+
+            const globalOriginal = `{"version":3,"skills":{"bad":null,"good":${JSON.stringify(validGlobalEntry)}}}`;
+            writeFileSync(globalPath, globalOriginal);
+            await expect(writeGlobalLock({ version: 3, skills: { fresh: validGlobalEntry } }, env)).rejects.toThrow(
+                /malformed skill entries/,
+            );
+            expect(readFileSync(globalPath, 'utf-8')).toBe(globalOriginal);
+        } finally {
+            rmSync(dir, { recursive: true, force: true });
+        }
+    });
+
+    it('add/remove mutations refuse a lock with malformed entries and preserve bytes (AC2)', async () => {
+        const dir = mkdtempSync(join(tmpdir(), 'lock-mutate-entry-'));
+        const env = { XDG_STATE_HOME: dir };
+        mkdirSync(join(dir, 'skills'), { recursive: true });
+        const localPath = join(dir, 'skills-lock.json');
+        const globalPath = getGlobalLockPath(env);
+        try {
+            const localOriginal = `{"version":1,"skills":{"bad":"invalid-entry","good":${JSON.stringify(validLocalEntry)}}}`;
+            writeFileSync(localPath, localOriginal);
+            await expect(addSkillToLocalLock('new', validLocalEntry, { cwd: dir })).rejects.toThrow(
+                /malformed skill entry/,
+            );
+            expect(readFileSync(localPath, 'utf-8')).toBe(localOriginal);
+            // The corrupt lock exposes no readable entry, so remove refuses with a no-op false.
+            expect(await removeSkillFromLocalLock('good', dir)).toBe(false);
+            expect(readFileSync(localPath, 'utf-8')).toBe(localOriginal);
+
+            const globalOriginal = `{"version":3,"skills":{"bad":[1],"good":${JSON.stringify(validGlobalEntry)}}}`;
+            writeFileSync(globalPath, globalOriginal);
+            await expect(
+                addSkillToGlobalLock(
+                    'new',
+                    {
+                        source: 'o/r',
+                        sourceType: 'github',
+                        sourceUrl: 'https://github.com/o/r',
+                        skillFolderHash: 'h',
+                    },
+                    { env },
+                ),
+            ).rejects.toThrow(/malformed skill entry/);
+            expect(readFileSync(globalPath, 'utf-8')).toBe(globalOriginal);
+            expect(await removeSkillFromGlobalLock('good', env)).toBe(false);
+            expect(readFileSync(globalPath, 'utf-8')).toBe(globalOriginal);
         } finally {
             rmSync(dir, { recursive: true, force: true });
         }

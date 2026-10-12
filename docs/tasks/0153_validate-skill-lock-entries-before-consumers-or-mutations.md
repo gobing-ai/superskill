@@ -1,16 +1,18 @@
 ---
 schema_version: 1
 name: Validate skill lock entries before consumers or mutations
-status: todo
+status: done
 template: issue
 created_at: 2026-10-12T16:36:53.942Z
-updated_at: "2026-10-12T16:47:19.005Z"
+updated_at: "2026-10-12T18:21:34.002Z"
 feature_id: F2
 
 ac_altitude: task-local
 ac_numbering: task-local
 priority: P2
 estimate_hours: 3
+done_forced: "false"
+done_reason: unforced close; PASS artifact at .spur/memory/evidence/0153-verdict.json
 ---
 
 ## 0153. Validate skill lock entries before consumers or mutations
@@ -27,9 +29,9 @@ Review confirmed malformed per-skill lock entries bypass read validation and cra
 
 ### Requirements
 
-- [ ] R1. Validate supported local v1 and global v3 entries before returning typed skills. Both require a non-null non-array object with string source and sourceType; local requires string computedHash, global requires string skillFolderHash, installedAt and updatedAt. sourceUrl is optional in both runtime schemas, including global vendor fixtures. Validate optional ref/skillPath/sourceUrl as strings, local subagents as a string array and global pluginName as a string when non-undefined. Accept empty strings and unknown sourceType strings; preserve unknown entry fields and own special-name keys. Do not validate timestamp/hash formats.
-- [ ] R2. Reject any invalid supported-version entry as a corrupt whole lock using existing warning-bearing empty-state readers. Reuse the same entry validation in writeLocalLock/writeGlobalLock for caller input and in assertOnDiskVersionMatches for existing disk content; neither invalid input nor invalid disk entries may be written over. Preserve bytes and existing ENOENT, read-error and version-mismatch behavior. Existing add/remove/update must refuse before changing installed files or lock bytes.
-- [ ] R3. Add real filesystem regressions for both schemas, raw writers, mutation operations and unnamed update --check --json. Demonstrate structured checkSkills failure without throwing and exit-2 update JSON output. Keep vendor fixtures without sourceUrl and special-key interop passing; synchronize validation and compatibility wording in docs/04_DESIGN.md.
+- [x] R1. Validate supported local v1 and global v3 entries before returning typed skills. Both require a non-null non-array object with string source and sourceType; local requires string computedHash, global requires string skillFolderHash, installedAt and updatedAt. sourceUrl is optional in both runtime schemas, including global vendor fixtures. Validate optional ref/skillPath/sourceUrl as strings, local subagents as a string array and global pluginName as a string when non-undefined. Accept empty strings and unknown sourceType strings; preserve unknown entry fields and own special-name keys. Do not validate timestamp/hash formats.
+- [x] R2. Reject any invalid supported-version entry as a corrupt whole lock using existing warning-bearing empty-state readers. Reuse the same entry validation in writeLocalLock/writeGlobalLock for caller input and in assertOnDiskVersionMatches for existing disk content; neither invalid input nor invalid disk entries may be written over. Preserve bytes and existing ENOENT, read-error and version-mismatch behavior. Existing add/remove/update must refuse before changing installed files or lock bytes.
+- [x] R3. Add real filesystem regressions for both schemas, raw writers, mutation operations and unnamed update --check --json. Demonstrate structured checkSkills failure without throwing and exit-2 update JSON output. Keep vendor fixtures without sourceUrl and special-key interop passing; synchronize validation and compatibility wording in docs/04_DESIGN.md.
 
 ### Acceptance Criteria
 
@@ -72,12 +74,12 @@ No new public API, schema version or dependency. Add one private lockEntriesErro
 
 ### Plan
 
-- [ ] R1: Add lockEntriesError with the frozen local/global fields, optional sourceUrl/undefined compatibility, own-key traversal and first-invalid-field diagnostics.
-- [ ] R1/R2: Integrate supported-version readers, writer input validation and the existing on-disk writer guard; preserve current version mismatch ordering and corruption return/throw contracts.
-- [ ] R1/R3: Add local/global malformed-entry matrices and valid vendor/special-key fixtures, including sourceUrl omission, empty strings and unknown entry fields. Assert original disk bytes remain identical on every invalid read/write.
-- [ ] R2/R3: Test add/remove/update refusal with isolated installed-skill sentinels and valid local acquisition input; test raw writes of valid fresh objects over corrupt entry dictionaries and invalid caller input over absent/valid disk state.
-- [ ] R3: Exercise checkSkills and unnamed executeUpdate --check --json using real locks and no mocks of lock readers or skills checking; stub only unrelated external plugin discovery. Verify structured failure, exit 2 and byte preservation.
-- [ ] R3: Sync docs/04_DESIGN.md and any directly obsolete compatibility test comment, then run focused lock/operation/update tests, bun run spur-check and bun run build.
+- [x] R1: Add lockEntriesError with the frozen local/global fields, optional sourceUrl/undefined compatibility, own-key traversal and first-invalid-field diagnostics.
+- [x] R1/R2: Integrate supported-version readers, writer input validation and the existing on-disk writer guard; preserve current version mismatch ordering and corruption return/throw contracts.
+- [x] R1/R3: Add local/global malformed-entry matrices and valid vendor/special-key fixtures, including sourceUrl omission, empty strings and unknown entry fields. Assert original disk bytes remain identical on every invalid read/write.
+- [x] R2/R3: Test add/remove/update refusal with isolated installed-skill sentinels and valid local acquisition input; test raw writes of valid fresh objects over corrupt entry dictionaries and invalid caller input over absent/valid disk state.
+- [x] R3: Exercise checkSkills and unnamed executeUpdate --check --json using real locks and no mocks of lock readers or skills checking; stub only unrelated external plugin discovery. Verify structured failure, exit 2 and byte preservation.
+- [x] R3: Sync docs/04_DESIGN.md and any directly obsolete compatibility test comment, then run focused lock/operation/update tests, bun run spur-check and bun run build.
 
 ### Root Cause
 
@@ -85,15 +87,57 @@ toOwnKeyRecord casts untrusted values to entry types. Both readers validate the 
 
 ### Solution
 
-<!-- Filled during implementation: file:line change map and concise rationale. -->
+One private `lockEntriesError(skills, kind)` validates an own-key entry dictionary, and every reader/writer boundary reuses it; no public API, schema version or dependency changed.
+
+| File:line | Change |
+| --- | --- |
+| `packages/core/src/skills-ecosystem/locks.ts:475` | `GLOBAL_REQUIRED_FIELDS` — the global required-string field list, in diagnostic order |
+| `packages/core/src/skills-ecosystem/locks.ts:491` | `function lockEntriesError(skills: unknown, kind: 'local' \| 'global'): string \| null` — returns the first invalid key/field reason; frozen R1 rules (non-null non-array object, required strings, optional strings, local `subagents` string array, runtime-optional `sourceUrl` in both kinds) |
+| `packages/core/src/skills-ecosystem/locks.ts:280` | `assertOnDiskVersionMatches`: after the on-disk version check, an on-disk supported lock with malformed entries is refused before `writeLockAtomically` |
+| `packages/core/src/skills-ecosystem/locks.ts:581` | `readLocalLock`: after the version-mismatch branches, malformed v1 entries return `corruptLocalLock` (warning + empty null-prototype skills) |
+| `packages/core/src/skills-ecosystem/locks.ts:613` | `writeLocalLock`: caller-constructed input is validated before any bytes are touched |
+| `packages/core/src/skills-ecosystem/locks.ts:740` | `readGlobalLock`: same supported-version entry validation, returning `corruptGlobalLock` (global parity) |
+| `packages/core/src/skills-ecosystem/locks.ts:779` | `writeGlobalLock`: caller-constructed input is validated before any bytes are touched |
+| `packages/core/tests/skills-ecosystem/locks.test.ts:713` | new describe `locks.ts - entry validation before consumers or mutations (R1/R2)`: local/global malformed-entry matrices plus writer and mutation refusals; every invalid read and write asserts identical on-disk bytes |
+| `packages/core/tests/skills-ecosystem/locks.test.ts:783` | valid-interop case: empty strings, unknown `sourceType`, unknown entry field, `__proto__`/`constructor` own keys accepted and round-tripped without field filtering |
+| `packages/core/tests/skills-ecosystem/operations.test.ts:756` | `checkSkills` returns `success:false` with `rows: []` (no throw) for an isolated malformed local lock |
+| `packages/core/tests/skills-ecosystem/operations.test.ts:772` | the same structured failure for an isolated malformed global lock |
+| `packages/core/tests/skills-ecosystem/operations.test.ts:789` | `addSkills`/`removeSkills`/`updateSkills` refuse a malformed-entry lock without touching the lock bytes or the installed-skill sentinel |
+| `apps/cli/tests/commands/update.test.ts:1501` | unnamed `executeUpdate --check --json` emits one exit-2 JSON envelope for a malformed lock entry and preserves lock and installed-file bytes |
+| `docs/04_DESIGN.md:415` | local lock entry contract restated as required/optional string shapes |
+| `docs/04_DESIGN.md:417` | global entry contract plus the runtime entry-validation wording, with `sourceUrl` runtime-optional in both kinds while published `GlobalSkillLockEntry.sourceUrl` stays required |
+
+Unchanged by design: the published `GlobalSkillLockEntry.sourceUrl` type, `corruptLocalLock`/`corruptGlobalLock`, the null-prototype skills records, the newer/older version-mismatch ordering, and the existing mutation protocol (warning check plus the authoritative add re-read). `checkSkills` and unnamed `executeUpdate` are unmodified — they already carried the warning branches this change now feeds, so no per-consumer catch was added.
 
 ### Testing
 
-Planned regression layers: locks.test.ts for real read/input-write/on-disk-write matrices and byte preservation; operations.test.ts for checkSkills structured failure plus add/remove/update refusal without changing isolated installed-skill sentinels; apps/cli/tests/commands/update.test.ts for unnamed JSON envelope with exitCode 2. Use temporary cwd/homeDir/XDG_STATE_HOME; never touch ambient home and never mock the lock boundary. Keep round-trips a vendor-shaped global lock sample verbatim (R5) and __proto__/constructor own-key regressions intact, including missing global sourceUrl. Commands after implementation: bun test packages/core/tests/skills-ecosystem/locks.test.ts packages/core/tests/skills-ecosystem/operations.test.ts apps/cli/tests/commands/update.test.ts, bun run spur-check, bun run build. This refine confirmed both supported-schema primitive entries return no warning and cause checkSkills to throw; both raw writers replaced malformed disk entries. A valid global vendor sample without sourceUrl remains readable. These are defect/compatibility probes, not completed-fix evidence.
+**Pipeline verify results**
+
+- Verdict: PASS (from verdict artifact)
+- Confidence: HIGH
+
+| Requirement | Status | Evidence |
+|-------------|--------|----------|
+| R1 | MET | `packages/core/src/skills-ecosystem/locks.ts:491` `lockEntriesError` enforces a non-null non-array object with string `source`/`sourceType`, kind-required strings (local `computedHash`; global `skillFolderHash`/`installedAt`/`updatedAt`), optional strings (`sourceUrl`/`ref`/`skillPath`; global `pluginName`), local `subagents` as a string array, runtime-optional `sourceUrl` for both kinds, and no enum/format/filter checks. Wired into the local reader at `packages/core/src/skills-ecosystem/locks.ts:581` and the global reader at `packages/core/src/skills-ecosystem/locks.ts:740`. Malformed matrices and the empty-string/unknown-`sourceType`/unknown-field/`__proto__`+`constructor` acceptance cases pass at `packages/core/tests/skills-ecosystem/locks.test.ts:713` and `packages/core/tests/skills-ecosystem/locks.test.ts:783`; vendor-shaped global locks omitting `sourceUrl` stay readable. |
+| R2 | MET | Readers return byte-preserving `corruptLocalLock`/`corruptGlobalLock` for invalid supported entries at `packages/core/src/skills-ecosystem/locks.ts:583` and `packages/core/src/skills-ecosystem/locks.ts:742`. The same helper validates raw-writer caller input at `packages/core/src/skills-ecosystem/locks.ts:613` and `packages/core/src/skills-ecosystem/locks.ts:779`, and on-disk content in `assertOnDiskVersionMatches` at `packages/core/src/skills-ecosystem/locks.ts:280`, before `writeLockAtomically`. Byte-identity and refusal tests pass at `packages/core/tests/skills-ecosystem/locks.test.ts:841`, `packages/core/tests/skills-ecosystem/locks.test.ts:889`, `packages/core/tests/skills-ecosystem/locks.test.ts:914`; version-mismatch ordering preserved at `packages/core/tests/skills-ecosystem/locks.test.ts:825`; mutation refusal via the existing warning branch at `packages/core/tests/skills-ecosystem/operations.test.ts:789`. No other writer reaches lock bytes (only `writeLockAtomically` in `packages/core/src/skills-ecosystem/locks.ts:288`). |
+| R3 | MET | `checkSkills` returns `success:false`/`rows:[]` on the reader warning at `packages/core/src/skills-ecosystem/operations.ts:765`; unnamed `executeUpdate` emits the existing JSON envelope with `exitCode:2` at `apps/cli/src/commands/update.ts:334` and `apps/cli/src/commands/update.ts:348`. Behavioral tests pass at `packages/core/tests/skills-ecosystem/operations.test.ts:756`, `packages/core/tests/skills-ecosystem/operations.test.ts:772`, and `apps/cli/tests/commands/update.test.ts:1501`. Docs synchronized at `docs/04_DESIGN.md:415` and `docs/04_DESIGN.md:417`. |
+
+| Acceptance Criteria | Status | Evidence Type | Evidence |
+|---------------------|--------|---------------|----------|
+| AC1 — Invalid entry values are rejected while vendor shapes remain valid (req: R1) | MET | test | `packages/core/tests/skills-ecosystem/locks.test.ts:713` iterates primitive/null/array/missing-required/non-string-source and optional-shape cases for local and global locks beside a valid sibling, asserting the warning names the key, `Object.keys(lock.skills)` is empty, and on-disk bytes are identical. `packages/core/tests/skills-ecosystem/locks.test.ts:783` accepts empty strings, unknown `sourceType`, unknown entry fields, and own `__proto__`/`constructor` keys and proves round-trip preservation. Ran `bun test packages/core/tests/skills-ecosystem/locks.test.ts -t "AC1"`: 7 pass, 0 fail. An independent out-of-repo probe reproduced warning + empty skills + unchanged bytes for both schemas and accepted a global lock without `sourceUrl`. |
+| AC2 — Corruption cannot bypass raw writer or mutation guards (req: R2) | MET | test | `packages/core/tests/skills-ecosystem/locks.test.ts:841` asserts invalid caller input throws `/malformed skill entry/` while an absent lock is not created and existing bytes are unchanged; `packages/core/tests/skills-ecosystem/locks.test.ts:889` asserts a fresh valid object is refused over a malformed on-disk supported lock (`/malformed skill entries/`) with identical bytes; `packages/core/tests/skills-ecosystem/locks.test.ts:914` asserts `add` throws and `remove` returns false without byte changes; `packages/core/tests/skills-ecosystem/operations.test.ts:789` asserts add/remove/update refuse while the lock and the installed-skill sentinel are unchanged. Ran `bun test packages/core/tests/skills-ecosystem/locks.test.ts packages/core/tests/skills-ecosystem/operations.test.ts -t "AC2"`: 7 pass, 0 fail. Independent probe confirmed writer refusal over malformed disk, no creation on invalid absent input, and mutation refusal with identical bytes. |
+| AC3 — Consumers return structured failures (req: R3) | MET | test | `packages/core/tests/skills-ecosystem/operations.test.ts:756` and `packages/core/tests/skills-ecosystem/operations.test.ts:772` assert `success:false`, `rows:[]`, error containing `malformed skill entry`, unchanged bytes, and no throw for isolated malformed local and global locks read through the real readers. `apps/cli/tests/commands/update.test.ts:1501` asserts exactly one parseable JSON envelope, empty rows, `exitCode:2`, returned code 2, stderr `malformed skill entry`, and preserved lock and installed-file bytes. Ran `bun test packages/core/tests/skills-ecosystem/operations.test.ts apps/cli/tests/commands/update.test.ts -t "AC3"`: 3 pass, 0 fail. |
+- Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review
 
-<!-- Filled during review: P1-P4 findings, residual risk, and final disposition. -->
+<!-- spur:record-review -->
+
+**SECU findings** (pipeline verify step — verdict: PASS)
+
+| Priority | Dimension | Location | Finding |
+|----------|-----------|----------|----------|
+| P4 | — | — | No findings (verify verdict PASS) |
 
 ### References
 
@@ -108,3 +152,8 @@ Planned regression layers: locks.test.ts for real read/input-write/on-disk-write
 - Concurrency audit 2026-10-12: main worktree only; no wip tasks; no out-of-set dependencies.
 
 ### History
+
+- 2026-10-12T18:09:00.463Z todo → wip (system)
+- 2026-10-12T18:19:40.921Z wip → testing (system)
+- 2026-10-12T18:21:33.995Z testing → done (system)
+

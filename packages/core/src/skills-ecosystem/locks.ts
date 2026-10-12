@@ -275,6 +275,14 @@ async function assertOnDiskVersionMatches(
             `Cannot write ${kind} lock: on-disk lock version (${record.version}) differs from supported version (${supported}). Lock preserved untouched; migrate explicitly.`,
         );
     }
+    // R1/R2: a supported-version lock with malformed entries is corrupt state, not an
+    // overwritable base — a fresh valid object must not silently discard it.
+    const entryError = lockEntriesError(record.skills, kind);
+    if (entryError) {
+        throw new Error(
+            `Cannot write ${kind} lock: on-disk lock at ${lockPath} has malformed skill entries (${entryError}). Lock preserved untouched; repair or remove the file explicitly.`,
+        );
+    }
 }
 
 async function writeLockAtomically(lockPath: string, content: string): Promise<void> {
@@ -463,6 +471,56 @@ function toOwnKeyRecord<T>(skills: unknown): Record<string, T> {
     return record;
 }
 
+/** Global entry strings the runtime requires, in diagnostic order. */
+const GLOBAL_REQUIRED_FIELDS = ['source', 'sourceType', 'skillFolderHash', 'installedAt', 'updatedAt'] as const;
+
+/**
+ * Validate a lock's own-key entry dictionary (R1) and return the first invalid
+ * key/field reason, or null when every entry fits `kind`.
+ *
+ * Runtime rules are shape-only, frozen from the vendor-observed data: an entry must be
+ * a non-null non-array object with string `source`/`sourceType` plus the kind's required
+ * strings; `ref`/`skillPath`/`sourceUrl` (and `pluginName` globally, `subagents` as a
+ * string array locally) must be the named shape when present. `sourceUrl` stays
+ * runtime-optional for BOTH kinds even though {@link GlobalSkillLockEntry} declares it
+ * required — real vendor locks omit it. Empty strings, unknown `sourceType` values and
+ * unknown entry fields are accepted (no filtering or coercion), and hash/timestamp
+ * formats are never validated. Prototype-special own entry keys (`__proto__`) are seen
+ * through `Object.entries` as data keys, never through a prototype setter.
+ */
+function lockEntriesError(skills: unknown, kind: 'local' | 'global'): string | null {
+    if (!skills || typeof skills !== 'object' || Array.isArray(skills)) {
+        return 'skills shape is not a JSON object';
+    }
+    const required = kind === 'local' ? ['source', 'sourceType', 'computedHash'] : GLOBAL_REQUIRED_FIELDS;
+    const optionalStrings =
+        kind === 'local' ? ['sourceUrl', 'ref', 'skillPath'] : ['sourceUrl', 'ref', 'skillPath', 'pluginName'];
+    for (const [key, entry] of Object.entries(skills as Record<string, unknown>)) {
+        if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
+            return `entry '${key}' is not a JSON object`;
+        }
+        const record = entry as Record<string, unknown>;
+        for (const field of required) {
+            if (typeof record[field] !== 'string') {
+                return `entry '${key}' field '${field}' is not a string`;
+            }
+        }
+        for (const field of optionalStrings) {
+            if (record[field] !== undefined && typeof record[field] !== 'string') {
+                return `entry '${key}' optional field '${field}' is not a string`;
+            }
+        }
+        if (
+            kind === 'local' &&
+            record.subagents !== undefined &&
+            (!Array.isArray(record.subagents) || record.subagents.some((item) => typeof item !== 'string'))
+        ) {
+            return `entry '${key}' optional field 'subagents' is not a string array`;
+        }
+    }
+    return null;
+}
+
 /**
  * Read project local skill lock file.
  * Preserves newer/older lock files untouched with a warning flag (R3). Only an absent
@@ -518,6 +576,12 @@ export async function readLocalLock(cwd?: string): Promise<LocalSkillLockFile> {
             warning: `Local skill lock version (${record.version}) is older than current version (${LOCAL_LOCK_VERSION}). Lock preserved untouched; migrate explicitly.`,
         };
     }
+    // R1: a supported-version lock with malformed entries is corrupt state (R4) — the
+    // typed skills map would otherwise hand consumers a non-entry that crashes them.
+    const entryError = lockEntriesError(record.skills, 'local');
+    if (entryError) {
+        return corruptLocalLock(lockPath, `malformed skill entry (${entryError})`);
+    }
     return { ...(parsed as LocalSkillLockFile), skills };
 }
 
@@ -543,6 +607,12 @@ export async function writeLocalLock(lock: LocalSkillLockFile, cwd?: string): Pr
         throw new Error(
             `Cannot write local lock: lock version (${lock.version}) differs from supported version (${LOCAL_LOCK_VERSION}).`,
         );
+    }
+    // R2: validation is not reader-only — a caller-constructed lock never passes through
+    // readLocalLock, so the raw writer validates its own input before touching bytes.
+    const entryError = lockEntriesError(lock.skills, 'local');
+    if (entryError) {
+        throw new Error(`Cannot write local lock: malformed skill entry (${entryError}). Lock preserved untouched.`);
     }
 
     const lockPath = getLocalLockPath(cwd);
@@ -666,6 +736,11 @@ export async function readGlobalLock(
             warning: `Global skill lock version (${record.version}) is older than current version (${GLOBAL_LOCK_VERSION}). Lock preserved untouched; migrate explicitly.`,
         };
     }
+    // R1: same supported-version entry validation as the local reader (global parity).
+    const entryError = lockEntriesError(record.skills, 'global');
+    if (entryError) {
+        return corruptGlobalLock(lockPath, `malformed skill entry (${entryError})`);
+    }
     return { ...(parsed as GlobalSkillLockFile), skills, dismissed };
 }
 
@@ -699,6 +774,11 @@ export async function writeGlobalLock(
         throw new Error(
             `Cannot write global lock: lock version (${lock.version}) differs from supported version (${GLOBAL_LOCK_VERSION}).`,
         );
+    }
+    // R2: same raw-writer input validation as writeLocalLock (global parity).
+    const entryError = lockEntriesError(lock.skills, 'global');
+    if (entryError) {
+        throw new Error(`Cannot write global lock: malformed skill entry (${entryError}). Lock preserved untouched.`);
     }
 
     const lockPath = getGlobalLockPath(env, homeDir);
