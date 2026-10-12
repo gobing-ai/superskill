@@ -465,7 +465,7 @@ export async function runBuilderCommand(argv: string[], _shell: ShellRunner = $)
             if (drift.length > 0) {
                 fail(
                     `.claude-plugin/marketplace.json is stale — the packed manifest would advertise a wrong plugin version:\n  ${drift.join('\n  ')}\n` +
-                        `Run \`bun scripts/builder.ts bump-ver ${pkgVersion}\` to sync the marketplace and plugin.json manifests before publishing.`,
+                        `Run \`spur builder bump-ver ${pkgVersion}\` to sync the marketplace and plugin.json manifests before publishing.`,
                 );
             }
             logger.info(`${manifestPath}: publishable — no workspace-only specifiers, marketplace versions in sync.`);
@@ -509,7 +509,7 @@ export async function runBuilderCommand(argv: string[], _shell: ShellRunner = $)
         default:
             fail(
                 `Unknown command: ${command}\n` +
-                    'Usage: bun scripts/builder.ts <bump-ver|drop-tags|postbuild|check-skill-citations|check-publish-manifest|resolve-publish-deps|restore-publish-deps> [args]',
+                    'Usage: bun scripts/builder.ts <postbuild|check-skill-citations|check-publish-manifest|resolve-publish-deps|restore-publish-deps> [args]',
             );
     }
 }
