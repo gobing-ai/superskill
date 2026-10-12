@@ -1,6 +1,15 @@
 import { afterEach, beforeEach, describe, expect, it, spyOn } from 'bun:test';
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import {
+    existsSync,
+    linkSync,
+    mkdirSync,
+    mkdtempSync,
+    readFileSync,
+    rmSync,
+    symlinkSync,
+    writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { getEnvVar, getEnvVars, removeEnvVar, setEnvVar } from '@gobing-ai/superskill-core';
@@ -138,6 +147,68 @@ describe('convertScriptToPortableTwin', () => {
         expect(res.status).toBe(0);
         const parsed = JSON.parse(res.stdout) as { ok: boolean };
         expect(parsed.ok).toBe(true);
+    });
+});
+
+describe('convertScriptToPortableTwin collision refusal (task 0152 R1)', () => {
+    // WHY: the default output spelling swaps the source extension for `.mjs`, so a `.mjs` source maps
+    // to itself and a bundle write would destroy the original bytes. Every fixture is deliberately
+    // syntax-invalid: a refusal that still carries the collision diagnostic proves the check runs
+    // BEFORE Bun.build (a build failure would surface `bun build failed` instead).
+    const INVALID = 'export const = ;\n';
+    let dir: string;
+
+    beforeEach(() => {
+        dir = mkdtempSync(join(tmpdir(), 'convert-collision-'));
+    });
+
+    afterEach(() => {
+        rmSync(dir, { recursive: true, force: true });
+    });
+
+    it('refuses an output naming its source directly and preserves the source bytes', async () => {
+        const src = join(dir, 'demo.mjs');
+        writeFileSync(src, INVALID);
+
+        await expect(convertScriptToPortableTwin(src, src)).rejects.toThrow(/Refusing to convert/);
+        expect(readFileSync(src, 'utf-8')).toBe(INVALID);
+    });
+
+    it('refuses a normalized spelling of the source path', async () => {
+        const src = join(dir, 'demo.mjs');
+        writeFileSync(src, INVALID);
+        mkdirSync(join(dir, 'sub'));
+
+        await expect(convertScriptToPortableTwin(src, `${dir}/sub/../demo.mjs`)).rejects.toThrow(/Refusing to convert/);
+        expect(readFileSync(src, 'utf-8')).toBe(INVALID);
+    });
+
+    it('refuses a symlink to the source, whether the leaf or its parent is aliased', async () => {
+        const real = join(dir, 'real');
+        mkdirSync(real);
+        const src = join(real, 'demo.mjs');
+        writeFileSync(src, INVALID);
+        const leafAlias = join(dir, 'leaf-alias.mjs');
+        symlinkSync(src, leafAlias);
+        const parentHash = join(dir, 'parent-alias');
+        symlinkSync(real, parentHash, 'dir');
+
+        await expect(convertScriptToPortableTwin(src, leafAlias)).rejects.toThrow(/Refusing to convert/);
+        await expect(convertScriptToPortableTwin(src, join(parentHash, 'demo.mjs'))).rejects.toThrow(
+            /Refusing to convert/,
+        );
+        expect(readFileSync(src, 'utf-8')).toBe(INVALID);
+    });
+
+    it('refuses a hard link to the source', async () => {
+        const src = join(dir, 'demo.mjs');
+        writeFileSync(src, INVALID);
+        const alias = join(dir, 'hard-alias.mjs');
+        linkSync(src, alias);
+
+        await expect(convertScriptToPortableTwin(src, alias)).rejects.toThrow(/Refusing to convert/);
+        expect(readFileSync(src, 'utf-8')).toBe(INVALID);
+        expect(readFileSync(alias, 'utf-8')).toBe(INVALID);
     });
 });
 
@@ -295,6 +366,94 @@ describe('registerScriptConvert CLI', () => {
         expect(joined(stderrSpy)).toContain('Bun globals survive');
         expect(existsSync(join(projectDir, 'plugins', 'cc', 'scripts', 'bunky.mjs'))).toBe(false);
     });
+
+    it('refuses the default .mjs-to-itself output with the collision diagnostic (task 0152 R2, AC2)', async () => {
+        // Syntax-invalid source: the refusal must come from the preflight, not a build failure.
+        const src = seedSource('demo.mjs', 'export const = ;\n');
+        const program = new Command().name('superskill');
+        const exits = registerWithExitRecording(program);
+
+        await expect(program.parseAsync(['node', 'superskill', 'script', 'convert', 'cc', 'demo.mjs'])).rejects.toThrow(
+            /exit 1/,
+        );
+
+        expect(exits).toEqual([1]);
+        expect(joined(stderrSpy)).toContain('Refusing to convert');
+        expect(joined(stdoutSpy)).toBe('');
+        expect(readFileSync(src, 'utf-8')).toBe('export const = ;\n');
+    });
+
+    it('refuses a default collision under --json and --dry-run with empty stdout', async () => {
+        const src = seedSource('demo.mjs', 'export const = ;\n');
+        for (const flag of ['--json', '--dry-run']) {
+            const program = new Command().name('superskill');
+            const exits = registerWithExitRecording(program);
+            await expect(
+                program.parseAsync(['node', 'superskill', 'script', 'convert', 'cc', 'demo.mjs', flag]),
+            ).rejects.toThrow(/exit 1/);
+            expect(exits).toEqual([1]);
+            expect(joined(stderrSpy)).toContain('Refusing to convert');
+            expect(joined(stdoutSpy)).toBe('');
+            stderrSpy.mockClear();
+            stdoutSpy.mockClear();
+        }
+        expect(readFileSync(src, 'utf-8')).toBe('export const = ;\n');
+    });
+
+    it('refuses an explicit --out naming its own source, directly or through an alias', async () => {
+        const src = seedSource('demo.ts', 'export const = ;\n');
+        const scriptsDir = join(projectDir, 'plugins', 'cc', 'scripts');
+        const hardLink = join(scriptsDir, 'hard-alias.ts');
+        linkSync(src, hardLink);
+        const symLink = join(scriptsDir, 'sym-alias.ts');
+        symlinkSync(src, symLink);
+
+        for (const out of [src, hardLink, symLink]) {
+            const program = new Command().name('superskill');
+            const exits = registerWithExitRecording(program);
+            await expect(
+                program.parseAsync(['node', 'superskill', 'script', 'convert', 'cc', 'demo.ts', '--out', out]),
+            ).rejects.toThrow(/exit 1/);
+            expect(exits).toEqual([1]);
+            expect(joined(stderrSpy)).toContain('Refusing to convert');
+            expect(joined(stdoutSpy)).toBe('');
+            stderrSpy.mockClear();
+            stdoutSpy.mockClear();
+        }
+        expect(readFileSync(src, 'utf-8')).toBe('export const = ;\n');
+        expect(existsSync(join(scriptsDir, 'demo.mjs'))).toBe(false);
+    });
+
+    it('replaces an unrelated existing twin for a distinct output and runs it under node (task 0152 R3)', async () => {
+        const src = seedSource('demo.ts');
+        const out = join(projectDir, 'plugins', 'cc', 'scripts', 'demo.mjs');
+        writeFileSync(out, '// unrelated stale twin\n');
+        const program = new Command().name('superskill');
+        const exits = registerWithExitRecording(program);
+
+        await program.parseAsync(['node', 'superskill', 'script', 'convert', 'cc', 'demo.ts']);
+
+        expect(joined(stderrSpy)).toBe('');
+        expect(exits).toEqual([]);
+        expect(joined(stdoutSpy)).toContain('bytes)');
+        expect(readFileSync(out, 'utf-8')).not.toContain('unrelated stale twin');
+        expect(readFileSync(out, 'utf-8').split('\n')[0]).toBe('#!/usr/bin/env node');
+        expect(existsSync(src)).toBe(true);
+        const res = spawnSync('node', [out], { encoding: 'utf-8' });
+        expect(res.status).toBe(0);
+    });
+
+    /** Register the command with a recording exit function, returning the collected codes. */
+    function registerWithExitRecording(program: Command): number[] {
+        const exits: number[] = [];
+        registerScriptConvert(program, {
+            exit: (code) => {
+                exits.push(code);
+                throw new Error(`exit ${code}`);
+            },
+        });
+        return exits;
+    }
 
     /** Write a minimal entrypoint .ts under the temp projectRoot the CLI action resolves. */
     function seedSource(name: string, content?: string): string {

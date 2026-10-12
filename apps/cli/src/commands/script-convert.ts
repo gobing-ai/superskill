@@ -1,6 +1,6 @@
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { basename, join } from 'node:path';
+import { basename, join, resolve } from 'node:path';
 import { getEnvVar } from '@gobing-ai/superskill-core';
 import { echo, echoError } from '@gobing-ai/ts-utils';
 import type { Command } from 'commander';
@@ -69,6 +69,33 @@ export interface ConvertedTwin {
 }
 
 /**
+ * Refuse a conversion whose output IS the source (task 0152, R1).
+ *
+ * The default output spelling swaps the source extension for `.mjs`, so a `.mjs` source maps to
+ * itself and writing the bundle would destroy the original bytes. Resolved spelling catches
+ * normalized paths; `statSync` follows symlinks and reports the same inode for a hard link, so both
+ * alias shapes count as the same file. An absent output is the normal case — only ENOENT means "no
+ * collision", any other stat failure propagates before bundling or writing.
+ */
+function assertDistinctScriptOutput(srcPath: string, outPath: string): void {
+    const refusal =
+        'Refusing to convert: the output is the source itself, so writing it would destroy the source.\n' +
+        `  source: ${srcPath}\n` +
+        `  output: ${outPath}\n` +
+        'Pass a distinct --out path (the default swaps the source extension for .mjs).';
+    if (resolve(srcPath) === resolve(outPath)) throw new Error(refusal);
+    const src = statSync(srcPath);
+    let out: ReturnType<typeof statSync>;
+    try {
+        out = statSync(outPath);
+    } catch (err) {
+        if ((err as { code?: string }).code === 'ENOENT') return;
+        throw err;
+    }
+    if (src.dev === out.dev && src.ino === out.ino) throw new Error(refusal);
+}
+
+/**
  * Bundle a plugin-script `.ts` into a portable ESM `.mjs` twin that runs under bare Node on any
  * install target (no Bun, no `type:module` package.json). This is the build step of the plugin-script
  * lifecycle (`script path` resolves, `script run` executes, `script convert` BUILDS the twin).
@@ -86,6 +113,8 @@ export interface ConvertedTwin {
  * Writes only `outPath` + a temp dir it cleans up → unit-testable.
  */
 export async function convertScriptToPortableTwin(srcPath: string, outPath: string): Promise<ConvertedTwin> {
+    // Before any temp dir or build: a collision must fail without producing or replacing bytes.
+    assertDistinctScriptOutput(srcPath, outPath);
     const tmpDir = mkdtempSync(join(tmpdir(), 'superskill-convert-'));
     try {
         const res = await Bun.build({ entrypoints: [srcPath], target: 'node', outdir: tmpDir, format: 'esm' });
@@ -165,11 +194,13 @@ export function registerScriptConvert(program: Command, ci?: { exit(code: number
                 exitFn(1);
             }
             const out = options.out ?? src.replace(/\.[cm]?[tj]sx?$/, '.mjs');
-            if (options.dryRun) {
-                echo(`${src} → ${out} (dry-run)`);
-                return;
-            }
             try {
+                if (options.dryRun) {
+                    // The write path re-checks inside the converter; the preview must refuse too.
+                    assertDistinctScriptOutput(src, out);
+                    echo(`${src} → ${out} (dry-run)`);
+                    return;
+                }
                 const result = await convertScriptToPortableTwin(src, out);
                 if (options.json) echo(JSON.stringify({ converted: [result] }));
                 else echo(`✓ ${src} → ${out} (${result.bytes} bytes)`);
