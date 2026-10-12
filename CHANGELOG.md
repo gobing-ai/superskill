@@ -11,6 +11,37 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 - fix(grok-bot): treat host-rewritten bridge pointers as healthy when `canonical:` still targets the owned recipe (stops 113× owned-drift after Bot `update_state` register); still refuse canonical drift, full-mode edits, and unowned extras
 - fix(grok-bot): handoff/doctor/README copy — slash fill is NOT automatic, Shell fallback for `.superskill` Read denial, soft-pedal unverified Settings > Plugins path
 
+## [0.3.36] - 2026-10-12
+
+### Added
+
+- feat(gate): enforce the vendor-citation boundary for shipped plugin content (0154) (`f28eed9`)
+- feat(project): add feature-verification workflow entry (`ca72a29`)
+
+### Fixed
+
+- fix: replace vendor citations with shipped anchors in hook docs (`3b255be`)
+- fix(core): reject malformed skill lock entries at read and write (`fd36492`)
+- fix(cli): refuse script convert output that aliases its source (`e214e7b`)
+- fix(builder): point publish-manifest guidance at the spur CLI (`eaec3ec`)
+- fix(anti-hallucination): tolerate malformed Stop content parts (`c5defbf`)
+- fix(hook-run): delegate sp/context hooks to the plugin's own scripts (spur#1166) (`2196081`)
+- fix(install): stage plugin sibling lib/ into the shared scripts root (`b42961b`)
+
+### Changed
+
+- chore(project): upgrade project dependencies (`7a9db45`)
+- chore(merge): land sp/runall-0154-b7e4 — task 0154 vendor-citation boundary (`d3f9b3d`)
+- chore(project): upgrade project dependencies (`b40bb4a`)
+- docs(tasks): file 0154 to enforce the vendor-citation boundary (`e5625c1`)
+- docs: mark H1 and F2 done after reverification (`c7016cb`)
+- chore(wrap): record runall 0152,0153 learnings and metrics (`668900f`)
+- chore(wrap): dev-runall 0152,0153 close-out doc writes (`a453fc4`)
+- docs(tasks): add triage tasks 0152/0153 and reopen H1 and F2 (`1beae98`)
+- chore(project): upgrade project dependencies (`e99d5c5`)
+- docs(help2): document script verify and sibling lib staging (`0fe2818`)
+- chore(project): upgrade project config (`91b6440`)
+
 ## [0.3.35] - 2026-10-02
 
 ### Added
