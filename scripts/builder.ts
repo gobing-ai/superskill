@@ -5,7 +5,7 @@
  *
  * Usage:
  *   bun scripts/builder.ts postbuild <outfile>           prepend bun shebang to a bundle
- *   bun scripts/builder.ts check-skill-citations [glob]  resolve skill citations + drift
+ *   bun scripts/builder.ts check-skill-citations [glob]  resolve skill/agent citations + vendor boundary + drift
  *   bun scripts/builder.ts check-publish-manifest [pkg]  fail on catalog:/workspace: deps
  *   bun scripts/builder.ts resolve-publish-deps [pkg]    expand catalog: → root catalog version
  *   bun scripts/builder.ts restore-publish-deps [pkg]    restore manifest from resolve backup
@@ -151,12 +151,15 @@ export function bumpMarketplaceManifests(marketplaceText: string | null, ver: st
 
 // ── Skill citation-resolution guard ─────────────────────────────────────────────
 //
-// Catches two documentation-drift defect classes the pure content heuristics
+// Catches three documentation-drift defect classes the pure content heuristics
 // cannot see (they score content, never the filesystem):
 //   1. Dead code citations — a `path.ts:LINE` or repo-relative source path in a
-//      SKILL.md that no longer exists, or whose line is out of range.
+//      checked plugin document that no longer exists, or whose line is out of range.
 //   2. Rubric dimension drift — a skill that documents a rubric while claiming a
 //      dimension count that disagrees with the rubric YAML it points at.
+//   3. Vendor boundary — a reference into the gitignored, never-shipped `vendors/`
+//      tree, rejected without a filesystem probe so the verdict cannot depend on
+//      whether the local reference checkout happens to exist.
 // Lives here (not in packages/core) so the core quality evaluators stay pure
 // functions over content (architecture invariant 5). Wired into spur-check as an
 // exit-code rule.
@@ -179,8 +182,20 @@ export interface FileResolver {
  * Repo-relative source-path prefixes worth resolving. Citations under these
  * roots name real code; everything else (e.g. `examples/validate.sh`,
  * `agents/my-agent.md`) is illustrative placeholder text inside fenced blocks.
+ * The gitignored `vendors/` tree is deliberately absent — `VENDOR_REF_RE` reports
+ * those references as boundary violations rather than resolving them.
  */
-const RESOLVABLE_PREFIXES = ['packages/', 'apps/', 'vendors/', 'plugins/', 'tooling/', 'scripts/', 'docs/'];
+const RESOLVABLE_PREFIXES = ['packages/', 'apps/', 'plugins/', 'tooling/', 'scripts/', 'docs/'];
+
+/**
+ * Match a reference into the gitignored `vendors/` reference-only tree (ADR-004) — including
+ * directory mentions with no file extension. Never shipped, so never citable from plugin content.
+ *
+ * The leading lookbehind is a word/path boundary, not `\b`: `\b` also sits between `-` and `v`,
+ * which made a hyphen-adjacent lookalike (`multi-vendors/registry.ts`) a hard error. A mid-path
+ * segment (`plugins/foo/vendors/x.ts`) still matches — it is preceded by `/`.
+ */
+const VENDOR_REF_RE = /(?<![\w.-])vendors\/[\w./-]*/g;
 
 /** Match a code citation: `path.ext` optionally suffixed with `:line`. */
 const CITATION_RE = /\b([a-zA-Z0-9_./-]+\.(?:ts|tsx|js|mjs|yaml|yml|json|sh))(?::(\d+))?\b/g;
@@ -201,9 +216,17 @@ function isResolvablePath(path: string): boolean {
     return RESOLVABLE_PREFIXES.some((p) => path.startsWith(p));
 }
 
-/** Resolve every code citation in a skill body; collect dead ones. */
+/** Resolve every code citation in a skill body; collect dead ones and vendor-boundary violations. */
 export function checkCitations(file: string, body: string, fs: FileResolver): Finding[] {
     const findings: Finding[] = [];
+    // Boundary first, and without consulting `fs`: the verdict must be identical on a machine
+    // that happens to carry the gitignored reference tree and on a clean checkout.
+    for (const match of body.matchAll(VENDOR_REF_RE)) {
+        findings.push({
+            file,
+            message: `vendor boundary: ${match[0]} is reference-only (gitignored, not shipped); cite a shipped path or absorb the content`,
+        });
+    }
     for (const match of body.matchAll(CITATION_RE)) {
         const [, path, lineStr] = match;
         if (isResolvablePath(path)) {
@@ -272,28 +295,32 @@ export function fsLineCount(rel: string): number {
 }
 
 /**
- * Scan every plugin SKILL.md matched by `skillGlob`, resolving code citations
- * and checking rubric dimension claims. Prints findings and fails the process
- * when any are found (so it gates spur-check via the exit-code rule).
+ * Scan every plugin skill/agent document matched by `skillGlobs`, resolving code citations,
+ * rejecting vendor-tree references and checking rubric dimension claims. Prints findings and fails
+ * the process when any are found (so it gates spur-check via the exit-code rule).
  */
-export function checkSkillCitations(skillGlob: string) {
+export function checkSkillCitations(skillGlobs: string | string[]) {
+    const globs = Array.isArray(skillGlobs) ? skillGlobs : [skillGlobs];
     const fs: FileResolver = {
         exists: fsExists,
         lineCount: fsLineCount,
     };
     const findings: Finding[] = [];
 
-    for (const rel of new Glob(skillGlob).scanSync({ cwd: ROOT })) {
-        if (!rel.includes('node_modules') && !rel.includes('/vendors/')) {
-            const body = readFileSync(resolve(ROOT, rel), 'utf8');
-            const skillName = rel.split('/').at(-2) ?? '';
-            findings.push(...checkCitations(rel, body, fs));
-            findings.push(...checkDimensionDrift(rel, body, skillName, diskRubricCount));
+    for (const glob of globs) {
+        for (const rel of new Glob(glob).scanSync({ cwd: ROOT })) {
+            if (!rel.includes('node_modules') && !rel.includes('/vendors/')) {
+                const body = readFileSync(resolve(ROOT, rel), 'utf8');
+                // Agent documents yield 'agents' here, which SKILL_TO_RUBRIC does not map → drift is a no-op.
+                const skillName = rel.split('/').at(-2) ?? '';
+                findings.push(...checkCitations(rel, body, fs));
+                findings.push(...checkDimensionDrift(rel, body, skillName, diskRubricCount));
+            }
         }
     }
 
     if (findings.length === 0) {
-        logger.info(`OK: skill citations resolve and dimension claims match rubrics (${skillGlob})`);
+        logger.info(`OK: skill citations resolve and dimension claims match rubrics (${globs.join(', ')})`);
         return;
     }
     for (const f of findings) {
@@ -440,7 +467,7 @@ export async function runBuilderCommand(argv: string[], _shell: ShellRunner = $)
             break;
         }
         case 'check-skill-citations': {
-            checkSkillCitations(version ?? 'plugins/*/skills/*/SKILL.md');
+            checkSkillCitations(version ?? ['plugins/*/skills/*/SKILL.md', 'plugins/*/agents/*.md']);
             break;
         }
         case 'check-publish-manifest': {
