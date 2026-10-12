@@ -165,7 +165,7 @@ function messageText(content: Message['content'] | null | undefined): string {
         // Handle mixed content (text + tool_use)
         const textParts: string[] = [];
         for (const part of content) {
-            if (part.type === 'text' && part.text) {
+            if (part?.type === 'text' && typeof part.text === 'string') {
                 textParts.push(part.text);
             }
         }

@@ -589,6 +589,27 @@ describe('resolveStopContext', () => {
         expect(resolveStopContext(undefined, stdin).content).toBe(failingClaim);
     });
 
+    it('ignores malformed content parts while preserving the claim on both input channels', () => {
+        const payload = JSON.stringify({
+            messages: [{ role: 'assistant', content: [null, { type: 'text', text: failingClaim }] }],
+        });
+        for (const [args, stdin] of [
+            [undefined, payload],
+            [payload, ''],
+        ] as const) {
+            expect(resolveStopContext(args, stdin).content).toBe(failingClaim);
+            expect(JSON.parse(runStopGuard(args, stdin).output).decision).toBe('block');
+        }
+        expect(
+            JSON.parse(
+                runStopGuard(
+                    undefined,
+                    JSON.stringify({ messages: [{ role: 'assistant', content: [null, { type: 'text', text: {} }] }] }),
+                ).output,
+            ),
+        ).toEqual({});
+    });
+
     it('reads the Claude Stop payload from stdin via transcript_path', () => {
         const transcript = [
             JSON.stringify({ type: 'user', message: { role: 'user', content: 'q' } }),
