@@ -4,7 +4,7 @@ name: Prevent script conversion from overwriting its source
 status: done
 template: issue
 created_at: 2026-10-12T16:36:52.631Z
-updated_at: "2026-10-12T21:16:39.367Z"
+updated_at: "2026-10-12T23:38:40.149Z"
 feature_id: H1
 
 ac_altitude: task-local
@@ -102,15 +102,15 @@ Rationale: identity, not containment, is the question, so one resolved-spelling 
 
 | Requirement | Status | Evidence |
 |-------------|--------|----------|
-| R1 | MET | `apps/cli/src/commands/script-convert.ts:80` defines the identity assertion; resolved equality and stat dev/ino refuse aliases before temp creation at `apps/cli/src/commands/script-convert.ts:117`. Syntax-invalid direct, normalized, symlink leaf/parent and hard-link fixtures at `apps/cli/tests/commands/script-convert.test.ts:169` pass and preserve bytes. |
-| R2 | MET | `apps/cli/src/commands/script-convert.ts:200` checks before preview; the normal path uses the same converter. CLI refusal tests at `apps/cli/tests/commands/script-convert.test.ts:370` pass. Six fresh real CLI collision invocations exited 1 with empty stdout, actionable stderr and identical source bytes, including JSON and dry-run aliases. |
-| R3 | MET | `apps/cli/tests/commands/script-convert.test.ts:427` replaces an unrelated twin and executes it under Node. Fresh real CLI JSON conversion returned exit 0 and the twin printed portable-ok under Node, preserving source bytes. `docs/04_DESIGN.md:318` documents collision refusal. Fresh full suite: 2578 pass, 0 fail; measured coverage 99.61% functions and 98.89% lines; lint/typecheck, 39 pre-check rules, 3 post-check rules and build pass. Reverification wrote @superskill `.spur/run/0152-verify-answer.txt` line 1 and @superskill `.spur/run/0152-verdict.json` line 1; gate receipt @superskill `.spur/run/2026-10-12-verifyall-gates.log` line 1. No source repair required. |
+| R1 | MET | `apps/cli/src/commands/script-convert.ts:80` identity assertion (resolved spelling, then stat dev/ino, ENOENT-only absence) is called before temp creation at `apps/cli/src/commands/script-convert.ts:117`; syntax-invalid direct/normalized/symlink/hard-link fixtures at `apps/cli/tests/commands/script-convert.test.ts:169` pass with bytes preserved. |
+| R2 | MET | `apps/cli/src/commands/script-convert.ts:200` asserts before the dry-run preview inside the existing try/catch; fresh real CLI probes this run: default .mjs, --dry-run, --json, normalized --out, hard-link --out --json and symlink --out --dry-run each exit 1, stdout 0 bytes, refusal on stderr, source bytes unchanged. Tests at `apps/cli/tests/commands/script-convert.test.ts:370` pass. |
+| R3 | MET | `apps/cli/tests/commands/script-convert.test.ts:427` distinct-output replacement test passes; `docs/04_DESIGN.md:318` documents collision refusal. Fresh gate this run (receipt @superskill `.spur/run/verifyall-20261012/status` line 1): lint+typecheck exit 0; bun test 2585 pass / 0 fail, 99.61% funcs / 98.89% lines; build exit 0; spur-check 39 pre-check + 3 post-check rules pass. |
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
 |---------------------|--------|---------------|----------|
-| AC1 — Reject identical and aliased files before bundling (req: R1) | MET | test | `apps/cli/tests/commands/script-convert.test.ts:169` through the hard-link case cover syntax-invalid direct, normalized and both symlink shapes; the collision-specific error precedes bundling and bytes remain identical. Executed in the fresh full suite. |
-| AC2 — CLI collision refusal includes preview and JSON (req: R2) | MET | test | `apps/cli/tests/commands/script-convert.test.ts:370` covers normal, JSON, dry-run and explicit aliases. Fresh real CLI probes also exercised six collision invocations, each exit 1, stdout empty and source unchanged; receipt @superskill `.spur/run/2026-10-12-verifyall-cli-receipt.json` line 1. |
-| AC3 — Distinct output conversion remains portable (req: R3) | MET | test | `apps/cli/tests/commands/script-convert.test.ts:427` proves an existing unrelated twin is replaced and executes under Node. Fresh real CLI JSON golden path produced one converted entry, exit 0, Node output portable-ok and byte-identical TS source. Documentation at `docs/04_DESIGN.md:318`. |
+| AC1 — Reject identical and aliased files before bundling (req: R1) | MET | test | `apps/cli/tests/commands/script-convert.test.ts:169` syntax-invalid direct, normalized, symlink leaf/parent and hard-link cases get the collision diagnostic (proving rejection precedes bundling) with identical bytes; executed in the fresh 2585-pass suite. |
+| AC2 — CLI collision refusal includes preview and JSON (req: R2) | MET | command | Six fresh real CLI invocations in a scratch project (default .mjs, --dry-run, --json, ./-normalized --out, hard-link --out --json, symlink --out --dry-run): all exit 1, empty stdout, actionable refusal naming source/output on stderr, shasum unchanged. Test coverage at `apps/cli/tests/commands/script-convert.test.ts:370`. |
+| AC3 — Distinct output conversion remains portable (req: R3) | MET | command | Fresh real CLI demo.ts --json over a pre-existing unrelated demo.mjs: exit 0, JSON envelope on stdout, node demo.mjs printed portable-ok. Test at `apps/cli/tests/commands/script-convert.test.ts:427`; doc at `docs/04_DESIGN.md:318`. |
 - Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review
