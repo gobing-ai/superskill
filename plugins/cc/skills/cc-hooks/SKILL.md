@@ -34,7 +34,7 @@ automation across multiple coding agents: author once in the canonical `hooks.js
 
 ## Canonical Schema (HookDefinitionSchema)
 
-Hooks are authored as a rulesync-canonical `hooks.json` in the `.rulesync/` directory of a plugin. The schema is defined in `vendors/rulesync/src/types/hooks.ts:26` as `HookDefinitionSchema`:
+Hooks are authored as a rulesync-canonical `hooks.json` in the `.rulesync/` directory of a plugin. The canonical schema is rulesync's `HookDefinitionSchema`; this repo's parsed model of one entry lives in `packages/core/src/quality/hook.ts:10`:
 
 ```jsonc
 {
@@ -64,7 +64,7 @@ Hooks are authored as a rulesync-canonical `hooks.json` in the `.rulesync/` dire
 
 ### HookEvent Taxonomy
 
-Canonical event names are **camelCase**. Each tool supports a subset — see `vendors/rulesync/src/types/hooks.ts:49` for the full `HookEvent` union.
+Canonical event names are **camelCase**. Each tool supports a subset — this repo's event vocabulary and the Claude-PascalCase → canonical mapping live in `packages/core/src/content/hook-events.ts:16`.
 
 | Event | When | Use For |
 |-------|------|---------|
@@ -81,7 +81,7 @@ Canonical event names are **camelCase**. Each tool supports a subset — see `ve
 | `beforeReadFile` / `afterFileEdit` | Around file IO | Redaction, log |
 | `afterAgentResponse` / `afterAgentThought` | Turn lifecycle | Telemetry |
 
-Per-tool event support: see `CURSOR_HOOK_EVENTS`, `CLAUDE_HOOK_EVENTS`, `OPENCODE_HOOK_EVENTS`, `CODEXCLI_HOOK_EVENTS`, `GEMINICLI_HOOK_EVENTS` in `vendors/rulesync/src/types/hooks.ts`.
+Per-tool event support: this repo ships only the Claude Code set and its canonical mapping (`packages/core/src/content/hook-events.ts:16`); the other tools' event sets are rulesync-side and are not part of this checkout.
 
 ## Safety Invariants (hooks run code — non-negotiable)
 
@@ -273,5 +273,5 @@ The JSON shapes a hook writes to stdout (standard, `preToolUse` permission decis
 - **[cross-platform.md](references/cross-platform.md)** — Event crosswalk, tool-name mapping, `failClosed` matrix
 - **[platform-limits.md](references/platform-limits.md)** — What's NOT portable and why
 - **[migration.md](references/migration.md)** — Migrating legacy hook configs to the canonical `HookDefinitionSchema`
-- **Canonical schema:** `vendors/rulesync/src/types/hooks.ts:26,49` (`HookDefinitionSchema`, `HookEvent`)
+- **Canonical schema:** rulesync's `HookDefinitionSchema` / `HookEvent` union (reference-only, not shipped here); the parsed entry model is `packages/core/src/quality/hook.ts:10`
 - **Hook dimensions:** `packages/core/src/quality/hook.ts:226` (`correctness`, `event-coverage`, `safety`, `pattern-match-quality`)
