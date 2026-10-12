@@ -495,3 +495,51 @@ Artifact: `/Users/robin/xprojects/superskill/.spur/run/909f6e54-bf31-4ff3-af22-c
 
 ### Residual (left open, not doc drift)
 - Same-class risk 0148 did not close: `hook.ts:84` still roots `hook emit --global` at `homedir()`, and `skill.ts` passes `opts.homeDir` (undefined → `homedir()`), so those two global roots can still diverge from `resolveHomeDir()`. `docs/04_DESIGN.md:381`'s "defaults to `os.homedir()`" is accurate for the accessor, so this is a product inconsistency, not a documentation one — a follow-up candidate.
+**Confidence-level verification: PASS.** Claim `confidence: HIGH` in `.spur/memory/evidence/0153-verdict.json` is valid and substantiated:
+
+1. **Enum check** — `HIGH` ∈ {HIGH, MEDIUM, LOW} ✓
+2. **Substantiation** — the artifact's own `confidence` check is a value echo (circular), so verified independently: HIGH requires all requirements/ACs MET with executable evidence and all pipeline checks passing → 3/3 requirements MET, 3/3 ACs MET, all `evidenceType: test`, all 5 checks pass (`spur task check`, `evidence-rule-pass`, `confidence`, `proof-input-digest`, `residual-sweep`) ✓
+3. **Fresh evidence spot-check** — re-ran the three cited test groups on the current tree: AC1 7 pass, AC2 7 pass, AC3 3 pass (17 tests, 0 fail) — counts match the artifact's recorded runs exactly ✓
+
+Verification recorded in the wrapup artifact at `.spur/run/0fd8a029-5165-4ec5-97a3-a0452961c68a-wrapup-learnings.md`. Skipped: full `bun run spur-check` rerun (out-of-scope for this docs-wrapup session; the pipeline gate already ran at task close).
+
+## 2026-10-12 — task 0153 (Validate skill lock entries before consumers or mutations)
+
+### Conventions applied
+
+- One private validator, every boundary: `lockEntriesError(skills, kind)` in `packages/core/src/skills-ecosystem/locks.ts:491` is reused by both readers, both raw writers (caller input) and `assertOnDiskVersionMatches` (on-disk content). No per-consumer catches, no new error channels — existing `corruptLocalLock`/`corruptGlobalLock` warning-bearing empty states are the only failure shape.
+- Validate at the owning boundary, not at consumers: readers, writer input, and the on-disk writer guard each validate; `checkSkills` and unnamed `executeUpdate` were left unmodified because they already carried warning branches the fix feeds.
+- Preserve existing contracts: entry validation runs after version-mismatch handling (ordering contract kept), null-prototype skills records kept, bytes untouched on every refusal, existing JSON envelope + exit 2 reused instead of a new exit path.
+
+### Errors fixed / root cause
+
+- Root cause: `toOwnKeyRecord` cast untrusted values to entry types; readers validated only the outer dictionary, so a primitive/null/array/missing-field entry reached `checkSkills` and crashed at the `in` operator (`operations.ts:794`).
+- Raw writers validated only outer shape + version, so `writeLocalLock`/`writeGlobalLock` silently overwrote a supported malformed-entry lock with a fresh valid object — reader-only validation was insufficient because raw writers construct locks independently of reads.
+- Global crash parity was initially a hypothesis; reproduced with an isolated `XDG_STATE_HOME` before freezing scope (both schemas returned no warning and threw).
+
+### Patterns worth repeating
+
+- Structural consumer failures over throws: `checkSkills` returns `success:false`/`rows:[]`; unnamed `update --check --json` emits the single existing envelope with `exitCode:2`.
+- Every refusal test asserts on-disk byte identity; mutation refusal tests pin an installed-skill sentinel so "refused before touching files" is proven, not assumed.
+- Test through the real lock readers; mock only unrelated external plugin discovery.
+
+### Gotchas
+
+- Runtime schema ≠ published TS type: `GlobalSkillLockEntry.sourceUrl` stays required in the published interface while runtime validation treats `sourceUrl` as optional in both kinds (vendor fixtures omit it). Compatibility is tested independently of the stricter interface — do not "fix" the type or the runtime to match each other in a bugfix task.
+- Shape-only validation: empty strings, unknown `sourceType` values, unknown entry fields, own special-name keys (`__proto__`/`constructor`), and any hash/timestamp format must stay accepted — no field filtering, coercion, or enum checks.
+
+## 2026-10-12 — wrapup doc-evolve pass (00/03/04/design scope)
+
+- Same-commit doc sync held for the body (fd36492 included the `docs/04_DESIGN.md:415/417` lock-contract edit) but missed the §4.3-r3 frontmatter bump — a substantive body edit and its `version`/`updated_at` bump belong to the same edit; the wrapup pass repaired 04 → 2.21.0 / 2026-10-12.
+- T3 drift hides in `03_ARCHITECTURE.md`, not just 04: task 0149's `script verify` verb was registered (`cli.ts:34`) but 03's module tree and the `script` command-family row both lacked it. Audit both blocks when a verb lands.
+- Frontmatter/§4.1 contract drift: 03's `owns` lacked the constitution's `rationale-in-depth` clause — §4.1 wins, frontmatter is the instantiated copy.
+- ADR-017 silent divergence repaired by dated Amendment (bump-ver/drop-tags → `spur builder`, in-process cases disabled in place with a re-enable pointer). Verify amendment claims against code before writing them: `scripts/builder.ts:468` really names `spur builder bump-ver` as the drift remedy.
+- Superseded-satellite rows intentionally absent from 04 stay absent — do not re-add during coverage audits.
+- Tooling: `rg -r` is the replace flag — `rg -rn "<pattern>"` silently rewrites match text to `n` in output; use `rg -n` for line-number search.
+
+## 2026-10-12 — verification: confidence level (HIGH/MEDIUM/LOW) — PASS
+
+- Claim verified: `.spur/memory/evidence/0153-verdict.json` records `verdict: PASS`, `confidence: HIGH` — a valid enum value (HIGH | MEDIUM | LOW).
+- Substantiation (the artifact's own `confidence` check is a value echo, so verified independently): HIGH requires all requirements and ACs MET with executable evidence and all pipeline checks passing — confirmed programmatically: 3/3 requirements MET, 3/3 ACs MET, all `evidenceType: test`, all 5 checks pass (`spur task check`, `evidence-rule-pass`, `confidence`, `proof-input-digest`, `residual-sweep`).
+- Fresh spot-check on the current tree reproduces the cited evidence exactly: AC1 7 pass / AC2 7 pass / AC3 3 pass (17 tests, 0 fail) across `locks.test.ts`, `operations.test.ts`, `update.test.ts` — counts match the artifact's recorded runs.
+- Convention: a verdict's confidence level is not verified by restating it; verify enum membership, factor completeness (requirements + ACs + checks), and re-run at least the cited executable evidence before carrying the claim into a wrapup report.
