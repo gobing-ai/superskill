@@ -3,8 +3,9 @@
 # repo — so its rg evaluator finds zero files and exits 2, failing the whole
 # pre-check as "misconfigured". Disabled here until the fix reaches the binary
 # that `bun run` actually resolves. superskill's own vendor boundary is enforced
-# by the absorb-don't-cite grep in task 0070 (no vendors/skills / study-author
-# citations under plugins/cc or packages/).
+# by `skill-citations-resolve` (`scripts/builder.ts` `checkCitations`, task 0154),
+# which rejects any `vendors/` reference in a checked plugin document without
+# consulting the filesystem.
 #
 # INTENTIONAL OVERRIDE — not cruft (task 0071, R2-local/D3). The upstream fix
 # (task 0071 R2-upstream, spur-new 0212) is already DONE: @gobing-ai/ts-rule-engine

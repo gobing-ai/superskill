@@ -1,15 +1,17 @@
 # Skill citation-resolution gate — runs in the recommended-post-check preset.
 #
 # Catches documentation drift the pure content heuristics cannot see: dead
-# `path:line` code citations and rubric dimension-count claims that disagree
+# `path:line` code citations, references into the gitignored `vendors/`
+# reference-only tree (ADR-004), and rubric dimension-count claims that disagree
 # with the rubric YAML a skill documents. See the check-skill-citations command
-# in scripts/builder.ts for the two defect classes and why this lives outside
+# in scripts/builder.ts for the defect classes and why this lives outside
 # packages/core.
 rules:
   - id: skill-citations-resolve
     description: >
-      Plugin SKILL.md code citations must resolve (file exists, line in range)
-      and any "N dimensions" claim must match the rubric the skill documents.
+      Plugin SKILL.md and agents/*.md code citations must resolve (file exists,
+      line in range) and must not reference the reference-only `vendors/` tree;
+      any "N dimensions" claim must match the rubric the skill documents.
     severity: error
     enabled: true
     evaluator:
@@ -21,3 +23,4 @@ rules:
           - check-skill-citations
     include:
       - "plugins/**/SKILL.md"
+      - "plugins/*/agents/*.md"

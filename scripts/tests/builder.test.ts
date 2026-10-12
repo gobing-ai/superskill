@@ -55,6 +55,21 @@ function fakeFs(present: Record<string, number>): FileResolver {
     };
 }
 
+/** Resolver that records every `exists` probe, so a test can assert a path was never consulted. */
+function recordingFs(present: Record<string, number>): { fs: FileResolver; probed: string[] } {
+    const probed: string[] = [];
+    return {
+        probed,
+        fs: {
+            exists: (rel) => {
+                probed.push(rel);
+                return rel in present;
+            },
+            lineCount: (rel) => present[rel] ?? 0,
+        },
+    };
+}
+
 describe('checkCitations', () => {
     it('flags a citation whose file does not exist (the cc-hooks dead-path defect)', () => {
         const body = 'See `apps/cli/src/quality/dimensions.ts:54` for the dimensions.';
@@ -82,6 +97,49 @@ describe('checkCitations', () => {
         const body = 'Run `bash examples/validate.sh` and edit `agents/my-agent.md`.';
         // Neither path is under a resolvable prefix, so neither is checked.
         expect(checkCitations('SKILL.md', body, fakeFs({}))).toHaveLength(0);
+    });
+
+    it('reports a vendor reference identically whether or not the local tree has it (AC2)', () => {
+        const vendorPath = 'vendors/rulesync/src/types/hooks.ts';
+        const body = 'The hook model lives at `vendors/rulesync/src/types/hooks.ts:49`.';
+        // Same body, two resolver fixtures — the verdict must not depend on the local tree.
+        for (const present of [{ [vendorPath]: 400 }, {}]) {
+            const { fs, probed } = recordingFs(present);
+            const findings = checkCitations('SKILL.md', body, fs);
+            expect(findings).toHaveLength(1);
+            expect(findings[0].message).toStartWith('vendor boundary:');
+            expect(findings[0].message).toContain(vendorPath);
+            expect(findings[0].message).not.toContain('dead citation');
+            // A boundary verdict never consults the filesystem.
+            expect(probed).not.toContain(vendorPath);
+        }
+    });
+
+    it('reports a directory-style vendor reference with no file extension (AC3)', () => {
+        const body = 'Study the feature layout under `vendors/rulesync/src/features/skills/` before editing.';
+        const findings = checkCitations('SKILL.md', body, fakeFs({}));
+        expect(findings).toHaveLength(1);
+        expect(findings[0].message).toStartWith('vendor boundary:');
+        expect(findings[0].message).toContain('vendors/rulesync/src/features/skills/');
+    });
+
+    it('passes a body whose only citations are shipped anchors (AC1 content shape)', () => {
+        const body =
+            'Emitted from `packages/core/src/quality/hook.ts:10` and `packages/core/src/content/hook-events.ts:16`.';
+        const fs = fakeFs({ 'packages/core/src/quality/hook.ts': 300, 'packages/core/src/content/hook-events.ts': 40 });
+        expect(checkCitations('SKILL.md', body, fs)).toHaveLength(0);
+    });
+
+    it('does not fire on a hyphen-adjacent lookalike segment (AC2 residual-proof negative)', () => {
+        // The body carries the trigger half (`vendors/` inside `multi-vendors/`) and still asserts
+        // "does not fire": only the leading boundary distinguishes the two, so `\b` would fail here.
+        const body = 'See `multi-vendors/registry.ts` for the legacy loader.';
+        expect(checkCitations('SKILL.md', body, fakeFs({}))).toHaveLength(0);
+    });
+
+    it('still fires on a mid-path vendor segment (AC2)', () => {
+        const findings = checkCitations('SKILL.md', 'Repo layout: `plugins/foo/vendors/x.ts`', fakeFs({}));
+        expect(findings.some((f) => f.message.startsWith('vendor boundary: vendors/x.ts'))).toBe(true);
     });
 });
 
@@ -274,6 +332,20 @@ describe('checkSkillCitations — integration', () => {
         expect(logSpy).toHaveBeenCalledWith(
             `${fixturesDir}/test-skill/SKILL.md: dead citation: ${deadPath} (file does not exist)`,
         );
+        expect(errorSpy).toHaveBeenCalledWith('\n1 citation/drift finding(s).');
+    });
+
+    it('reports a vendor citation in an agent document when the agent glob is in scope (AC4)', async () => {
+        const agentPath = `${fixturesDir}/test-plugin/agents/expert-hook.md`;
+        await Bun.write(agentPath, '# Expert hook\n\nSee `vendors/rulesync/src/types/hooks.ts:49` for the model.\n');
+
+        expect(() =>
+            checkSkillCitations([`${fixturesDir}/*/skills/*/SKILL.md`, `${fixturesDir}/*/agents/*.md`]),
+        ).toThrow('process.exit mocked');
+
+        expect(exitSpy).toHaveBeenCalledWith(1);
+        const printed = logSpy.mock.calls.map((call) => String(call[0])).join('\n');
+        expect(printed).toContain(`${agentPath}: vendor boundary:`);
         expect(errorSpy).toHaveBeenCalledWith('\n1 citation/drift finding(s).');
     });
 });
@@ -510,6 +582,17 @@ describe('runBuilderCommand', () => {
 
         // Use a relative glob that matches nothing so we don't scan real skills
         await runBuilderCommand(['check-skill-citations', 'nonexistent-test-glob-xyz/*/SKILL.md']);
+    });
+
+    it('defaults to scanning both skills and agent documents (AC4)', async () => {
+        const logSpy = spyOn(console, 'log').mockImplementation(() => {});
+
+        await runBuilderCommand(['check-skill-citations']);
+
+        const printed = logSpy.mock.calls.map((call) => String(call[0])).join('\n');
+        expect(printed).toContain('OK: skill citations resolve and dimension claims match rubrics');
+        expect(printed).toContain('plugins/*/skills/*/SKILL.md');
+        expect(printed).toContain('plugins/*/agents/*.md');
     });
 
     it('fails on missing arguments and unknown commands', async () => {
