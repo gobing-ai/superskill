@@ -2,11 +2,11 @@
 schema_version: 1
 id: "H1"
 name: "Portable plugin scripts via install-time staging"
-status: active
+status: done
 priority: P2
 tags: []
 created_at: "2026-07-17T06:13:24.436Z"
-updated_at: "2026-10-12T16:36:52.767Z"
+updated_at: "2026-10-12T21:48:36.823Z"
 ---
 
 # A: Portable plugin scripts via install-time staging
@@ -88,6 +88,10 @@ Feature: Portable plugin scripts via install-time staging
 | 0121 | Harden script convert against Bun globals and document the script run contract limits | done |
 | 0122 | Standardize plugin-skill script authoring (path contract, cc-skills, validate layout gate) | done |
 | 0148 | Fix apps CLI review findings across script-path home, hermes ownership, symlink hits, and skill counts | done |
+| 0149 | Stamp staged plugin scripts with version and per-file hashes | done |
+| 0150 | Fix shared Stop hook JSON compatibility and Codex assistant input | done |
+| 0151 | Add bounded native Pi anti-hallucination continuation guard | done |
+| 0152 | Prevent script conversion from overwriting its source | done |
 <!-- END AUTO-GENERATED -->
 
 ## Notes
@@ -119,11 +123,11 @@ Feature: Portable plugin scripts via install-time staging
 ### Reopened work
 - **0087** reopened `done → wip → blocked` pending **0088** + **0089**. Original absorption Solution retained for history; Requirements/Design must be rewritten after frontier research tickets resolve — do not re-verify absorption as the end state.
 
-## Destination
+### Destination
 
 Every agent-skill-related plugin script is delivered by `superskill install` staging (native plugin tree or `~/.agents/scripts/<plugin>/`) and invocable on every supported target through a superskill-resolved path under a portable runner contract — not repo-relative `bun` paths and not CLI absorption alone.
 
-## Decisions so far
+### Decisions so far
 
 <!-- Populated as tickets resolve: `- [WBS title](path) — one-line gist` -->
 - (charting session) Discovery locked C + R2-B…R7-B — see Notes.
@@ -136,7 +140,7 @@ Every agent-skill-related plugin script is delivered by `superskill install` sta
 - [0094 Design hook-path unification without CLAUDE_PLUGIN_ROOT regression](../tasks/0094_design-hook-path-unification-without-claude-plugin-root-regr.md) — keep `superskill hook run` as the sole hooks.json form; R6-B narrowed to "unify delivery (install staging), not runtime invocation form." Zero emitter changes; minCliVersion role preserved; ADR-020 fail-open intact. Proposed follow-up 0096 (`.js` twin for validate_response.ts/ah_guard.ts).
 - [0095 Supersede ADR-015 / extend ADR-022](../tasks/0095_supersede-adr-015-copied-on-install-wording-and-extend-adr-0.md) — ADR-023 dual contract (staging + path standard + optional registry; supersedes ADR-015 "copied on install"); ADR-024 amends ADR-022 to script dispatcher family (`hook-run.ts` + `script-run.ts`); AGENTS.md / 04_DESIGN / bundled_plugin + CHANGELOG synced; surface drift greps clean.
 
-## Not yet specified
+### Not yet specified
 
 - Exact resolution order for `script path` when both native plugin root and `~/.agents/scripts/` exist (multi-target machine).
 - ~~Whether staged entrypoints are Node-only, shell-only, or allow a small set of compiled JS emitted at install.~~ **Resolved by 0089 + ADR-023:** portable runtimes are Node `.js`/`.mjs` + POSIX `.sh` (no Bun-on-target); no install-time compile step in the standard contract.
@@ -148,7 +152,7 @@ Every agent-skill-related plugin script is delivered by `superskill install` sta
 - Coverage/gate impact of staging TS tests under new install destinations.
 - Whether Claude marketplace sync (outside `superskill install`) still needs a separate story for scripts.
 
-## Out of scope
+### Out of scope
 
 - Per-skill `skills/<name>/scripts/` executable revival (ADR-015 anti-pattern).
 - Promoting guard engines to `@gobing-ai/*` workspace packages (rejected by ADR-022 ownership model unless a later ticket reopens packaging).
@@ -162,4 +166,6 @@ Every agent-skill-related plugin script is delivered by `superskill install` sta
 - 2026-09-24T06:59:00.880Z backlog → active (system)
 - 2026-09-24T17:01:09.133Z active → verifying (system)
 - 2026-10-12T16:36:52.767Z verifying → active (system)
+- 2026-10-12T21:48:36.370Z active → verifying (system)
+- 2026-10-12T21:48:36.823Z verifying → done (system)
 

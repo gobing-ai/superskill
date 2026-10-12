@@ -2,11 +2,11 @@
 schema_version: 1
 id: "F2"
 name: "Skills ecosystem compatibility (npx skills add interop)"
-status: active
+status: done
 priority: P2
 tags: []
 created_at: "2026-07-24T22:54:40.642Z"
-updated_at: "2026-10-12T16:39:53.289Z"
+updated_at: "2026-10-12T21:49:29.442Z"
 ---
 
 # B: Skills ecosystem compatibility (npx skills add interop)
@@ -69,6 +69,7 @@ Feature: Skills ecosystem compatibility (npx skills add interop)
 | 0102 | skills-ecosystem: CLI verbs skill add/list/remove/update with lock writes and dry-run | done |
 | 0103 | skills-ecosystem: npx skills interop round-trip verification and docs sync | done |
 | 0106 | Fix skills-ecosystem SECUA and architecture review findings | done |
+| 0153 | Validate skill lock entries before consumers or mutations | done |
 <!-- END AUTO-GENERATED -->
 
 ## Notes
@@ -84,4 +85,6 @@ Feature: Skills ecosystem compatibility (npx skills add interop)
 - 2026-08-12T14:22:41.376Z active → verifying (system)
 - 2026-08-12T14:22:41.508Z verifying → done (system)
 - 2026-10-12T16:36:53.437Z done → active (system)
+- 2026-10-12T21:49:29.024Z active → verifying (system)
+- 2026-10-12T21:49:29.442Z verifying → done (system)
 

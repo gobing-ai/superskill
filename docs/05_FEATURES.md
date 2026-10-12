@@ -2,7 +2,7 @@
 doc: 05_FEATURES
 owns: STATUS — feature decomposition + state (✅ done / 🔶 partial / ⏳ planned / 💤 deferred)
 authority: derived
-version: 6.5.0
+version: 6.6.0
 derived_from: [01_PRD, 02_ROADMAP]
 owner: Robin Min
 updated_at: 2026-10-12
@@ -370,7 +370,7 @@ Design: [04_DESIGN.md § Skills-ecosystem module surface](04_DESIGN.md#skills-ec
 
 | ID | Feature | Deps | Size | Status | Files |
 |----|---------|------|------|--------|-------|
-| F2 | [Skills-ecosystem interop: `npx skills` parity](features/F2_skills-ecosystem-compatibility-npx-skills-add-interop.md) | — | L | 🔶 | `packages/core/src/skills-ecosystem/*`, `apps/cli/src/commands/skill.ts`, `packages/core/tests/skills-ecosystem/*` |
+| F2 | [Skills-ecosystem interop: `npx skills` parity](features/F2_skills-ecosystem-compatibility-npx-skills-add-interop.md) | — | L | ✅ | `packages/core/src/skills-ecosystem/*`, `apps/cli/src/commands/skill.ts`, `packages/core/tests/skills-ecosystem/*` |
 
 Tasks: 0097 (scaffold), 0098 (source-parser/sanitize/frontmatter), 0099 (agents/locks), 0100 (fetch/discovery), 0101 (installer/emit), 0102 (cli verbs), 0103 (round-trip interop verification & docs sync).
 
