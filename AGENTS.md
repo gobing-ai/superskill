@@ -101,6 +101,7 @@ bun run dev        # watch mode (runs CLI from source)
 bun run check      # lint + test (CI gate)
 bun run corpus-check # explicit corpus audit (spur >=0.3.78: unsuppressed, advisory — not part of the gate)
 bun run spur-check # lint + pre-check rules + test + post-check rules
+bun run spur-check-feature # feature-verification workflow entry; runs spur-check
 ```
 
 CLI binary: `apps/cli` exposes `bin: { superskill: "dist/index.js" }`. Root `bun run build` compiles the standalone executable to `dist/superskill` and the versioned Codex plugin ZIP; package `prepack` runs `build:bundle` to create the published `apps/cli/dist/index.js` bundle and package assets.

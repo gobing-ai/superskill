@@ -1,0 +1,37 @@
+"$schema": "@gobing-ai/spur/schemas/state-machine-workflow.schema.json"
+kind: state-machine
+name: feature-verification
+version: "1"
+description: "Verify a feature with the repository's Bun runtime and full quality gate."
+iterationBound: 2
+initialState: verify
+terminalStates: [done, failed]
+failureStates: [failed]
+vars:
+  featureId: "X"
+  spurBin: "spur"
+  verificationCmd: "bun run spur-check-feature"
+  __runId: ""
+states:
+  - id: verify
+    onEnter:
+      # The installed receipt implementation loads Bun APIs, so its host must be Bun.
+      - kind: shell
+        options:
+          command: >-
+            S="$(superskill script path sp feature-verification-steps.mjs)";
+            bun "$S" verify --feature-id "$featureId" --run-id "$__runId" --spur-bin "$spurBin"
+            || printf 'FAIL feature-verification launcher failed\n' > ".spur/run/$__runId-feature-verification.status";
+            exit 0
+  - id: done
+  - id: failed
+transitions:
+  - from: verify
+    to: done
+    guard:
+      kind: shell
+      options:
+        command: 'test "$(cat .spur/run/$__runId-feature-verification.status 2>/dev/null)" = PASS'
+  - from: verify
+    to: failed
+    terminalReason: failed-check

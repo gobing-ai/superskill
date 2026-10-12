@@ -2,7 +2,7 @@
 doc: 04_DESIGN
 owns: SURFACE — concrete shapes: every CLI command, flag, config key, env var, table, DTO
 authority: derived
-version: 2.21.0
+version: 2.22.0
 derived_from: [00_ADR, 01_PRD, 02_ROADMAP]
 owner: Robin Min
 updated_at: 2026-10-12
@@ -428,3 +428,10 @@ A plugin's `hooks.json` is the canonical (abstract) hook definition consumed by 
 | `minCliVersion` | `string` (semver) | **Compat floor (task 0074, ADR-021).** When set, `superskill install` reads the installed CLI version and, if below the floor, warns + skips emitting this plugin's hooks (skills still install). Warn-and-skip only — Claude Code's marketplace sync bypasses `superskill install`, so the floor is early-warning, not enforcement; the load-bearing protection is the fail-open policy (ADR-020). Omitted/empty = no floor. |
 
 Non-`hooks` top-level fields (including `minCliVersion`) survive round-trip conversion through `packages/core/src/mapper.ts` (`convertClaudeHooksToCanonical` preserves all non-hooks metadata).
+
+## Repository feature verification
+
+`.spur/workflows/feature-verification.yaml` runs the installed verification receipt script under Bun,
+because its application dependencies use Bun APIs. Its `verificationCmd` is `bun run spur-check-feature`,
+an alias of the full `spur-check` gate. Biome excludes generated `.spur/memory` evidence and run records;
+the verification workflow validates their identity, input digest and outcome at feature completion.

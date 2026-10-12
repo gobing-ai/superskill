@@ -12,6 +12,7 @@
             "!**/dist",
             "!**/.turbo",
             "!**/.coverage",
+            "!**/.spur/memory",
             "!**/node_modules",
             "!plugins/cc/skills/*/scripts",
             "!plugins/cc/skills/*/tests",
