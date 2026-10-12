@@ -1,11 +1,11 @@
 ---
 doc: 03_ARCHITECTURE
-owns: HOW — module boundaries, data flow, runtime model, invariants
+owns: HOW — module boundaries, data flow, runtime model, invariants, rationale-in-depth
 authority: derived
-version: 2.20.0
+version: 2.22.0
 derived_from: [00_ADR, 01_PRD]
 owner: Robin Min
-updated_at: 2026-09-29
+updated_at: 2026-10-12
 read_before: cross-module, seam, or schema work
 edit_rules: 99 §6.4
 sync: [T1]
@@ -198,6 +198,7 @@ apps/cli/src/                     # ── CLI app (@gobing-ai/superskill) ─�
 │   ├── script-convert.ts         # portable .mjs build command
 │   ├── script-path.ts            # staged plugin entrypoint resolver
 │   ├── script-run.ts             # registered plugin script dispatcher
+│   ├── script-verify.ts          # staged script-root stamp verifier (task 0149)
 │   ├── skill.ts                  # superskill skill subcommands
 │   └── update.ts                 # superskill update: plugin manifests + lock-tracked skills (ADR-035)
 │
@@ -486,7 +487,7 @@ Commander registers nine root commands and families. Exact signatures and flags 
 | `command` | `scaffold`, `validate`, `evaluate`, `refine`, `evolve` |
 | `hook` | `validate`, `evaluate`, `refine`, `evolve`, `emit`, `run` |
 | `magent` | `scaffold`, `validate`, `evaluate`, `refine`, `evolve` |
-| `script` | `run`, `path`, `convert` |
+| `script` | `run`, `path`, `verify`, `convert` |
 | `doctor` | root command (grok-bot target only; task 0128) |
 
 ## Command Sequence Diagrams & Briefings

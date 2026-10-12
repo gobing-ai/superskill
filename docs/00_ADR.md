@@ -2,9 +2,9 @@
 doc: 00_ADR
 owns: WHY — which cross-cutting decision was made, and the one-line reason
 authority: authoritative
-version: 1.16.0
+version: 1.17.0
 owner: Robin Min
-updated_at: 2026-09-29
+updated_at: 2026-10-12
 read_before: any structural change; add a dated entry before diverging from a decision
 edit_rules: 99 §6.1
 sync: [T1, T2]
@@ -241,6 +241,8 @@ their exit behavior.
 **Why.** One script with multiple command patterns keeps release/test seams discoverable and avoids tiny helper files that exist only to support one command.
 
 **Detail:** `scripts/builder.ts` owns `bump-ver`, `drop-tags`, `postbuild`, and `check-skill-citations`; tests inject seams through exported builder functions/subcommand dispatch.
+
+**Amendment (2026-10-12).** `bump-ver` and `drop-tags` migrated off the in-process builder to the Spur harness noun `spur builder` (commit 6bc510a, 2026-09-13); the in-process cases are disabled in place with a re-enable pointer, and `check-publish-manifest`'s drift remedy names `spur builder bump-ver`. `scripts/builder.ts` retains `postbuild`, `check-skill-citations`, `check-publish-manifest`, and `resolve`/`restore-publish-deps`; the no-sibling-wrapper rule is unchanged.
 
 ---
 
