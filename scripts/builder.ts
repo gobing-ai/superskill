@@ -197,6 +197,9 @@ const RESOLVABLE_PREFIXES = ['packages/', 'apps/', 'plugins/', 'tooling/', 'scri
  */
 const VENDOR_REF_RE = /(?<![\w.-])vendors\/[\w./-]*/g;
 
+/** Non-global twin of `VENDOR_REF_RE` for a stateless `.test()` on one citation path. */
+const VENDOR_SEGMENT_RE = /(?<![\w.-])vendors\//;
+
 /** Match a code citation: `path.ext` optionally suffixed with `:line`. */
 const CITATION_RE = /\b([a-zA-Z0-9_./-]+\.(?:ts|tsx|js|mjs|yaml|yml|json|sh))(?::(\d+))?\b/g;
 
@@ -229,7 +232,9 @@ export function checkCitations(file: string, body: string, fs: FileResolver): Fi
     }
     for (const match of body.matchAll(CITATION_RE)) {
         const [, path, lineStr] = match;
-        if (isResolvablePath(path)) {
+        // A shipped-root path with a mid-path `vendors/` segment was already reported above;
+        // resolving it too would add a duplicate, machine-dependent `dead citation`.
+        if (isResolvablePath(path) && !VENDOR_SEGMENT_RE.test(path)) {
             if (!fs.exists(path)) {
                 findings.push({ file, message: `dead citation: ${path} (file does not exist)` });
             } else if (lineStr) {

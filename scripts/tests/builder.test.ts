@@ -141,6 +141,14 @@ describe('checkCitations', () => {
         const findings = checkCitations('SKILL.md', 'Repo layout: `plugins/foo/vendors/x.ts`', fakeFs({}));
         expect(findings.some((f) => f.message.startsWith('vendor boundary: vendors/x.ts'))).toBe(true);
     });
+
+    it('reports a mid-path vendor citation once, as a boundary finding, never also as dead (AC2)', () => {
+        const { fs, probed } = recordingFs({});
+        const findings = checkCitations('SKILL.md', 'See `plugins/foo/vendors/x.ts:12`', fs);
+        expect(findings).toHaveLength(1);
+        expect(findings[0]?.message).toStartWith('vendor boundary:');
+        expect(probed).not.toContain('plugins/foo/vendors/x.ts');
+    });
 });
 
 describe('checkDimensionDrift', () => {
