@@ -6,7 +6,8 @@ status: done
 priority: P2
 tags: []
 created_at: "2026-09-13T17:34:31.464Z"
-updated_at: "2026-09-13T23:16:01.854Z"
+updated_at: "2026-10-13T02:25:14.298Z"
+confidence: MEDIUM
 ---
 
 # F8: Unified update: lock-tracked skills + actionable output

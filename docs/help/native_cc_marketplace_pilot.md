@@ -1,5 +1,7 @@
 # Native Claude Code (`cc`) Marketplace Pilot & Verification
 
+Confidence: MEDIUM — every claim here carries an in-repo line anchor; upstream sources were not re-verified in this pass.
+
 | Field | Value |
 |-------|-------|
 | Status | Verified Pilot & Canonical Documentation |

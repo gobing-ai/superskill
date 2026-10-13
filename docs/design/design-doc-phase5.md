@@ -1,5 +1,7 @@
 # Phase 5 Design — Universal Hooks & Deterministic Verb Restoration
 
+Confidence: MEDIUM — every claim here carries an in-repo line anchor; upstream sources were not re-verified in this pass.
+
 > **One-line goal.** Deliver one canonical hook definition that installs correctly across every
 > supported coding agent, and restore the deterministic verbs deleted in Phase 3 — **leveraging
 > `rulesync`'s native hook feature instead of rebuilding a hook abstraction.**

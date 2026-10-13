@@ -229,6 +229,29 @@ const CITATION_ANCHOR_RE =
 /** Match a time- or version-anchored external API claim, e.g. "deprecated since 1.2". */
 const ANCHORED_CLAIM_RE = /\b(?:deprecated (?:since|in|as of)|introduced in|added in|available since|stable since)\b/;
 
+/**
+ * A *document-level* confidence declaration. Two legal forms:
+ *
+ * 1. Body prose — `Confidence: HIGH`, `**Confidence:** MEDIUM`, `Confidence level: LOW`, or a
+ *    `## Confidence` heading whose body names a level within 80 characters (guard parity:
+ *    `ah_guard.ts CONFIDENCE_PATTERNS` accepts that heading form for a response).
+ * 2. A frontmatter `confidence: <LEVEL>` field — the CLI-managed corpus (`docs/features/**`)
+ *    declares its level as a field because `spur feature update` writes fields and canonical
+ *    sections only, so a hand-written prose line there would be a non-canonical write.
+ *
+ * WHY document-level: the sibling enforcement point (`ah_guard.ts hasConfidenceLevel`) checks the
+ * whole response, not each sentence, and a per-line rule would force retrospective confidence
+ * labels onto historical claims nobody re-verified — manufactured evidence. One honest declaration
+ * covers the document. The level must be a whole word, so `HIGHWAY` and `MEDIUM-rare` declare
+ * nothing. KNOWN RESIDUAL: a document that *quotes* a declaration in prose or an example block
+ * outside a fence satisfies the gate without holding one; no line-local signal separates the two.
+ */
+const CONFIDENCE_DECLARATION_RE =
+    /\*{0,2}\bConfidence(?:\s+level)?\b\*{0,2}\s*:?\s*\*{0,2}\s*\b(?:HIGH|MEDIUM|LOW)(?![\w-])|(?:^|\n)#{2,6}\s*Confidence\b[\s\S]{0,80}?\b(?:HIGH|MEDIUM|LOW)(?![\w-])/i;
+
+/** Frontmatter twin of `CONFIDENCE_DECLARATION_RE` for the CLI-managed corpus's field form. */
+const CONFIDENCE_FIELD_RE = /^\s*confidence\s*:\s*['"]?\s*(?:HIGH|MEDIUM|LOW)(?![\w-])/i;
+
 /** Map a plugin-skill directory name to the rubric type it documents. */
 const SKILL_TO_RUBRIC: Record<string, string> = {
     'cc-skills': 'skill',
@@ -399,8 +422,8 @@ export function claimScanMask(lines: string[]): boolean[] {
 
 /**
  * Find uncited claims in one document body. `kind` selects the class: `version` fires on a semver
- * token, `api` on a time/version-anchored API claim phrase. A line is a finding only when it
- * carries a claim and no citation anchor.
+ * token, `api` on a time/version-anchored API claim phrase. A line is a finding unless it carries a
+ * claim, a citation anchor, *and* the document declares its confidence level.
  */
 export function findUncitedClaims(
     file: string,
@@ -411,17 +434,30 @@ export function findUncitedClaims(
     const lines = body.split('\n');
     const masked = claimScanMask(lines);
     const trigger = kind === 'version' ? SEMVER_TOKEN_RE : ANCHORED_CLAIM_RE;
+    // Masked lines cannot declare: a declaration shown *inside* fenced example prose is an example,
+    // not this document's own confidence in its claims. The frontmatter field is the exception — it
+    // is the declaration for CLI-managed docs (see `CONFIDENCE_DECLARATION_RE`).
+    const fmEnd = lines[0]?.trim() === '---' ? lines.findIndex((l, i) => i > 0 && l.trim() === '---') : -1;
+    const declared =
+        (fmEnd > 0 && lines.slice(0, fmEnd).some((l) => CONFIDENCE_FIELD_RE.test(l))) ||
+        CONFIDENCE_DECLARATION_RE.test(lines.filter((_, i) => masked[i] !== true).join('\n'));
     const findings: Finding[] = [];
     lines.forEach((line, i) => {
         if (masked[i] === true || isOwnReleaseLine(line, release)) return;
-        if (!trigger.test(line) || CITATION_ANCHOR_RE.test(line)) return;
+        if (!trigger.test(line)) return;
+        const anchored = CITATION_ANCHOR_RE.test(line);
+        if (anchored && declared) return;
+        const missing: string[] = [];
+        if (!anchored) missing.push('a source anchor (URL, `path:line`, or `pkg@version`)');
+        if (!declared) missing.push('a document-level confidence declaration (`Confidence: HIGH|MEDIUM|LOW`)');
+        const guidance = anchored ? '' : ', or drop the version if it is not load-bearing';
         findings.push({
             file,
             line: i + 1,
             message:
                 kind === 'version'
-                    ? 'uncited version claim: add a source anchor (URL, `path:line`, or `pkg@version`), or drop the version if it is not load-bearing'
-                    : 'uncited API claim: add a source anchor (URL, `path:line`, or `pkg@version`) for the anchored claim',
+                    ? `uncited version claim: add ${missing.join(' and ')}${guidance}`
+                    : `uncited API claim: add ${missing.join(' and ')}${anchored ? '' : ', or drop the claim'}`,
         });
     });
     return findings;

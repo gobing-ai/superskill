@@ -6,7 +6,8 @@ status: done
 priority: P2
 tags: []
 created_at: "2026-08-01T00:24:03.843Z"
-updated_at: "2026-09-14T17:51:06.961Z"
+updated_at: "2026-10-13T02:27:13.843Z"
+confidence: MEDIUM
 ---
 
 # F: CLI Surface

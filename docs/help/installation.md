@@ -1,5 +1,7 @@
 # Installation
 
+Confidence: MEDIUM — every claim here carries an in-repo line anchor; upstream sources were not re-verified in this pass.
+
 ## Canonical Landing Page
 
 `README.md` is the designated universal landing entry point for superskill. This document (`docs/help/installation.md`) serves as the in-depth operational guide for CLI installation, development workflows, and cross-host plugin distribution.

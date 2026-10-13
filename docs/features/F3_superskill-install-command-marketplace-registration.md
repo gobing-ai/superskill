@@ -6,7 +6,8 @@ status: done
 priority: P1
 tags: []
 created_at: "2026-08-01T00:40:45.858Z"
-updated_at: "2026-08-12T13:36:35.392Z"
+updated_at: "2026-10-13T02:25:13.903Z"
+confidence: MEDIUM
 ---
 
 # F3: superskill install command + marketplace registration

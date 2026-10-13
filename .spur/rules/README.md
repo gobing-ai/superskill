@@ -14,7 +14,7 @@ install or to ts-libs.
 | `boundary` | `boundary/` | DB/DAO boundary enforcement |
 | `structure` | `structure/` | File layout, protected files, no focused/skipped tests |
 | `quality` | `quality/` | Post-test gates (coverage) |
-| `docs` | `docs/` | Sourced-claims gate: a markdown line asserting a version string, or a time-anchored API claim, with no citation anchor on that line (`warning`; the scan itself lives in `scripts/builder.ts check-sourced-claims`, which sees fence and frontmatter state a rule-file regex cannot) |
+| `docs` | `docs/` | Sourced-claims gate: a markdown line asserting a version string, or a time-anchored API claim, with no citation anchor on that line, or a document with such claims and no confidence declaration (`warning`; the scan itself lives in `scripts/builder.ts check-sourced-claims`, which sees fence and frontmatter state a rule-file regex cannot) |
 | `surface` | `surface/` | CLI surface consistency (registerXxxCommand wiring, --json serialization) |
 
 ## Presets

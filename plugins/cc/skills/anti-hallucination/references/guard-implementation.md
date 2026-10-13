@@ -1,5 +1,7 @@
 # Guard Implementation Guide
 
+Confidence: MEDIUM — every claim here carries an in-repo line anchor; upstream sources were not re-verified in this pass.
+
 Integration guide for the anti-hallucination guard script with Claude Code hooks.
 
 ## Overview

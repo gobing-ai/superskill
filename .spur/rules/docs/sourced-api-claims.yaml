@@ -3,6 +3,17 @@
 # since", "added in 0.5.x") on a line with no citation anchor is an unverifiable
 # claim: readers cannot tell measured fact from model memory.
 #
+# The scan verifies three halves: the claim trigger, a citation anchor on the
+# same line, and a *document-level* confidence declaration. The declaration is
+# `Confidence: HIGH|MEDIUM|LOW` in prose (`**Confidence:**` and a `## Confidence`
+# heading with the level following are accepted), or a frontmatter
+# `confidence: <LEVEL>` field — the form the CLI-managed corpus can carry,
+# since `spur feature update` writes fields and canonical sections, not
+# arbitrary prose. It is document-level because the sibling enforcement point
+# (`ah_guard.ts hasConfidenceLevel`) reads the whole response: a per-line rule
+# would force retrospective confidence labels onto historical claims nobody
+# re-verified, which is manufactured evidence rather than verification.
+#
 # Absorbed from `~/.config/spur/rules/docs/sourced-api-claims.yaml` (user layer)
 # so the gate is self-contained. WHY: `extends: docs` resolves to ZERO rules —
 # silently, with no validation error — on any machine whose user layer lacks the
@@ -33,11 +44,13 @@ include:
 rules:
   - id: cited-version-strings
     description: >
-      A markdown line asserting a version string (x.y.z) without a citation
-      anchor on the same line — an http(s) URL, a repo `path:line`, or the
-      `pkg@version` form — is unverifiable. Add the anchor, or drop the version
-      if it is not load-bearing. Confidence level (HIGH/MEDIUM/LOW) is part of
-      the claim contract; see sp-source-driven-development.
+      A markdown line asserting a version string (x.y.z) with no citation anchor
+      on the same line — an http(s) URL, a repo `path:line`, or the `pkg@version`
+      form — is unverifiable. Add the anchor, or drop the version if it is not
+      load-bearing. The document must also declare its confidence level
+      (`Confidence: HIGH|MEDIUM|LOW` in prose, or a frontmatter `confidence:`
+      field); the claim contract's confidence arm is enforced here, not just
+      described. See sp-source-driven-development.
     severity: warning
     evaluator:
       type: exit-code
@@ -51,9 +64,10 @@ rules:
     description: >
       A markdown line making a time- or version-anchored external API claim
       ("deprecated since 1.2", "introduced in v3", "available since 0.9") must
-      carry a citation anchor on the same line. Add the source (URL, path:line,
-      or `pkg@version`) and the confidence level (HIGH/MEDIUM/LOW); contract in
-      sp-source-driven-development.
+      carry a citation anchor on the same line, and the document must declare its
+      confidence level (`Confidence: HIGH|MEDIUM|LOW` in prose, or a frontmatter
+      `confidence:` field). Add the source (URL, path:line, or `pkg@version`)
+      and the declaration; contract in sp-source-driven-development.
     severity: warning
     evaluator:
       type: exit-code

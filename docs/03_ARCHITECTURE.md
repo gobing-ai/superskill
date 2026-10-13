@@ -13,6 +13,8 @@ sync: [T1]
 
 # Architecture
 
+Confidence: MEDIUM — every claim here carries an in-repo line anchor; upstream sources were not re-verified in this pass.
+
 ## Codex plugin archive build (ADR-038)
 
 Root `bun run build` cleans `dist/`, builds the standalone CLI, then runs

@@ -14,6 +14,8 @@ sync: [T7]
 
 # Project Constitution — How to Organize the Project
 
+Confidence: MEDIUM — every claim here carries an in-repo line anchor; upstream sources were not re-verified in this pass.
+
 ## 1. What this is & what this is not
 
 This is the **constitution** for the project's key files: an accumulated, machine-maintained set

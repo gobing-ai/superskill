@@ -1,5 +1,7 @@
 # Entity locations
 
+Confidence: MEDIUM — every claim here carries an in-repo line anchor; upstream sources were not re-verified in this pass.
+
 Each coding agent stores skills, slash commands, subagents, and hooks in different directories. This page is the single source of truth for where `superskill install` writes each entity type per target — verified against each agent's source code (`vendors/`).
 
 ## Entity locations — global (user-level, `~`)

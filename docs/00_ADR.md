@@ -12,6 +12,8 @@ sync: [T1, T2]
 
 # Architecture Decision Record
 
+Confidence: MEDIUM — every claim here carries an in-repo line anchor; upstream sources were not re-verified in this pass.
+
 Append-only. Never renumber, never delete. Corrections = dated `**Amendment (YYYY-MM-DD)**` blocks.
 Reversals = new entries naming what they supersede. Burned numbers get a `Skipped` stub.
 

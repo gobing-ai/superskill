@@ -1,5 +1,7 @@
 # Development
 
+Confidence: MEDIUM — every claim here carries an in-repo line anchor; upstream sources were not re-verified in this pass.
+
 Guide for contributors and internal developers. Covers stack, workspace layout, build commands, verification gate, and code style.
 
 ## Stack

@@ -1,5 +1,7 @@
 # Installation
 
+Confidence: MEDIUM — every claim here carries an in-repo line anchor; upstream sources were not re-verified in this pass.
+
 Two ways to get the `superskill` CLI: install the published package (consumers), or build from
 source (contributors). Both land a `superskill` binary on your `PATH`.
 

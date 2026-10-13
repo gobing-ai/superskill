@@ -1,5 +1,7 @@
 # Design: Skill update notification — install manifest + `superskill update`
 
+Confidence: MEDIUM — every claim here carries an in-repo line anchor; upstream sources were not re-verified in this pass.
+
 Feature B · ADR-035 (Accepted design) · 2026-08-31 · amended same day: hybrid version-first compare + release-workflow impact section (repo versioning infra verified: `check-publish-manifest` guard, `bump-ver`, publish.yml → prepublishOnly)
 
 ## Correction (2026-09-10)

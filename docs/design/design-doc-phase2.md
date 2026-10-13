@@ -1,5 +1,7 @@
 # Phase 2 Design — Authoring + Quality Commands
 
+Confidence: MEDIUM — every claim here carries an in-repo line anchor; upstream sources were not re-verified in this pass.
+
 ## Goal
 
 Migrate the five meta-agent skills from `cc-agents/plugins/rd3/skills/cc-agents/` into first-class CLI commands, each with create, validate, evaluate, refine, and evolve operations. The key enhancement over the origin Claude Code skills is **self-evolution** — persistent evaluation data drives longitudinal improvement proposals.

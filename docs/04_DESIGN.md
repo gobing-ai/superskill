@@ -13,6 +13,8 @@ sync: [T3]
 
 # Design — Surface Reference
 
+Confidence: MEDIUM — every claim here carries an in-repo line anchor; upstream sources were not re-verified in this pass.
+
 ## OpenAI listing metadata
 
 `plugins/cc/plugin.json` → `extensions.com.openai`: `interface.developerName` is `Gobing AI`; public contact email is `support@gobing.ai`; `interface.privacyPolicyURL` is `https://gobing.ai/privacy`; `interface.termsOfServiceURL` is `https://gobing.ai/terms`; `review.commerce` is `false`; `publication.countries` is `[]` (all supported countries). Legal pages must be deployed and accessible before re-uploading the ZIP for review.

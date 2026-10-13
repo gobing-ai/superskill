@@ -937,7 +937,8 @@ describe('findUncitedClaims (sourced-claims scan)', () => {
     const NO_OWN_RELEASES = new Set<string>();
 
     it('fires on a bare version claim with no anchor, reporting its line', () => {
-        // Compound (fires): the line carries the trigger half — a semver token — and no anchor half.
+        // Compound (fires): the line carries the trigger half — a semver token — and neither the
+        // anchor half nor a document confidence declaration.
         const findings = findUncitedClaims(
             'f.md',
             '# T\n\nBun is pinned to 1.3.14 here.\n',
@@ -949,9 +950,11 @@ describe('findUncitedClaims (sourced-claims scan)', () => {
     });
 
     it('does not fire when the trigger half carries each accepted anchor form (residual-proof)', () => {
-        // Every line carries BOTH halves: a semver token and an anchor. Dropping the anchor from any
-        // one line makes it fire, which is what makes these negatives carry the compound.
+        // Every line carries all three halves: a semver token, an anchor, and the document
+        // declaration. Dropping either half from any one line makes it fire, which is what makes
+        // these negatives carry the compound.
         const body = [
+            'Confidence: HIGH — checked against the pinned sources above.',
             'Bun is pinned to 1.3.14 (see https://bun.sh/docs/installation).',
             'Biome is pinned to 2.4.16 — docs/04_DESIGN.md:120.',
             'Bun is pinned to 1.3.14 at package.json:42.',
@@ -1000,7 +1003,67 @@ describe('findUncitedClaims (sourced-claims scan)', () => {
         const bare = findUncitedClaims('f.md', 'The hook was deprecated since 1.2.\n', 'api', NO_OWN_RELEASES);
         expect(bare).toHaveLength(1);
         const anchored = 'The hook was deprecated since 1.2 (see https://example.com/rfc).\n';
-        expect(findUncitedClaims('f.md', anchored, 'api', NO_OWN_RELEASES)).toHaveLength(0);
+        // Clean only when both halves hold: the anchor above plus the document declaration below.
+        expect(findUncitedClaims('f.md', `Confidence: MEDIUM\n${anchored}`, 'api', NO_OWN_RELEASES)).toHaveLength(0);
+    });
+
+    it('fires on an anchored claim when the document declares no confidence (residual-proof)', () => {
+        // Everything the anchor check wants is present — a semver token and `package.json:42` — and
+        // the line still fires: the declaration half is missing.
+        const findings = findUncitedClaims(
+            'f.md',
+            'Bun is pinned to 1.3.14 at package.json:42.\n',
+            'version',
+            NO_OWN_RELEASES,
+        );
+        expect(findings).toHaveLength(1);
+        expect(findings[0]?.message).toContain('confidence declaration');
+    });
+
+    it('accepts every body declaration form on an anchored claim (residual-proof)', () => {
+        // Each body carries the trigger half and an anchor half; the varying half is the
+        // declaration, so a regression in any form fails here.
+        const claim = 'Bun is pinned to 1.3.14 at package.json:42.';
+        const bodies = [
+            `Confidence: HIGH\n${claim}`,
+            `**Confidence:** MEDIUM\n${claim}`,
+            `Confidence level: LOW\n${claim}`,
+            `### Confidence\n\nHIGH — checked against .prototools:1.\n${claim}`,
+        ];
+        for (const body of bodies) {
+            expect(findUncitedClaims('f.md', body, 'version', NO_OWN_RELEASES)).toHaveLength(0);
+        }
+    });
+
+    it('accepts a frontmatter confidence field on an anchored claim (residual-proof)', () => {
+        // The CLI-managed corpus declares its level as a field (`spur feature update --field
+        // confidence`), because the section writer cannot carry a hand-written prose line — so the
+        // field form must satisfy the same compound as prose.
+        const body = [
+            '---',
+            'doc: F',
+            'confidence: MEDIUM',
+            '---',
+            '',
+            'Bun is pinned to 1.3.14 at package.json:42.',
+        ].join('\n');
+        expect(findUncitedClaims('f.md', body, 'version', NO_OWN_RELEASES)).toHaveLength(0);
+    });
+
+    it('rejects a level token that only starts with a level word (residual-proof)', () => {
+        // `HIGHWAY` / `MEDIUM-rare` sit exactly where a declaration belongs and the line is
+        // otherwise fully sourced, so each must still fire: the whole-word guard's compound.
+        const claim = 'Bun is pinned to 1.3.14 at package.json:42.';
+        for (const bogus of ['Confidence: HIGHWAY', 'Confidence: MEDIUM-rare']) {
+            expect(findUncitedClaims('f.md', `${bogus}\n${claim}`, 'version', NO_OWN_RELEASES)).toHaveLength(1);
+        }
+    });
+
+    it('does not fire on a declaration with no claim in the document (baseline negative)', () => {
+        // Bare half only: no claim token anywhere, so this locks the baseline and certifies nothing
+        // about the declaration half.
+        const body = 'Confidence: HIGH\n\nThis section carries no version token at all.\n';
+        expect(findUncitedClaims('f.md', body, 'version', NO_OWN_RELEASES)).toHaveLength(0);
     });
 
     it('masks frontmatter and fence interiors only', () => {
