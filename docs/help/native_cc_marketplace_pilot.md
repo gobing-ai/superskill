@@ -51,7 +51,7 @@ To prevent fragmentation and conflicting instructions across documentation sites
                                        ▼
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │ In-Depth Operational Guide: docs/help/installation.md                       │
-│ • Prerequisites & toolchain (Bun ≥ 1.3.14, proto)                           │
+│ • Prerequisites & toolchain (Bun ≥ 1.4.3, proto)                           │
 │ • Global npm/bun package installation vs source builds                      │
 │ • Native host marketplace installation (Claude Code, OMP, Grok)             │
 │ • Cross-host CLI placement commands (all 10 targets)                        │

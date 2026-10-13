@@ -36,8 +36,8 @@ turbo.json      # Turborepo task graph
 
 Workspaces reference each other by the project scope (`@<scope>/*`), set during `bun run setup` from the root `package.json` name.
 
-- **Runtime / package manager / test runner:** Bun `1.3.14`. Prefer `bun:*` APIs over `node:*` unless Bun lacks the API.
-- **Lint + format:** Biome `2.4.16`. No ESLint, no Prettier.
+- **Runtime / package manager / test runner:** Bun `1.4.3`. Prefer `bun:*` APIs over `node:*` unless Bun lacks the API.
+- **Lint + format:** Biome `2.5.15`. No ESLint, no Prettier.
 - **Build orchestration:** Turborepo `^2.9`.
 - **Tool versions:** pinned in `.prototools` via [proto](https://moonrepo.dev/proto). Run `proto use` to install.
 - **Git hooks:** Lefthook. **Conventional commits:** cocogitto (`cog`).

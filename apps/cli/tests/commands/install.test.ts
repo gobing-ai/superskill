@@ -1457,32 +1457,35 @@ describe('resolveRemoteMarketplace — freshness probe + cache contract (task 01
             }),
         ],
         ['identity-mismatched (other owner)', null],
-    ])('refreshes online when the marker is %s and writes a valid identity marker (AC3)', async (_label, markerBody) => {
-        const home = createTempWorkspace();
-        setEnvVar('HOME_DIR', home);
-        const cacheRoot = join(marketplaceCacheRoot(), 'gobing-ai', 'superskill', 'HEAD');
-        seedWarmCache(cacheRoot, '# stale\n');
-        if (typeof markerBody === 'string') {
-            writeFileSync(join(cacheRoot, '.superskill-ref.json'), markerBody);
-        } else if (markerBody === null) {
-            // The explicit identity-mismatch case: a well-formed marker for another owner.
-            writeMarker(cacheRoot, { owner: 'other-org' });
-        }
+    ])(
+        'refreshes online when the marker is %s and writes a valid identity marker (AC3)',
+        async (_label, markerBody) => {
+            const home = createTempWorkspace();
+            setEnvVar('HOME_DIR', home);
+            const cacheRoot = join(marketplaceCacheRoot(), 'gobing-ai', 'superskill', 'HEAD');
+            seedWarmCache(cacheRoot, '# stale\n');
+            if (typeof markerBody === 'string') {
+                writeFileSync(join(cacheRoot, '.superskill-ref.json'), markerBody);
+            } else if (markerBody === null) {
+                // The explicit identity-mismatch case: a well-formed marker for another owner.
+                writeMarker(cacheRoot, { owner: 'other-org' });
+            }
 
-        const resolved = await resolveRemoteMarketplace('gobing-ai/superskill', {
-            fetchFn: ccRepoFetch({ commit: COMMIT_A, tree: TREE_A, skillBody: '# fresh\n' }),
-        });
+            const resolved = await resolveRemoteMarketplace('gobing-ai/superskill', {
+                fetchFn: ccRepoFetch({ commit: COMMIT_A, tree: TREE_A, skillBody: '# fresh\n' }),
+            });
 
-        expect(readFileSync(join(resolved.root, 'plugins', 'cc', 'skills', 'a.md'), 'utf-8')).toBe('# fresh\n');
-        const marker = JSON.parse(markerText(resolved.root)) as Record<string, string>;
-        expect(marker.owner).toBe('gobing-ai');
-        expect(marker.repo).toBe('superskill');
-        expect(marker.ref).toBe('HEAD');
-        expect(marker.subdir).toBe('');
-        expect(marker.commitSha).toBe(COMMIT_A);
-        expect(marker.treeSha).toBe(TREE_A);
-        expect(resolved.resolvedRef).toBe(TREE_A);
-    });
+            expect(readFileSync(join(resolved.root, 'plugins', 'cc', 'skills', 'a.md'), 'utf-8')).toBe('# fresh\n');
+            const marker = JSON.parse(markerText(resolved.root)) as Record<string, string>;
+            expect(marker.owner).toBe('gobing-ai');
+            expect(marker.repo).toBe('superskill');
+            expect(marker.ref).toBe('HEAD');
+            expect(marker.subdir).toBe('');
+            expect(marker.commitSha).toBe(COMMIT_A);
+            expect(marker.treeSha).toBe(TREE_A);
+            expect(resolved.resolvedRef).toBe(TREE_A);
+        },
+    );
 
     // AC4/R3: probe failures reuse a manifest-bearing cache with one stderr warning —
     // old bytes and marker stay byte-identical, freshness stays unclaimed.

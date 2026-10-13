@@ -8,7 +8,7 @@ source (contributors). Both land a `superskill` binary on your `PATH`.
 ## Prerequisites
 
 - **Consumers:** npm (Node.js) or Bun — used only to install; the package ships a prebuilt bundle.
-- **Contributors:** [Bun](https://bun.sh/) ≥ 1.3.14 (runtime, package manager, test runner).
+- **Contributors:** [Bun](https://bun.sh/) ≥ 1.4.3 (runtime, package manager, test runner).
   [proto](https://moonrepo.dev/proto) is optional and pins tool versions via `.prototools`.
 
 ## Option A — install the published package
@@ -103,7 +103,7 @@ See the [release process](./release.md) for how versions are gated before they r
 |---------|-----|
 | `command not found: superskill` after `bun link` | Ensure `~/.bun/bin` is on your `PATH`. |
 | `Cannot find module` errors running from source | Run `bun install` from the repo root. |
-| `bun: command not found` | Install Bun ≥ 1.3.14 from [bun.sh](https://bun.sh/). |
+| `bun: command not found` | Install Bun ≥ 1.4.3 from [bun.sh](https://bun.sh/). |
 | Install fails resolving a plugin | Check the marketplace locator: an existing local path is treated as local; `owner/repo` that does not exist locally is treated as GitHub shorthand. See [install](./install.md#marketplace-locators). |
 | TypeScript errors during development | Run the formatter/typecheck autofix the repo provides, then rebuild. |
 

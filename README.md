@@ -51,7 +51,7 @@ bun run build
 cd apps/cli && bun link
 ```
 
-Requires [Bun](https://bun.sh/) ≥ 1.3.14. See [Installation guide](docs/help/installation.md) for details and troubleshooting.
+Requires [Bun](https://bun.sh/) ≥ 1.4.3. See [Installation guide](docs/help/installation.md) for details and troubleshooting.
 
 ## Quick start
 

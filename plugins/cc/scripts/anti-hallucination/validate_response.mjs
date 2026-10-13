@@ -241,7 +241,7 @@ async function main() {
   process.exit(await main());
 }
 export {
-  validateResponseText,
+  main,
   readStdinText,
-  main
+  validateResponseText
 };

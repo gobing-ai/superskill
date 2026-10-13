@@ -1,7 +1,7 @@
-bun = "1.3.14"
-biome = "2.4.16"
-cog = "6.5.0"
-lefthook = "1.13.0"
+bun = "1.4.3"
+biome = "2.5.15"
+cog = "7.0.0"
+lefthook = "2.2.2"
 
 [plugins.tools]
 biome = "file://.moon/plugins/biome.yml"

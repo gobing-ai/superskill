@@ -8,7 +8,7 @@ Confidence: MEDIUM — every claim here carries an in-repo line anchor; upstream
 
 ## Prerequisites
 
-- [Bun](https://bun.sh/) ≥ 1.3.14 (runtime + package manager + test runner)
+- [Bun](https://bun.sh/) ≥ 1.4.3 (runtime + package manager + test runner)
 - [proto](https://moonrepo.dev/proto) (optional — pins tool versions via `.prototools`)
 
 ## Option A — Consumer install (npm or bun)
@@ -92,5 +92,5 @@ bun run build      # compile to standalone binary
 |---------|-----|
 | `command not found: superskill` after `bun link` | Ensure `~/.bun/bin` is on your `$PATH` |
 | `Cannot find module 'rulesync'` | Run `bun install` from the repo root |
-| `bun: command not found` | Install Bun ≥ 1.3.14 from [bun.sh](https://bun.sh/) |
+| `bun: command not found` | Install Bun ≥ 1.4.3 from [bun.sh](https://bun.sh/) |
 | TypeScript errors on `bun run dev` | Run `bun run autofix` (format + typecheck) |

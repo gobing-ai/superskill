@@ -2,7 +2,7 @@
     "name": "superskill",
     "type": "module",
     "private": true,
-    "packageManager": "bun@1.3.14",
+    "packageManager": "bun@1.4.3",
     "workspaces": {
         "packages": [
             "apps/*",
@@ -44,8 +44,8 @@
         "check:full": "bun run lint && bun run test:full"
     },
     "devDependencies": {
-        "@biomejs/biome": "2.4.16",
-        "@types/bun": "1.3.14",
-        "lefthook": "1.13.0"
+        "@biomejs/biome": "2.5.15",
+        "@types/bun": "1.4.3",
+        "lefthook": "2.2.2"
     }
 }
