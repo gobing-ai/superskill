@@ -11,8 +11,13 @@ jobs:
   ci:
     runs-on: ubuntu-latest
     steps:
+      # fetch-depth: 0 — the sourced-claims scan (`scripts/builder.ts`) derives the
+      # "own release" exemption set from `git tag -l`; a shallow clone empties it and
+      # ADR lines citing our own released versions then fail as uncited claims.
       - name: Checkout
         uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
 
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
