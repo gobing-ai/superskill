@@ -14,7 +14,7 @@ install or to ts-libs.
 | `boundary` | `boundary/` | DB/DAO boundary enforcement |
 | `structure` | `structure/` | File layout, protected files, no focused/skipped tests |
 | `quality` | `quality/` | Post-test gates (coverage) |
-| `docs` | `docs/` | Sourced-claims advisory: a markdown line asserting a version string, or a time-anchored API claim, with no citation anchor on that line (`info` — surfaces findings for review without reddening a `--fail-on warning` gate) |
+| `docs` | `docs/` | Sourced-claims gate: a markdown line asserting a version string, or a time-anchored API claim, with no citation anchor on that line (`warning`; the scan itself lives in `scripts/builder.ts check-sourced-claims`, which sees fence and frontmatter state a rule-file regex cannot) |
 | `surface` | `surface/` | CLI surface consistency (registerXxxCommand wiring, --json serialization) |
 
 ## Presets
@@ -32,6 +32,12 @@ run time. A preset `extends` resolves against **all** rules roots, but a categor
 the user layer resolves to **zero rules and no error** — so an inherited-only dependency is a silent
 false green on any machine whose user layer lacks the file. Keeping the file in-repo makes the
 backstop real wherever the gate runs.
+
+The scan is a `scripts/builder.ts check-sourced-claims` command, not a rule-file regex: a per-line
+pattern cannot mask fenced code or a YAML frontmatter block, and the absorbed pattern's anchor set
+rejected the `pkg@version` form the citation contract names. Those gaps produced 36 false positives
+in the first repo-wide run. Defect classes live in the command; its labelled baseline and
+residual-proof cases live in `scripts/tests/builder.test.ts`.
 
 ## Relationship to ts-libs
 

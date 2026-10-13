@@ -6,6 +6,7 @@
  * Usage:
  *   bun scripts/builder.ts postbuild <outfile>           prepend bun shebang to a bundle
  *   bun scripts/builder.ts check-skill-citations [glob]  resolve skill/agent citations + vendor boundary + drift
+ *   bun scripts/builder.ts check-sourced-claims <kind> [glob]  uncited version/API claims in markdown (kind: version|api)
  *   bun scripts/builder.ts check-publish-manifest [pkg]  fail on catalog:/workspace: deps
  *   bun scripts/builder.ts resolve-publish-deps [pkg]    expand catalog: → root catalog version
  *   bun scripts/builder.ts restore-publish-deps [pkg]    restore manifest from resolve backup
@@ -168,6 +169,8 @@ export function bumpMarketplaceManifests(marketplaceText: string | null, ver: st
 export interface Finding {
     file: string;
     message: string;
+    /** 1-based line, when the check is line-scoped. */
+    line?: number;
 }
 
 /** Filesystem seam — injected so the checkers are unit-testable without fixtures. */
@@ -205,6 +208,26 @@ const CITATION_RE = /\b([a-zA-Z0-9_./-]+\.(?:ts|tsx|js|mjs|yaml|yml|json|sh))(?:
 
 /** Match a dimension-count claim, e.g. "5 dimensions", "10 rubric dimensions". */
 const DIMENSION_CLAIM_RE = /\b(\d+)\s+(?:rubric\s+)?dimensions\b/gi;
+
+/**
+ * Match a semver x.y.z token. The lookarounds keep IPs (`127.0.0.1`) and longer dotted numerics
+ * (`1.2.3.4`) out — neither is a version claim.
+ */
+const SEMVER_TOKEN_RE = /(?<![\d.])\d+\.\d+\.\d+(?!\.\d)/;
+
+/**
+ * A citation anchor, in the forms `sp-source-driven-development` accepts: an http(s) URL, a repo
+ * path with a line (`docs/00_ADR.md:5`, `package.json:42`, `.prototools:1`), or the pinned
+ * `pkg@version` form (optionally ranged, `rulesync@^8.28.1`).
+ *
+ * The path arm needs a real filename shape — a leading-dot config file (`.prototools`) or a
+ * dot-separated extension — so a bare `10:30` clock time can never pass as a citation.
+ */
+const CITATION_ANCHOR_RE =
+    /https?:\/\/|(?:[\w.-]+\/)*(?:\.[A-Za-z][\w-]*|[\w-]+(?:\.[\w-]+)+):\d+|[\w@/-]+@[\^~><=]*\d+\.\d+/;
+
+/** Match a time- or version-anchored external API claim, e.g. "deprecated since 1.2". */
+const ANCHORED_CLAIM_RE = /\b(?:deprecated (?:since|in|as of)|introduced in|added in|available since|stable since)\b/;
 
 /** Map a plugin-skill directory name to the rubric type it documents. */
 const SKILL_TO_RUBRIC: Record<string, string> = {
@@ -297,6 +320,139 @@ function fsExists(rel: string): boolean {
 
 export function fsLineCount(rel: string): number {
     return readFileSync(resolve(ROOT, rel), 'utf8').split('\n').length;
+}
+
+/**
+ * Every version this repo has released, read from its own `superskill-v<semver>` tags.
+ *
+ * WHY: a version in this set is an own-history reference whose source is the git tag itself — not
+ * an external API/library claim, which is the class this check exists to catch. Both historical tag
+ * prefixes are accepted (`@gobing-ai/superskill-v0.3.11` and the older `superskill-v0.3.29`).
+ */
+export function releaseVersions(): Set<string> {
+    const out = new Set<string>();
+    const result = Bun.spawnSync({ cmd: ['git', 'tag', '-l'], stdout: 'pipe' });
+    for (const tag of new TextDecoder().decode(result.stdout).split('\n')) {
+        const m = tag.trim().match(/-v(\d+\.\d+\.\d+)$/);
+        if (m?.[1]) out.add(m[1]);
+    }
+    return out;
+}
+
+/** A scoped package reference to something that is not this project. */
+const FOREIGN_SCOPE_RE = /@(?!gobing-ai\/superskill)[a-z0-9-]+\/[a-z0-9-]+/i;
+
+/**
+ * True when every semver token on the line names one of this repo's own releases, and the line does
+ * not also name a foreign scoped package.
+ *
+ * WHY the foreign-scope guard: an external library version can coincide with one of this repo's own
+ * release numbers (`@gobing-ai/ts-ai-runner` 0.3.19 → 0.3.21 are both superskill tags). Without the
+ * guard, an external claim would be exempted as own-history — a false negative. KNOWN RESIDUAL: an
+ * *unscoped* external name whose version coincides with an own release number is still exempt; no
+ * line-local signal distinguishes it, so it is disclosed rather than pretended away.
+ */
+function isOwnReleaseLine(line: string, release: Set<string>): boolean {
+    if (FOREIGN_SCOPE_RE.test(line)) return false;
+    const tokens = line.match(new RegExp(SEMVER_TOKEN_RE.source, 'g')) ?? [];
+    return tokens.length > 0 && tokens.every((t) => release.has(t));
+}
+
+/** Claim classes scanned by `cited-version-strings` and `cited-api-claims`. */
+export type ClaimKind = 'version' | 'api';
+
+/** True when a line opens or closes a fenced code block. */
+function isFenceDelimiter(line: string): boolean {
+    const t = line.trimStart();
+    return t.startsWith('```') || t.startsWith('~~~');
+}
+
+/**
+ * Classify each line as non-assertion surface (`true`) or in-scope (`false`).
+ *
+ * WHY this exists: a per-line regex cannot see block state, so the previous scan fired on the two
+ * shapes a claim check must never flag — a YAML frontmatter block (whose `version:` field the doc
+ * contract mandates, so no citation could ever satisfy it) and fenced code (a `package.json`
+ * excerpt or command example legitimately carries bare versions). Both were the bulk of the false
+ * positives this replaced.
+ */
+export function claimScanMask(lines: string[]): boolean[] {
+    const masked = lines.map(() => false);
+    let inFrontmatter = lines[0]?.trim() === '---';
+    let inFence = false;
+    for (let i = 0; i < lines.length; i++) {
+        const line = lines[i] ?? '';
+        if (inFrontmatter) {
+            masked[i] = true;
+            if (i > 0 && line.trim() === '---') inFrontmatter = false;
+            continue;
+        }
+        if (isFenceDelimiter(line)) {
+            masked[i] = true;
+            inFence = !inFence;
+            continue;
+        }
+        masked[i] = inFence;
+    }
+    return masked;
+}
+
+/**
+ * Find uncited claims in one document body. `kind` selects the class: `version` fires on a semver
+ * token, `api` on a time/version-anchored API claim phrase. A line is a finding only when it
+ * carries a claim and no citation anchor.
+ */
+export function findUncitedClaims(
+    file: string,
+    body: string,
+    kind: ClaimKind,
+    release: Set<string> = releaseVersions(),
+): Finding[] {
+    const lines = body.split('\n');
+    const masked = claimScanMask(lines);
+    const trigger = kind === 'version' ? SEMVER_TOKEN_RE : ANCHORED_CLAIM_RE;
+    const findings: Finding[] = [];
+    lines.forEach((line, i) => {
+        if (masked[i] === true || isOwnReleaseLine(line, release)) return;
+        if (!trigger.test(line) || CITATION_ANCHOR_RE.test(line)) return;
+        findings.push({
+            file,
+            line: i + 1,
+            message:
+                kind === 'version'
+                    ? 'uncited version claim: add a source anchor (URL, `path:line`, or `pkg@version`), or drop the version if it is not load-bearing'
+                    : 'uncited API claim: add a source anchor (URL, `path:line`, or `pkg@version`) for the anchored claim',
+        });
+    });
+    return findings;
+}
+
+/**
+ * Scan markdown for uncited version/API claims and fail the process when any are found, so the rule
+ * gates spur-check. Defaults to the docs corpus plus shipped plugin skill/agent content; historical
+ * task archives are skipped because retro-citing closed records is make-work.
+ */
+export function checkSourcedClaims(kind: ClaimKind, globs?: string[]) {
+    const patterns = globs?.length
+        ? globs
+        : ['docs/**/*.md', 'plugins/**/SKILL.md', 'plugins/*/agents/*.md', 'plugins/**/skills/**/references/**/*.md'];
+    const findings: Finding[] = [];
+    const release = releaseVersions();
+    for (const glob of patterns) {
+        // An explicit existing file is scanned literally: glob engines skip dot-directories, so a
+        // caller naming `.spur/rules/fixtures/...` would otherwise match nothing and silently pass.
+        const rels = existsSync(resolve(ROOT, glob)) ? [glob] : [...new Glob(glob).scanSync({ cwd: ROOT })];
+        for (const rel of rels) {
+            if (rel.includes('node_modules') || rel.includes('/vendors/') || rel.startsWith('docs/tasks')) continue;
+            findings.push(...findUncitedClaims(rel, readFileSync(resolve(ROOT, rel), 'utf8'), kind, release));
+        }
+    }
+    if (findings.length === 0) {
+        logger.info(`OK: no uncited ${kind} claims (${patterns.join(', ')})`);
+        return;
+    }
+    for (const f of findings) logger.info(`${f.file}:${f.line}: ${f.message}`);
+    fail(`\n${findings.length} uncited-claim finding(s).`);
 }
 
 /**
@@ -475,6 +631,14 @@ export async function runBuilderCommand(argv: string[], _shell: ShellRunner = $)
             checkSkillCitations(version ?? ['plugins/*/skills/*/SKILL.md', 'plugins/*/agents/*.md']);
             break;
         }
+        case 'check-sourced-claims': {
+            const [kind, ...globs] = args;
+            if (kind !== 'version' && kind !== 'api') {
+                fail('Usage: bun scripts/builder.ts check-sourced-claims <version|api> [glob...]');
+            }
+            checkSourcedClaims(kind, globs);
+            break;
+        }
         case 'check-publish-manifest': {
             const manifestPath = version ?? 'apps/cli/package.json';
             const manifestText = readFileSync(resolve(ROOT, manifestPath), 'utf-8');
@@ -541,7 +705,7 @@ export async function runBuilderCommand(argv: string[], _shell: ShellRunner = $)
         default:
             fail(
                 `Unknown command: ${command}\n` +
-                    'Usage: bun scripts/builder.ts <postbuild|check-skill-citations|check-publish-manifest|resolve-publish-deps|restore-publish-deps> [args]',
+                    'Usage: bun scripts/builder.ts <postbuild|check-skill-citations|check-sourced-claims|check-publish-manifest|resolve-publish-deps|restore-publish-deps> [args]',
             );
     }
 }

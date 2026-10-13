@@ -6,16 +6,20 @@ import {
     checkCitations,
     checkDimensionDrift,
     checkSkillCitations,
+    checkSourcedClaims,
+    claimScanMask,
     computeTag,
     countRubricDimensions,
     diskRubricCount,
     type FileResolver,
     findMarketplaceVersionDrift,
+    findUncitedClaims,
     findUnpublishableSpecifiers,
     fsLineCount,
     handleMainError,
     main,
     postbuild,
+    releaseVersions,
     resolvePublishDeps,
     runBuilderCommand,
     validateVersion,
@@ -924,5 +928,97 @@ describe('runBuilderCommand — restore-publish-deps', () => {
             rmSync(tmp, { force: true });
             rmSync(`${tmp}.bak`, { force: true });
         }
+    });
+});
+
+describe('findUncitedClaims (sourced-claims scan)', () => {
+    // No version is treated as an own release unless a test injects the set, so the exemption can
+    // never mask a case by accident of this repo's real git tags.
+    const NO_OWN_RELEASES = new Set<string>();
+
+    it('fires on a bare version claim with no anchor, reporting its line', () => {
+        // Compound (fires): the line carries the trigger half — a semver token — and no anchor half.
+        const findings = findUncitedClaims(
+            'f.md',
+            '# T\n\nBun is pinned to 1.3.14 here.\n',
+            'version',
+            NO_OWN_RELEASES,
+        );
+        expect(findings).toHaveLength(1);
+        expect(findings[0]?.line).toBe(3);
+    });
+
+    it('does not fire when the trigger half carries each accepted anchor form (residual-proof)', () => {
+        // Every line carries BOTH halves: a semver token and an anchor. Dropping the anchor from any
+        // one line makes it fire, which is what makes these negatives carry the compound.
+        const body = [
+            'Bun is pinned to 1.3.14 (see https://bun.sh/docs/installation).',
+            'Biome is pinned to 2.4.16 — docs/04_DESIGN.md:120.',
+            'Bun is pinned to 1.3.14 at package.json:42.',
+            'Bun is pinned to 1.3.14 at .prototools:1.',
+            'The library is pinned to `rulesync@8.28.1`.',
+        ].join('\n');
+        expect(findUncitedClaims('f.md', body, 'version', NO_OWN_RELEASES)).toHaveLength(0);
+    });
+
+    it('does not fire on YAML frontmatter metadata (residual-proof)', () => {
+        // The frontmatter carries the trigger half and no anchor half — no citation could satisfy
+        // the field the doc contract mandates, so the whole block is masked.
+        const body = '---\ndoc: f\nversion: 1.2.3\n---\n\nBody carries no version token.\n';
+        expect(findUncitedClaims('f.md', body, 'version', NO_OWN_RELEASES)).toHaveLength(0);
+    });
+
+    it('does not fire inside a fenced code block (residual-proof)', () => {
+        // A fenced manifest excerpt legitimately carries bare versions: the trigger half is present
+        // on the fenced line and it is still exempt, so the negative carries the compound.
+        const body = 'Intro.\n\n```json\n{ "yaml": "^2.9.0" }\n```\n';
+        expect(findUncitedClaims('f.md', body, 'version', NO_OWN_RELEASES)).toHaveLength(0);
+    });
+
+    it('treats a clock time as a non-anchor (baseline negative for the anchor shape)', () => {
+        // `10:30` matches a naive word:digits anchor but cites nothing, so the claim still fires.
+        const findings = findUncitedClaims('f.md', 'Started at 10:30 with Bun 1.3.14.\n', 'version', NO_OWN_RELEASES);
+        expect(findings).toHaveLength(1);
+    });
+
+    it("exempts a version that is one of this repo's own releases (disclosed residual)", () => {
+        // Own-history: the source is that release's git tag. KNOWN RESIDUAL, disclosed not
+        // certified: an *unscoped* external name whose version collides with an own tag is exempt.
+        const body = 'Superskill 0.3.26 printed that row.\n';
+        expect(findUncitedClaims('f.md', body, 'version', new Set(['0.3.26']))).toHaveLength(0);
+    });
+
+    it('still fires when a foreign scoped package carries a coinciding version', () => {
+        // Guard on the residual above: both numbers are superskill release tags, but the line names
+        // another package, so it is an external claim and must NOT be exempted.
+        const release = new Set(['0.3.19', '0.3.21']);
+        const body = 'Upgraded `@gobing-ai/ts-ai-runner` from 0.3.19 to 0.3.21.\n';
+        expect(findUncitedClaims('f.md', body, 'version', release)).toHaveLength(1);
+    });
+
+    it('pairs an unanchored and an anchored API claim (residual-proof)', () => {
+        const bare = findUncitedClaims('f.md', 'The hook was deprecated since 1.2.\n', 'api', NO_OWN_RELEASES);
+        expect(bare).toHaveLength(1);
+        const anchored = 'The hook was deprecated since 1.2 (see https://example.com/rfc).\n';
+        expect(findUncitedClaims('f.md', anchored, 'api', NO_OWN_RELEASES)).toHaveLength(0);
+    });
+
+    it('masks frontmatter and fence interiors only', () => {
+        const lines = ['---', 'version: 1.0.0', '---', 'body line', '```', 'code line', '```', 'tail line'];
+        expect(claimScanMask(lines)).toEqual([true, true, true, false, true, true, true, false]);
+    });
+
+    it('reports OK through checkSourcedClaims when the named documents are clean', () => {
+        const log = spyOn(console, 'log').mockImplementation(() => {});
+        try {
+            checkSourcedClaims('version', ['docs/00_ADR.md']);
+            expect(log.mock.calls.flat().join('\n')).toContain('OK: no uncited version claims');
+        } finally {
+            log.mockRestore();
+        }
+    });
+
+    it('reads this repo release versions from its own tags as a set', () => {
+        expect(releaseVersions()).toBeInstanceOf(Set);
     });
 });
