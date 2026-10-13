@@ -1,0 +1,71 @@
+# Sourced-claims rules (docs corpus) — API/library claims in markdown must be
+# verifiable. A bare version string or a time-anchored API claim ("deprecated
+# since", "added in 0.5.x") on a line with no citation anchor (http(s) URL or a
+# repo path:line reference) is an unverifiable claim: readers cannot tell
+# measured fact from model memory. The deterministic scan is line-level and
+# heuristic — code fences and command examples can legitimately carry bare
+# versions, so severity is info (advisory visibility; the recommended-pre-check
+# gate runs --fail-on warning, so this rule surfaces findings for review without
+# reddening gates — changed-file enforcement happens in SECUA review).
+#
+# The semantic contract — every external API/library claim carries a source
+# citation (URL or path:line) AND a confidence level (HIGH/MEDIUM/LOW) — is
+# owned by the sp-source-driven-development skill and verified in SECUA review
+# (code-verification secu-review checklist). Generic "supports/requires" prose
+# is deliberately out of scope here: in this corpus it is structural writing,
+# not external API assertion, and would drown the signal.
+#
+# Absorbed from `~/.config/spur/rules/docs/sourced-api-claims.yaml` (user layer)
+# so the gate is self-contained. WHY: `extends: docs` resolves to ZERO rules —
+# silently, with no validation error — on any machine whose user layer lacks the
+# file, which would make this backstop a false green in CI (verified: a preset
+# extending a nonexistent category validates `valid: true, ruleCount: 0`).
+# Re-scoped for this repo's layout: the user-layer `plugins/sp/skills/**/
+# references/**` fragment matches nothing here (plugins/ holds cc only), so
+# shipped skill content is scoped as SKILL.md + agents/*.md + references/**.
+# The two `pattern` values are carried verbatim from the user layer.
+include:
+  - "docs/**/*.md"
+  - "plugins/**/SKILL.md"
+  - "plugins/*/agents/*.md"
+  - "plugins/**/skills/**/references/**/*.md"
+exclude:
+  # Legacy task archives are historical records — retro-citing ~900 closed
+  # lines is make-work; the tripwire targets active authoring surfaces.
+  - "docs/tasks/"
+  - "docs/tasks2/"
+  - "docs/tasks3/"
+  - "docs/tasks4/"
+  - "drizzle/**"
+  - "**/node_modules/**"
+rules:
+  - id: cited-version-strings
+    description: >
+      A markdown line asserting a version string (x.y.z) without a citation
+      anchor on the same line — http(s) URL or repo path reference like
+      packages/app/src/foo.ts:123 — is unverifiable. Add the anchor, or drop
+      the version if it is not load-bearing. Confidence level (HIGH/MEDIUM/LOW)
+      is part of the claim contract; see sp-source-driven-development.
+    severity: info
+    evaluator:
+      type: regex
+      config:
+        mode: forbid
+        # Fire when the line has NO citation anchor (no URL, no slash-bearing
+        # path:line) AND contains a semver-ish token. Lookarounds exclude IPs
+        # (127.0.0.1) and longer dotted numerics; fenced-code lines are out of
+        # regex reach — that residual noise is why this is info, not error.
+        pattern: "^(?!.*(?:https?://|(?:[\\w.-]+/)+[\\w.-]+:\\d+)).*(?<![\\d.])\\d+\\.\\d+\\.\\d+(?!\\.\\d)"
+  - id: cited-api-claims
+    description: >
+      A markdown line making a time- or version-anchored external API claim
+      ("deprecated since 1.2", "introduced in v3", "available since 0.9") must
+      carry a citation anchor on the same line — URL or repo path:line. Add the
+      source (URL or path:line) and the confidence level (HIGH/MEDIUM/LOW);
+      contract in sp-source-driven-development.
+    severity: info
+    evaluator:
+      type: regex
+      config:
+        mode: forbid
+        pattern: "^(?!.*(?:https?://|(?:[\\w.-]+/)+[\\w.-]+:\\d+)).*\\b(?:deprecated (?:since|in|as of)|introduced in|added in|available since|stable since)\\b"

@@ -2,13 +2,14 @@
 # Use with: spur rule run --preset recommended-pre-check
 #
 # Runs BEFORE tests (test-pre-check). TypeScript quality, structural, DB
-# boundary, and CLI surface consistency rules. TSDoc exports run in post-check
-# alongside coverage-gate.
+# boundary, CLI surface consistency, and the sourced-claims docs advisory.
+# TSDoc exports run in post-check alongside coverage-gate.
 name: recommended-pre-check
 extends:
   - typescript
   - structure
   - boundary
   - surface
+  - docs
 disable:
   - prefer-accessible-role-for-button-queries

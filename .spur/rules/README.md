@@ -14,15 +14,24 @@ install or to ts-libs.
 | `boundary` | `boundary/` | DB/DAO boundary enforcement |
 | `structure` | `structure/` | File layout, protected files, no focused/skipped tests |
 | `quality` | `quality/` | Post-test gates (coverage) |
+| `docs` | `docs/` | Sourced-claims advisory: a markdown line asserting a version string, or a time-anchored API claim, with no citation anchor on that line (`info` — surfaces findings for review without reddening a `--fail-on warning` gate) |
 | `surface` | `surface/` | CLI surface consistency (registerXxxCommand wiring, --json serialization) |
 
 ## Presets
 
 | Preset | When | Extends |
 |---|---|---|
-| `recommended-pre-check` | Before tests | `typescript`, `structure`, `boundary`, `surface` |
+| `recommended-pre-check` | Before tests | `typescript`, `structure`, `boundary`, `surface`, `docs` |
 | `recommended-post-check` | After tests | `quality` |
 | `strict-check` | Opt-in | `strict` |
+
+## Relationship to the user layer
+
+`docs/sourced-api-claims.yaml` is absorbed from `~/.config/spur/rules/docs/` rather than inherited at
+run time. A preset `extends` resolves against **all** rules roots, but a category that exists only in
+the user layer resolves to **zero rules and no error** — so an inherited-only dependency is a silent
+false green on any machine whose user layer lacks the file. Keeping the file in-repo makes the
+backstop real wherever the gate runs.
 
 ## Relationship to ts-libs
 
