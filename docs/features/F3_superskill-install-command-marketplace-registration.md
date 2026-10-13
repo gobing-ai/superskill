@@ -85,7 +85,7 @@ Feature: superskill install command + marketplace registration
     Then lint, typecheck, tests, build, and pre/post rules pass without skips or ignore-list entries
 
   Scenario: Codex agent discovery and model-key honoring are live-verified and routed.
-    Given the current official OpenAI subagents contract and a scratch CODEX_HOME with one probe agent TOML, verified on codex-cli 0.147.0
+    Given the current official OpenAI subagents contract (https://developers.openai.com/codex/subagents) and a scratch CODEX_HOME with one probe agent TOML, verified on codex-cli 0.147.0
     When the isolated scratch-home custom-agent spawn returns PONG and the official model/effort precedence contract is reconciled
     Then directory discovery is recorded as smoke-confirmed and model-key precedence as officially verified, per the 0111 R9/R14 evidence
 ## Tasks

@@ -96,7 +96,7 @@ Messages that don't require external verification (no APIs, libraries, facts) ar
 The current heuristic treats the following as signals that a message may require external verification:
 - API mentions
 - Library references
-- **Version references** — only when a version cue is present: a `v`-prefix (`v2.0`), a version word (`version 2.0`, `release 1.4`, `semver 1.2.3`), or a 3-part semver (`1.2.3`). Bare 2-part decimals like `94.87` are NOT version claims — they are metrics, percentages, ratios, durations. *(0079)*
+- **Version references** — only when a version cue is present: a `v`-prefix (`v2.0`), a version word (`version 2.0`, `release 1.4`, `semver 1.2.3`), or a 3-part semver (`1.2.3`). Bare 2-part decimals like `94.87` are NOT version claims — they are metrics, percentages, ratios, durations. *(0079)* (`plugins/cc/scripts/anti-hallucination/ah_guard.ts:379`)
 - Documentation links
 - Factual claims
 

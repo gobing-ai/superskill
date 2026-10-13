@@ -127,7 +127,7 @@ Reversals = new entries naming what they supersede. Burned numbers get a `Skippe
 
 **Amendment (2026-06-16, ADR-009).** The original entry stated the shim "already handles the 7-agent matrix (Claude, Codex, Gemini, Pi, OpenCode, Antigravity, OpenClaw)." Verified against `@gobing-ai/ts-ai-runner@0.3.19`: `AgentName = 'claude' | 'codex' | 'gemini' | 'pi' | 'opencode' | 'antigravity' | 'openclaw'`. This matrix **includes** `gemini`/`openclaw` (which superskill does not target) and **excludes** all four Phase 1 additions (`antigravity-cli`, `antigravity-ide`, `hermes`, `omp`). The decision (delegate agent knowledge to the shim) stands; the coverage claim was overstated. Until the shim's `AgentName` is enriched in ts-libs, superskill bridges its own `Target` to the shim via a `TARGET_TO_AGENT_NAME` map (`omp→pi`; `antigravity-cli`/`antigravity-ide`→default dialect; `hermes` handled outside the shim). `translateSlashCommand`'s `default` branch already yields the correct `/plugin-command` form for unmapped agents, so the bridge is sufficient for Phase 1. See 03 §Conversion pipeline, 04 §Target taxonomy.
 
-**Amendment (2026-06-20, ADR-009).** Upgraded `@gobing-ai/ts-ai-runner` from 0.3.19 to 0.3.21. `AgentName` is now `'claude' | 'codex' | 'gemini' | 'pi' | 'opencode' | 'antigravity-cli' | 'openclaw' | 'hermes' | 'omp'` — `'antigravity'` was renamed to `'antigravity-cli'`, and `'omp'`/`'hermes'` were added as canonical ids. `TARGET_TO_AGENT_NAME` updated: `omp→'omp'`, `hermes→'hermes'`, `antigravity-cli→'antigravity-cli'` (all now map 1:1 to canonical `AgentName` values). Only `antigravity-ide` (not in `AgentName`) still bridges to `'opencode'`. Slash-command output is unchanged: `translateSlashCommand` handles `'omp'` with the same `/skill:` dialect as `'pi'`, and `'hermes'`/`'antigravity-cli'` fall to the `default` branch (same as `'opencode'`). The 0.3.19-era bridge workaround described in the previous amendment is now retired for all targets except `antigravity-ide`.
+**Amendment (2026-06-20, ADR-009).** Upgraded `@gobing-ai/ts-ai-runner` from 0.3.19 to 0.3.21 (catalog pin now `^0.5.24` at `package.json:12`). `AgentName` is now `'claude' | 'codex' | 'gemini' | 'pi' | 'opencode' | 'antigravity-cli' | 'openclaw' | 'hermes' | 'omp'` — `'antigravity'` was renamed to `'antigravity-cli'`, and `'omp'`/`'hermes'` were added as canonical ids. `TARGET_TO_AGENT_NAME` updated: `omp→'omp'`, `hermes→'hermes'`, `antigravity-cli→'antigravity-cli'` (all now map 1:1 to canonical `AgentName` values). Only `antigravity-ide` (not in `AgentName`) still bridges to `'opencode'`. Slash-command output is unchanged: `translateSlashCommand` handles `'omp'` with the same `/skill:` dialect as `'pi'`, and `'hermes'`/`'antigravity-cli'` fall to the `default` branch (same as `'opencode'`). The 0.3.19-era bridge workaround described in the previous amendment is now retired for all targets except `antigravity-ide`.
 
 ---
 
@@ -165,7 +165,7 @@ Reversals = new entries naming what they supersede. Burned numbers get a `Skippe
 
 **Status:** Accepted (design) · **Date:** 2026-06-16
 
-**Decision.** Phase 2 quality operations (`validate`, `evaluate`, `refine`, `evolve`) parse and edit YAML frontmatter through the `yaml` package (`^2.9.0`), declared as a direct dependency of `apps/cli`. A single shared module `apps/cli/src/content/frontmatter.ts` exports `parseFrontmatter(content): { data, body, raw }` and `applyFrontmatterChange(...)`; no Phase 2 module parses `---` blocks by hand. The existing regex injector `pipeline/frontmatter.ts` (`normalizeFrontmatter`) is Phase 1 distribution-only and is **not** reused for structured parsing.
+**Decision.** Phase 2 quality operations (`validate`, `evaluate`, `refine`, `evolve`) parse and edit YAML frontmatter through the `yaml@^2.9.0` package, declared as a direct dependency of `apps/cli` (`apps/cli/package.json:53`). A single shared module `apps/cli/src/content/frontmatter.ts` exports `parseFrontmatter(content): { data, body, raw }` and `applyFrontmatterChange(...)`; no Phase 2 module parses `---` blocks by hand. The existing regex injector `pipeline/frontmatter.ts` (`normalizeFrontmatter`) is Phase 1 distribution-only and is **not** reused for structured parsing.
 
 **Why.** Phase 1's `normalizeFrontmatter` only injects a `name` line via regex — it cannot read frontmatter as a typed object, which `validate` (field-type checks) and `refine`/`evolve` (parse → mutate → serialize) require. `yaml` is the only round-tripping parser (`parseDocument` preserves comments and key order on re-serialize), satisfying G25's comment-preservation requirement; `js-yaml` and `gray-matter` discard comments. `yaml@2.9.0` is already present transitively (via `rulesync`), so declaring it directly adds **no new package** to the resolved tree — it only fixes the design-doc §7 "no new external packages" claim, which was wrong for Phase 2.
 
@@ -454,7 +454,7 @@ no network, no re-classification). The `superskill agent evolve` proposal flow
 can stamp `model-tier:` into frontmatter after human acceptance.
 
 **Why.** The `~/.codex/agents/*.toml` convention follows the real-world agent files
-observed on disk and the agent-role machinery confirmed in codex-cli 0.146.0
+observed on disk and the agent-role machinery confirmed in codex-cli 0.146.0 (https://developers.openai.com/codex/subagents)
 (`AgentRoleToml`, `default_subagent_model`, spawn-time `model`/`reasoning_effort`
 tool parameters). The emission shape is safe under either outcome: if the keys are
 ignored, Codex falls back to its inherit-default per agent; if directory registration
@@ -467,8 +467,8 @@ deterministic: the same plugin bytes always produce the same TOML.
 
 **Amendment (2026-08-09, task 0112).** The two unverified premises in the `Why`
 above (directory discovery, model-key honoring) are now verified against
-codex-cli 0.147.0 and the current official OpenAI subagents contract
-(developers.openai.com/codex/subagents): custom agents are standalone TOML under
+codex-cli 0.147.0 (https://developers.openai.com/codex/subagents) and the current official OpenAI subagents contract:
+custom agents are standalone TOML under
 `~/.codex/agents/` (personal) or `.codex/agents/` (project-scoped) with **no**
 per-agent `[agents.<name>]` registration, and file-level `model` /
 `model_reasoning_effort` take precedence (both are documented optional keys). A
@@ -586,8 +586,8 @@ subprocess probe and stay deferred. Safety: `executeInstall`'s poisoned-cache
 self-heal now wipes only cache-owned roots (under
 `~/.cache/superskill/marketplaces/`) — a locally installed package that lacks
 the plugin is a real resolution error, never deleted. Accepted tradeoff: the
-npm tarball's embedded manifest can lag the repo (observed: `0.0.21` inside
-the `0.0.22` tarball vs `0.0.22` at HEAD); freshness is owned by the package
+npm tarball's embedded manifest can lag the repo (observed: a tarball whose
+embedded manifest trailed the repo by one release); freshness is owned by the package
 manager upgrade, and `update` reconciles through the same local-first
 resolution.
 

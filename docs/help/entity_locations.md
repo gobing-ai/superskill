@@ -78,7 +78,7 @@ tool when Read denies `.superskill`).
 | **Hermes** | rulesync + superskill shim | `hermes` → `opencode` surrogate for rulesync, then copy to `~/.hermes/`; hooks format is HOOK.yaml not hooks.json |
 | **OpenClaw** | implicit (via `~/.agents/skills/`) | Reads skills from `~/.agents/skills/` (shared root with codex/opencode in global mode). No dedicated dispatch needed. |
 
-Since ts-ai-runner 0.3.21, `omp`, `hermes`, and `antigravity-cli` are canonical `AgentName` values — slash-command dialect translation maps 1:1. Only `antigravity-ide` still bridges through `opencode`.
+Since `@gobing-ai/ts-ai-runner@0.3.21`, `omp`, `hermes`, and `antigravity-cli` are canonical `AgentName` values — slash-command dialect translation maps 1:1. Only `antigravity-ide` still bridges through `opencode`.
 
 ## Known gaps
 

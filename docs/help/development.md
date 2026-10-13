@@ -6,10 +6,10 @@ Guide for contributors and internal developers. Covers stack, workspace layout, 
 
 | Concern | Tool |
 |---------|------|
-| Runtime / package manager | Bun 1.3.14 |
+| Runtime / package manager | Bun 1.3.14 (`.prototools:1`) |
 | Language | TypeScript 5.x |
 | CLI framework | Commander.js |
-| Lint + format | Biome 2.4.16 |
+| Lint + format | Biome 2.4.16 (`.prototools:2`) |
 | Test runner | `bun:test` |
 | Format conversion | rulesync (npm) |
 | Quality store | SQLite via `@gobing-ai/ts-db` |

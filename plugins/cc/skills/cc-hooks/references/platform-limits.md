@@ -93,7 +93,7 @@ What's NOT portable and why. Workarounds for limited platforms.
 **Limitations:**
 - Only `type: "command"` hooks (no prompt/http/agent)
 - Requires explicit extension installation: `pi install npm:@hsingjui/pi-hooks`
-- Extension is at version 0.0.1 — may change
+- Extension is at `@hsingjui/pi-hooks@0.0.1` — may change
 - Tool names are lowercase (`bash` not `Bash`)
 - `if` conditions only work for tool events (PreToolUse, PostToolUse, PostToolUseFailure)
 
@@ -182,4 +182,4 @@ pi install npm:@hsingjui/pi-hooks
 
 3. **Test on each target platform:** Don't assume a hook that works on Claude Code works identically on Pi. The execution model differs (sync vs async, stdin/stdout protocol, etc.).
 
-4. **Pin pi-hooks version:** The `@hsingjui/pi-hooks` extension is at 0.0.1. Pin to a known-good version in your project's docs.
+4. **Pin pi-hooks version:** The `@hsingjui/pi-hooks` extension is at 0.0.1 (https://www.npmjs.com/package/@hsingjui/pi-hooks). Pin to a known-good version in your project's docs.

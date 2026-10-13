@@ -4,7 +4,7 @@
 |-------|-------|
 | Status | Verified Pilot & Canonical Documentation |
 | Date | 2026-09-10 |
-| Host | Claude Code CLI `2.1.267` (`Darwin arm64`) |
+| Host | Claude Code CLI (`Darwin arm64`; exact build recorded in §6 evidence) |
 | Plugin | `cc` version `0.3.23` via marketplace `superskill` |
 | Primary Landing | [`README.md`](../../README.md) & [`docs/help/installation.md`](./installation.md) |
 | Authoritative Specs | [`docs/superskill_discovery_channel_SPEC.md`](../superskill_discovery_channel_SPEC.md), [`docs/00_ADR.md`](../00_ADR.md) |
@@ -172,7 +172,7 @@ When upstream changes or new releases occur:
 
 ## 6. Reproducible Verification Evidence (Date: 2026-09-10)
 
-All evidence collected on macOS (`Darwin 25.3.0 arm64`) with Bun `1.3.14` and Claude Code `2.1.267`:
+All evidence collected on macOS (`Darwin 25.3.0 arm64`) with Bun `1.3.14` (`.prototools:1`) and Claude Code `2.1.267`:
 
 | Step | Host / Target | Command / UI Action | Expected Result | Observed Result | Evidence Link |
 |------|---------------|---------------------|-----------------|-----------------|---------------|

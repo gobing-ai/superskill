@@ -466,7 +466,7 @@ apps/cli/src/
 
 Two foundations are declared:
 
-- **`yaml`** (`^2.9.0`) — Phase 1's `pipeline/frontmatter.ts` is a regex injector that cannot read frontmatter as a typed object; `validate` needs field-type checks and `refine`/`evolve` need parse → mutate → serialize with comment preservation (`parseDocument`). ADR-012.
+- **`yaml`** (`yaml@^2.9.0`, `apps/cli/package.json:53`) — Phase 1's `pipeline/frontmatter.ts` is a regex injector that cannot read frontmatter as a typed object; `validate` needs field-type checks and `refine`/`evolve` need parse → mutate → serialize with comment preservation (`parseDocument`). ADR-012.
 - **`@gobing-ai/ts-db`** + its peers — the store uses the ts-db facade (typed DAOs, predicate query spec, migrations), **not** `bun:sqlite` directly, per ADR-007/ADR-014. `bun:sqlite` remains an internal detail of ts-db's `bun-sqlite` adapter.
 
 All of these (`yaml@2.9.0`, `@gobing-ai/ts-db@0.3.19`, `drizzle-orm@0.45.2`, `zod@3.25.76`) are **already resolved in the tree transitively**, so declaring them directly adds no new package — it only makes the dependence explicit. The earlier "no new external packages / `bun:sqlite` is built-in" claim was wrong for Phase 2 and is superseded by ADR-012 and ADR-014.

@@ -65,7 +65,7 @@ project-variable section besides Lessons — update the binding when the toolcha
 | ------ | ----------------- | ------- |
 | Spec lifecycle — tasks | `spur task` (WBS markdown task files) | Task files are tool-owned; edit through the tool, never the Write tool |
 | Spec lifecycle — features | `spur feature` (feature markdown files) | Same tool-owned rule |
-| Delivery harness | `spur` (constraint rules, workflows, agent runner, history analytics) | Quality gates are self-hosted through it where possible. `spur task check --corpus` (`bun run corpus-check`) is an explicit, unsuppressed audit of the whole corpus — spur 0.3.78 retired the `config/corpus-baseline.json` ratchet, so the audit is advisory and stays out of the `spur-check` gate; current and new work must pass normal task checks. |
+| Delivery harness | `spur` (constraint rules, workflows, agent runner, history analytics) | Quality gates are self-hosted through it where possible. `spur task check --corpus` (`bun run corpus-check`) is an explicit, unsuppressed audit of the whole corpus — spur retired the `config/corpus-baseline.json` ratchet (audit script `package.json:34`), so the audit is advisory and stays out of the `spur-check` gate; current and new work must pass normal task checks. |
 | Agent-facing wrappers | per-project plugin dir (e.g. `plugins/sp/`) | **Fat Skills, thin others:** skills are the SSOT for agent-facing behavior and may be arbitrarily rich; slash commands and subagents are thin wrappers of skills (every agent supports skills; command/subagent support varies) |
 
 ## 4. Common file layout
@@ -369,7 +369,7 @@ if it recurs, a new rule in §6.
   gaps (now §6.1 rule 4).
 - [2026-08-09] superskill: Task 0112 reconciled Codex evidence by folding the verification
   into ADR-033's original `**Why.**` paragraph as an inline edit, leaving the 2026-08-02
-  "confirmed in codex-cli 0.146.0" premise as lead justification while a 2026-08-09 verification
+  "confirmed in codex-cli 0.146.0" premise (https://developers.openai.com/codex/subagents) as lead justification while a 2026-08-09 verification
   was spliced mid-paragraph — and a dead "if directory registration turns out to be needed"
   contingency survived because the resolution never named it as retired. An evidence update to an
   accepted ADR is a correction to an append-only file: restore the original reasoning and add a

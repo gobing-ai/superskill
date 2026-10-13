@@ -126,7 +126,7 @@ Feature F8 · ADR-035 amendment 2026-09-13. Authoritative flag/row/envelope shap
   with `superskill skill add` are invisible to it. They live only in the ADR-028 locks, and the
   only verb for them is `skill update`, which always writes.
 - Output defects observed on 0.3.26:
-  - `kk: stale: 0.0.1 → 0.0.1`: content drift shown as a version arrow.
+  - `kk: stale: 0.0.1 → 0.0.1`: content drift shown as a version arrow (`apps/cli/src/commands/update.ts:740`).
   - No summary and no next command.
   - An unbounded changed-path list.
   - Apply mode that reinstalls silently.

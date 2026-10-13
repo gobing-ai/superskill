@@ -102,7 +102,7 @@ can Pi / omp be given a Claude-Code-like hook lifecycle via an installable exten
 Lifecycle events include `session_start`, `session_shutdown`, `agent_start`, `agent_end`, `tool_call`,
 `tool_result`, `turn_start`, `turn_end`, `message_start/update/end`, and more.
 
-- **Chosen rung: (b) superskill-installed shim.** The `@vahor/pi-hooks` package (v0.0.11, npm, MIT,
+- **Chosen rung: (b) superskill-installed shim.** The `@vahor/pi-hooks@0.0.11` package (npm, MIT,
   681 downloads/mo, published 2026-05-23) provides a declarative `.pi/hooks.json` config that runs shell
   commands on Pi lifecycle events. superskill converts the rulesync-canonical `hooks.json` to
   `@vahor/pi-hooks` format and writes it to `.pi/hooks.json` (project) or `~/.pi/agent/hooks.json` (global).

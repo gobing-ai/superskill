@@ -25,14 +25,14 @@ updated_at: "2026-09-13T23:16:01.854Z"
 - `superskill update --json` with a structured result envelope. Exit codes are documented in `--help`.
 - Output:
   - rows grouped by kind
-  - content drift at an unchanged version gets its own wording, replacing `0.0.1 → 0.0.1`
+  - content drift at an unchanged version gets its own wording, replacing `0.0.1 → 0.0.1` (`apps/cli/src/commands/update.ts:740`)
   - a capped changed-path list
   - stale targets shown when only some targets are stale
   - a summary footer with counts and one next command
   - per-item progress plus a final result when applying
   - a labeled npm remedy for the bundled channel
   - legacy and unavailable rows that name the remedy
-- Version-declaration mismatch: a marketplace plugin row notes when its `marketplace.json` entry and its `plugin.json` declare different versions (observed: kk `0.0.1` vs `0.1.0`).
+- Version-declaration mismatch: a marketplace plugin row notes when its `marketplace.json` entry and its `plugin.json` declare different versions (observed: kk `0.0.1` vs `0.1.0`; `apps/cli/src/commands/update.ts:684`).
 - `skill update` fixes: the header counts only updated skills, and the duplicated `-y` help default is removed.
 - Docs in the same commits: an ADR-035 amendment, `docs/04_DESIGN.md` update/skill surfaces, and `docs/help2/installation.md` § Stay current.
 
