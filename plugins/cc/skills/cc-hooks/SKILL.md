@@ -112,31 +112,31 @@ Per-tool event support: this repo ships only the Claude Code set and its canonic
 
 ## Portable runtime hooks via `superskill hook run`
 
-For any command hook with non-trivial logic — a guard that parses the tool payload, shells to another
-CLI, or makes a decision — register a **runtime runner** in the hook registry (superskill-side), then
-invoke it as a stable PATH command:
+For any command hook with non-trivial logic (a guard that parses the tool payload, shells to another
+CLI, or makes a decision), ship the logic as a script in your plugin and invoke it through a stable
+PATH command. Adding a hook is one file plus one line:
 
-```json
-{
-  "preToolUse": [
-    { "type": "command", "command": "superskill hook run sp task-write-guard", "matcher": "Write|Edit", "timeout": 10 }
-  ]
-}
-```
+1. `plugins/<plugin>/hooks/<hook-id>.ts`, or `scripts/hooks/<hook-id>.ts` to reach staged-scripts targets too.
+2. `{ "type": "command", "command": "superskill hook run <plugin> <hook-id>", "matcher": "Write|Edit", "timeout": 10 }`.
 
 Why this is the portable standard:
 
 - **One command, every target.** `superskill hook run <plugin> <hook-id>` is on `PATH` wherever the
   CLI is installed. The generated hook config is byte-identical across codex, opencode,
   antigravity, pi, omp, hermes, and Claude — no per-target script copy, no `${CLAUDE_PLUGIN_ROOT}`.
-- **The runner owns the logic.** The dispatcher reads stdin + env, resolves the runner from the
-  registry (`apps/cli/src/commands/hook-run.ts`), and emits Claude canonical hook JSON (PreToolUse
-  permission decision / Stop `allowStop`). Agents that can't parse that shape fail open.
-- **Plugin scripts stay as the runner's implementation**, not the hook entry point. Example: the cc
-  anti-hallucination `Stop` hook calls `superskill hook run cc anti-hallucination`; the runner imports
-  the verification functions from `plugins/cc/scripts/anti-hallucination/ah_guard.ts`.
-- **Unknown hook ids are a config error**, not a runtime payload — the dispatcher exits non-zero with
-  the list of known hooks (it does not fail open on a typo'd id).
+- **Nothing to register.** The dispatcher finds the script under the installed plugin root, runs it
+  under Bun with the payload on stdin, and needs no registration or release.
+- **Write it once, host-neutral.** The script reads one canonical payload (Pi/omp events are
+  normalized first) and prints nothing or `{"decision":"allow|deny|ask|block","reason":"…"}`.
+  `hook run` renders that as a Claude `permissionDecision`, a Codex/omp exit 2, or a Stop
+  `decision:"block"`. Don't print Claude's `permissionDecision:"allow"`: it would bypass the user's
+  permission rules, so `hook run` drops it.
+- **Fails open.** A missing script, a crash, a non-0/2 exit or a timeout (declared `timeout` minus
+  500 ms) exits 0 with one stderr line. A guard must not wedge the agent.
+
+The full contract and a minimal example are in the plugin-scripts guide under *How to write a hook*.
+First-party engines compiled into the CLI (the cc anti-hallucination `Stop` hook,
+`superskill hook run cc anti-hallucination`) are built-in runners; other plugins never need that path.
 
 Reserve raw `.rulesync/hooks/<script>` commands for trivial, self-contained shell scripts that rulesync
 copies verbatim; reach for `superskill hook run` whenever the hook needs real logic or a dependency.

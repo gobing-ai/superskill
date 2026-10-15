@@ -6,6 +6,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
+### Added
+
+- feat(hook-run): `superskill hook run <plugin> <id>` runs the hook script the plugin ships at `hooks/<id>.{ts,mjs,js}` or `scripts/hooks/<id>.*` (ADR-039). It looks under `SUPERSKILL_PLUGIN_ROOT`, `CLAUDE_PLUGIN_ROOT`, the Claude Code / omp / Grok plugin caches, then staged `.agents/scripts/<plugin>/hooks/`. The script runs under Bun with the payload on stdin and `SUPERSKILL_PLUGIN_ROOT/HOOK_ID/HOOK_HOST/HOOK_EVENT/HOOK_PROFILE` in env. A new hook in any plugin is one script plus one `hooks.json` line, with no superskill change. The deadline is the declared `timeout` minus 500 ms (`SUPERSKILL_HOOK_TIMEOUT_MS` overrides). A spawn failure, timeout or non-0/2 exit fails open.
+- feat(hook-run): host-neutral hook contract (`apps/cli/src/hook-host.ts`). Pi/omp events are normalized to the canonical payload. A script result `{"decision":"allow|deny|ask|block","reason"}` is rendered per host and event: Claude `permissionDecision` JSON, Codex/omp exit 2, Stop `decision:"block"`. Claude-native script output keeps working; off Claude Code its PreToolUse decision becomes an exit code. Generated omp hook modules now pass `SUPERSKILL_HOOK_HOST=omp` and `SUPERSKILL_HOOK_EVENT` (reinstall omp to pick this up).
+
+### Removed
+
+- refactor(hook-run): all `sp`-specific code. That covers the in-CLI `sp/*` context runners, `runSpTaskWriteGuard`, the `couldBeTaskCorpusPath` pre-filter, the sp plugin-file import (`loadSpPluginDelegate`/`resolveSpPluginScript`) and the interim `spur self hook` delegate. sp's existing `hooks.json` works unchanged: its seven `hooks/<id>.ts` scripts now resolve and run through the generic path, including `careful-guard`, `agent-lifecycle` and `fleet-guest-stop`, which used to silently no-op.
+
+### Changed
+
+- fix(hook-run): an unconfirmable `ask` on `PreToolUse` fails closed as a deny carrying the reason (exit 2 + stderr) on hosts without a confirm UI (Codex, omp, Hermes, …). Claude Code still gets `permissionDecision:"ask"`. Hook errors/timeouts/missing scripts still fail open (ADR-020).
+
 ### Fixed
 
 - fix(grok-bot): treat host-rewritten bridge pointers as healthy when `canonical:` still targets the owned recipe (stops 113× owned-drift after Bot `update_state` register); still refuse canonical drift, full-mode edits, and unowned extras

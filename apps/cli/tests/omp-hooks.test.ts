@@ -107,6 +107,36 @@ describe('generateOmpHookModules', () => {
         }
     });
 
+    it('tells `hook run` the host and canonical event through the spawned env', () => {
+        const sourceDir = makeTempDir();
+        const installPath = makeTempDir();
+        try {
+            const seen = join(sourceDir, 'seen');
+            writeHooksJson(sourceDir, {
+                hooks: {
+                    preToolUse: [
+                        {
+                            hooks: [
+                                {
+                                    type: 'command',
+                                    command: `sh -c 'printf "%s %s" "$SUPERSKILL_HOOK_HOST" "$SUPERSKILL_HOOK_EVENT" > ${seen}; echo no >&2; exit 2'`,
+                                },
+                            ],
+                        },
+                    ],
+                },
+            });
+            const result = generateOmpHookModules(sourceDir, installPath, 'sp');
+            const run = runGeneratedModule(requireString(result.files[0], 'module'), [{ toolName: 'bash' }]);
+            expect(run.exitCode).toBe(0);
+            expect(readFileSync(seen, 'utf-8')).toBe('omp PreToolUse');
+            expect(run.outcomes).toEqual([{ block: true, reason: 'no\n' }]);
+        } finally {
+            rmSync(sourceDir, { recursive: true, force: true });
+            rmSync(installPath, { recursive: true, force: true });
+        }
+    });
+
     it('maps preToolUse → tool_call and writes to hooks/pre/', () => {
         const sourceDir = makeTempDir();
         const installPath = makeTempDir();

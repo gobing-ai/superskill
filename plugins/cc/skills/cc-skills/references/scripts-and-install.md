@@ -85,9 +85,9 @@ dependencies, and native loading behavior before claiming it is self-contained.
 
 ## Hooks are a separate contract
 
-For a host hook, use the bound `cc:cc-hooks` skill and the registered implementation in
-`apps/cli/src/commands/hook-run.ts`. Its event payload, decision output, and exit semantics must
-match the target host and handler. There is no universal "exit 2 blocks every hook" contract;
+For a host hook, use the bound `cc:cc-hooks` skill: ship `hooks/<hook-id>.ts` in the plugin and
+declare `superskill hook run <plugin> <hook-id>` in `hooks.json`. The script answers host-neutrally
+and `hook run` renders the decision for the target host and event. There is no universal "exit 2 blocks every hook" contract;
 for example, a Stop decision can be expressed through JSON with exit 0.
 
 Do not wire a utility validator as a hook just because it returns a nonzero status. Preserve

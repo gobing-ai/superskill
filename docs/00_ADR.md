@@ -2,9 +2,9 @@
 doc: 00_ADR
 owns: WHY — which cross-cutting decision was made, and the one-line reason
 authority: authoritative
-version: 1.17.0
+version: 1.18.0
 owner: Robin Min
-updated_at: 2026-10-12
+updated_at: 2026-10-15
 read_before: any structural change; add a dated entry before diverging from a decision
 edit_rules: 99 §6.1
 sync: [T1, T2]
@@ -767,3 +767,17 @@ serialized by the operator.
 **Why.** One build should yield the reviewed plugin upload from the same source and version as the CLI.
 
 **Detail:** see 03 §Codex plugin archive build.
+
+---
+
+## ADR-039: `hook run` is a generic runner for the hook scripts a plugin ships; superskill holds no plugin-specific hook code
+
+**Status:** Accepted · **Date:** 2026-10-15
+
+**Decision.** `superskill hook run <plugin> <id>` resolves `<id>` to the script the plugin itself ships (`hooks/<id>.{ts,mjs,js}`, then `scripts/hooks/<id>.*`, under the installed plugin root) and runs it under Bun with the host payload on stdin. A host adapter layer normalizes Pi/omp payloads in and renders a host-neutral `{"decision","reason"}` result out for Claude Code, Codex, omp and Pi. The compiled `HOOK_RUNNERS` registry (ADR-022/024) stays for this repo's own first-party engines only; no other plugin's ids, logic or CLI appear in superskill. Resolution and spawn failures fail open per ADR-020. Supersedes the in-CLI `sp/*` runners and the plugin-file import of spur task 1166, and amends ADR-024's "hooks use registry absorption" to "registry, else the plugin's own script".
+
+**Why.** Adding a hook to any plugin must be one script file plus one `hooks.json` line, with no superskill change or release; a registry of external ids and their logic drifts from the owning plugin and couples its fixes to superskill releases.
+
+**Amendment (2026-10-15).** An `ask` decision on `PreToolUse` is a confirmation request. Only Claude Code (native `permissionDecision:"ask"`) and a native Pi extension that calls `ctx.ui.confirm` can honor it. On every other host the ask is rendered as a deny carrying the reason (exit 2 + stderr, or the Claude-native ask projected through `preToolUseByExitCode`), so a safety guard cannot silently pass when no one can confirm. Hook errors, timeouts and missing scripts still fail open (ADR-020) — that is a different path.
+
+**Detail:** see 03 §Invariants 9; 04 §Plugin hook scripts (`hook run`).

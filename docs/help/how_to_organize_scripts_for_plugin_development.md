@@ -5,8 +5,8 @@ Guidance for plugin authors on where executable logic lives in a superskill plug
 ## The two contracts
 
 Every non-hook script is authored under the **standard** contract. A first-party pure engine may
-*also* register on the optional contract — that is extra, not a replacement. Hook scripts currently
-stay on `hook run` (H1 R6-B). Choose using the table:
+*also* register on the optional contract — that is extra, not a replacement. Hook scripts use
+`hook run`, which runs the script the plugin ships ([How to write a hook](#how-to-write-a-hook)). Choose using the table:
 
 | Contract | How it ships to targets | How skills invoke it | When to choose |
 | --- | --- | --- | --- |
@@ -143,9 +143,8 @@ printf '%s' "$FINAL_ANSWER" | superskill script run cc validate-response
   `SCRIPT_RUNNERS` is a hardcoded object populated by static top-level imports, and there is no
   dynamic or third-party registration path. A plugin maintained in another repository therefore
   cannot self-register: its logic must be ported into (or imported into) superskill's own tree, and
-  every subsequent fix requires a superskill release. The `sp` plugin's *hooks* are registered this
-  way — `runSpTaskWriteGuard` is implemented inside `hook-run.ts`, not imported from the plugin's
-  home repo. Weigh this before choosing the optional contract for an external plugin.
+  every subsequent fix requires a superskill release. Weigh this before choosing the optional
+  contract for an external plugin.
 - **The runner signature is argv-less and synchronous:** `run({ stdinText, env }) => { stdout, exitCode }`.
   There is no argument channel, so a flag-driven CLI (`--wbs`, subcommands) does not fit without
   smuggling argv through environment variables, and a runner cannot `await`. (`HookRunner` *may* be
@@ -154,23 +153,81 @@ printf '%s' "$FINAL_ANSWER" | superskill script run cc validate-response
 ### Hook: `hook run` (current hook form)
 
 ```json
-{ "type": "command", "command": "superskill hook run cc anti-hallucination", "timeout": 10 }
+{ "type": "command", "command": "superskill hook run <plugin> <hook-id>", "timeout": 10 }
 ```
 
-- Portable PATH form; install translates to each host's native hook format.
+- Portable PATH form; install translates it to each host's native hook format.
 - `minCliVersion` in `hooks.json` gates emission: an older CLI skips hook emission with a warning while skills/commands still install.
-- Register a `HookRunner` in `apps/cli/src/commands/hook-run.ts`.
+- **No registration.** `hook run` runs the script your plugin ships for the id (ADR-039). Only
+  this repo's own first-party engines are also compiled in as built-in runners (`cc/anti-hallucination`).
 
-**Hooks stay on `hook run` for now.** Hook-path unification (migrating hooks off the binary registry onto staged paths) is feature A work item R6-B and is **not done**; do not stage a hook via `script path` until that design lands.
+## How to write a hook
+
+Adding a hook to any plugin takes **one script file and one `hooks.json` line**. superskill needs
+no change and no release.
+
+1. **Write `plugins/<plugin>/hooks/<hook-id>.ts`.** `scripts/hooks/<hook-id>.ts` also works and is
+   the location to use when the hook must also run on staged-scripts targets (Codex, OpenCode,
+   Antigravity, Hermes): install stages `scripts/`, not `hooks/`. `.mjs`/`.js` are accepted too.
+2. **Declare it** in `plugins/<plugin>/hooks/hooks.json`:
+   `{ "type": "command", "command": "superskill hook run <plugin> <hook-id>", "timeout": 10 }`.
+
+That's all. The script contract:
+
+- **Runtime:** Bun, in the host's cwd. Bun is always available because superskill runs on it.
+  Keep the script self-contained (`node:*` builtins and relative imports only): targets have no
+  `node_modules`.
+- **Input:** one JSON payload on stdin, always in the canonical Claude-style shape
+  (`hook_event_name`, `tool_name`, `tool_input.file_path` / `.command`, `tool_response.content`,
+  `session_id`, `cwd`). Pi/omp events are normalized before your script sees them.
+  The env adds `SUPERSKILL_PLUGIN_ROOT`, `SUPERSKILL_HOOK_ID`, `SUPERSKILL_HOOK_EVENT`,
+  `SUPERSKILL_HOOK_HOST` and `SUPERSKILL_HOOK_PROFILE`.
+- **Output:** print nothing (allow / capture-only hooks), or one host-neutral JSON object
+  `{"decision": "allow" | "deny" | "ask" | "block", "reason": "…"}` and exit 0. superskill renders it
+  per host and event: a Claude `permissionDecision`, a Codex/omp exit 2, or a Stop
+  `decision:"block"`. An `ask` is a confirmation request: Claude Code (and a native Pi extension
+  with `ctx.ui.confirm`) honor it; everywhere else it becomes a deny carrying the reason so a
+  safety guard cannot silently pass. Don't print Claude's `permissionDecision:"allow"`: it would
+  bypass the user's permission rules, so `hook run` drops it. Exit 2 + stderr remains a raw block;
+  any other non-zero exit, a crash or a timeout fails open.
+- **Deadline:** your declared `timeout` minus 500 ms, after which the script is killed and the hook
+  fails open.
+
+Minimal guard:
+
+```ts
+#!/usr/bin/env bun
+// plugins/acme/hooks/no-env-writes.ts
+const payload = JSON.parse((await Bun.stdin.text()) || '{}');
+const file: string = payload.tool_input?.file_path ?? '';
+if (payload.hook_event_name === 'PreToolUse' && /(^|\/)\.env/.test(file)) {
+    process.stdout.write(JSON.stringify({ decision: 'deny', reason: `${file} holds secrets; edit it by hand.` }));
+}
+process.exit(0);
+```
+
+```json
+{ "hooks": { "PreToolUse": [{ "matcher": "Write|Edit", "hooks": [
+    { "type": "command", "command": "superskill hook run acme no-env-writes", "timeout": 5 }
+] }] } }
+```
+
+Try it from a checkout without installing:
+`echo '{"hook_event_name":"PreToolUse","tool_input":{"file_path":".env"}}' | SUPERSKILL_PLUGIN_ROOT=plugins/acme superskill hook run acme no-env-writes`.
+
+Where superskill looks for the script (Claude Code / omp / Grok plugin caches, `CLAUDE_PLUGIN_ROOT`,
+staged roots), the exact host translation table and the fail-open rules:
+[04 §Plugin hook scripts](../04_DESIGN.md). Pi still runs hooks through the `@vahor/pi-hooks`
+command shim (no `ask` confirm, no Stop continuation); a generated native Pi adapter is designed
+there.
 
 ## Decision tree
 
 ```text
 Is it triggered by a host hook event (Stop/PreToolUse/…)?
   YES → hook script
-        → register HookRunner in hook-run.ts
+        → write plugins/<plugin>/hooks/<id>.ts (see "How to write a hook")
         → hooks.json uses `superskill hook run <plugin> <id>`
-        (staged hook paths are R6-B, not yet shipped)
   NO  → Is it invoked by an agent/host workflow (referenced from skill docs)?
     YES → Does the script need a real file on the target (portable runner, FS, args)?
       YES → STANDARD contract
@@ -196,7 +253,7 @@ Is it triggered by a host hook event (Stop/PreToolUse/…)?
 | Hard-coded absolute path (`~/.agents/scripts/...`, cache dir, repo clone) | Install mode and target class decide the real path | `$(superskill script path <plugin> <rel>)` |
 | Per-skill `skills/<name>/scripts/` executables | Duplication across skills (ADR-015); skill folders are prose-only | Plugin-level `scripts/<feature>/` shared by all skills |
 | Wiring a validation CLI (exit 0/1) into `hooks.json` | Hosts treat exit 1 as non-blocking error, not a block signal | Keep exit-0/1 CLIs as non-hook scripts (standard or optional); hook adapters use exit 2 |
-| Assuming Bun is on the target host | Targets have no Bun/TS runtime guarantee; a `.ts` file staged as-is is not runnable | Ship a `.js`/`.mjs`/`.sh` portable entrypoint (Entrypoint Contract) |
+| Assuming Bun is on the target host | Targets have no Bun/TS runtime guarantee; a `.ts` file staged as-is is not runnable | Ship a `.js`/`.mjs`/`.sh` portable entrypoint (Entrypoint Contract) (hook scripts are the exception: `hook run` supplies Bun) |
 | Trusting `script convert`'s exit code as proof the twin works | Exit 0 means *no Bun globals*, not *the twin runs* — convert rejects `Bun.*` references but cannot prove runtime behavior | Run the generated `.mjs` under `node` as the acceptance check |
 | Choosing the registry contract for a flag-driven or externally-maintained script | `ScriptRunner` is argv-less, synchronous, and hardcoded in superskill's tree | Standard contract: portable twin + `$(superskill script path …)` |
 | Ad-hoc manual copy of scripts into target dirs | Bypasses staging dedup and re-install safety; drifts from source | Let `superskill install` stage; never copy by hand |
@@ -220,5 +277,6 @@ Is it triggered by a host hook event (Stop/PreToolUse/…)?
 | `superskill script convert <plugin> <rel>` — build a portable `.mjs` twin from a plugin script `.ts` (reusable across plugins) | Shipped; `cc anti-hallucination/validate_response.mjs` built via `build:scripts`. Rejects `Bun.*` globals that would survive the bundle (non-zero exit, writes nothing) — see [Build the portable twin](#build-the-portable-twin--script-convert). |
 | Entrypoint Contract v1 (Node `.js`/`.mjs`, POSIX `.sh`; exit-code classes) | Defined (task 0089) |
 | `superskill script run <plugin> <id>` + `ScriptRunner` registry (optional contract, non-hook) | Shipped (task 0087); `cc/validate-response` registered |
-| `superskill hook run <plugin> <id>` + `HookRunner` registry (current hook form) | Shipped (v0.2.19+); `cc/anti-hallucination` registered |
-| Hook-path unification (hooks on staged paths instead of `hook run`) | **Planned** (feature A, R6-B) — keep using `hook run` until it lands |
+| `superskill hook run <plugin> <id>` (current hook form) | Shipped (v0.2.19+). Runs the plugin's own `hooks/<id>` script with host-neutral in/out (ADR-039); `cc/anti-hallucination` is a compiled built-in |
+| Hook-path unification (hooks on staged paths instead of `hook run`) | Superseded by ADR-039: the runtime form stays `hook run`, which resolves the plugin-shipped script under native plugin roots and staged `.agents/scripts/<plugin>/hooks/` |
+| Native Pi hook adapter (generated extension modules, `ask` → confirm) | **Designed** ([04 §Plugin hook scripts](../04_DESIGN.md)); Pi uses the `@vahor/pi-hooks` command shim meanwhile |

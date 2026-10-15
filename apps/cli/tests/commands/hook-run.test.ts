@@ -1,31 +1,29 @@
 import { afterEach, beforeEach, describe, expect, it, mock, spyOn } from 'bun:test';
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { getEnvVar, removeEnvVar, setEnvVar } from '@gobing-ai/superskill-core';
-import type { ProcessExecutor, ProcessOptions } from '@gobing-ai/ts-runtime';
+import { getEnvVar } from '@gobing-ai/superskill-core';
+import type { PipeProcess, ProcessExecutor } from '@gobing-ai/ts-runtime';
 import { Command } from 'commander';
 import {
-    couldBeTaskCorpusPath,
+    DEFAULT_HOOK_TIMEOUT_MS,
+    HOOK_TIMEOUT_MARGIN_MS,
     hookRun,
-    parseSpurBinSpec,
+    hookScriptRuntime,
+    hookScriptTimeoutMs,
+    pluginRootCandidates,
     registerHookRun,
-    resolveSpPluginScript,
-    resolveSpurTaskOwnership,
-    runSpTaskWriteGuard,
+    resolveHookScript,
+    runHookScript,
 } from '../../src/commands/hook-run';
 import { cliVersion } from '../../src/version';
 
 /**
- * `superskill hook run <plugin> <hook-id>` — the cross-agent hook runtime trigger (task 0151).
- * Tests assert the dispatcher contract (resolve runner, emit the right exit code + output) and
- * each runner's decision + fail-open behavior. Allow → exit 0 (PreToolUse with empty stdout, Stop
- * with canonical JSON). Deny takes the clean channel per host: Stop → `decision:"block"` JSON at
- * exit 0 (cc/anti-hallucination is Claude-Code-only); PreToolUse → `permissionDecision:"deny"` JSON
- * at exit 0 when Claude Code is the host (CLAUDE_PROJECT_DIR set), else exit 2 + stderr for
- * Codex/omp. Claude Code treats exit 1 as a non-blocking error, so 1 never blocks; it honors stdout
- * JSON only at exit 0. `hookRun` returns the exit code and writes to stdout/stderr; tests capture
- * both streams to inspect the payload.
+ * `superskill hook run <plugin> <hook-id>` — the cross-agent hook runtime trigger.
+ * Tests assert the dispatcher contract (built-in runner → the plugin's own hook script → fail-open
+ * warning), id → script resolution across every install root, and the script runner's forwarding,
+ * host translation, timeout and fail-open behavior through real `bun` spawns of fixture scripts.
+ * `hookRun` returns the exit code and writes to stdout/stderr; tests capture both streams.
  */
 
 async function capture(
@@ -34,6 +32,7 @@ async function capture(
     env: NodeJS.ProcessEnv,
     stdinText: string,
     profile?: 'block' | 'deny',
+    location?: { home?: string; cwd?: string },
 ) {
     const chunks: string[] = [];
     const errChunks: string[] = [];
@@ -50,7 +49,7 @@ async function capture(
         return true;
     };
     try {
-        const code = await hookRun(plugin, hookId, env, stdinText, profile);
+        const code = await hookRun(plugin, hookId, env, stdinText, profile, location);
         return { code, out: chunks.join(''), err: errChunks.join('') };
     } finally {
         process.stdout.write = original;
@@ -61,6 +60,23 @@ async function capture(
 afterEach(() => {
     mock.restore();
 });
+
+/**
+ * Fixture hook script: records its stdin + the superskill env it got, then behaves per
+ * `FIXTURE_MODE`. Spawned (never imported), so coverage never instruments it.
+ */
+const FIXTURE_HOOK = readFileSync(join(import.meta.dir, '..', 'fixtures', 'hook-run', 'fixture-hook.mjs'), 'utf-8');
+
+function makePluginRoot(base: string, plugin: string, opts: { manifest?: string | null; script?: string[] } = {}) {
+    mkdirSync(base, { recursive: true });
+    if (opts.manifest !== null)
+        writeFileSync(join(base, 'plugin.json'), JSON.stringify({ name: opts.manifest ?? plugin }));
+    for (const rel of opts.script ?? []) {
+        mkdirSync(join(base, rel, '..'), { recursive: true });
+        writeFileSync(join(base, rel), FIXTURE_HOOK);
+    }
+    return base;
+}
 
 describe('hook run — registration', () => {
     it('registers the run subcommand under the hook group', async () => {
@@ -79,285 +95,359 @@ describe('hook run — registration', () => {
         spyOn(process.stderr, 'write').mockImplementation(() => true);
         const exit = spyOn(process, 'exit').mockImplementation(() => undefined as never);
 
-        await cmd.parseAsync(['node', 'hook', 'run', 'sp', 'does-not-exist']);
+        await cmd.parseAsync(['node', 'hook', 'run', 'no-such-plugin', 'does-not-exist']);
 
-        // Unknown hooks fail open (exit 0) — see dispatcher test for the policy rationale.
+        // Unresolvable hooks fail open (exit 0) — see dispatcher test for the policy rationale.
         expect(exit).toHaveBeenCalledWith(0);
     });
 });
 
 describe('hook run — dispatcher', () => {
-    it('fails open (exit 0) with a skew warning and the known-hook list for an unknown hook id', async () => {
-        // Unknown hooks fail open: an unrecognized id means the installed plugin emits a hook
-        // the running CLI doesn't know — version skew, not a policy violation. Blocking would
-        // turn skew into stuck agent loops. Assert we still surface a loud warning + the list.
-        const errs: string[] = [];
-        const originalErr = process.stderr.write.bind(process.stderr);
-        (process.stderr.write as (chunk: unknown) => boolean) = (chunk: unknown) => {
-            errs.push(String(chunk));
-            return true;
-        };
-        try {
-            const code = await hookRun('sp', 'does-not-exist', {}, '{}');
-            expect(code).toBe(0);
-            expect(errs.join('')).toContain("unknown hook 'sp does-not-exist'");
-            expect(errs.join('')).toContain('Failing open');
-            // The warning must name the real installed version — 'unknown' means the version
-            // lookup silently broke (task 0074: skew is only diagnosable if the version is real).
-            expect(errs.join('')).toContain(`(superskill ${cliVersion})`);
-            expect(errs.join('')).toContain('sp/task-write-guard');
-            expect(errs.join('')).toContain('sp/context-post-tool');
-            expect(errs.join('')).toContain('sp/context-session-start');
-            expect(errs.join('')).toContain('sp/context-session-stop');
-            expect(errs.join('')).toContain('cc/anti-hallucination');
-        } finally {
-            process.stderr.write = originalErr;
-        }
+    let dir: string;
+    beforeEach(() => {
+        dir = mkdtempSync(join(tmpdir(), 'hook-run-plugin-'));
+    });
+    afterEach(() => {
+        rmSync(dir, { recursive: true, force: true });
+    });
+
+    it('fails open (exit 0) with a skew warning when no built-in runner and no hook script exist', async () => {
+        // Unresolvable ids mean plugin/CLI skew or an incomplete install — not a policy
+        // violation. Blocking would turn skew into stuck agent loops. Assert a loud warning.
+        const { code, out, err } = await capture('acme', 'does-not-exist', {}, '{}', undefined, {
+            home: dir,
+            cwd: dir,
+        });
+        expect(code).toBe(0);
+        expect(out).toBe('');
+        expect(err).toContain("unknown hook 'acme does-not-exist'");
+        expect(err).toContain('hooks/does-not-exist.{ts,mjs,js}');
+        expect(err).toContain('SUPERSKILL_PLUGIN_ROOT');
+        expect(err).toContain('Failing open');
+        // The warning must name the real installed version — 'unknown' means the version
+        // lookup silently broke (task 0074: skew is only diagnosable if the version is real).
+        expect(err).toContain(`(superskill ${cliVersion})`);
+        expect(err).toContain('cc/anti-hallucination');
+    });
+
+    it("runs the plugin's own hook script: one file + one hooks.json line, no registration", async () => {
+        const root = makePluginRoot(join(dir, 'acme'), 'acme', { script: ['hooks/new-guard.ts'] });
+        const env = { PATH: getEnvVar('PATH'), SUPERSKILL_PLUGIN_ROOT: root, FIXTURE_DIR: dir, FIXTURE_MODE: 'deny' };
+        const payload = JSON.stringify({ hook_event_name: 'PreToolUse', tool_name: 'Bash' });
+        const { code, out, err } = await capture('acme', 'new-guard', env, payload, undefined, {
+            home: dir,
+            cwd: dir,
+        });
+        expect(code).toBe(2);
+        expect(out).toBe('');
+        expect(err.trim()).toBe('nope');
+        expect(readFileSync(join(dir, 'stdin'), 'utf-8')).toBe(payload);
+        expect(JSON.parse(readFileSync(join(dir, 'env'), 'utf-8'))).toEqual({
+            root,
+            id: 'new-guard',
+            host: 'generic',
+            event: 'PreToolUse',
+            profile: 'block',
+        });
+    });
+
+    it('prefers a first-party built-in runner over a same-named plugin script', async () => {
+        const root = makePluginRoot(join(dir, 'cc'), 'cc', { script: ['hooks/anti-hallucination.ts'] });
+        const env = { SUPERSKILL_PLUGIN_ROOT: root, FIXTURE_DIR: dir, FIXTURE_MODE: 'deny' };
+        const { code, out } = await capture('cc', 'anti-hallucination', env, '', undefined, { home: dir, cwd: dir });
+        expect(code).toBe(0);
+        expect(JSON.parse(out)).toEqual({});
     });
 });
 
-describe('parseSpurBinSpec', () => {
-    it('splits unquoted tokens on spaces', async () => {
-        expect(parseSpurBinSpec('spur --flag')).toEqual(['spur', '--flag']);
+describe('hook run — id → script resolution', () => {
+    let dir: string;
+    beforeEach(() => {
+        dir = mkdtempSync(join(tmpdir(), 'hook-run-plugin-'));
+    });
+    afterEach(() => {
+        rmSync(dir, { recursive: true, force: true });
+    });
+    const loc = () => ({ home: join(dir, 'home'), cwd: join(dir, 'proj') });
+
+    it('resolves under SUPERSKILL_PLUGIN_ROOT, then CLAUDE_PLUGIN_ROOT', () => {
+        const a = makePluginRoot(join(dir, 'a'), 'acme', { script: ['hooks/h.ts'] });
+        const b = makePluginRoot(join(dir, 'b'), 'acme', { script: ['hooks/h.ts'] });
+        expect(resolveHookScript('acme', 'h', { SUPERSKILL_PLUGIN_ROOT: a, CLAUDE_PLUGIN_ROOT: b }, loc())).toEqual({
+            script: join(a, 'hooks', 'h.ts'),
+            root: a,
+            source: 'env',
+        });
+        expect(resolveHookScript('acme', 'h', { CLAUDE_PLUGIN_ROOT: b }, loc())?.source).toBe('claude-plugin-root');
     });
 
-    it('preserves spaces inside double- or single-quoted paths', async () => {
-        expect(parseSpurBinSpec('"/opt/my tools/spur" task')).toEqual(['/opt/my tools/spur', 'task']);
-        expect(parseSpurBinSpec("'/opt/my tools/spur' --x")).toEqual(['/opt/my tools/spur', '--x']);
+    it("rejects a root whose manifest names another plugin (an inherited env root never serves another plugin's hooks)", () => {
+        const other = makePluginRoot(join(dir, 'other'), 'other', { script: ['hooks/h.ts'] });
+        expect(resolveHookScript('acme', 'h', { CLAUDE_PLUGIN_ROOT: other }, loc())).toBeNull();
+        // .claude-plugin/plugin.json counts as a manifest too; a manifest-less root is accepted.
+        const bare = makePluginRoot(join(dir, 'bare'), 'acme', { manifest: null, script: ['hooks/h.ts'] });
+        expect(resolveHookScript('acme', 'h', { SUPERSKILL_PLUGIN_ROOT: bare }, loc())?.root).toBe(bare);
+        mkdirSync(join(bare, '.claude-plugin'));
+        writeFileSync(join(bare, '.claude-plugin', 'plugin.json'), '{"name":"other"}');
+        expect(resolveHookScript('acme', 'h', { SUPERSKILL_PLUGIN_ROOT: bare }, loc())).toBeNull();
     });
 
-    it('returns a single token when the whole binary path is quoted', async () => {
-        expect(parseSpurBinSpec('"/Applications/Spur CLI/spur"')).toEqual(['/Applications/Spur CLI/spur']);
+    it('tries hooks/<id>.ts|.mjs|.js, then scripts/hooks/<id>.*', () => {
+        const root = makePluginRoot(join(dir, 'r'), 'acme', {
+            script: ['hooks/x.mjs', 'hooks/x.js', 'scripts/hooks/y.ts', 'scripts/hooks/x.ts'],
+        });
+        const env = { SUPERSKILL_PLUGIN_ROOT: root };
+        expect(resolveHookScript('acme', 'x', env, loc())?.script).toBe(join(root, 'hooks', 'x.mjs'));
+        expect(resolveHookScript('acme', 'y', env, loc())?.script).toBe(join(root, 'scripts', 'hooks', 'y.ts'));
+    });
+
+    it('scans the Claude Code plugin cache newest version first, skipping versions without the script', () => {
+        const cache = join(dir, 'home', '.claude', 'plugins', 'cache', 'mkt', 'acme');
+        makePluginRoot(join(cache, '0.9.0'), 'acme', { script: ['hooks/h.ts'] });
+        makePluginRoot(join(cache, '0.10.0'), 'acme', { script: ['hooks/h.ts'] });
+        makePluginRoot(join(cache, '0.11.0'), 'acme');
+        expect(resolveHookScript('acme', 'h', {}, loc())).toEqual({
+            script: join(cache, '0.10.0', 'hooks', 'h.ts'),
+            root: join(cache, '0.10.0'),
+            source: 'claude-cache',
+        });
+        // CLAUDE_CONFIG_DIR relocates the cache.
+        const cfg = join(dir, 'cfg', 'plugins', 'cache', 'm', 'acme', '1.0.0');
+        makePluginRoot(cfg, 'acme', { script: ['hooks/h.ts'] });
+        expect(resolveHookScript('acme', 'h', { CLAUDE_CONFIG_DIR: join(dir, 'cfg') }, loc())?.root).toBe(cfg);
+    });
+
+    it('scans the omp plugin cache (project, then home) and Grok installed-plugins', () => {
+        const omp = join(dir, 'proj', '.omp', 'plugins', 'cache', 'plugins');
+        makePluginRoot(join(omp, 'acme___mkt___1.0.0'), 'acme', { script: ['hooks/h.ts'] });
+        makePluginRoot(join(omp, 'acme-two___mkt___9.0.0'), 'acme-two', { script: ['hooks/h.ts'] });
+        expect(resolveHookScript('acme', 'h', {}, loc())?.root).toBe(join(omp, 'acme___mkt___1.0.0'));
+
+        rmSync(join(dir, 'proj'), { recursive: true, force: true });
+        const grok = join(dir, 'home', '.grok', 'installed-plugins');
+        makePluginRoot(join(grok, 'acme-tools-1'), 'acme-tools', { script: ['hooks/h.ts'] });
+        makePluginRoot(join(grok, 'acme-adf27'), 'acme', { script: ['hooks/h.ts'] });
+        expect(resolveHookScript('acme', 'h', {}, loc())).toEqual({
+            script: join(grok, 'acme-adf27', 'hooks', 'h.ts'),
+            root: join(grok, 'acme-adf27'),
+            source: 'grok',
+        });
+    });
+
+    it('falls back to staged scripts roots (project, then global), searching only their hooks/', () => {
+        const project = join(dir, 'proj', '.agents', 'scripts', 'acme');
+        const global = join(dir, 'home', '.agents', 'scripts', 'acme');
+        makePluginRoot(global, 'acme', { manifest: null, script: ['hooks/h.ts', 'scripts/hooks/g.ts'] });
+        expect(resolveHookScript('acme', 'h', {}, loc())?.root).toBe(global);
+        expect(resolveHookScript('acme', 'g', {}, loc())).toBeNull();
+        makePluginRoot(project, 'acme', { manifest: null, script: ['hooks/h.ts'] });
+        expect(resolveHookScript('acme', 'h', {}, loc())).toEqual({
+            script: join(project, 'hooks', 'h.ts'),
+            root: project,
+            source: 'staged',
+        });
+        expect(pluginRootCandidates('acme', {}, loc()).map((c) => c.source)).toEqual(['staged', 'staged']);
+    });
+
+    it('defaults the project anchor to CLAUDE_PROJECT_DIR', () => {
+        const project = join(dir, 'proj', '.agents', 'scripts', 'acme');
+        makePluginRoot(project, 'acme', { manifest: null, script: ['hooks/h.ts'] });
+        const found = resolveHookScript('acme', 'h', { CLAUDE_PROJECT_DIR: join(dir, 'proj') }, { home: dir });
+        expect(found?.root).toBe(project);
+    });
+
+    it('returns null for an id or plugin that is not a single safe path segment', () => {
+        const root = makePluginRoot(join(dir, 'r'), 'acme', { script: ['hooks/h.ts'] });
+        expect(resolveHookScript('acme', '../hooks/h', { SUPERSKILL_PLUGIN_ROOT: root }, loc())).toBeNull();
+        expect(resolveHookScript('..', 'h', { SUPERSKILL_PLUGIN_ROOT: root }, loc())).toBeNull();
     });
 });
 
-describe('hook run — sp/task-write-guard', () => {
-    const payload = (tool: string, path: string) =>
-        JSON.stringify({ tool_name: tool, tool_input: { file_path: path } });
-    it('fails open (allow) for a non-Write/Edit tool', async () => {
-        const { code, out } = await capture('sp', 'task-write-guard', {}, payload('Read', '/tmp/x.md'));
-        // WHY: allow = empty stdout + exit 0 — the cross-agent "continue normally" signal.
-        // Codex rejects `permissionDecision:"allow"` in JSON, so the guard emits nothing.
-        expect(code).toBe(0);
-        expect(out).toBe('');
+describe('hook run — deadline from the declared hooks.json timeout', () => {
+    let dir: string;
+    beforeEach(() => {
+        dir = mkdtempSync(join(tmpdir(), 'hook-run-plugin-'));
     });
-    it('fails open (allow) on a malformed payload', async () => {
-        const { code, out } = await capture('sp', 'task-write-guard', {}, 'not json');
-        expect(code).toBe(0);
-        expect(out).toBe('');
+    afterEach(() => {
+        rmSync(dir, { recursive: true, force: true });
     });
-    it('fails open (allow) when the path is empty', async () => {
-        const { code, out } = await capture('sp', 'task-write-guard', {}, payload('Edit', ''));
-        expect(code).toBe(0);
-        expect(out).toBe('');
-    });
-    it('short-circuits to allow when SPUR_WRITE_GUARD=off (no subprocess)', async () => {
-        const { code, out } = await capture(
-            'sp',
-            'task-write-guard',
-            { SPUR_WRITE_GUARD: 'off' },
-            payload('Edit', '/any/task.md'),
+    const hooksJson = (path: string) => {
+        mkdirSync(join(path, '..'), { recursive: true });
+        writeFileSync(
+            path,
+            JSON.stringify({
+                hooks: {
+                    Stop: [{ hooks: [{ type: 'command', command: 'superskill hook run acme h', timeout: 10 }] }],
+                    SessionStart: [{ type: 'command', command: 'superskill hook run acme h', timeout: 5 }],
+                    UserPromptSubmit: [
+                        { hooks: [{ type: 'command', command: 'superskill hook run acme tiny', timeout: 1 }] },
+                    ],
+                    Bad: 'not-an-array',
+                },
+            }),
         );
-        expect(code).toBe(0);
-        expect(out).toBe('');
-    });
-    it('fails open (allow) when `spur` cannot resolve ownership (not on PATH / unknown cwd)', async () => {
-        // PATH stripped → spawnSync errors → fail open. A non-corpus path under any resolvable cwd
-        // also yields allow; both converge on the safe default.
-        const { code, out } = await capture(
-            'sp',
-            'task-write-guard',
-            { PATH: '', CLAUDE_PROJECT_DIR: '/nonexistent-project-dir' },
-            payload('Edit', '/nonexistent-project-dir/scratch.md'),
-        );
-        expect(code).toBe(0);
-        expect(out).toBe('');
-    });
-    it('fails open (allow) when the resolver reports an unowned path', async () => {
-        const result = await runSpTaskWriteGuard(
-            { CLAUDE_PROJECT_DIR: process.cwd() },
-            payload('Edit', '/tmp/not-a-task.md'),
-            () => Promise.resolve('unowned'),
-        );
-        expect(result.exitCode).toBe(0);
-        expect(result.output).toBe('');
+    };
+
+    it('uses the smallest declared timeout minus the margin, floored at 1 s', () => {
+        hooksJson(join(dir, 'hooks', 'hooks.json'));
+        expect(hookScriptTimeoutMs(dir, 'acme', 'h', {})).toBe(5000 - HOOK_TIMEOUT_MARGIN_MS);
+        expect(hookScriptTimeoutMs(dir, 'acme', 'tiny', {})).toBe(1000);
     });
 
-    it('denies Write/Edit via permissionDecision:"deny" JSON (exit 0) when Claude Code is the host', async () => {
-        const result = await runSpTaskWriteGuard(
-            { CLAUDE_PROJECT_DIR: process.cwd() },
-            payload('Write', '/repo/docs/tasks/0001_example.md'),
-            () => Promise.resolve('owned'),
-        );
-        // WHY: Claude Code honors stdout JSON only at exit 0, so a clean deny emits
-        // `permissionDecision:"deny"` + reason at exit 0 (not the exit-2 "blocking error" path).
-        const parsed = JSON.parse(result.output);
-        expect(parsed.hookSpecificOutput.hookEventName).toBe('PreToolUse');
-        expect(parsed.hookSpecificOutput.permissionDecision).toBe('deny');
-        expect(parsed.hookSpecificOutput.permissionDecisionReason).toContain('owned by the spur corpus');
-        expect(result.exitCode).toBe(0);
-        expect(result.stderr).toBeUndefined();
-    });
-
-    it('denies Write/Edit via exit 2 + stderr when a non-Claude-Code host has no CLAUDE_PROJECT_DIR', async () => {
-        const result = await runSpTaskWriteGuard({}, payload('Write', '/repo/docs/tasks/0001_example.md'), () =>
-            Promise.resolve('owned'),
-        );
-        // WHY: Codex/omp don't set CLAUDE_PROJECT_DIR and reject `permissionDecision` JSON (418894e),
-        // so the cross-agent fallback is exit 2 + stderr — the universal block signal.
-        expect(result.exitCode).toBe(2);
-        expect(result.output).toBe('');
-        expect(result.stderr).toContain('owned by the spur corpus');
+    it('reads a root-level hooks.json, honors SUPERSKILL_HOOK_TIMEOUT_MS, else the default', () => {
+        hooksJson(join(dir, 'hooks.json'));
+        expect(hookScriptTimeoutMs(dir, 'acme', 'h', {})).toBe(4500);
+        expect(hookScriptTimeoutMs(dir, 'acme', 'h', { SUPERSKILL_HOOK_TIMEOUT_MS: '1234' })).toBe(1234);
+        expect(hookScriptTimeoutMs(dir, 'acme', 'h', { SUPERSKILL_HOOK_TIMEOUT_MS: 'x' })).toBe(4500);
+        expect(hookScriptTimeoutMs(dir, 'acme', 'undeclared', {})).toBe(DEFAULT_HOOK_TIMEOUT_MS);
+        expect(hookScriptTimeoutMs(join(dir, 'missing'), 'acme', 'h', {})).toBe(DEFAULT_HOOK_TIMEOUT_MS);
     });
 });
 
-describe('hook run — sp/task-write-guard prefilter (Spur task 0398 R2)', () => {
-    const payload = (tool: string, file_path: string) => JSON.stringify({ tool_name: tool, tool_input: { file_path } });
+describe('hook run — script execution and host translation', () => {
+    let dir: string;
+    let root: string;
+    beforeEach(() => {
+        dir = mkdtempSync(join(tmpdir(), 'hook-run-plugin-'));
+        root = makePluginRoot(join(dir, 'acme'), 'acme', { script: ['hooks/h.ts'] });
+    });
+    afterEach(() => {
+        rmSync(dir, { recursive: true, force: true });
+    });
+    const run = (mode: string, payload: unknown, extra: NodeJS.ProcessEnv = {}, profile?: 'block' | 'deny') =>
+        capture(
+            'acme',
+            'h',
+            { PATH: getEnvVar('PATH'), SUPERSKILL_PLUGIN_ROOT: root, FIXTURE_DIR: dir, FIXTURE_MODE: mode, ...extra },
+            typeof payload === 'string' ? payload : JSON.stringify(payload),
+            profile,
+            { home: dir, cwd: dir },
+        );
+    const pre = { hook_event_name: 'PreToolUse', tool_name: 'Write', tool_input: { file_path: 'x' } };
+    const stop = { hook_event_name: 'Stop', session_id: 's1' };
+    const claude = { CLAUDE_PROJECT_DIR: '/p' };
 
-    /** Resolver that records whether it ran, so a skipped spawn is observable (R7). */
-    function spyResolver() {
-        let called = false;
-        return {
-            fn: () => {
-                called = true;
-                return Promise.resolve('unowned' as const);
+    it('a silent capture hook exits 0 with no output on every host', async () => {
+        expect(await run('silent', stop)).toEqual({ code: 0, out: '', err: '' });
+        expect(await run('allow', pre, claude)).toEqual({ code: 0, out: '', err: '' });
+    });
+
+    it('renders a neutral PreToolUse deny/ask as permissionDecision JSON on Claude Code', async () => {
+        const deny = await run('deny', pre, claude);
+        expect(deny.code).toBe(0);
+        expect(JSON.parse(deny.out)).toEqual({
+            hookSpecificOutput: {
+                hookEventName: 'PreToolUse',
+                permissionDecision: 'deny',
+                permissionDecisionReason: 'nope',
             },
-            wasCalled: () => called,
-        };
-    }
-
-    // WHY: each row is a path that cannot be a task file. The guard must allow it without ever
-    // consulting `spur task resolve` — the spawn costs ~2.4 s. The spy makes the skip observable;
-    // a test that only checked exitCode === 0 would pass even with the prefilter deleted.
-    it.each([
-        ['source file', '/repo/src/foo.ts'],
-        ['manifest', '/repo/package.json'],
-        ['lockfile', '/repo/bun.lock'],
-        ['markdown outside a tasks segment', '/repo/README.md'],
-        ['docs markdown that is not task corpus', '/repo/docs/00_ADR.md'],
-        ['tasks-like segment that is not markdown', '/repo/docs/tasks3/notes.txt'],
-    ])('allows a %s without spawning spur task resolve', async (_label, path) => {
-        const spy = spyResolver();
-        const result = await runSpTaskWriteGuard({ CLAUDE_PROJECT_DIR: process.cwd() }, payload('Write', path), spy.fn);
-        expect(result.exitCode).toBe(0);
-        expect(result.output).toBe('');
-        // WHY: the spawn costs ~2.4 s. Skipping it for non-corpus paths is the whole fix.
-        expect(spy.wasCalled()).toBe(false);
+        });
+        const ask = await run('ask', pre, claude);
+        expect(JSON.parse(ask.out).hookSpecificOutput.permissionDecision).toBe('ask');
     });
 
-    it.each([
-        ['docs/tasks', '/repo/docs/tasks/0001_example.md'],
-        ['docs/tasks3', '/repo/docs/tasks3/0398_example.md'],
-        ['flat tasks dir', '/repo/tasks/0042_example.md'],
-        ['relative path', 'docs/tasks2/0007_example.md'],
-    ])('still consults spur task resolve for a %s path', async (_label, path) => {
-        const spy = spyResolver();
-        await runSpTaskWriteGuard({ CLAUDE_PROJECT_DIR: process.cwd() }, payload('Write', path), spy.fn);
-        expect(spy.wasCalled()).toBe(true);
+    it('renders a neutral PreToolUse deny/ask as exit 2 + stderr elsewhere (unconfirmable ask fails closed)', async () => {
+        expect(await run('deny', pre)).toEqual({ code: 2, out: '', err: 'nope\n' });
+        expect(await run('ask', pre, { SUPERSKILL_HOOK_HOST: 'omp' })).toEqual({ code: 2, out: '', err: 'sure?\n' });
+        expect(await run('ask', pre, { SUPERSKILL_HOOK_HOST: 'generic' })).toEqual({
+            code: 2,
+            out: '',
+            err: 'sure?\n',
+        });
     });
 
-    it('still denies an owned task file — the prefilter must not weaken the guard', async () => {
-        const result = await runSpTaskWriteGuard(
-            { CLAUDE_PROJECT_DIR: process.cwd() },
-            payload('Write', '/repo/docs/tasks/0001_example.md'),
-            () => Promise.resolve('owned'),
+    it('renders a neutral Stop block as decision JSON (deny under --profile deny), exit 2 on omp', async () => {
+        const block = await run('block', stop, claude);
+        expect(JSON.parse(block.out)).toEqual({ decision: 'block', reason: 'inbox' });
+        const gemini = await run('block', stop, {}, 'deny');
+        expect(JSON.parse(gemini.out)).toEqual({ decision: 'deny', reason: 'inbox' });
+        expect(await run('block', stop, { SUPERSKILL_HOOK_HOST: 'omp' })).toEqual({ code: 2, out: '', err: 'inbox\n' });
+    });
+
+    it('forwards legacy Claude-native JSON verbatim on Claude Code and re-expresses it elsewhere', async () => {
+        const verbatim = await run('claude-deny', pre, claude);
+        expect(JSON.parse(verbatim.out).hookSpecificOutput.permissionDecision).toBe('deny');
+        expect(await run('claude-deny', pre)).toEqual({ code: 2, out: '', err: 'legacy deny\n' });
+        expect(await run('claude-allow', pre)).toEqual({ code: 0, out: '', err: '' });
+    });
+
+    it('drops a legacy bare PreToolUse allow on Claude Code too (it would auto-approve the call)', async () => {
+        expect(await run('claude-allow', pre, claude)).toEqual({ code: 0, out: '', err: '' });
+    });
+
+    it('forwards other stdout, the script stderr, and an exit-2 block as-is', async () => {
+        expect(await run('text', stop)).toEqual({ code: 0, out: 'plain text\n', err: '' });
+        expect(await run('warn', stop)).toEqual({ code: 0, out: '', err: 'a warning\n' });
+        expect(await run('exit2', pre)).toEqual({ code: 2, out: '', err: 'blocked by exit code\n' });
+    });
+
+    it('normalizes an omp tool_call event into the canonical payload the script reads', async () => {
+        const omp = { toolName: 'write', input: { path: '/r/a.md', content: 'hi' } };
+        const result = await run('deny', omp, { SUPERSKILL_HOOK_HOST: 'omp', SUPERSKILL_HOOK_EVENT: 'PreToolUse' });
+        expect(result.code).toBe(2);
+        const seen = JSON.parse(readFileSync(join(dir, 'stdin'), 'utf-8'));
+        expect(seen.hook_event_name).toBe('PreToolUse');
+        expect(seen.tool_name).toBe('Write');
+        expect(seen.tool_input.file_path).toBe('/r/a.md');
+        expect(JSON.parse(readFileSync(join(dir, 'env'), 'utf-8')).host).toBe('omp');
+    });
+
+    it('fails open (exit 0, no stdout) with the cause and the script stderr on any other exit status', async () => {
+        const { code, out, err } = await run('crash', pre);
+        expect(code).toBe(0);
+        expect(out).toBe('');
+        expect(err).toContain(
+            `superskill hook run acme h: ${join(root, 'hooks', 'h.ts')} exited 3; failing open (exit 0).`,
         );
-        expect(JSON.parse(result.output).hookSpecificOutput.permissionDecision).toBe('deny');
+        expect(err).toContain('boom');
     });
 
-    it('still fails open when ownership cannot be determined', async () => {
-        const result = await runSpTaskWriteGuard(
-            { CLAUDE_PROJECT_DIR: process.cwd() },
-            payload('Write', '/repo/docs/tasks/0001_example.md'),
-            () => Promise.resolve('unknown'),
-        );
-        expect(result.exitCode).toBe(0);
-        expect(result.output).toBe('');
+    it('fails open and kills the script when it outlives the deadline', async () => {
+        const resolved = { script: join(root, 'hooks', 'h.ts'), root, source: 'env' as const };
+        const started = Date.now();
+        const result = await runHookScript({ PATH: getEnvVar('PATH'), FIXTURE_MODE: 'sleep' }, '{}', {
+            plugin: 'acme',
+            id: 'h',
+            resolved,
+            timeoutMs: 300,
+        });
+        expect(Date.now() - started).toBeLessThan(3000);
+        expect(result).toEqual({
+            output: '',
+            exitCode: 0,
+            stderr: `superskill hook run acme h: ${resolved.script} timed out after 300 ms; failing open (exit 0).`,
+        });
     });
 
-    it('classifies paths at the unit level', () => {
-        expect(couldBeTaskCorpusPath('/repo/docs/tasks3/0398_x.md')).toBe(true);
-        expect(couldBeTaskCorpusPath('/repo/tasks/0042_x.md')).toBe(true);
-        expect(couldBeTaskCorpusPath('/repo/src/index.ts')).toBe(false);
-        expect(couldBeTaskCorpusPath('/repo/docs/tasks3/x.txt')).toBe(false);
-        expect(couldBeTaskCorpusPath('/repo/docs/tasksfoo/x.md')).toBe(false);
-        expect(couldBeTaskCorpusPath('C:\\repo\\docs\\tasks\\0001_x.md')).toBe(true);
-    });
-});
-
-/**
- * `resolveSpurTaskOwnership` subprocess contract — the three exit-code branches and the SPUR_BIN
- * override (task 0109 + the resolveSpurTaskOwnership refactor). A fake {@link ProcessExecutor}
- * records the argv the hook builds, so these tests prove the exact `spur task resolve` invocation
- * (flags, positional path, --strict --json) without shelling out.
- */
-describe('resolveSpurTaskOwnership — subprocess contract', () => {
-    /** Minimal fake executor that returns a canned result and records the invocation. */
-    function fakeExecutor(exitCode: number | null): { executor: ProcessExecutor; calls: ProcessOptions[] } {
-        const calls: ProcessOptions[] = [];
-        const executor: ProcessExecutor = {
-            run: (options) => {
-                calls.push(options);
-                return Promise.resolve({
-                    command: options.command,
-                    args: options.args ?? [],
-                    exitCode,
-                    stdout: '',
-                    stderr: '',
-                    durationMs: 1,
-                });
+    it('fails open when the runtime cannot be spawned', async () => {
+        const failing = (code?: string): ProcessExecutor => ({
+            run: async () => ({ exitCode: 0, stdout: '', stderr: '' }) as never,
+            runStreaming: (): PipeProcess => {
+                throw Object.assign(new Error('spawn'), { code });
             },
-            runStreaming: () => {
-                throw new Error('not used');
-            },
-        };
-        return { executor, calls };
-    }
-
-    it('maps a spur exit code 0 to "owned" and builds the strict JSON argv', async () => {
-        const { executor, calls } = fakeExecutor(0);
-        const ownership = await resolveSpurTaskOwnership('/repo/docs/tasks/0001_x.md', '/repo', executor);
-        expect(ownership).toBe('owned');
-        expect(calls[0]).toBeDefined();
-        const opts = calls[0];
-        expect(opts?.command).toBe('spur');
-        // WHY: --strict makes unowned exit non-zero; --json keeps stdout machine-parsable. The
-        // resolved file path must be the first positional after 'task resolve'.
-        expect(opts?.args).toEqual(['task', 'resolve', '/repo/docs/tasks/0001_x.md', '--strict', '--json']);
-        expect(opts?.cwd).toBe('/repo');
-        expect(opts?.timeout).toBe(8000);
+        });
+        const resolved = { script: join(root, 'hooks', 'h.ts'), root, source: 'env' as const };
+        const missing = await runHookScript({}, '{}', {
+            plugin: 'acme',
+            id: 'h',
+            resolved,
+            timeoutMs: 100,
+            executor: failing('ENOENT'),
+        });
+        expect(missing.exitCode).toBe(0);
+        expect(missing.stderr).toContain('not found (install bun)');
+        const other = await runHookScript({}, '{}', {
+            plugin: 'acme',
+            id: 'h',
+            resolved,
+            timeoutMs: 100,
+            executor: failing(),
+        });
+        expect(other.stderr).toContain('spawn failed; failing open');
     });
 
-    it('maps a non-zero spur exit code to "unowned"', async () => {
-        const { executor } = fakeExecutor(1);
-        const ownership = await resolveSpurTaskOwnership('/repo/scratch.md', '/repo', executor);
-        expect(ownership).toBe('unowned');
-    });
-
-    it('fails open ("unknown") when spur cannot run (exitCode null — spawn/timeout failure)', async () => {
-        // WHY: a missing `spur` binary, a SIGKILL, or a timeout all surface as exitCode === null.
-        // The guard must fail open rather than block writes it cannot vet.
-        const { executor } = fakeExecutor(null);
-        const ownership = await resolveSpurTaskOwnership('/repo/docs/tasks/0001_x.md', '/repo', executor);
-        expect(ownership).toBe('unknown');
-    });
-
-    it('honors a quoted SPUR_BIN override by splitting it into command + leading args', async () => {
-        const { executor, calls } = fakeExecutor(0);
-        const restore = getEnvVar('SPUR_BIN');
-        setEnvVar('SPUR_BIN', '"/opt/my tools/spur" --no-color');
-        try {
-            await resolveSpurTaskOwnership('/x.md', '/repo', executor);
-        } finally {
-            if (restore === undefined) removeEnvVar('SPUR_BIN');
-            else setEnvVar('SPUR_BIN', restore);
-        }
-        expect(calls[0]).toBeDefined();
-        const opts = calls[0];
-        // WHY: SPUR_BIN may carry a quoted path with spaces plus preset flags; parseSpurBinSpec
-        // splits them so the spawn sees ['/opt/my tools/spur', '--no-color', 'task', ...].
-        expect(opts?.command).toBe('/opt/my tools/spur');
-        expect(opts?.args).toEqual(['--no-color', 'task', 'resolve', '/x.md', '--strict', '--json']);
+    it('runs scripts under the Bun executing superskill', () => {
+        expect(hookScriptRuntime({})).toEqual({ command: process.execPath, env: {} });
     });
 });
 
@@ -522,457 +612,5 @@ describe('hook run — cc/anti-hallucination (Stop, canonical output contract)',
         const { code, out } = await capture('cc', 'anti-hallucination', {}, payload);
         expect(code).toBe(0);
         expect(JSON.parse(out).decision).toBeUndefined();
-    });
-});
-
-describe('hook run — sp/context-* (indexed-context token ledger, all fail-open)', () => {
-    // WHY: the 3 context hooks are side-effect-only (token ledger). They must ALWAYS return
-    // exit 0 with empty stdout — a broken context hook must never wedge the agent. These tests
-    // verify the fail-open contract against the edge cases that triggered it (missing dir,
-    // missing session, bad JSON, wrong tool), plus a golden-path ledger write.
-    let tmpRoot: string;
-
-    // Hermeticity (spur#1166): the runners may delegate to the sp plugin's own hook scripts
-    // resolved via SPUR_PLUGIN_ROOT / CLAUDE_PLUGIN_ROOT / the Claude plugin cache. Pin the
-    // config dir to the temp root so the machine's real plugin cache never leaks in — these
-    // tests exercise the in-CLI fallback. Delegation has its own describe below.
-    const ctxEnv = (): NodeJS.ProcessEnv => ({ CLAUDE_PROJECT_DIR: tmpRoot, CLAUDE_CONFIG_DIR: tmpRoot });
-
-    function sessionPaths(): string[] {
-        const ctxDir = join(tmpRoot, '.spur', 'context');
-        if (!existsSync(ctxDir)) return [];
-        return readdirSync(ctxDir)
-            .filter((name) => /^\.session-[a-f0-9]{16}\.json$/.test(name))
-            .map((name) => join(ctxDir, name));
-    }
-
-    function onlySessionPath(): string {
-        const paths = sessionPaths();
-        expect(paths).toHaveLength(1);
-        return paths[0] as string;
-    }
-
-    beforeEach(() => {
-        tmpRoot = mkdtempSync(join(tmpdir(), 'hook-run-ctx-'));
-    });
-    afterEach(() => {
-        mock.restore();
-    });
-
-    it('context-session-start: creates an isolated session file + session_start event and exits 0', async () => {
-        const { code, out } = await capture('sp', 'context-session-start', ctxEnv(), '');
-        expect(code).toBe(0);
-        expect(out).toBe('');
-        const ctxDir = join(tmpRoot, '.spur', 'context');
-        const session = JSON.parse(readFileSync(onlySessionPath(), 'utf-8'));
-        expect(session.session).toMatch(/^session-\d{4}-\d{2}-\d{2}-\d{4}-[a-f0-9]{8}$/);
-        expect(session.started).toBeString();
-        // F4 (task 0127 R4): identity/start marker only — no running counters on session files.
-        expect(session.reads).toBeUndefined();
-        expect(session.writes).toBeUndefined();
-        expect(session.tokens).toBeUndefined();
-        const ledger = readFileSync(join(ctxDir, 'token-ledger.jsonl'), 'utf-8').trim().split('\n');
-        expect(ledger.length).toBe(1);
-        const first = JSON.parse(ledger[0] ?? '');
-        expect(first.type).toBe('session_start');
-    });
-
-    it('context-post-tool: appends a read event and exits 0', async () => {
-        await capture('sp', 'context-session-start', ctxEnv(), '');
-        const payload = JSON.stringify({
-            tool_name: 'Read',
-            tool_input: { file_path: '/tmp/x.md' },
-            tool_response: { content: 'hello world' },
-        });
-        const { code, out } = await capture('sp', 'context-post-tool', ctxEnv(), payload);
-        expect(code).toBe(0);
-        expect(out).toBe('');
-        const ledger = readFileSync(join(tmpRoot, '.spur', 'context', 'token-ledger.jsonl'), 'utf-8')
-            .trim()
-            .split('\n');
-        const events = ledger.map((l) => JSON.parse(l));
-        const readEvt = events.find((e) => e.type === 'read');
-        expect(readEvt).toBeDefined();
-        expect(readEvt.file).toBe('/tmp/x.md');
-        expect(readEvt.tokens).toBeGreaterThan(0);
-        // F4 (task 0127 R4): PostToolUse only appends to the ledger — it must NOT rewrite the
-        // session JSON (an unlocked read-modify-write lost increments under concurrency). The
-        // session file stays an identity marker; Stop aggregates the ledger.
-        const session = JSON.parse(readFileSync(onlySessionPath(), 'utf-8'));
-        expect(session.reads).toBeUndefined();
-        expect(session.writes).toBeUndefined();
-        expect(session.tokens).toBeUndefined();
-    });
-
-    it('context-post-tool: fails open (exit 0, no ledger write) without a session', async () => {
-        // No session-start called → no session file → hook must fail open silently.
-        const payload = JSON.stringify({
-            tool_name: 'Read',
-            tool_input: { file_path: '/tmp/x.md' },
-            tool_response: { content: 'hello' },
-        });
-        const { code, out } = await capture('sp', 'context-post-tool', ctxEnv(), payload);
-        expect(code).toBe(0);
-        expect(out).toBe('');
-    });
-
-    it('context-post-tool: fails open on malformed JSON', async () => {
-        await capture('sp', 'context-session-start', ctxEnv(), '');
-        const { code, out } = await capture('sp', 'context-post-tool', ctxEnv(), 'not json');
-        expect(code).toBe(0);
-        expect(out).toBe('');
-    });
-
-    it('context-post-tool: ignores non-Read/Write/Edit tools (matcher contract)', async () => {
-        await capture('sp', 'context-session-start', ctxEnv(), '');
-        const { code, out } = await capture(
-            'sp',
-            'context-post-tool',
-            ctxEnv(),
-            JSON.stringify({ tool_name: 'Bash', tool_input: { file_path: '/tmp/x' } }),
-        );
-        expect(code).toBe(0);
-        expect(out).toBe('');
-        const ledger = readFileSync(join(tmpRoot, '.spur', 'context', 'token-ledger.jsonl'), 'utf-8')
-            .trim()
-            .split('\n');
-        const events = ledger.map((l) => JSON.parse(l));
-        expect(events.some((e) => e.type === 'read' || e.type === 'write')).toBe(false);
-    });
-
-    it('context-session-stop: appends session_end with totals and removes its session file', async () => {
-        await capture('sp', 'context-session-start', ctxEnv(), '');
-        await capture(
-            'sp',
-            'context-post-tool',
-            ctxEnv(),
-            JSON.stringify({
-                tool_name: 'Read',
-                tool_input: { file_path: '/a.md' },
-                tool_response: { content: 'aaaa' },
-            }),
-        );
-        await capture(
-            'sp',
-            'context-post-tool',
-            ctxEnv(),
-            JSON.stringify({
-                tool_name: 'Write',
-                tool_input: { file_path: '/b.md' },
-                tool_response: { content: 'bbbb' },
-            }),
-        );
-
-        const { code, out } = await capture('sp', 'context-session-stop', ctxEnv(), '');
-        expect(code).toBe(0);
-        expect(out).toBe('');
-
-        const ctxDir = join(tmpRoot, '.spur', 'context');
-        expect(sessionPaths()).toHaveLength(0);
-        const events = readFileSync(join(ctxDir, 'token-ledger.jsonl'), 'utf-8')
-            .trim()
-            .split('\n')
-            .map((l) => JSON.parse(l));
-        const endEvt = events.find((e) => e.type === 'session_end');
-        expect(endEvt).toBeDefined();
-        expect(endEvt.totals.reads).toBe(1);
-        expect(endEvt.totals.writes).toBe(1);
-        expect(endEvt.totals.tokens).toBeGreaterThan(0);
-    });
-
-    it('context-session-stop: fails open when no session exists', async () => {
-        const { code, out } = await capture('sp', 'context-session-stop', ctxEnv(), '');
-        expect(code).toBe(0);
-        expect(out).toBe('');
-    });
-
-    it('isolates interleaved concurrent sessions by payload session_id', async () => {
-        const env = ctxEnv();
-        const sessionA = JSON.stringify({ session_id: 'session-a' });
-        const sessionB = JSON.stringify({ session_id: 'session-b' });
-        await capture('sp', 'context-session-start', env, sessionA);
-        await capture('sp', 'context-session-start', env, sessionB);
-        expect(sessionPaths()).toHaveLength(2);
-
-        await capture(
-            'sp',
-            'context-post-tool',
-            env,
-            JSON.stringify({
-                session_id: 'session-a',
-                tool_name: 'Read',
-                tool_input: { file_path: '/a.md' },
-                tool_response: { content: 'aaaa' },
-            }),
-        );
-        for (const file of ['/b.md', '/c.md']) {
-            await capture(
-                'sp',
-                'context-post-tool',
-                env,
-                JSON.stringify({
-                    session_id: 'session-b',
-                    tool_name: 'Write',
-                    tool_input: { file_path: file },
-                    tool_response: { content: 'bbbb' },
-                }),
-            );
-        }
-
-        await capture('sp', 'context-session-stop', env, sessionA);
-        expect(sessionPaths()).toHaveLength(1);
-        const remaining = JSON.parse(readFileSync(onlySessionPath(), 'utf-8'));
-        expect(remaining.session).toBe('session-b');
-        // F4 (task 0127 R4): no running counters — each session's totals come from the ledger.
-        expect(remaining.reads).toBeUndefined();
-        expect(remaining.writes).toBeUndefined();
-
-        await capture('sp', 'context-session-stop', env, sessionB);
-        expect(sessionPaths()).toHaveLength(0);
-        const events = readFileSync(join(tmpRoot, '.spur', 'context', 'token-ledger.jsonl'), 'utf-8')
-            .trim()
-            .split('\n')
-            .map((line) => JSON.parse(line));
-        expect(events.find((event) => event.type === 'session_end' && event.session === 'session-a').totals).toEqual({
-            reads: 1,
-            writes: 0,
-            tokens: 1,
-        });
-        expect(events.find((event) => event.type === 'session_end' && event.session === 'session-b').totals).toEqual({
-            reads: 0,
-            writes: 2,
-            tokens: 2,
-        });
-    });
-
-    it('context-session-stop: stale/partial session counters never override the ledger', async () => {
-        // WHY (F4, task 0127 R4): concurrent PostToolUse processes could lose increments or
-        // leave unreadable counters. Stop must ignore any present counters and always aggregate
-        // the append-only ledger: only parseable read/write events whose session exactly
-        // matches count; malformed lines and foreign sessions are skipped.
-        const env = ctxEnv();
-        const sessionId = 'ledger-wins';
-        const sessionPayload = JSON.stringify({ session_id: sessionId });
-        await capture('sp', 'context-session-start', env, sessionPayload);
-        const ctxDir = join(tmpRoot, '.spur', 'context');
-        const sessionFile = onlySessionPath();
-        const started = JSON.parse(readFileSync(sessionFile, 'utf-8'));
-        // Seed stale counters for the SAME session — the state a lost PostToolUse race leaves.
-        writeFileSync(sessionFile, JSON.stringify({ ...started, reads: 99, writes: 1, tokens: 999 }));
-
-        // Append three ledger events for this session (2 reads, 1 write) plus a decoy from another.
-        const ledger = join(ctxDir, 'token-ledger.jsonl');
-        const evts = [
-            { ts: '2026-07-31T00:00:00Z', session: sessionId, type: 'read', file: '/a.md', tokens: 3 },
-            { ts: '2026-07-31T00:00:01Z', session: sessionId, type: 'read', file: '/b.md', tokens: 5 },
-            { ts: '2026-07-31T00:00:02Z', session: sessionId, type: 'write', file: '/c.md', tokens: 7 },
-            { ts: '2026-07-31T00:00:03Z', session: 'other', type: 'read', file: '/d.md', tokens: 99 },
-            // An unparseable line must be skipped, not abort the scan.
-            'this is not json',
-        ];
-        writeFileSync(ledger, `${evts.map((e) => (typeof e === 'string' ? e : JSON.stringify(e))).join('\n')}\n`);
-
-        const { code, out } = await capture('sp', 'context-session-stop', env, sessionPayload);
-        expect(code).toBe(0);
-        expect(out).toBe('');
-
-        const endEvents = readFileSync(ledger, 'utf-8')
-            .trim()
-            .split('\n')
-            // WHY: the ledger intentionally contains an unparseable line (to prove the guard's
-            // scan skips it). Parse defensively so the assertion doesn't choke on that seed line.
-            .map((l) => {
-                try {
-                    return JSON.parse(l) as Record<string, unknown>;
-                } catch {
-                    return null;
-                }
-            })
-            .filter((e): e is Record<string, unknown> => e !== null && e.type === 'session_end');
-        const endEvt = endEvents.find((e) => e.session === sessionId);
-        expect(endEvt).toBeDefined();
-        // Only this session's events counted; the decoy 'other' session read excluded.
-        expect(endEvt?.totals).toEqual({ reads: 2, writes: 1, tokens: 15 });
-    });
-
-    it('context-session-stop: fails open when the session file has no "session" string', async () => {
-        // WHY: a corrupted/truncated session file (e.g. {reads:0} with no session id) must not
-        // crash Stop. The guard reads the id, finds it missing, and returns OK without writing
-        // a bogus session_end event.
-        const env = ctxEnv();
-        const sessionPayload = JSON.stringify({ session_id: 'corrupt' });
-        await capture('sp', 'context-session-start', env, sessionPayload);
-        const sessionFile = onlySessionPath();
-        writeFileSync(sessionFile, JSON.stringify({ reads: 0, writes: 0 })); // no "session" field
-
-        const { code, out } = await capture('sp', 'context-session-stop', env, sessionPayload);
-        expect(code).toBe(0);
-        expect(out).toBe('');
-        const ledger = readFileSync(join(tmpRoot, '.spur', 'context', 'token-ledger.jsonl'), 'utf-8')
-            .trim()
-            .split('\n');
-        const events = ledger.map((l) => JSON.parse(l));
-        // No session_end emitted for the corrupt session.
-        expect(events.some((e) => e.type === 'session_end' && e.session === 'corrupt')).toBe(false);
-    });
-
-    it('uses transcript_path as the session identity when session_id is absent (Claude Stop payload)', async () => {
-        // WHY: Claude Code Stop payloads carry transcript_path (not session_id). The context hooks
-        // must key the session file off transcript_path so a Stop without session_id still resolves
-        // to the same session the SessionStart/PostToolUse hooks created from that transcript.
-        const env = ctxEnv();
-        const transcript = '/tmp/session-xyz.jsonl';
-        const startPayload = JSON.stringify({ transcript_path: transcript });
-        await capture('sp', 'context-session-start', env, startPayload);
-        expect(sessionPaths()).toHaveLength(1);
-
-        // A Stop with the SAME transcript_path must resolve to that session and clean it up.
-        const { code } = await capture('sp', 'context-session-stop', env, startPayload);
-        expect(code).toBe(0);
-        expect(sessionPaths()).toHaveLength(0);
-    });
-});
-
-describe('hook run — sp/context-* plugin delegation (spur#1166)', () => {
-    // The in-CLI sp/context-* runners are a fallback for the plugin's self-contained hook
-    // scripts. When the scripts resolve (SPUR_PLUGIN_ROOT / CLAUDE_PLUGIN_ROOT / Claude plugin
-    // cache) and export the payload adapters, all three hooks delegate so ownership gating
-    // (spur#1159) and the plugin's pointer scheme apply on the installed Claude path.
-    let tmpRoot: string;
-    let pluginRoot: string;
-
-    const FIXTURES: Record<string, string> = {
-        'context-session-start.ts': `import { appendFileSync, mkdirSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
-export function recordSessionStartFromPayloadText(text: string, env: Record<string, string | undefined>) {
-    const dir = join(env.CLAUDE_PROJECT_DIR ?? process.cwd(), '.spur', 'context');
-    mkdirSync(dir, { recursive: true });
-    writeFileSync(join(dir, '.session.json'), JSON.stringify({ session: 'fixture-session', owner: { host: 'claude', sessionId: 'fixture-owner' } }));
-    appendFileSync(join(dir, 'token-ledger.jsonl'), JSON.stringify({ marker: 'delegated-start', payload: text }) + '\\n');
-}
-`,
-        'context-session-stop.ts': `import { appendFileSync, rmSync } from 'node:fs';
-import { join } from 'node:path';
-export function recordSessionEndFromPayloadText(text: string, env: Record<string, string | undefined>) {
-    const dir = join(env.CLAUDE_PROJECT_DIR ?? process.cwd(), '.spur', 'context');
-    appendFileSync(join(dir, 'token-ledger.jsonl'), JSON.stringify({ marker: 'delegated-stop' }) + '\\n');
-    rmSync(join(dir, '.session.json'), { force: true });
-}
-`,
-        'context-post-tool.ts': `import { appendFileSync } from 'node:fs';
-import { join } from 'node:path';
-export function recordToolUseEvent(dir: string, payload: unknown) {
-    appendFileSync(join(dir, 'token-ledger.jsonl'), JSON.stringify({ marker: 'delegated-post-tool', tool: (payload as { tool_name?: string }).tool_name }) + '\\n');
-}
-`,
-    };
-
-    function writeFixture(files: string[]): void {
-        for (const name of files) {
-            writeFileSync(join(pluginRoot, 'hooks', name), FIXTURES[name] ?? '');
-        }
-    }
-
-    function ledgerMarkers(): Array<Record<string, unknown>> {
-        const ledger = join(tmpRoot, '.spur', 'context', 'token-ledger.jsonl');
-        if (!existsSync(ledger)) return [];
-        return readFileSync(ledger, 'utf-8')
-            .trim()
-            .split('\n')
-            .filter((l) => l.trim())
-            .map((l) => JSON.parse(l) as Record<string, unknown>);
-    }
-
-    function shaSessionCount(): number {
-        const ctxDir = join(tmpRoot, '.spur', 'context');
-        if (!existsSync(ctxDir)) return 0;
-        return readdirSync(ctxDir).filter((n) => /^\.session-[a-f0-9]{16}\.json$/.test(n)).length;
-    }
-
-    beforeEach(() => {
-        tmpRoot = mkdtempSync(join(tmpdir(), 'hook-run-delegate-'));
-        pluginRoot = mkdtempSync(join(tmpdir(), 'hook-run-plugin-'));
-        mkdirSync(join(pluginRoot, 'hooks'), { recursive: true });
-    });
-    afterEach(() => {
-        mock.restore();
-    });
-
-    it('resolveSpPluginScript: SPUR_PLUGIN_ROOT wins, then CLAUDE_PLUGIN_ROOT, then newest cache version', () => {
-        writeFixture(['context-session-start.ts']);
-        const byOverride = resolveSpPluginScript({ SPUR_PLUGIN_ROOT: pluginRoot }, 'context-session-start');
-        expect(byOverride).toBe(join(pluginRoot, 'hooks', 'context-session-start.ts'));
-
-        const claudeRoot = mkdtempSync(join(tmpdir(), 'hook-run-claude-'));
-        const byPluginRoot = resolveSpPluginScript(
-            { CLAUDE_PLUGIN_ROOT: claudeRoot, CLAUDE_CONFIG_DIR: tmpRoot },
-            'context-session-start',
-        );
-        expect(byPluginRoot).toBeNull(); // no hooks/ script under CLAUDE_PLUGIN_ROOT, empty cache
-
-        // Cache scan picks the numerically newest version across marketplaces.
-        const configDir = mkdtempSync(join(tmpdir(), 'hook-run-cache-'));
-        for (const [marketplace, version] of [
-            ['mkt-a', '0.4.1'],
-            ['mkt-b', '0.10.0'],
-        ] as const) {
-            const dir = join(configDir, 'plugins', 'cache', marketplace, 'sp', version, 'hooks');
-            mkdirSync(dir, { recursive: true });
-            writeFileSync(join(dir, 'context-session-start.ts'), FIXTURES['context-session-start.ts'] ?? '');
-        }
-        const byCache = resolveSpPluginScript({ CLAUDE_CONFIG_DIR: configDir }, 'context-session-start');
-        expect(byCache).toBe(
-            join(configDir, 'plugins', 'cache', 'mkt-b', 'sp', '0.10.0', 'hooks', 'context-session-start.ts'),
-        );
-    });
-
-    it('delegates start/post-tool/stop to the plugin scripts and never touches the in-CLI scheme', async () => {
-        writeFixture(['context-session-start.ts', 'context-session-stop.ts', 'context-post-tool.ts']);
-        const env = { CLAUDE_PROJECT_DIR: tmpRoot, CLAUDE_CONFIG_DIR: tmpRoot, SPUR_PLUGIN_ROOT: pluginRoot };
-
-        const start = await capture('sp', 'context-session-start', env, JSON.stringify({ session_id: 'native-1' }));
-        expect(start.code).toBe(0);
-        const ctxDir = join(tmpRoot, '.spur', 'context');
-        const pointer = JSON.parse(readFileSync(join(ctxDir, '.session.json'), 'utf-8'));
-        expect(pointer.session).toBe('fixture-session');
-        expect(shaSessionCount()).toBe(0);
-
-        await capture(
-            'sp',
-            'context-post-tool',
-            env,
-            JSON.stringify({ tool_name: 'Bash', tool_input: { command: 'ls' } }),
-        );
-        const stop = await capture('sp', 'context-session-stop', env, JSON.stringify({ session_id: 'native-1' }));
-        expect(stop.code).toBe(0);
-        expect(existsSync(join(ctxDir, '.session.json'))).toBe(false);
-
-        expect(ledgerMarkers().map((e) => e.marker)).toEqual([
-            'delegated-start',
-            'delegated-post-tool',
-            'delegated-stop',
-        ]);
-    });
-
-    it('falls back to the in-CLI runners when the plugin lacks an adapter export (all-or-nothing)', async () => {
-        // Stop adapter missing → delegation must not activate for ANY of the three hooks.
-        writeFixture(['context-session-start.ts', 'context-post-tool.ts']);
-        const env = { CLAUDE_PROJECT_DIR: tmpRoot, CLAUDE_CONFIG_DIR: tmpRoot, SPUR_PLUGIN_ROOT: pluginRoot };
-
-        const { code } = await capture('sp', 'context-session-start', env, '');
-        expect(code).toBe(0);
-        expect(shaSessionCount()).toBe(1); // in-CLI .session-<sha16>.json scheme
-        expect(existsSync(join(tmpRoot, '.spur', 'context', '.session.json'))).toBe(false);
-    });
-
-    it('falls back when the plugin script is unloadable', async () => {
-        writeFileSync(join(pluginRoot, 'hooks', 'context-session-start.ts'), 'export const broken = ;');
-        writeFixture(['context-session-stop.ts', 'context-post-tool.ts']);
-        const env = { CLAUDE_PROJECT_DIR: tmpRoot, CLAUDE_CONFIG_DIR: tmpRoot, SPUR_PLUGIN_ROOT: pluginRoot };
-
-        const { code, out } = await capture('sp', 'context-session-start', env, '');
-        expect(code).toBe(0);
-        expect(out).toBe('');
-        expect(shaSessionCount()).toBe(1);
     });
 });

@@ -2,10 +2,10 @@
 doc: 04_DESIGN
 owns: SURFACE — concrete shapes: every CLI command, flag, config key, env var, table, DTO
 authority: derived
-version: 2.22.0
+version: 2.23.0
 derived_from: [00_ADR, 01_PRD, 02_ROADMAP]
 owner: Robin Min
-updated_at: 2026-10-12
+updated_at: 2026-10-15
 read_before: changing a command, flag, env var, or schema
 edit_rules: 99 §6.5
 sync: [T3]
@@ -350,6 +350,61 @@ Written after the copy (atomic temp + rename), only when at least one regular fi
 
 `script verify <plugin>` selects **one** scripts root — project first by directory existence, else global; explicit `--project`/`--global` never falls back — reads that root's stamp, and compares it with a fresh regular-file snapshot excluding the stamp. Every result is `{plugin, source, status, added, removed, changed}` with `source` ∈ `project | global | null` and `status` ∈ `ok | drift | missing_root | missing_stamp | invalid_stamp | unreadable`; the arrays are sorted and empty unless a valid baseline was read. `unreadable` means the baseline is valid but a staged file could not be read (the snapshot is wrapped, so a filesystem failure is a verification outcome, never an escaping error) and adds `error: <filesystem message naming the file>`. Failure diagnostics name each differing path and give reinstall guidance; stdout keeps the JSON result in `--json` mode and stderr carries the diagnostics.
 
+### Plugin hook scripts (`hook run`, ADR-039)
+
+`hook run <plugin> <id>` runs, in order: a first-party compiled runner (`HOOK_RUNNERS`, only `cc/anti-hallucination`); else the plugin's own script; else a fail-open warning (exit 0, stderr names the id, the searched layout and the CLI version).
+
+**Script resolution** (`resolveHookScript`, `apps/cli/src/commands/hook-run.ts`). The first regular file `hooks/<id>.ts|.mjs|.js`, then `scripts/hooks/<id>.ts|.mjs|.js`, under the first plugin root that has one. `<plugin>` and `<id>` must be single path segments. A root is skipped when a manifest in it (`plugin.json`, `.claude-plugin/plugin.json`) names a different plugin.
+
+| # | Root | Source |
+| --- | --- | --- |
+| 1 | `$SUPERSKILL_PLUGIN_ROOT` | explicit override (dev checkout, tests) |
+| 2 | `$CLAUDE_PLUGIN_ROOT` | Claude Code plugin hook env |
+| 3 | `<$CLAUDE_CONFIG_DIR\|~/.claude>/plugins/cache/<mkt>/<plugin>/<version>/`, newest version first | Claude Code cache |
+| 4 | `<project\|home>/.omp/plugins/cache/plugins/<plugin>___<mkt>___<version>/` | omp cache |
+| 5 | `~/.grok/installed-plugins/<plugin>-<hash>/` (manifest must name `<plugin>`) | Grok |
+| 6 | `<project\|home>/.agents/scripts/<plugin>/` — only its `hooks/` subdir | staged scripts root (rulesync/hermes targets) |
+
+Project = `CLAUDE_PROJECT_DIR`, else cwd. Home = `HOME_DIR`, else the OS home.
+
+**Execution** (`runHookScript`). `bun <script>` runs in the host's cwd. superskill under Bun reuses its own executable; the standalone binary prefers `bun` on `PATH`, else re-enters itself with `BUN_BE_BUN=1`. Stdin carries the normalized payload. The env adds:
+
+| Env var | Value |
+| --- | --- |
+| `SUPERSKILL_PLUGIN_ROOT` | the root the script resolved under |
+| `SUPERSKILL_HOOK_ID` | `<id>` |
+| `SUPERSKILL_HOOK_HOST` | `claude` \| `omp` \| `pi` \| `generic` (an inbound value wins; else `claude` when `CLAUDE_PROJECT_DIR` is set; generated omp modules set `omp`) |
+| `SUPERSKILL_HOOK_EVENT` | canonical event (`PreToolUse`, `Stop`, …): payload `hook_event_name`, else the inbound value (generated omp modules set it) |
+| `SUPERSKILL_HOOK_PROFILE` | `--profile` value (`block` default) |
+
+Deadline: `SUPERSKILL_HOOK_TIMEOUT_MS` (positive integer), else the smallest `timeout` (s) the root's `hooks/hooks.json` or `hooks.json` declares for `superskill hook run <plugin> <id>`, minus 500 ms (floor 1 s), else 10 s.
+
+**Payload in** (`normalizeHookPayload`, `apps/cli/src/hook-host.ts`). A payload carrying `hook_event_name` or `tool_name` passes through. A Pi/omp event becomes `{hook_event_name, tool_name, tool_input, tool_response?, session_id?, cwd, host_event}`. Tools map `read/write/edit/bash/grep/find|glob` → `Read/Write/Edit/Bash/Grep/Glob`, `path` → `file_path`, `edits[].oldText/newText` → `old_string/new_string`, and `content` text parts → `tool_response.content`. Events map `tool_call/tool_result/agent_end/session_start/session_shutdown/session_before_compact` → `PreToolUse/PostToolUse/Stop/SessionStart/SessionEnd/PreCompact`.
+
+**Result out.** Script exit 0 with stdout `{"decision":"allow"|"deny"|"ask"|"block","reason"?}` (`deny` ≡ `block`) is rendered by `translateHookResult`:
+
+| Event | `deny`/`block` | `ask` | `allow` / no output |
+| --- | --- | --- | --- |
+| `PreToolUse`, host `claude` | `permissionDecision:"deny"` JSON + reason, exit 0 | `permissionDecision:"ask"` JSON, exit 0 | nothing, exit 0 |
+| `PreToolUse`, other hosts | exit 2, reason on stderr | exit 2, reason on stderr (cannot confirm; fails closed) | nothing, exit 0 |
+| `Stop`/`SubagentStop`/`UserPromptSubmit`/`PostToolUse`, host `claude`/`generic` | `{"decision":"block","reason"}` (`"deny"` under `--profile deny`, except `PostToolUse`), exit 0 | as allow | nothing, exit 0 |
+| same events, host `omp`/`pi`; any other or unknown event | exit 2, reason on stderr | as allow | nothing, exit 0 |
+
+An `ask` is a confirmation request. Only Claude Code (and a native Pi extension that reads the neutral decision and calls `ctx.ui.confirm`) can show one. On every other host — and on Pi when `hook run` is reached only via the exit-code channel — an unconfirmable ask is rendered as a deny carrying the reason, so a safety guard cannot silently pass. Hook errors, timeouts and missing scripts still fail open (ADR-020).
+
+Other script outcomes:
+
+| Script outcome | `hook run` result |
+| --- | --- |
+| exit 0, Claude-native JSON (`hookSpecificOutput…`) | host `claude`: verbatim, except a bare PreToolUse `permissionDecision:"allow"` (no `updatedInput`), which is dropped because it would auto-approve the call. Elsewhere a PreToolUse `permissionDecision` becomes deny/ask → exit 2 + reason (`permissionDecisionReason`, else `systemMessage`), allow → nothing |
+| exit 0, any other stdout | forwarded (trailing newlines trimmed) |
+| exit 2 | stdout, stderr and exit 2 forwarded |
+| spawn failure, deadline hit (child `SIGKILL`ed), any other exit status | exit 0, no stdout, stderr `superskill hook run <plugin> <id>: <cause>; failing open (exit 0).` then the script's stderr (≤ 2000 chars) |
+
+The script's own stderr is always forwarded after any adapter stderr.
+
+**Pi (designed, not shipped).** Pi still gets `hooks.json` commands through the `@vahor/pi-hooks` shim, which cannot carry an `ask` confirm or a Stop continuation. The designed adapter reuses the omp generator, because omp is a Pi fork with the same `pi.on` API. It emits one native extension module per declared hook into Pi's extensions dir. Each module spawns `superskill hook run` with `SUPERSKILL_HOOK_HOST=pi` and `SUPERSKILL_HOOK_EVENT`. Exit 2 maps to `{block: true, reason}`, and a neutral `ask` maps to `ctx.ui.confirm`, which needs a structured channel back from `hook run` (for example `--host pi` emitting the neutral JSON as-is). That lets a plugin drop a bespoke Pi extension.
+
 ### Stdin payload contract (`script run` / `hook run`)
 
 Hook and script runners receive their payload on fd 0 from the spawning host. `readStdinNonBlocking`
@@ -368,7 +423,7 @@ observed with Antigravity, and it hangs the agent mid-run.
 
 The budget is an **idle** timeout, never a deadline on the whole read. This is a correctness
 requirement, not a tuning choice: every runner fails open on an unparseable payload
-(`runSpTaskWriteGuard`, `runStopGuard`), so a truncated read silently converts a guard `deny` into an
+(plugin hook scripts behind `hook run`, `runStopGuard`), so a truncated read silently converts a guard `deny` into an
 `allow`. Default `250` ms, overridable with **`SUPERSKILL_STDIN_TIMEOUT_MS`** (positive integer;
 invalid values fall back to the default).
 

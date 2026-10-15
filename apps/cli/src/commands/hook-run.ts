@@ -1,14 +1,21 @@
-import { createHash, randomUUID } from 'node:crypto';
-import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
-import { pathToFileURL } from 'node:url';
-import { getEnvVar, getEnvVars } from '@gobing-ai/superskill-core';
-import { NodeProcessExecutor, type ProcessExecutor } from '@gobing-ai/ts-runtime';
+import { assertSafePathSegment, getEnvVars } from '@gobing-ai/superskill-core';
+import { NodeProcessExecutor, type PipeProcess, type ProcessExecutor } from '@gobing-ai/ts-runtime';
 import { echo, echoError } from '@gobing-ai/ts-utils';
 import type { Command } from 'commander';
 import { runStopGuard, type StopProfile } from '../../../../plugins/cc/scripts/anti-hallucination/ah_guard';
-import { parseCommandArgv } from '../command-argv';
+import {
+    detectHookHost,
+    hookEventOf,
+    isPreToolUseAllow,
+    normalizeHookPayload,
+    parseNeutralResult,
+    preToolUseByExitCode,
+    translateHookResult,
+} from '../hook-host';
+import { flattenCanonicalHookEntries, hookRunKey } from '../hooks';
 import { readStdinNonBlocking } from '../stdin';
 import { cliVersion } from '../version';
 
@@ -17,35 +24,31 @@ import { cliVersion } from '../version';
  *
  * Installed hook configs call a stable PATH command (`superskill hook run …`) instead of a
  * plugin-checkout script path or a Claude-only `${CLAUDE_PLUGIN_ROOT}` reference. The dispatcher
- * resolves a known {@link HookRunner} from the registry, hands it stdin + the process env, writes
- * the runner's JSON to stdout, and exits with the runner's code. Unknown `<plugin>/<hook-id>`
- * fails **open** (exit 0 + stderr warning naming the hook and the installed CLI version): an
- * unknown id is a deployment skew (CLI too old for the plugin), not a policy violation — blocking
- * here turns version skew into blocked Stops and agent loops. Known guards keep their own exit
- * codes regardless.
+ * holds no plugin-specific logic. It tries, in order:
  *
- * Runners signal: allow → exit 0 (PreToolUse with empty stdout, Stop with its canonical JSON). A
- * deny takes the channel each host renders cleanly: Stop → `decision:"block"` JSON at exit 0 (clean
- * feedback for Claude/Codex/Hermes; Gemini/Antigravity use `decision:"deny"`); PreToolUse → `permissionDecision:
- * "deny"` JSON at exit 0 when Claude Code is the host (`CLAUDE_PROJECT_DIR` set), else exit 2 + stderr
- * for cross-agent hosts (Codex/omp) that don't parse that JSON. Claude Code treats exit 1 as a
- * non-blocking error, so 1 never blocks; and it honors stdout JSON only at exit 0, so a deny that
- * wants its JSON read must NOT use exit 2. Agents that cannot parse a runner's JSON shape fail open
- * (treat as allow), which is the intended cross-agent default.
+ * 1. A first-party built-in {@link HookRunner} compiled into the CLI (only this repo's own `cc`
+ *    plugin registers one).
+ * 2. The hook script the plugin ships — `hooks/<id>.{ts,mjs,js}` or `scripts/hooks/<id>.{ts,mjs,js}`
+ *    under the installed plugin root ({@link resolveHookScript}). It runs under Bun with the host
+ *    payload on stdin and its stdout, stderr and exit code are forwarded ({@link runHookScript}).
+ * 3. Nothing found: fail **open** (exit 0 + stderr warning naming the hook and the installed CLI
+ *    version). An unresolvable id is deployment skew, not a policy violation — blocking here turns
+ *    skew into blocked Stops and agent loops.
+ *
+ * Runners signal: allow → exit 0 (empty stdout, or a Stop runner's canonical JSON). A block takes
+ * the channel each host renders cleanly: stdout JSON at exit 0 (`decision:"block"` for
+ * Claude/Codex/Hermes Stop, `decision:"deny"` for Gemini/Antigravity, `permissionDecision:"deny"`
+ * for PreToolUse), or exit 2 + stderr. Claude Code treats exit 1 as a non-blocking error and honors
+ * stdout JSON only at exit 0. A script answers host-neutrally (`{"decision":"deny","reason":"…"}`)
+ * and the host adapter layer (`../hook-host`) renders that for Claude Code, Codex, omp or Pi.
  */
 
 interface HookRunResult {
     /** JSON string written verbatim to stdout (empty string writes nothing). */
     output: string;
-    /** Optional reason written to stderr (used by deny via exit 2; ignored on allow). */
+    /** Optional diagnostic written to stderr (a fail-open cause, or the script's own stderr). */
     stderr?: string;
-    /**
-     * Process exit code. Allow → 0 (PreToolUse with empty stdout — both Claude Code and Codex treat
-     * empty-output exit-0 as "continue normally"; Stop with canonical JSON). Deny → 0 with the
-     * decision JSON on stdout when Claude Code is the host (it honors stdout JSON only at exit 0), or
-     * → 2 with the reason on stderr for cross-agent hosts (Codex/omp) that key off the exit code.
-     * Claude Code treats exit 1 as a non-blocking error, so 1 never blocks.
-     */
+    /** Process exit code; 0 for allow and for a JSON-carried block, 2 for an exit-code block. */
     exitCode: number;
 }
 
@@ -53,152 +56,347 @@ interface HookRunner {
     run(env: NodeJS.ProcessEnv, stdinText: string, profile?: StopProfile): Promise<HookRunResult>;
 }
 
-/** Process execution port for hook runners that shell out (no-direct-process-spawn: routed via ts-runtime). */
+/** Process execution port for hook scripts (no-direct-process-spawn: routed via ts-runtime). */
 const hookProcessExecutor: ProcessExecutor = new NodeProcessExecutor();
 
-// ── sp/task-write-guard ─────────────────────────────────────────────────────
+// ── Plugin hook scripts: id → script resolution ─────────────────────────────
 
-interface ToolPayload {
-    tool_name?: string;
-    tool_input?: { file_path?: string };
+/** Where a plugin root candidate came from (reported in diagnostics and tests). */
+export type PluginRootSource = 'env' | 'claude-plugin-root' | 'claude-cache' | 'omp-cache' | 'grok' | 'staged';
+
+/** A resolved hook script. */
+export interface ResolvedHookScript {
+    /** Absolute path of the script file. */
+    script: string;
+    /** The plugin root it was found under (exported to the script as `SUPERSKILL_PLUGIN_ROOT`). */
+    root: string;
+    source: PluginRootSource;
 }
 
-type TaskOwnership = 'owned' | 'unowned' | 'unknown';
-type ResolveTaskOwnership = (filePath: string, cwd: string) => Promise<TaskOwnership>;
-/**
- * Build a PreToolUse decision. Allow → empty stdout + exit 0 (both Claude Code and Codex treat
- * empty-output exit-0 as "continue normally"; Codex rejects `permissionDecision:"allow"` JSON, so
- * allow emits nothing). Deny takes the channel each host renders cleanly: when Claude Code is the
- * host (`CLAUDE_PROJECT_DIR` set) emit `permissionDecision:"deny"` JSON at exit 0 (a clean deny,
- * not a "blocking error"); otherwise fall back to exit 2 + stderr — the universal block signal that
- * Codex/omp honor without parsing JSON. The host check keeps Codex off the JSON path that 418894e
- * broke (`unsupported permissionDecision`).
- */
-function preToolUseDecision(decision: 'allow' | 'deny', reason?: string, env?: NodeJS.ProcessEnv): HookRunResult {
-    if (decision === 'allow') return { output: '', exitCode: 0 };
-    const blockReason = reason ?? 'blocked by PreToolUse hook';
-    if (env?.CLAUDE_PROJECT_DIR) {
-        return {
-            output: JSON.stringify({
-                hookSpecificOutput: {
-                    hookEventName: 'PreToolUse',
-                    permissionDecision: 'deny',
-                    permissionDecisionReason: blockReason,
-                },
-            }),
-            exitCode: 0,
-        };
+/** Filesystem anchors for resolution; injectable for tests. */
+export interface HookScriptLocation {
+    /** User home (defaults to `HOME_DIR`, then the OS home). */
+    home?: string;
+    /** Project root (defaults to `CLAUDE_PROJECT_DIR`, then the process cwd). */
+    cwd?: string;
+}
+
+/** Extensions tried for `<id>`, in order. Bun runs all three. */
+const HOOK_SCRIPT_EXTENSIONS = ['.ts', '.mjs', '.js'] as const;
+/** Directories under a plugin root that may hold hook entrypoints, in order. */
+const HOOK_SCRIPT_DIRS = [['hooks'], ['scripts', 'hooks']] as const;
+
+function isFile(path: string): boolean {
+    try {
+        return statSync(path).isFile();
+    } catch {
+        return false;
     }
-    return { output: '', exitCode: 2, stderr: blockReason };
+}
+
+function isDir(path: string): boolean {
+    try {
+        return statSync(path).isDirectory();
+    } catch {
+        return false;
+    }
+}
+
+function listDir(path: string): string[] {
+    try {
+        return readdirSync(path);
+    } catch {
+        return [];
+    }
+}
+
+/** Numeric compare for version dirs like `0.4.1` (non-numeric segments sort lowest). */
+function compareVersions(a: string, b: string): number {
+    const pa = a.split('.').map((p) => Number.parseInt(p, 10));
+    const pb = b.split('.').map((p) => Number.parseInt(p, 10));
+    for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+        const va = Number.isNaN(pa[i] ?? Number.NaN) ? -1 : (pa[i] as number);
+        const vb = Number.isNaN(pb[i] ?? Number.NaN) ? -1 : (pb[i] as number);
+        if (va !== vb) return va - vb;
+    }
+    return 0;
+}
+
+/** Plugin names declared by the root's manifests (`plugin.json`, `.claude-plugin/plugin.json`). */
+function manifestNames(root: string): string[] {
+    const names: string[] = [];
+    for (const manifest of [join(root, 'plugin.json'), join(root, '.claude-plugin', 'plugin.json')]) {
+        try {
+            const name = (JSON.parse(readFileSync(manifest, 'utf-8')) as { name?: unknown }).name;
+            if (typeof name === 'string') names.push(name);
+        } catch {
+            // absent or unreadable manifest
+        }
+    }
+    return names;
 }
 
 /**
- * Tokenize a `SPUR_BIN` override with quote-aware splitting so paths containing
- * spaces work when quoted (`"/opt/my tools/spur" --flag`). Unquoted spaces still
- * separate argv tokens. Single- and double-quoted runs preserve interior spaces.
+ * True when `root` may serve `plugin`: it is a directory, and no manifest in it names a different
+ * plugin. An env-provided root (`CLAUDE_PLUGIN_ROOT`, `SUPERSKILL_PLUGIN_ROOT`) is inherited by
+ * child processes, so the name check keeps one plugin's root from serving another plugin's hooks.
  */
-export const parseSpurBinSpec = parseCommandArgv;
-
-/**
- * Resolve whether a file path is owned by a Spur task. Shells out to `spur task resolve --strict --json`:
- * exit 0 → owned, non-zero → unowned, spawn/timeout failure → unknown (fail open). Honors `SPUR_BIN`
- * for a custom binary (optional args; quote paths that contain spaces).
- */
-export async function resolveSpurTaskOwnership(
-    filePath: string,
-    cwd: string,
-    executor: ProcessExecutor = hookProcessExecutor,
-): Promise<TaskOwnership> {
-    const spurBin = getEnvVar('SPUR_BIN') || 'spur';
-    const parts = parseSpurBinSpec(spurBin);
-    const cmd = parts[0] ?? 'spur';
-    const args = [...parts.slice(1), 'task', 'resolve', filePath, '--strict', '--json'];
-    const result = await executor.run({ command: cmd, args, cwd, timeout: 8000 });
-    if (result.exitCode === null) return 'unknown';
-    return result.exitCode === 0 ? 'owned' : 'unowned';
-}
-/**
- * Cheap in-process check: could this path plausibly be a Spur task-corpus file?
- *
- * Exists purely to avoid a ~2.4 s `spur task resolve` subprocess on paths that cannot be task
- * files (Spur task 0398 R2). The guard used to spawn on every Write/Edit, so editing `src/foo.ts`
- * or `package.json` paid the same toll as editing a real task file — ~3.7 s per mutation once the
- * hook's own ~1.3 s startup is included, on every agent in every repo with the sp plugin installed.
- *
- * The convention encoded here is already fixed elsewhere in the corpus tooling (Spur's
- * `defaultVerdictRunDir` resolves the same `docs/tasks<N>` / flat-`tasks` layout pair): task files
- * are markdown living under a path segment named `tasks`, optionally digit-suffixed.
- *
- * **Fails toward the spawn.** Anything markdown-shaped naming a `tasks*` segment still goes to
- * `spur task resolve` and lets it decide. A false spawn only costs latency; a false skip would
- * silently disable the write guard.
- *
- * Known limitation: a project that relocates its corpus to a folder not named `tasks*` (via
- * `spur task create --folder`) is not matched, and its task files stop being guarded. That is the
- * same convention the rest of the corpus tooling already assumes; widening it needs a real config
- * surface rather than a guess, which this deliberately does not add.
- */
-export function couldBeTaskCorpusPath(filePath: string): boolean {
-    // Task corpus files are always markdown.
-    if (!/\.md$/i.test(filePath)) return false;
-    // ...living under a `tasks` / `tasks2` / `tasks3` … path segment. Segment match, not substring:
-    // `docs/tasksfoo/x.md` and `docs/my-tasks/x.md` are NOT candidates.
-    return filePath
-        .replace(/\\/g, '/')
-        .split('/')
-        .some((segment) => /^tasks\d*$/i.test(segment));
+function rootServesPlugin(root: string, plugin: string): boolean {
+    if (!isDir(root)) return false;
+    const names = manifestNames(root);
+    return names.length === 0 || names.includes(plugin);
 }
 
 /**
- * Deny a raw Write/Edit whose target path is owned by a Spur task (mutate task files through the
- * `spur task` CLI, never by hand). Pure delegation: ownership is decided by `spur task resolve`'s
- * exit code alone. Fail open on every other condition. `SPUR_WRITE_GUARD=off` short-circuits to allow.
+ * Ordered plugin-root candidates for `plugin`:
+ *
+ * 1. `SUPERSKILL_PLUGIN_ROOT` — explicit override (a dev checkout, tests).
+ * 2. `CLAUDE_PLUGIN_ROOT` — set by Claude Code for plugin hook commands.
+ * 3. Claude Code plugin cache `<CLAUDE_CONFIG_DIR|~/.claude>/plugins/cache/<marketplace>/<plugin>/<version>/`,
+ *    newest version first.
+ * 4. omp plugin cache `<project|home>/.omp/plugins/cache/plugins/<plugin>___<marketplace>___<version>/`.
+ * 5. Grok `~/.grok/installed-plugins/<plugin>-<hash>/` (manifest name must match).
+ * 6. Staged scripts roots `<project|home>/.agents/scripts/<plugin>/` (rulesync/hermes targets);
+ *    only the `hooks/` subdirectory of a staged root is searched (see {@link resolveHookScript}).
  */
-/** Run the Spur task write guard with an injectable resolver for deterministic tests. */
-export async function runSpTaskWriteGuard(
+export function pluginRootCandidates(
+    plugin: string,
+    env: NodeJS.ProcessEnv,
+    location: HookScriptLocation = {},
+): Array<{ root: string; source: PluginRootSource }> {
+    const home = location.home ?? env.HOME_DIR ?? homedir();
+    const cwd = location.cwd ?? (env.CLAUDE_PROJECT_DIR || process.cwd());
+    const out: Array<{ root: string; source: PluginRootSource }> = [];
+    const add = (root: string, source: PluginRootSource) => {
+        if (rootServesPlugin(root, plugin) && !out.some((c) => c.root === root)) out.push({ root, source });
+    };
+
+    if (env.SUPERSKILL_PLUGIN_ROOT) add(env.SUPERSKILL_PLUGIN_ROOT, 'env');
+    if (env.CLAUDE_PLUGIN_ROOT) add(env.CLAUDE_PLUGIN_ROOT, 'claude-plugin-root');
+
+    const claudeCache = join(env.CLAUDE_CONFIG_DIR ?? join(home, '.claude'), 'plugins', 'cache');
+    const claudeHits: Array<{ version: string; root: string }> = [];
+    for (const marketplace of listDir(claudeCache)) {
+        for (const version of listDir(join(claudeCache, marketplace, plugin))) {
+            claudeHits.push({ version, root: join(claudeCache, marketplace, plugin, version) });
+        }
+    }
+    for (const hit of claudeHits.sort((a, b) => compareVersions(b.version, a.version))) add(hit.root, 'claude-cache');
+
+    for (const scope of [...new Set([cwd, home])]) {
+        const ompCache = join(scope, '.omp', 'plugins', 'cache', 'plugins');
+        const prefix = `${plugin}___`;
+        const hits = listDir(ompCache)
+            .filter((name) => name.startsWith(prefix))
+            .map((name) => ({ version: name.split('___')[2] ?? '', root: join(ompCache, name) }));
+        for (const hit of hits.sort((a, b) => compareVersions(b.version, a.version))) add(hit.root, 'omp-cache');
+    }
+
+    const grokDir = join(home, '.grok', 'installed-plugins');
+    for (const name of listDir(grokDir)) {
+        const root = join(grokDir, name);
+        if (name.startsWith(`${plugin}-`) && manifestNames(root).includes(plugin)) add(root, 'grok');
+    }
+
+    for (const scope of [...new Set([cwd, home])]) add(join(scope, '.agents', 'scripts', plugin), 'staged');
+    return out;
+}
+
+/**
+ * Resolve `<plugin>/<id>` to the hook script the plugin ships. Convention (no `hooks.json` field
+ * needed, so hosts that read `hooks.json` verbatim never see an unknown key): the first regular file
+ * among `hooks/<id>.ts|.mjs|.js`, then `scripts/hooks/<id>.ts|.mjs|.js`, under each root of
+ * {@link pluginRootCandidates} in order. A staged scripts root already *is* the plugin's `scripts/`
+ * directory, so only its `hooks/` subdirectory is searched. Returns null when nothing matches or
+ * when `plugin`/`id` is not a single safe path segment.
+ */
+export function resolveHookScript(
+    plugin: string,
+    id: string,
+    env: NodeJS.ProcessEnv,
+    location: HookScriptLocation = {},
+): ResolvedHookScript | null {
+    try {
+        assertSafePathSegment(plugin, 'plugin name');
+        assertSafePathSegment(id, 'hook id');
+    } catch {
+        return null;
+    }
+    for (const { root, source } of pluginRootCandidates(plugin, env, location)) {
+        const dirs = source === 'staged' ? [['hooks']] : HOOK_SCRIPT_DIRS;
+        for (const dir of dirs) {
+            for (const ext of HOOK_SCRIPT_EXTENSIONS) {
+                const script = join(root, ...dir, `${id}${ext}`);
+                if (isFile(script)) return { script, root, source };
+            }
+        }
+    }
+    return null;
+}
+
+// ── Plugin hook scripts: execution ──────────────────────────────────────────
+
+/** Deadline when the plugin's `hooks.json` declares no timeout for the id. */
+export const DEFAULT_HOOK_TIMEOUT_MS = 10_000;
+/** Head start taken off a declared host timeout, so `hook run` fails open before the host kills it. */
+export const HOOK_TIMEOUT_MARGIN_MS = 500;
+
+/**
+ * Kill deadline for `<plugin>/<id>`. `SUPERSKILL_HOOK_TIMEOUT_MS` (positive integer) wins. Otherwise
+ * the smallest `timeout` (seconds) that the root's `hooks.json` (`hooks/hooks.json` or `hooks.json`)
+ * declares for a `superskill hook run <plugin> <id>` entry, minus {@link HOOK_TIMEOUT_MARGIN_MS}
+ * (floor 1 s) — the host kills the hook at that timeout, and a kill skips the fail-open path.
+ * Otherwise {@link DEFAULT_HOOK_TIMEOUT_MS}.
+ */
+export function hookScriptTimeoutMs(root: string, plugin: string, id: string, env: NodeJS.ProcessEnv): number {
+    const override = Number(env.SUPERSKILL_HOOK_TIMEOUT_MS);
+    if (Number.isInteger(override) && override > 0) return override;
+    let declared: number | undefined;
+    for (const file of [join(root, 'hooks', 'hooks.json'), join(root, 'hooks.json')]) {
+        let config: { hooks?: Record<string, unknown> };
+        try {
+            config = JSON.parse(readFileSync(file, 'utf-8')) as { hooks?: Record<string, unknown> };
+        } catch {
+            continue;
+        }
+        for (const defs of Object.values(config.hooks ?? {})) {
+            if (!Array.isArray(defs)) continue;
+            for (const entry of flattenCanonicalHookEntries(defs)) {
+                if (hookRunKey(entry.command) !== `${plugin}/${id}`) continue;
+                if (typeof entry.timeout === 'number' && entry.timeout > 0) {
+                    declared = Math.min(declared ?? entry.timeout, entry.timeout);
+                }
+            }
+        }
+        break;
+    }
+    if (declared === undefined) return DEFAULT_HOOK_TIMEOUT_MS;
+    return Math.max(declared * 1000 - HOOK_TIMEOUT_MARGIN_MS, 1000);
+}
+
+/**
+ * The Bun runtime that executes a hook script. superskill itself runs under Bun: the npm bundle via
+ * its `bun` shebang, the standalone binary as an embedded Bun. A plain Bun process reuses its own
+ * executable; a standalone binary prefers `bun` on `PATH`, else re-enters itself as Bun
+ * (`BUN_BE_BUN=1`).
+ */
+export function hookScriptRuntime(env: NodeJS.ProcessEnv): { command: string; env: Record<string, string> } {
+    if (!process.versions.bun) return { command: 'bun', env: {} };
+    const compiled = import.meta.path.startsWith('/$bunfs/') || import.meta.path.includes('~BUN');
+    if (!compiled) return { command: process.execPath, env: {} };
+    const onPath = Bun.which('bun', { PATH: env.PATH ?? '' });
+    return onPath ? { command: onPath, env: {} } : { command: process.execPath, env: { BUN_BE_BUN: '1' } };
+}
+
+function childEnv(env: NodeJS.ProcessEnv, extra: Record<string, string>): Record<string, string> {
+    const out: Record<string, string> = {};
+    for (const [key, value] of Object.entries(env)) if (value !== undefined) out[key] = value;
+    return { ...out, ...extra };
+}
+
+/** Options for {@link runHookScript}. */
+export interface RunHookScriptOptions {
+    plugin: string;
+    id: string;
+    resolved: ResolvedHookScript;
+    timeoutMs: number;
+    profile?: StopProfile;
+    executor?: ProcessExecutor;
+}
+
+/**
+ * Run a resolved plugin hook script: `bun <script>` in the host's cwd, with the normalized payload
+ * on stdin ({@link normalizeHookPayload}) and `SUPERSKILL_PLUGIN_ROOT` (the root it resolved under),
+ * `SUPERSKILL_HOOK_ID`, `SUPERSKILL_HOOK_HOST`, `SUPERSKILL_HOOK_EVENT` and `SUPERSKILL_HOOK_PROFILE`
+ * in its environment.
+ *
+ * - exit 0 + a host-neutral `{"decision",…}` on stdout → rendered for the host
+ *   ({@link translateHookResult}); exit 0 + Claude-native JSON → verbatim on Claude Code (a bare
+ *   PreToolUse allow is dropped — {@link isPreToolUseAllow}), PreToolUse decisions re-expressed elsewhere ({@link preToolUseByExitCode}); exit 0 + anything else → forwarded.
+ * - exit 2 → the block signal: stdout, stderr and exit 2 forwarded.
+ * - spawn failure, deadline hit (child killed), or any other exit status → fail open: exit 0, no
+ *   stdout, one stderr line naming the hook and the cause, then the script's own stderr.
+ */
+export async function runHookScript(
     env: NodeJS.ProcessEnv,
     stdinText: string,
-    resolveTaskOwnership: ResolveTaskOwnership = resolveSpurTaskOwnership,
+    options: RunHookScriptOptions,
 ): Promise<HookRunResult> {
-    if (env.SPUR_WRITE_GUARD === 'off') return preToolUseDecision('allow');
-
-    let payload: ToolPayload;
+    const { plugin, id, resolved, timeoutMs } = options;
+    const executor = options.executor ?? hookProcessExecutor;
+    const failOpen = (cause: string, detail = ''): HookRunResult => ({
+        output: '',
+        exitCode: 0,
+        stderr: `superskill hook run ${plugin} ${id}: ${cause}; failing open (exit 0).${detail ? `\n${detail}` : ''}`,
+    });
+    const runtime = hookScriptRuntime(env);
+    const host = detectHookHost(env);
+    const payload = normalizeHookPayload(stdinText, env);
+    const event = hookEventOf(payload, env);
+    const extra: Record<string, string> = {
+        ...runtime.env,
+        SUPERSKILL_PLUGIN_ROOT: resolved.root,
+        SUPERSKILL_HOOK_ID: id,
+        SUPERSKILL_HOOK_HOST: host,
+        SUPERSKILL_HOOK_PROFILE: options.profile ?? 'block',
+        ...(event ? { SUPERSKILL_HOOK_EVENT: event } : {}),
+    };
+    let child: PipeProcess;
     try {
-        payload = JSON.parse(stdinText) as ToolPayload;
+        child = executor.runStreaming({
+            command: runtime.command,
+            args: [resolved.script],
+            env: childEnv(env, extra),
+            envMode: 'replace',
+        });
+    } catch (error) {
+        const code = (error as NodeJS.ErrnoException).code;
+        return failOpen(code === 'ENOENT' ? `runtime '${runtime.command}' not found (install bun)` : 'spawn failed');
+    }
+    try {
+        child.writeStdin(payload);
+        child.endStdin();
     } catch {
-        return preToolUseDecision('allow'); // unparseable payload — fail open
+        // the script may exit before reading stdin; its exit status decides below
     }
-
-    const toolName = payload.tool_name ?? '';
-    if (toolName !== 'Write' && toolName !== 'Edit') return preToolUseDecision('allow');
-
-    const filePath = payload.tool_input?.file_path ?? '';
-    if (filePath === '') return preToolUseDecision('allow');
-    // Skip the ~2.4 s ownership spawn for paths that cannot be task files (0398 R2).
-    if (!couldBeTaskCorpusPath(filePath)) return preToolUseDecision('allow');
-
-    // Delegate ownership entirely to the globally installed `spur`: owned => deny,
-    // unowned/unknown => fail open.
-    const ownership = await resolveTaskOwnership(filePath, env.CLAUDE_PROJECT_DIR ?? process.cwd());
-    if (ownership === 'owned') {
-        return preToolUseDecision(
-            'deny',
-            `${filePath} is a task file owned by the spur corpus. Edit it through the spur CLI ` +
-                '(e.g. `spur task update <wbs> --section <name> --from-file <file>`), not a raw ' +
-                'Write/Edit. Set SPUR_WRITE_GUARD=off to bypass.',
-            env,
-        );
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const deadline = new Promise<'timeout'>((resolve) => {
+        timer = setTimeout(() => resolve('timeout'), timeoutMs);
+    });
+    const finished = Promise.all([
+        child.exited,
+        child.stdout ? new Response(child.stdout).text() : Promise.resolve(''),
+        child.stderr ? new Response(child.stderr).text() : Promise.resolve(''),
+    ]);
+    const outcome = await Promise.race([finished, deadline]);
+    clearTimeout(timer);
+    if (outcome === 'timeout') {
+        child.kill('SIGKILL');
+        return failOpen(`${resolved.script} timed out after ${timeoutMs} ms`);
     }
-    return preToolUseDecision('allow');
+    const [exitCode, stdout, stderr] = outcome;
+    const trimmedErr = stderr.trim();
+    if (exitCode !== 0 && exitCode !== 2) {
+        return failOpen(`${resolved.script} exited ${exitCode ?? 'by signal'}`, trimmedErr.slice(0, 2000));
+    }
+    const output = stdout.replace(/\n+$/, '');
+    const withScriptErr = (r: HookRunResult): HookRunResult => {
+        const err = [r.stderr, trimmedErr].filter(Boolean).join('\n');
+        return err ? { ...r, stderr: err } : { output: r.output, exitCode: r.exitCode };
+    };
+    if (exitCode === 0) {
+        const neutral = parseNeutralResult(output);
+        if (neutral) return withScriptErr(translateHookResult(neutral, host, event, options.profile));
+        // Legacy: Claude-native JSON. Verbatim on Claude Code, minus a bare PreToolUse allow (it
+        // would auto-approve the call); elsewhere re-express the PreToolUse decision as an exit code.
+        if (host === 'claude' && isPreToolUseAllow(output)) return withScriptErr({ output: '', exitCode: 0 });
+        const adapted = host === 'claude' ? null : preToolUseByExitCode(output);
+        if (adapted) return withScriptErr(adapted);
+    }
+    return withScriptErr({ output, exitCode });
 }
 
-const spTaskWriteGuard: HookRunner = {
-    // `profile` is irrelevant to this PreToolUse guard. Ignore it so the dispatcher's profile arg
-    // is never mistaken for runSpTaskWriteGuard's test-injectable resolver (its 3rd parameter).
-    run: (env, stdinText) => runSpTaskWriteGuard(env, stdinText),
-};
-
-// ── cc/anti-hallucination ───────────────────────────────────────────────────
+// ── cc/anti-hallucination (first-party built-in) ────────────────────────────
 /**
  * Stop hook: block the agent from stopping when its last message claims external facts without the
  * anti-hallucination protocol (source citations / confidence level / verification-tool evidence).
@@ -222,384 +420,51 @@ const ccAntiHallucination: HookRunner = {
     },
 };
 
-// ── sp/context-* hooks (indexed-context token ledger, all fail-open) ─────────
-
-const OK: HookRunResult = { output: '', exitCode: 0 };
-
-/** Resolve `.spur/context/` under the project dir the agent anchors to. */
-function spurContextDir(env: NodeJS.ProcessEnv): string {
-    return join(env.CLAUDE_PROJECT_DIR ?? process.cwd(), '.spur', 'context');
-}
-
-// ── sp/context-* plugin delegation (spur task 1166) ─────────────────────────
-//
-// The sp plugin ships self-contained hook scripts (spur tasks 0232/1159) that are the
-// single source of truth for session ownership, session reuse and token recording. The
-// in-CLI runners below are a fallback and have drifted from them (no owner gating, a
-// different pointer scheme, fewer recorded tools). When the plugin's scripts resolve,
-// import them in-process — superskill runs under Bun, which loads their dependency-free
-// TypeScript directly — and delegate. Delegation is all-or-nothing across the three
-// hooks: a plugin too old to export the payload adapters falls back to the in-CLI
-// runners for every hook, never a mixed pointer scheme. Every resolution, import or
-// call failure fails open to the in-CLI runner the same way.
-
-interface SpPluginContextDelegate {
-    start: (text: string, env: NodeJS.ProcessEnv) => unknown;
-    stop: (text: string, env: NodeJS.ProcessEnv) => unknown;
-    postTool: (contextDir: string, payload: unknown) => unknown;
-}
-
-/** Numeric compare for cache version dirs like `0.4.1` (non-numeric segments sort last). */
-function compareVersionDirs(a: string, b: string): number {
-    const pa = a.split('.').map((p) => Number.parseInt(p, 10));
-    const pb = b.split('.').map((p) => Number.parseInt(p, 10));
-    for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
-        const na = pa[i];
-        const nb = pb[i];
-        const va = na === undefined || Number.isNaN(na) ? -1 : na;
-        const vb = nb === undefined || Number.isNaN(nb) ? -1 : nb;
-        if (va !== vb) return va - vb;
-    }
-    return 0;
-}
-
-/** Resolve `<root>/hooks/<name>.ts` when the file exists, else null. */
-function scriptUnder(root: string | undefined, name: string): string | null {
-    if (!root) return null;
-    const script = join(root, 'hooks', `${name}.ts`);
-    return existsSync(script) ? script : null;
-}
-
-/**
- * Resolve the plugin's `<name>` hook script. Order: explicit `SPUR_PLUGIN_ROOT`, then
- * `CLAUDE_PLUGIN_ROOT` (set by Claude Code for plugin hook commands), then the newest
- * version under Claude's plugin cache (`<CLAUDE_CONFIG_DIR|~/.claude>/plugins/cache/<mkt>/sp/<ver>`).
- */
-export function resolveSpPluginScript(env: NodeJS.ProcessEnv, name: string): string | null {
-    const explicit = scriptUnder(env.SPUR_PLUGIN_ROOT, name) ?? scriptUnder(env.CLAUDE_PLUGIN_ROOT, name);
-    if (explicit) return explicit;
-
-    const cacheRoot = join(env.CLAUDE_CONFIG_DIR ?? join(homedir(), '.claude'), 'plugins', 'cache');
-    const candidates: { version: string; script: string }[] = [];
-    try {
-        for (const marketplace of readdirSync(cacheRoot)) {
-            let versions: string[];
-            try {
-                versions = readdirSync(join(cacheRoot, marketplace, 'sp'));
-            } catch {
-                continue; // marketplace without an sp plugin
-            }
-            for (const version of versions) {
-                const script = scriptUnder(join(cacheRoot, marketplace, 'sp', version), name);
-                if (script) candidates.push({ version, script });
-            }
-        }
-    } catch {
-        return null;
-    }
-    candidates.sort((a, b) => compareVersionDirs(b.version, a.version));
-    return candidates[0]?.script ?? null;
-}
-
-/**
- * Load the plugin's context-hook delegate, or null when any of the three scripts or
- * adapter exports is missing/unloadable (old plugin, partial install). All-or-nothing:
- * start/stop/post-tool must come from one scheme, so a partial delegate never activates.
- */
-async function loadSpPluginDelegate(env: NodeJS.ProcessEnv): Promise<SpPluginContextDelegate | null> {
-    const startScript = resolveSpPluginScript(env, 'context-session-start');
-    const stopScript = resolveSpPluginScript(env, 'context-session-stop');
-    const postToolScript = resolveSpPluginScript(env, 'context-post-tool');
-    if (!startScript || !stopScript || !postToolScript) return null;
-    try {
-        const start = (await import(pathToFileURL(startScript).href)) as Record<string, unknown>;
-        const stop = (await import(pathToFileURL(stopScript).href)) as Record<string, unknown>;
-        const post = (await import(pathToFileURL(postToolScript).href)) as Record<string, unknown>;
-        if (
-            typeof start.recordSessionStartFromPayloadText !== 'function' ||
-            typeof stop.recordSessionEndFromPayloadText !== 'function' ||
-            typeof post.recordToolUseEvent !== 'function'
-        ) {
-            return null;
-        }
-        return {
-            start: start.recordSessionStartFromPayloadText as SpPluginContextDelegate['start'],
-            stop: stop.recordSessionEndFromPayloadText as SpPluginContextDelegate['stop'],
-            postTool: post.recordToolUseEvent as SpPluginContextDelegate['postTool'],
-        };
-    } catch {
-        return null;
-    }
-}
-
-interface SpurSession {
-    id: string;
-    path: string;
-}
-
-/** Extract the stable host session identity carried by lifecycle/tool hook payloads. */
-function payloadSessionIdentity(stdinText: string): string {
-    try {
-        const payload = JSON.parse(stdinText) as Record<string, unknown>;
-        if (typeof payload.session_id === 'string' && payload.session_id.length > 0) return payload.session_id;
-        if (typeof payload.transcript_path === 'string' && payload.transcript_path.length > 0) {
-            return payload.transcript_path;
-        }
-    } catch {
-        // Hooks without a payload use the single-session compatibility fallback below.
-    }
-    return '';
-}
-
-function sessionPathForIdentity(dir: string, identity: string): string {
-    const key = createHash('sha256').update(identity).digest('hex').slice(0, 16);
-    return join(dir, `.session-${key}.json`);
-}
-
-function existingSessionPaths(dir: string): string[] {
-    try {
-        return readdirSync(dir)
-            .filter((name) => /^\.session-[a-f0-9]{16}\.json$/.test(name))
-            .sort()
-            .map((name) => join(dir, name));
-    } catch {
-        return [];
-    }
-}
-
-/** Resolve the payload's session, falling back only when exactly one session is active. */
-function readSpurSession(dir: string, stdinText: string): SpurSession | null {
-    const identity = payloadSessionIdentity(stdinText);
-    const existingSessions = identity ? [] : existingSessionPaths(dir);
-    const sessionFile = identity ? sessionPathForIdentity(dir, identity) : existingSessions[0];
-    if (!sessionFile || (!identity && existingSessions.length !== 1) || !existsSync(sessionFile)) return null;
-    try {
-        const data = JSON.parse(readFileSync(sessionFile, 'utf-8'));
-        if (typeof data === 'object' && data !== null && 'session' in data && typeof data.session === 'string') {
-            return { id: data.session, path: sessionFile };
-        }
-        return null;
-    } catch {
-        return null;
-    }
-}
-
-/** PostToolUse (matcher Read|Write|Edit): append one token-estimate event to the ledger. */
-const spContextPostTool: HookRunner = {
-    async run(env, stdinText) {
-        const delegate = await loadSpPluginDelegate(env);
-        if (delegate) {
-            try {
-                delegate.postTool(spurContextDir(env), JSON.parse(stdinText));
-            } catch {
-                // fail-open: delegation errors (incl. malformed payload) never wedge the agent
-            }
-            return OK;
-        }
-        const dir = spurContextDir(env);
-        let payload: unknown;
-        try {
-            payload = JSON.parse(stdinText);
-        } catch {
-            return OK;
-        }
-        if (typeof payload !== 'object' || payload === null) return OK;
-        const p = payload as Record<string, unknown>;
-
-        const toolName = typeof p.tool_name === 'string' ? p.tool_name : '';
-        if (toolName !== 'Read' && toolName !== 'Write' && toolName !== 'Edit') return OK;
-
-        const toolInput = p.tool_input;
-        const filePath =
-            typeof toolInput === 'object' &&
-            toolInput !== null &&
-            'file_path' in toolInput &&
-            typeof (toolInput as Record<string, unknown>).file_path === 'string'
-                ? ((toolInput as Record<string, unknown>).file_path as string)
-                : '';
-        if (!filePath) return OK;
-
-        const session = readSpurSession(dir, stdinText);
-        if (!session) return OK;
-
-        const toolResponse = p.tool_response;
-        const content =
-            typeof toolResponse === 'object' &&
-            toolResponse !== null &&
-            'content' in toolResponse &&
-            typeof (toolResponse as Record<string, unknown>).content === 'string'
-                ? ((toolResponse as Record<string, unknown>).content as string)
-                : '';
-        const tokens = content ? Math.ceil(new TextEncoder().encode(content).length / 4) : 0;
-        const ts = new Date().toISOString();
-        const type = toolName === 'Read' ? 'read' : 'write';
-        const action = toolName === 'Read' ? undefined : toolName === 'Write' ? 'create' : 'edit';
-
-        const event: Record<string, unknown> = { ts, session: session.id, type, file: filePath, tokens };
-        if (action) event.action = action;
-
-        try {
-            appendFileSync(join(dir, 'token-ledger.jsonl'), `${JSON.stringify(event)}\n`);
-        } catch {
-            // fail-open: a broken ledger must never wedge the agent
-        }
-
-        // F4 (task 0127 R4): the ledger append above is the only bookkeeping here. The former
-        // read-modify-write of running counters on the session JSON lost increments under
-        // concurrent PostToolUse processes; Stop now aggregates the ledger instead.
-        return OK;
-    },
-};
-
-/** SessionStart: create a payload-scoped session file and append `session_start`. */
-const spContextSessionStart: HookRunner = {
-    async run(env, stdinText) {
-        const delegate = await loadSpPluginDelegate(env);
-        if (delegate) {
-            try {
-                delegate.start(stdinText, env);
-            } catch {
-                // fail-open
-            }
-            return OK;
-        }
-        const dir = spurContextDir(env);
-        try {
-            mkdirSync(dir, { recursive: true });
-        } catch {
-            return OK;
-        }
-
-        const now = new Date();
-        const pad = (n: number) => String(n).padStart(2, '0');
-        const identity = payloadSessionIdentity(stdinText);
-        const sessionId =
-            identity ||
-            `session-${now.toISOString().slice(0, 10)}-${pad(now.getHours())}${pad(now.getMinutes())}-${randomUUID().slice(0, 8)}`;
-        const sessionFile = sessionPathForIdentity(dir, identity || sessionId);
-        const ts = now.toISOString();
-
-        try {
-            // F4 (task 0127 R4): identity/start marker only — running counters were removed.
-            // Totals are computed by Stop from the append-only ledger.
-            writeFileSync(sessionFile, JSON.stringify({ session: sessionId, started: ts }));
-        } catch {
-            return OK;
-        }
-
-        try {
-            appendFileSync(
-                join(dir, 'token-ledger.jsonl'),
-                `${JSON.stringify({ ts, session: sessionId, type: 'session_start' })}\n`,
-            );
-        } catch {
-            // fail-open
-        }
-        return OK;
-    },
-};
-
-/** Stop: aggregate totals from the append-only ledger, append `session_end`, then clean up. */
-const spContextSessionStop: HookRunner = {
-    async run(env, stdinText) {
-        const delegate = await loadSpPluginDelegate(env);
-        if (delegate) {
-            try {
-                delegate.stop(stdinText, env);
-            } catch {
-                // fail-open
-            }
-            return OK;
-        }
-        const dir = spurContextDir(env);
-        const session = readSpurSession(dir, stdinText);
-        if (!session) return OK;
-        const sessionFile = session.path;
-
-        let sessionId = '';
-        try {
-            const data = JSON.parse(readFileSync(sessionFile, 'utf-8')) as Record<string, unknown>;
-            if (typeof data.session !== 'string' || data.session.length === 0) return OK;
-            sessionId = data.session;
-        } catch {
-            return OK;
-        }
-
-        // F4 (task 0127 R4): the append-only ledger is the sole source for totals. One bounded
-        // scan per session replaces the removed running counters (which concurrent PostToolUse
-        // writers corrupted). Only parseable read/write events whose session exactly matches
-        // count; malformed lines, unrelated sessions, and non-event rows are skipped.
-        let reads = 0;
-        let writes = 0;
-        let tokens = 0;
-        const ledgerPath = join(dir, 'token-ledger.jsonl');
-        if (existsSync(ledgerPath)) {
-            for (const line of readFileSync(ledgerPath, 'utf-8').split('\n')) {
-                if (!line.trim()) continue;
-                try {
-                    const evt = JSON.parse(line) as Record<string, unknown>;
-                    if (evt.session !== sessionId) continue;
-                    if (evt.type === 'read') reads++;
-                    else if (evt.type === 'write') writes++;
-                    else continue;
-                    if (typeof evt.tokens === 'number') tokens += evt.tokens;
-                } catch {
-                    // skip unparseable lines
-                }
-            }
-        }
-
-        const event = {
-            ts: new Date().toISOString(),
-            session: sessionId,
-            type: 'session_end',
-            totals: { reads, writes, tokens },
-        };
-        try {
-            appendFileSync(ledgerPath, `${JSON.stringify(event)}\n`);
-        } catch {
-            // fail-open
-        }
-        try {
-            rmSync(sessionFile, { force: true });
-        } catch {
-            // cleanup is best-effort
-        }
-        return OK;
-    },
-};
-
 // ── Registry + dispatcher ────────────────────────────────────────────────────
 
+/**
+ * First-party built-in runners, compiled into the CLI (ADR-022). Only this repo's own plugin
+ * registers here; every other plugin's hooks resolve to the scripts the plugin ships.
+ */
 const HOOK_RUNNERS: Record<string, HookRunner> = {
-    'sp/task-write-guard': spTaskWriteGuard,
-    'sp/context-post-tool': spContextPostTool,
-    'sp/context-session-start': spContextSessionStart,
-    'sp/context-session-stop': spContextSessionStop,
     'cc/anti-hallucination': ccAntiHallucination,
 };
 
-/** Resolve and run a hook runner, writing its output to stdout and returning the exit code. */
+/** Resolve and run a hook, writing its output to stdout and returning the exit code. */
 export async function hookRun(
     plugin: string,
     hookId: string,
     env: NodeJS.ProcessEnv,
     stdinText: string,
     profile?: StopProfile,
+    location: HookScriptLocation = {},
 ): Promise<number> {
+    let result: HookRunResult;
     const runner = HOOK_RUNNERS[`${plugin}/${hookId}`];
-    if (!runner) {
-        // Fail open: an unknown hook id signals plugin/CLI version skew (the installed plugin
-        // emits a hook the running CLI doesn't recognize), not a policy violation. Blocking here
-        // would turn version skew into blocked Stops and stuck agent loops. Warn loudly and allow.
-        echoError(
-            `Warning: unknown hook '${plugin} ${hookId}' (superskill ${cliVersion}). ` +
-                `This usually means the installed plugin expects a newer CLI than the one on PATH. ` +
-                `Known hooks: ${Object.keys(HOOK_RUNNERS).join(', ')}. Failing open (exit 0).`,
-        );
-        return 0;
+    if (runner) {
+        result = await runner.run(env, stdinText, profile);
+    } else {
+        const resolved = resolveHookScript(plugin, hookId, env, location);
+        if (!resolved) {
+            // Fail open: no built-in runner and no hook script means plugin/CLI skew or an
+            // incomplete install, not a policy violation. Blocking here would turn skew into
+            // blocked Stops and stuck agent loops. Warn loudly and allow.
+            echoError(
+                `Warning: unknown hook '${plugin} ${hookId}' (superskill ${cliVersion}): no built-in runner ` +
+                    `and no hooks/${hookId}.{ts,mjs,js} or scripts/hooks/${hookId}.{ts,mjs,js} under an ` +
+                    `installed '${plugin}' plugin root (set SUPERSKILL_PLUGIN_ROOT to point at one). ` +
+                    `Built-in hooks: ${Object.keys(HOOK_RUNNERS).join(', ')}. Failing open (exit 0).`,
+            );
+            return 0;
+        }
+        result = await runHookScript(env, stdinText, {
+            plugin,
+            id: hookId,
+            resolved,
+            timeoutMs: hookScriptTimeoutMs(resolved.root, plugin, hookId, env),
+            profile,
+        });
     }
-    const result = await runner.run(env, stdinText, profile);
     // WHY conditional: echo('') writes '\n' (writeLine always appends a newline). A bare newline
     // on stdout makes Codex try to parse it as JSON and fail open noisily. Only emit when non-empty.
     if (result.output) echo(result.output);
@@ -610,7 +475,7 @@ export async function hookRun(
 /** Register `superskill hook run <plugin> <hook-id>` under the hook command group. */
 export function registerHookRun(cmd: Command, readInput?: () => string): void {
     cmd.command('run <plugin> <hook-id>')
-        .description('Run a registered plugin hook runner (the runtime command installed hook configs call)')
+        .description("Run a plugin hook: a built-in runner, else the plugin's own hooks/<hook-id> script")
         .option(
             '--profile <block|deny>',
             'prevent-stop output profile (block: Claude/Codex/Hermes; deny: Gemini/Antigravity)',

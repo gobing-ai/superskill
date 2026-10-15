@@ -2,10 +2,10 @@
 doc: 03_ARCHITECTURE
 owns: HOW — module boundaries, data flow, runtime model, invariants, rationale-in-depth
 authority: derived
-version: 2.22.0
+version: 2.23.0
 derived_from: [00_ADR, 01_PRD]
 owner: Robin Min
-updated_at: 2026-10-12
+updated_at: 2026-10-15
 read_before: cross-module, seam, or schema work
 edit_rules: 99 §6.4
 sync: [T1]
@@ -192,7 +192,7 @@ apps/cli/src/                     # ── CLI app (@gobing-ai/superskill) ─�
 │   ├── command.ts                # superskill command subcommands
 │   ├── doctor.ts                 # read-only grok-bot Sand root / catalog inspection (task 0128)
 │   ├── helpers.ts                # common options, target resolution, and operation runners
-│   ├── hook-run.ts               # registered plugin hook runtime dispatcher
+│   ├── hook-run.ts               # hook runtime: built-in runner, else the plugin's hooks/<id> script
 │   ├── hook.ts                   # superskill hook subcommands
 │   ├── install-post-actions.ts   # target post-install action factories (grok-bot handoff, ADR-037)
 │   ├── install.ts                # superskill install command
@@ -223,6 +223,7 @@ apps/cli/src/                     # ── CLI app (@gobing-ai/superskill) ─�
 │   └── schema.ts                 # Database table schema definition
 │
 ├── config.ts                     # Configuration schema definition
+├── hook-host.ts                  # Hook host adapters: Pi/omp payload in, neutral result out
 ├── hooks.ts                      # Hook emission (hermes/pi-style)
 ├── omp-hooks.ts                  # OMP hook-module reconciliation
 ├── stdin.ts                      # Non-blocking bounded stdin payload reader
@@ -823,9 +824,20 @@ result alongside plugin-manifest rows and never writes a lock directly.
 8. **Owned hook reconciliation.** Pi and Hermes remove stale entries owned by the plugin across all
    events before adding the desired set. User hooks and hooks owned by other plugins are preserved;
    reinstalling unchanged input is byte-idempotent, including the zero-hook case.
-9. **Scoped hook sessions.** Context hook state is stored in `.session-<identity-hash>.json`, keyed
-   from payload `session_id` or `transcript_path`. A payload without identity may use the sole active
-   session for compatibility; multiple candidates are ambiguous and fail open.
+9. **`hook run` is plugin-agnostic (ADR-039).** The dispatcher knows no plugin's hook ids. It runs a
+   first-party compiled runner when one exists (only `cc/anti-hallucination`), else the script the
+   plugin ships under its installed root, found by file convention, not by a registry or a
+   `hooks.json` field. Hosts that read `hooks.json` verbatim never see an unknown key. Host
+   differences live in one adapter layer (`apps/cli/src/hook-host.ts`): Pi/omp payloads are
+   normalized to the canonical Claude-style shape before the script reads stdin, and a host-neutral
+   result is rendered per host and event afterwards. Scripts that print Claude-native JSON keep
+   working. An `ask` on `PreToolUse` becomes a deny carrying the reason on any host that cannot
+   show a confirmation (Codex, omp, Hermes, …), so a safety guard cannot silently pass; only Claude
+   Code and a native Pi `ctx.ui.confirm` honor ask as ask. Every failure to resolve, spawn or finish
+   still fails open, with the deadline taken from the plugin's own declared `timeout` so `hook run`
+   exits before the host kills it. Pi still consumes hooks through the `@vahor/pi-hooks` command
+   shim. A generated native Pi extension (one module per declared hook, like the omp generator, with
+   `ctx.ui.confirm` for `ask`) is the designed next step; see 04 §Plugin hook scripts.
 10. **Config precedence is explicit.** CLI marketplace and target flags override JSONC defaults;
     configured plugin paths precede ambient discovery. Feature filters are applied during mapping,
     and native installers reject unsupported partial filters before mutation.
