@@ -45,6 +45,8 @@ export interface OmpHookResult {
 /** Parsed hook entry extracted from canonical hooks.json. */
 interface ParsedHook {
     ompEvent: string;
+    /** Canonical PascalCase event (`PreToolUse`), exported to `hook run` as `SUPERSKILL_HOOK_EVENT`. */
+    canonicalEvent: string;
     matcher: string;
     command: string;
     timeout?: number;
@@ -69,6 +71,7 @@ function parseCanonicalHooks(config: CanonicalHooksConfig): ParsedHook[] {
             if ((entry.type && entry.type !== 'command') || !entry.command) continue;
             parsed.push({
                 ompEvent,
+                canonicalEvent: canonicalEvent.charAt(0).toUpperCase() + canonicalEvent.slice(1),
                 matcher: entry.matcher,
                 command: entry.command,
                 timeout: entry.timeout,
@@ -135,6 +138,7 @@ function buildModuleContent(hook: ParsedHook): string {
     // single-pass: inserted values are never re-scanned for sentinel tokens.
     const replacements: Record<string, string> = {
         '%%EVENT%%': hook.ompEvent,
+        '%%CANONICAL_EVENT_LITERAL%%': JSON.stringify(hook.canonicalEvent),
         '%%MATCHER_COMMENT%%': hook.matcher === '*' ? 'all tools' : oneLine(hook.matcher),
         '%%COMMAND_COMMENT%%': oneLine(hook.command),
         '%%MATCHER_GUARD%%': matcherGuard,

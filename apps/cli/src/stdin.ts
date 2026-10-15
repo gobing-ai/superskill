@@ -10,7 +10,7 @@
  * The budget is an **idle** timeout, never a deadline on the whole read: it is re-armed
  * on every chunk. A single fixed deadline drops a payload a host writes late and
  * truncates any payload it streams in more than one write — and because every runner
- * fails open on an unparseable payload (`hook-run.ts` `spurDelegate` → spur's guards,
+ * fails open on an unparseable payload (plugin hook scripts run by `hook-run.ts`,
  * `runStopGuard`), a truncated read silently converts a `deny` into an `allow`. Only
  * genuine idleness may end the read.
  */

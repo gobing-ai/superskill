@@ -350,21 +350,58 @@ Written after the copy (atomic temp + rename), only when at least one regular fi
 
 `script verify <plugin>` selects **one** scripts root — project first by directory existence, else global; explicit `--project`/`--global` never falls back — reads that root's stamp, and compares it with a fresh regular-file snapshot excluding the stamp. Every result is `{plugin, source, status, added, removed, changed}` with `source` ∈ `project | global | null` and `status` ∈ `ok | drift | missing_root | missing_stamp | invalid_stamp | unreadable`; the arrays are sorted and empty unless a valid baseline was read. `unreadable` means the baseline is valid but a staged file could not be read (the snapshot is wrapped, so a filesystem failure is a verification outcome, never an escaping error) and adds `error: <filesystem message naming the file>`. Failure diagnostics name each differing path and give reinstall guidance; stdout keeps the JSON result in `--json` mode and stderr carries the diagnostics.
 
-### `sp/*` hook delegation (ADR-039)
+### Plugin hook scripts (`hook run`, ADR-039)
 
-`hook run sp <id>` runs `${SPUR_BIN:-spur} self hook <id> --host <host>` (`spurDelegate`, `apps/cli/src/commands/hook-run.ts`) with the payload on stdin. `SPUR_BIN` may carry leading arguments; quote a path containing spaces. `--host` is `claude` when `CLAUDE_PROJECT_DIR` is set, else `auto`.
+`hook run <plugin> <id>` runs, in order: a first-party compiled runner (`HOOK_RUNNERS`, only `cc/anti-hallucination`); else the plugin's own script; else a fail-open warning (exit 0, stderr names the id, the searched layout and the CLI version).
 
-| Id | Deadline | Pre-filter (no spawn when false) |
+**Script resolution** (`resolveHookScript`, `apps/cli/src/commands/hook-run.ts`). The first regular file `hooks/<id>.ts|.mjs|.js`, then `scripts/hooks/<id>.ts|.mjs|.js`, under the first plugin root that has one. `<plugin>` and `<id>` must be single path segments. A root is skipped when a manifest in it (`plugin.json`, `.claude-plugin/plugin.json`) names a different plugin.
+
+| # | Root | Source |
 | --- | --- | --- |
-| `task-write-guard` | 5 s | `tool_input.file_path` is `.md` under a `tasks<N>` path segment (`couldBeTaskCorpusPath`) |
-| `careful-guard`, `agent-lifecycle` | 5 s | — |
-| `context-post-tool`, `context-session-start`, `context-session-stop`, `fleet-guest-stop` | 10 s | — |
+| 1 | `$SUPERSKILL_PLUGIN_ROOT` | explicit override (dev checkout, tests) |
+| 2 | `$CLAUDE_PLUGIN_ROOT` | Claude Code plugin hook env |
+| 3 | `<$CLAUDE_CONFIG_DIR\|~/.claude>/plugins/cache/<mkt>/<plugin>/<version>/`, newest version first | Claude Code cache |
+| 4 | `<project\|home>/.omp/plugins/cache/plugins/<plugin>___<mkt>___<version>/` | omp cache |
+| 5 | `~/.grok/installed-plugins/<plugin>-<hash>/` (manifest must name `<plugin>`) | Grok |
+| 6 | `<project\|home>/.agents/scripts/<plugin>/` — only its `hooks/` subdir | staged scripts root (rulesync/hermes targets) |
 
-| spur outcome | `hook run` result |
+Project = `CLAUDE_PROJECT_DIR`, else cwd. Home = `HOME_DIR`, else the OS home.
+
+**Execution** (`runHookScript`). `bun <script>` runs in the host's cwd. superskill under Bun reuses its own executable; the standalone binary prefers `bun` on `PATH`, else re-enters itself with `BUN_BE_BUN=1`. Stdin carries the normalized payload. The env adds:
+
+| Env var | Value |
 | --- | --- |
-| exit 0 | spur's stdout (trailing newlines trimmed) + exit 0; spur's stderr passes through |
-| exit 0, PreToolUse `permissionDecision` JSON, no `CLAUDE_PROJECT_DIR` | `deny` → exit 2 + reason on stderr; `allow`/`ask` → empty stdout, exit 0 (Codex rejects those JSON shapes; omp blocks only on exit 2) |
-| not found (ENOENT), deadline hit (child killed), non-zero exit, or stderr reports an unknown command/option/hook id | exit 0, no stdout, one stderr line `superskill hook run sp <id>: <cause>; failing open (exit 0).` |
+| `SUPERSKILL_PLUGIN_ROOT` | the root the script resolved under |
+| `SUPERSKILL_HOOK_ID` | `<id>` |
+| `SUPERSKILL_HOOK_HOST` | `claude` \| `omp` \| `pi` \| `generic` (an inbound value wins; else `claude` when `CLAUDE_PROJECT_DIR` is set; generated omp modules set `omp`) |
+| `SUPERSKILL_HOOK_EVENT` | canonical event (`PreToolUse`, `Stop`, …): payload `hook_event_name`, else the inbound value (generated omp modules set it) |
+| `SUPERSKILL_HOOK_PROFILE` | `--profile` value (`block` default) |
+
+Deadline: `SUPERSKILL_HOOK_TIMEOUT_MS` (positive integer), else the smallest `timeout` (s) the root's `hooks/hooks.json` or `hooks.json` declares for `superskill hook run <plugin> <id>`, minus 500 ms (floor 1 s), else 10 s.
+
+**Payload in** (`normalizeHookPayload`, `apps/cli/src/hook-host.ts`). A payload carrying `hook_event_name` or `tool_name` passes through. A Pi/omp event becomes `{hook_event_name, tool_name, tool_input, tool_response?, session_id?, cwd, host_event}`. Tools map `read/write/edit/bash/grep/find|glob` → `Read/Write/Edit/Bash/Grep/Glob`, `path` → `file_path`, `edits[].oldText/newText` → `old_string/new_string`, and `content` text parts → `tool_response.content`. Events map `tool_call/tool_result/agent_end/session_start/session_shutdown/session_before_compact` → `PreToolUse/PostToolUse/Stop/SessionStart/SessionEnd/PreCompact`.
+
+**Result out.** Script exit 0 with stdout `{"decision":"allow"|"deny"|"ask"|"block","reason"?}` (`deny` ≡ `block`) is rendered by `translateHookResult`:
+
+| Event | `deny`/`block` | `ask` | `allow` / no output |
+| --- | --- | --- | --- |
+| `PreToolUse`, host `claude` | `permissionDecision:"deny"` JSON + reason, exit 0 | `permissionDecision:"ask"` JSON, exit 0 | nothing, exit 0 |
+| `PreToolUse`, other hosts | exit 2, reason on stderr | nothing, exit 0 (cannot confirm; fails open) | nothing, exit 0 |
+| `Stop`/`SubagentStop`/`UserPromptSubmit`/`PostToolUse`, host `claude`/`generic` | `{"decision":"block","reason"}` (`"deny"` under `--profile deny`, except `PostToolUse`), exit 0 | as allow | nothing, exit 0 |
+| same events, host `omp`/`pi`; any other or unknown event | exit 2, reason on stderr | as allow | nothing, exit 0 |
+
+Other script outcomes:
+
+| Script outcome | `hook run` result |
+| --- | --- |
+| exit 0, Claude-native JSON (`hookSpecificOutput…`) | host `claude`: verbatim, except a bare PreToolUse `permissionDecision:"allow"` (no `updatedInput`), which is dropped because it would auto-approve the call. Elsewhere a PreToolUse `permissionDecision` becomes deny → exit 2 + reason (`permissionDecisionReason`, else `systemMessage`), allow/ask → nothing |
+| exit 0, any other stdout | forwarded (trailing newlines trimmed) |
+| exit 2 | stdout, stderr and exit 2 forwarded |
+| spawn failure, deadline hit (child `SIGKILL`ed), any other exit status | exit 0, no stdout, stderr `superskill hook run <plugin> <id>: <cause>; failing open (exit 0).` then the script's stderr (≤ 2000 chars) |
+
+The script's own stderr is always forwarded after any adapter stderr.
+
+**Pi (designed, not shipped).** Pi still gets `hooks.json` commands through the `@vahor/pi-hooks` shim, which cannot carry an `ask` confirm or a Stop continuation. The designed adapter reuses the omp generator, because omp is a Pi fork with the same `pi.on` API. It emits one native extension module per declared hook into Pi's extensions dir. Each module spawns `superskill hook run` with `SUPERSKILL_HOOK_HOST=pi` and `SUPERSKILL_HOOK_EVENT`. Exit 2 maps to `{block: true, reason}`, and a neutral `ask` maps to `ctx.ui.confirm`, which needs a structured channel back from `hook run` (for example `--host pi` emitting the neutral JSON as-is). That lets a plugin drop a bespoke Pi extension.
 
 ### Stdin payload contract (`script run` / `hook run`)
 
@@ -384,7 +421,7 @@ observed with Antigravity, and it hangs the agent mid-run.
 
 The budget is an **idle** timeout, never a deadline on the whole read. This is a correctness
 requirement, not a tuning choice: every runner fails open on an unparseable payload
-(spur's guards behind `sp/*`, `runStopGuard`), so a truncated read silently converts a guard `deny` into an
+(plugin hook scripts behind `hook run`, `runStopGuard`), so a truncated read silently converts a guard `deny` into an
 `allow`. Default `250` ms, overridable with **`SUPERSKILL_STDIN_TIMEOUT_MS`** (positive integer;
 invalid values fall back to the default).
 

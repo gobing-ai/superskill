@@ -770,13 +770,12 @@ serialized by the operator.
 
 ---
 
-## ADR-039: `sp/*` hooks delegate to `spur self hook`; superskill keeps no copy of their logic
+## ADR-039: `hook run` is a generic runner for the hook scripts a plugin ships; superskill holds no plugin-specific hook code
 
 **Status:** Accepted · **Date:** 2026-10-15
 
-**Decision.** Every `sp/<id>` runner in `hook run` is one generic transport that spawns `${SPUR_BIN:-spur} self hook <id>` with the host payload on stdin and forwards its output; superskill no longer reimplements sp hook logic in-CLI or imports sp plugin files by path. Transport failures (spur missing, timeout, non-zero exit, unknown command/id) fail open per ADR-020. Supersedes the in-CLI sp runners and the plugin-script delegation of spur task 1166.
+**Decision.** `superskill hook run <plugin> <id>` resolves `<id>` to the script the plugin itself ships (`hooks/<id>.{ts,mjs,js}`, then `scripts/hooks/<id>.*`, under the installed plugin root) and runs it under Bun with the host payload on stdin. A host adapter layer normalizes Pi/omp payloads in and renders a host-neutral `{"decision","reason"}` result out for Claude Code, Codex, omp and Pi. The compiled `HOOK_RUNNERS` registry (ADR-022/024) stays for this repo's own first-party engines only; no other plugin's ids, logic or CLI appear in superskill. Resolution and spawn failures fail open per ADR-020. Supersedes the in-CLI `sp/*` runners and the plugin-file import of spur task 1166, and amends ADR-024's "hooks use registry absorption" to "registry, else the plugin's own script".
 
-**Why.** Two drifted copies (CLI fallback + plugin scripts) diverged on session ownership and recorded tools; one owner — the spur CLI — removes the drift and lets sp hook fixes ship without a superskill release.
+**Why.** Adding a hook to any plugin must be one script file plus one `hooks.json` line, with no superskill change or release; a registry of external ids and their logic drifts from the owning plugin and couples its fixes to superskill releases.
 
-**Detail:** see 03 §Invariants 9; 04 §`sp/*` hook delegation.
-
+**Detail:** see 03 §Invariants 9; 04 §Plugin hook scripts (`hook run`).

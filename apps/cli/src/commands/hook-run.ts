@@ -1,9 +1,21 @@
-import { getEnvVars } from '@gobing-ai/superskill-core';
+import { readdirSync, readFileSync, statSync } from 'node:fs';
+import { homedir } from 'node:os';
+import { join } from 'node:path';
+import { assertSafePathSegment, getEnvVars } from '@gobing-ai/superskill-core';
 import { NodeProcessExecutor, type PipeProcess, type ProcessExecutor } from '@gobing-ai/ts-runtime';
 import { echo, echoError } from '@gobing-ai/ts-utils';
 import type { Command } from 'commander';
 import { runStopGuard, type StopProfile } from '../../../../plugins/cc/scripts/anti-hallucination/ah_guard';
-import { parseCommandArgv } from '../command-argv';
+import {
+    detectHookHost,
+    hookEventOf,
+    isPreToolUseAllow,
+    normalizeHookPayload,
+    parseNeutralResult,
+    preToolUseByExitCode,
+    translateHookResult,
+} from '../hook-host';
+import { flattenCanonicalHookEntries, hookRunKey } from '../hooks';
 import { readStdinNonBlocking } from '../stdin';
 import { cliVersion } from '../version';
 
@@ -12,27 +24,31 @@ import { cliVersion } from '../version';
  *
  * Installed hook configs call a stable PATH command (`superskill hook run …`) instead of a
  * plugin-checkout script path or a Claude-only `${CLAUDE_PLUGIN_ROOT}` reference. The dispatcher
- * resolves a known {@link HookRunner} from the registry, hands it stdin + the process env, writes
- * the runner's JSON to stdout, and exits with the runner's code. Unknown `<plugin>/<hook-id>`
- * fails **open** (exit 0 + stderr warning naming the hook and the installed CLI version): an
- * unknown id is a deployment skew (CLI too old for the plugin), not a policy violation — blocking
- * here turns version skew into blocked Stops and agent loops. Known guards keep their own exit
- * codes regardless.
+ * holds no plugin-specific logic. It tries, in order:
+ *
+ * 1. A first-party built-in {@link HookRunner} compiled into the CLI (only this repo's own `cc`
+ *    plugin registers one).
+ * 2. The hook script the plugin ships — `hooks/<id>.{ts,mjs,js}` or `scripts/hooks/<id>.{ts,mjs,js}`
+ *    under the installed plugin root ({@link resolveHookScript}). It runs under Bun with the host
+ *    payload on stdin and its stdout, stderr and exit code are forwarded ({@link runHookScript}).
+ * 3. Nothing found: fail **open** (exit 0 + stderr warning naming the hook and the installed CLI
+ *    version). An unresolvable id is deployment skew, not a policy violation — blocking here turns
+ *    skew into blocked Stops and agent loops.
  *
  * Runners signal: allow → exit 0 (empty stdout, or a Stop runner's canonical JSON). A block takes
  * the channel each host renders cleanly: stdout JSON at exit 0 (`decision:"block"` for
  * Claude/Codex/Hermes Stop, `decision:"deny"` for Gemini/Antigravity, `permissionDecision:"deny"`
- * for PreToolUse). Claude Code treats exit 1 as a non-blocking error and honors stdout JSON only at
- * exit 0, so a block that wants its JSON read must NOT use exit 2. `sp/*` runners delegate to
- * `spur self hook <id>`, which owns its host-shaped output ({@link spurDelegate}).
+ * for PreToolUse), or exit 2 + stderr. Claude Code treats exit 1 as a non-blocking error and honors
+ * stdout JSON only at exit 0. A script answers host-neutrally (`{"decision":"deny","reason":"…"}`)
+ * and the host adapter layer (`../hook-host`) renders that for Claude Code, Codex, omp or Pi.
  */
 
 interface HookRunResult {
     /** JSON string written verbatim to stdout (empty string writes nothing). */
     output: string;
-    /** Optional diagnostic written to stderr (a fail-open cause, or the delegate's own stderr). */
+    /** Optional diagnostic written to stderr (a fail-open cause, or the script's own stderr). */
     stderr?: string;
-    /** Process exit code; 0 for allow and for a JSON-carried block (see the module comment). */
+    /** Process exit code; 0 for allow and for a JSON-carried block, 2 for an exit-code block. */
     exitCode: number;
 }
 
@@ -40,198 +56,347 @@ interface HookRunner {
     run(env: NodeJS.ProcessEnv, stdinText: string, profile?: StopProfile): Promise<HookRunResult>;
 }
 
-/** Process execution port for hook runners that shell out (no-direct-process-spawn: routed via ts-runtime). */
+/** Process execution port for hook scripts (no-direct-process-spawn: routed via ts-runtime). */
 const hookProcessExecutor: ProcessExecutor = new NodeProcessExecutor();
 
-// ── sp/* → `spur self hook <id>` ─────────────────────────────────────────────
-//
-// The sp plugin's hook logic lives in the spur CLI (`spur self hook <id>`, spur script-absorption
-// plan §5). superskill only transports the payload: spawn spur with the host payload on stdin,
-// forward its stdout + exit code, and fail open on every transport failure. No fallback copy of
-// the logic lives here — the plugin hard-requires spur, and a missing spur degrades to "no hook".
+// ── Plugin hook scripts: id → script resolution ─────────────────────────────
 
-/** Kill deadline for guard ids (they gate a tool call, so a slow guard stalls the agent). */
-export const SPUR_GUARD_TIMEOUT_MS = 5000;
-/** Kill deadline for capture/delivery ids (ledger writes, fleet inbox delivery). */
-export const SPUR_CAPTURE_TIMEOUT_MS = 10_000;
+/** Where a plugin root candidate came from (reported in diagnostics and tests). */
+export type PluginRootSource = 'env' | 'claude-plugin-root' | 'claude-cache' | 'omp-cache' | 'grok' | 'staged';
 
-/** Per-id transport policy for {@link spurDelegate}. */
-export interface SpurDelegateOptions {
-    /** Kill spur and fail open after this many ms. */
-    timeoutMs: number;
-    /** Cheap in-process pre-filter: return false to skip the spawn (treated as a silent allow). */
-    shouldSpawn?: (stdinText: string) => boolean;
-    /** Process port; defaults to the shared ts-runtime executor. */
-    executor?: ProcessExecutor;
+/** A resolved hook script. */
+export interface ResolvedHookScript {
+    /** Absolute path of the script file. */
+    script: string;
+    /** The plugin root it was found under (exported to the script as `SUPERSKILL_PLUGIN_ROOT`). */
+    root: string;
+    source: PluginRootSource;
 }
 
-/**
- * Cheap in-process check: could this path plausibly be a Spur task-corpus file?
- *
- * Exists purely to avoid a spur subprocess on paths that cannot be task files (Spur task 0398 R2):
- * editing `src/foo.ts` or `package.json` must not pay a spawn on every Write/Edit, on every agent
- * in every repo with the sp plugin installed.
- *
- * The convention encoded here is already fixed elsewhere in the corpus tooling (Spur's
- * `defaultVerdictRunDir` resolves the same `docs/tasks<N>` / flat-`tasks` layout pair): task files
- * are markdown living under a path segment named `tasks`, optionally digit-suffixed.
- *
- * **Fails toward the spawn.** Anything markdown-shaped naming a `tasks*` segment still goes to
- * spur and lets it decide. A false spawn only costs latency; a false skip would silently disable
- * the write guard.
- *
- * Known limitation: a project that relocates its corpus to a folder not named `tasks*` (via
- * `spur task create --folder`) is not matched, and its task files stop being guarded. That is the
- * same convention the rest of the corpus tooling already assumes; widening it needs a real config
- * surface rather than a guess, which this deliberately does not add.
- */
-export function couldBeTaskCorpusPath(filePath: string): boolean {
-    // Task corpus files are always markdown.
-    if (!/\.md$/i.test(filePath)) return false;
-    // ...living under a `tasks` / `tasks2` / `tasks3` … path segment. Segment match, not substring:
-    // `docs/tasksfoo/x.md` and `docs/my-tasks/x.md` are NOT candidates.
-    return filePath
-        .replace(/\\/g, '/')
-        .split('/')
-        .some((segment) => /^tasks\d*$/i.test(segment));
+/** Filesystem anchors for resolution; injectable for tests. */
+export interface HookScriptLocation {
+    /** User home (defaults to `HOME_DIR`, then the OS home). */
+    home?: string;
+    /** Project root (defaults to `CLAUDE_PROJECT_DIR`, then the process cwd). */
+    cwd?: string;
 }
 
-/** Pre-filter for `task-write-guard`: spawn only when the payload's `tool_input.file_path` could be a task file. */
-export function payloadCouldTouchTaskCorpus(stdinText: string): boolean {
+/** Extensions tried for `<id>`, in order. Bun runs all three. */
+const HOOK_SCRIPT_EXTENSIONS = ['.ts', '.mjs', '.js'] as const;
+/** Directories under a plugin root that may hold hook entrypoints, in order. */
+const HOOK_SCRIPT_DIRS = [['hooks'], ['scripts', 'hooks']] as const;
+
+function isFile(path: string): boolean {
     try {
-        const payload = JSON.parse(stdinText) as { tool_input?: { file_path?: unknown } } | null;
-        const filePath = payload?.tool_input?.file_path;
-        return typeof filePath === 'string' && couldBeTaskCorpusPath(filePath);
+        return statSync(path).isFile();
     } catch {
-        return false; // unparseable payload — spur would fail open on it too
+        return false;
     }
 }
 
-/** `--host` for spur: Claude Code exports `CLAUDE_PROJECT_DIR`; anything else lets spur decide. */
-function spurHookHost(env: NodeJS.ProcessEnv): 'claude' | 'auto' {
-    return env.CLAUDE_PROJECT_DIR ? 'claude' : 'auto';
+function isDir(path: string): boolean {
+    try {
+        return statSync(path).isDirectory();
+    } catch {
+        return false;
+    }
 }
 
-function childEnv(env: NodeJS.ProcessEnv): Record<string, string> {
-    const out: Record<string, string> = {};
-    for (const [key, value] of Object.entries(env)) if (value !== undefined) out[key] = value;
+function listDir(path: string): string[] {
+    try {
+        return readdirSync(path);
+    } catch {
+        return [];
+    }
+}
+
+/** Numeric compare for version dirs like `0.4.1` (non-numeric segments sort lowest). */
+function compareVersions(a: string, b: string): number {
+    const pa = a.split('.').map((p) => Number.parseInt(p, 10));
+    const pb = b.split('.').map((p) => Number.parseInt(p, 10));
+    for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+        const va = Number.isNaN(pa[i] ?? Number.NaN) ? -1 : (pa[i] as number);
+        const vb = Number.isNaN(pb[i] ?? Number.NaN) ? -1 : (pb[i] as number);
+        if (va !== vb) return va - vb;
+    }
+    return 0;
+}
+
+/** Plugin names declared by the root's manifests (`plugin.json`, `.claude-plugin/plugin.json`). */
+function manifestNames(root: string): string[] {
+    const names: string[] = [];
+    for (const manifest of [join(root, 'plugin.json'), join(root, '.claude-plugin', 'plugin.json')]) {
+        try {
+            const name = (JSON.parse(readFileSync(manifest, 'utf-8')) as { name?: unknown }).name;
+            if (typeof name === 'string') names.push(name);
+        } catch {
+            // absent or unreadable manifest
+        }
+    }
+    return names;
+}
+
+/**
+ * True when `root` may serve `plugin`: it is a directory, and no manifest in it names a different
+ * plugin. An env-provided root (`CLAUDE_PLUGIN_ROOT`, `SUPERSKILL_PLUGIN_ROOT`) is inherited by
+ * child processes, so the name check keeps one plugin's root from serving another plugin's hooks.
+ */
+function rootServesPlugin(root: string, plugin: string): boolean {
+    if (!isDir(root)) return false;
+    const names = manifestNames(root);
+    return names.length === 0 || names.includes(plugin);
+}
+
+/**
+ * Ordered plugin-root candidates for `plugin`:
+ *
+ * 1. `SUPERSKILL_PLUGIN_ROOT` — explicit override (a dev checkout, tests).
+ * 2. `CLAUDE_PLUGIN_ROOT` — set by Claude Code for plugin hook commands.
+ * 3. Claude Code plugin cache `<CLAUDE_CONFIG_DIR|~/.claude>/plugins/cache/<marketplace>/<plugin>/<version>/`,
+ *    newest version first.
+ * 4. omp plugin cache `<project|home>/.omp/plugins/cache/plugins/<plugin>___<marketplace>___<version>/`.
+ * 5. Grok `~/.grok/installed-plugins/<plugin>-<hash>/` (manifest name must match).
+ * 6. Staged scripts roots `<project|home>/.agents/scripts/<plugin>/` (rulesync/hermes targets);
+ *    only the `hooks/` subdirectory of a staged root is searched (see {@link resolveHookScript}).
+ */
+export function pluginRootCandidates(
+    plugin: string,
+    env: NodeJS.ProcessEnv,
+    location: HookScriptLocation = {},
+): Array<{ root: string; source: PluginRootSource }> {
+    const home = location.home ?? env.HOME_DIR ?? homedir();
+    const cwd = location.cwd ?? (env.CLAUDE_PROJECT_DIR || process.cwd());
+    const out: Array<{ root: string; source: PluginRootSource }> = [];
+    const add = (root: string, source: PluginRootSource) => {
+        if (rootServesPlugin(root, plugin) && !out.some((c) => c.root === root)) out.push({ root, source });
+    };
+
+    if (env.SUPERSKILL_PLUGIN_ROOT) add(env.SUPERSKILL_PLUGIN_ROOT, 'env');
+    if (env.CLAUDE_PLUGIN_ROOT) add(env.CLAUDE_PLUGIN_ROOT, 'claude-plugin-root');
+
+    const claudeCache = join(env.CLAUDE_CONFIG_DIR ?? join(home, '.claude'), 'plugins', 'cache');
+    const claudeHits: Array<{ version: string; root: string }> = [];
+    for (const marketplace of listDir(claudeCache)) {
+        for (const version of listDir(join(claudeCache, marketplace, plugin))) {
+            claudeHits.push({ version, root: join(claudeCache, marketplace, plugin, version) });
+        }
+    }
+    for (const hit of claudeHits.sort((a, b) => compareVersions(b.version, a.version))) add(hit.root, 'claude-cache');
+
+    for (const scope of [...new Set([cwd, home])]) {
+        const ompCache = join(scope, '.omp', 'plugins', 'cache', 'plugins');
+        const prefix = `${plugin}___`;
+        const hits = listDir(ompCache)
+            .filter((name) => name.startsWith(prefix))
+            .map((name) => ({ version: name.split('___')[2] ?? '', root: join(ompCache, name) }));
+        for (const hit of hits.sort((a, b) => compareVersions(b.version, a.version))) add(hit.root, 'omp-cache');
+    }
+
+    const grokDir = join(home, '.grok', 'installed-plugins');
+    for (const name of listDir(grokDir)) {
+        const root = join(grokDir, name);
+        if (name.startsWith(`${plugin}-`) && manifestNames(root).includes(plugin)) add(root, 'grok');
+    }
+
+    for (const scope of [...new Set([cwd, home])]) add(join(scope, '.agents', 'scripts', plugin), 'staged');
     return out;
 }
 
 /**
- * Re-express a PreToolUse `permissionDecision` JSON through the exit-code channel for hosts other
- * than Claude Code. Codex rejects `permissionDecision:"allow"`/`"ask"` (it marks the hook run failed)
- * and omp's generated hook modules block only on exit 2, so off Claude Code: deny → exit 2 + the
- * reason on stderr, allow/ask → empty stdout at exit 0 (an unconfirmable ask fails open). Returns
- * null for any other output (Stop decisions, `updatedInput` rewrites, silence), which forwards as-is.
+ * Resolve `<plugin>/<id>` to the hook script the plugin ships. Convention (no `hooks.json` field
+ * needed, so hosts that read `hooks.json` verbatim never see an unknown key): the first regular file
+ * among `hooks/<id>.ts|.mjs|.js`, then `scripts/hooks/<id>.ts|.mjs|.js`, under each root of
+ * {@link pluginRootCandidates} in order. A staged scripts root already *is* the plugin's `scripts/`
+ * directory, so only its `hooks/` subdirectory is searched. Returns null when nothing matches or
+ * when `plugin`/`id` is not a single safe path segment.
  */
-export function preToolUseByExitCode(output: string): HookRunResult | null {
-    let parsed: unknown;
+export function resolveHookScript(
+    plugin: string,
+    id: string,
+    env: NodeJS.ProcessEnv,
+    location: HookScriptLocation = {},
+): ResolvedHookScript | null {
     try {
-        parsed = JSON.parse(output);
+        assertSafePathSegment(plugin, 'plugin name');
+        assertSafePathSegment(id, 'hook id');
     } catch {
         return null;
     }
-    if (typeof parsed !== 'object' || parsed === null) return null;
-    const { hookSpecificOutput: hso, systemMessage } = parsed as {
-        hookSpecificOutput?: Record<string, unknown>;
-        systemMessage?: unknown;
-    };
-    if (hso?.hookEventName !== 'PreToolUse' || hso.updatedInput !== undefined) return null;
-    if (hso.permissionDecision !== 'deny') return { output: '', exitCode: 0 };
-    const reason = [hso.permissionDecisionReason, systemMessage].find((r) => typeof r === 'string' && r.trim());
-    return { output: '', exitCode: 2, stderr: (reason as string | undefined) ?? 'blocked by PreToolUse hook' };
+    for (const { root, source } of pluginRootCandidates(plugin, env, location)) {
+        const dirs = source === 'staged' ? [['hooks']] : HOOK_SCRIPT_DIRS;
+        for (const dir of dirs) {
+            for (const ext of HOOK_SCRIPT_EXTENSIONS) {
+                const script = join(root, ...dir, `${id}${ext}`);
+                if (isFile(script)) return { script, root, source };
+            }
+        }
+    }
+    return null;
 }
 
-/** Older spur builds reject `self hook` (Commander) or an id they do not ship (`spur self hook`). */
-const SPUR_UNKNOWN = /unknown (command|option|hook id)/i;
+// ── Plugin hook scripts: execution ──────────────────────────────────────────
+
+/** Deadline when the plugin's `hooks.json` declares no timeout for the id. */
+export const DEFAULT_HOOK_TIMEOUT_MS = 10_000;
+/** Head start taken off a declared host timeout, so `hook run` fails open before the host kills it. */
+export const HOOK_TIMEOUT_MARGIN_MS = 500;
 
 /**
- * A {@link HookRunner} that delegates `<id>` to `${SPUR_BIN:-spur} self hook <id> --host <host>`.
- *
- * Success (spur exit 0, no unknown-id report) forwards spur's stdout and exit code — the
- * host-shaped decision is spur's to produce; off Claude Code a PreToolUse decision is re-expressed
- * as an exit code ({@link preToolUseByExitCode}). Every other outcome fails open: exit 0, no stdout, one
- * stderr line naming the hook and the cause (spur not found, timeout, non-zero exit — e.g. an older
- * spur without `self hook` — or an unknown id). `SPUR_BIN` may carry leading arguments; quote paths
- * containing spaces.
+ * Kill deadline for `<plugin>/<id>`. `SUPERSKILL_HOOK_TIMEOUT_MS` (positive integer) wins. Otherwise
+ * the smallest `timeout` (seconds) that the root's `hooks.json` (`hooks/hooks.json` or `hooks.json`)
+ * declares for a `superskill hook run <plugin> <id>` entry, minus {@link HOOK_TIMEOUT_MARGIN_MS}
+ * (floor 1 s) — the host kills the hook at that timeout, and a kill skips the fail-open path.
+ * Otherwise {@link DEFAULT_HOOK_TIMEOUT_MS}.
  */
-export function spurDelegate(id: string, options: SpurDelegateOptions): HookRunner {
+export function hookScriptTimeoutMs(root: string, plugin: string, id: string, env: NodeJS.ProcessEnv): number {
+    const override = Number(env.SUPERSKILL_HOOK_TIMEOUT_MS);
+    if (Number.isInteger(override) && override > 0) return override;
+    let declared: number | undefined;
+    for (const file of [join(root, 'hooks', 'hooks.json'), join(root, 'hooks.json')]) {
+        let config: { hooks?: Record<string, unknown> };
+        try {
+            config = JSON.parse(readFileSync(file, 'utf-8')) as { hooks?: Record<string, unknown> };
+        } catch {
+            continue;
+        }
+        for (const defs of Object.values(config.hooks ?? {})) {
+            if (!Array.isArray(defs)) continue;
+            for (const entry of flattenCanonicalHookEntries(defs)) {
+                if (hookRunKey(entry.command) !== `${plugin}/${id}`) continue;
+                if (typeof entry.timeout === 'number' && entry.timeout > 0) {
+                    declared = Math.min(declared ?? entry.timeout, entry.timeout);
+                }
+            }
+        }
+        break;
+    }
+    if (declared === undefined) return DEFAULT_HOOK_TIMEOUT_MS;
+    return Math.max(declared * 1000 - HOOK_TIMEOUT_MARGIN_MS, 1000);
+}
+
+/**
+ * The Bun runtime that executes a hook script. superskill itself runs under Bun: the npm bundle via
+ * its `bun` shebang, the standalone binary as an embedded Bun. A plain Bun process reuses its own
+ * executable; a standalone binary prefers `bun` on `PATH`, else re-enters itself as Bun
+ * (`BUN_BE_BUN=1`).
+ */
+export function hookScriptRuntime(env: NodeJS.ProcessEnv): { command: string; env: Record<string, string> } {
+    if (!process.versions.bun) return { command: 'bun', env: {} };
+    const compiled = import.meta.path.startsWith('/$bunfs/') || import.meta.path.includes('~BUN');
+    if (!compiled) return { command: process.execPath, env: {} };
+    const onPath = Bun.which('bun', { PATH: env.PATH ?? '' });
+    return onPath ? { command: onPath, env: {} } : { command: process.execPath, env: { BUN_BE_BUN: '1' } };
+}
+
+function childEnv(env: NodeJS.ProcessEnv, extra: Record<string, string>): Record<string, string> {
+    const out: Record<string, string> = {};
+    for (const [key, value] of Object.entries(env)) if (value !== undefined) out[key] = value;
+    return { ...out, ...extra };
+}
+
+/** Options for {@link runHookScript}. */
+export interface RunHookScriptOptions {
+    plugin: string;
+    id: string;
+    resolved: ResolvedHookScript;
+    timeoutMs: number;
+    profile?: StopProfile;
+    executor?: ProcessExecutor;
+}
+
+/**
+ * Run a resolved plugin hook script: `bun <script>` in the host's cwd, with the normalized payload
+ * on stdin ({@link normalizeHookPayload}) and `SUPERSKILL_PLUGIN_ROOT` (the root it resolved under),
+ * `SUPERSKILL_HOOK_ID`, `SUPERSKILL_HOOK_HOST`, `SUPERSKILL_HOOK_EVENT` and `SUPERSKILL_HOOK_PROFILE`
+ * in its environment.
+ *
+ * - exit 0 + a host-neutral `{"decision",…}` on stdout → rendered for the host
+ *   ({@link translateHookResult}); exit 0 + Claude-native JSON → verbatim on Claude Code (a bare
+ *   PreToolUse allow is dropped — {@link isPreToolUseAllow}), PreToolUse decisions re-expressed elsewhere ({@link preToolUseByExitCode}); exit 0 + anything else → forwarded.
+ * - exit 2 → the block signal: stdout, stderr and exit 2 forwarded.
+ * - spawn failure, deadline hit (child killed), or any other exit status → fail open: exit 0, no
+ *   stdout, one stderr line naming the hook and the cause, then the script's own stderr.
+ */
+export async function runHookScript(
+    env: NodeJS.ProcessEnv,
+    stdinText: string,
+    options: RunHookScriptOptions,
+): Promise<HookRunResult> {
+    const { plugin, id, resolved, timeoutMs } = options;
     const executor = options.executor ?? hookProcessExecutor;
-    const failOpen = (cause: string): HookRunResult => ({
+    const failOpen = (cause: string, detail = ''): HookRunResult => ({
         output: '',
         exitCode: 0,
-        stderr: `superskill hook run sp ${id}: ${cause}; failing open (exit 0).`,
+        stderr: `superskill hook run ${plugin} ${id}: ${cause}; failing open (exit 0).${detail ? `\n${detail}` : ''}`,
     });
-    return {
-        async run(env, stdinText) {
-            if (options.shouldSpawn && !options.shouldSpawn(stdinText)) return { output: '', exitCode: 0 };
-            const parts = parseCommandArgv(env.SPUR_BIN?.trim() || 'spur');
-            const command = parts[0] ?? 'spur';
-            const args = [...parts.slice(1), 'self', 'hook', id, '--host', spurHookHost(env)];
-            let child: PipeProcess;
-            try {
-                child = executor.runStreaming({ command, args, env: childEnv(env), envMode: 'replace' });
-            } catch (error) {
-                const code = (error as NodeJS.ErrnoException).code;
-                return failOpen(
-                    code === 'ENOENT' ? `'${command}' not found (install spur or set SPUR_BIN)` : `spawn failed`,
-                );
-            }
-            try {
-                child.writeStdin(stdinText);
-                child.endStdin();
-            } catch {
-                // spur may exit before reading stdin; its exit status decides below
-            }
-            let timer: ReturnType<typeof setTimeout> | undefined;
-            const deadline = new Promise<'timeout'>((resolve) => {
-                timer = setTimeout(() => resolve('timeout'), options.timeoutMs);
-            });
-            const finished = Promise.all([
-                child.exited,
-                child.stdout ? new Response(child.stdout).text() : Promise.resolve(''),
-                child.stderr ? new Response(child.stderr).text() : Promise.resolve(''),
-            ]);
-            const outcome = await Promise.race([finished, deadline]);
-            clearTimeout(timer);
-            if (outcome === 'timeout') {
-                child.kill('SIGKILL');
-                return failOpen(`spur timed out after ${options.timeoutMs} ms`);
-            }
-            const [exitCode, stdout, stderr] = outcome;
-            if (exitCode !== 0 || SPUR_UNKNOWN.test(stderr)) {
-                const why = SPUR_UNKNOWN.test(stderr)
-                    ? `spur does not know 'self hook ${id}' (upgrade spur)`
-                    : `spur exited ${exitCode ?? 'by signal'}`;
-                return failOpen(why);
-            }
-            const output = stdout.replace(/\n+$/, '');
-            const adapted = env.CLAUDE_PROJECT_DIR ? null : preToolUseByExitCode(output);
-            if (adapted) return adapted;
-            const trimmedErr = stderr.trim();
-            return { output, exitCode, ...(trimmedErr ? { stderr: trimmedErr } : {}) };
-        },
+    const runtime = hookScriptRuntime(env);
+    const host = detectHookHost(env);
+    const payload = normalizeHookPayload(stdinText, env);
+    const event = hookEventOf(payload, env);
+    const extra: Record<string, string> = {
+        ...runtime.env,
+        SUPERSKILL_PLUGIN_ROOT: resolved.root,
+        SUPERSKILL_HOOK_ID: id,
+        SUPERSKILL_HOOK_HOST: host,
+        SUPERSKILL_HOOK_PROFILE: options.profile ?? 'block',
+        ...(event ? { SUPERSKILL_HOOK_EVENT: event } : {}),
     };
+    let child: PipeProcess;
+    try {
+        child = executor.runStreaming({
+            command: runtime.command,
+            args: [resolved.script],
+            env: childEnv(env, extra),
+            envMode: 'replace',
+        });
+    } catch (error) {
+        const code = (error as NodeJS.ErrnoException).code;
+        return failOpen(code === 'ENOENT' ? `runtime '${runtime.command}' not found (install bun)` : 'spawn failed');
+    }
+    try {
+        child.writeStdin(payload);
+        child.endStdin();
+    } catch {
+        // the script may exit before reading stdin; its exit status decides below
+    }
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const deadline = new Promise<'timeout'>((resolve) => {
+        timer = setTimeout(() => resolve('timeout'), timeoutMs);
+    });
+    const finished = Promise.all([
+        child.exited,
+        child.stdout ? new Response(child.stdout).text() : Promise.resolve(''),
+        child.stderr ? new Response(child.stderr).text() : Promise.resolve(''),
+    ]);
+    const outcome = await Promise.race([finished, deadline]);
+    clearTimeout(timer);
+    if (outcome === 'timeout') {
+        child.kill('SIGKILL');
+        return failOpen(`${resolved.script} timed out after ${timeoutMs} ms`);
+    }
+    const [exitCode, stdout, stderr] = outcome;
+    const trimmedErr = stderr.trim();
+    if (exitCode !== 0 && exitCode !== 2) {
+        return failOpen(`${resolved.script} exited ${exitCode ?? 'by signal'}`, trimmedErr.slice(0, 2000));
+    }
+    const output = stdout.replace(/\n+$/, '');
+    const withScriptErr = (r: HookRunResult): HookRunResult => {
+        const err = [r.stderr, trimmedErr].filter(Boolean).join('\n');
+        return err ? { ...r, stderr: err } : { output: r.output, exitCode: r.exitCode };
+    };
+    if (exitCode === 0) {
+        const neutral = parseNeutralResult(output);
+        if (neutral) return withScriptErr(translateHookResult(neutral, host, event, options.profile));
+        // Legacy: Claude-native JSON. Verbatim on Claude Code, minus a bare PreToolUse allow (it
+        // would auto-approve the call); elsewhere re-express the PreToolUse decision as an exit code.
+        if (host === 'claude' && isPreToolUseAllow(output)) return withScriptErr({ output: '', exitCode: 0 });
+        const adapted = host === 'claude' ? null : preToolUseByExitCode(output);
+        if (adapted) return withScriptErr(adapted);
+    }
+    return withScriptErr({ output, exitCode });
 }
 
-/**
- * sp hook ids served by spur, mirroring `spur self hook list` and the sp plugin's `hooks.json`.
- * Only the transport policy is known here: guards get the short deadline, and the write guard keeps
- * its spawn-avoiding pre-filter. Adding an id is one line; its behavior lives entirely in spur.
- */
-const SP_SPUR_HOOKS: Record<string, Omit<SpurDelegateOptions, 'executor'>> = {
-    'task-write-guard': { timeoutMs: SPUR_GUARD_TIMEOUT_MS, shouldSpawn: payloadCouldTouchTaskCorpus },
-    'careful-guard': { timeoutMs: SPUR_GUARD_TIMEOUT_MS },
-    'context-post-tool': { timeoutMs: SPUR_CAPTURE_TIMEOUT_MS },
-    'context-session-start': { timeoutMs: SPUR_CAPTURE_TIMEOUT_MS },
-    'context-session-stop': { timeoutMs: SPUR_CAPTURE_TIMEOUT_MS },
-    // Detached `spur agent report`; hooks.json gives it a 5 s host timeout, so match it.
-    'agent-lifecycle': { timeoutMs: SPUR_GUARD_TIMEOUT_MS },
-    'fleet-guest-stop': { timeoutMs: SPUR_CAPTURE_TIMEOUT_MS },
-};
-
-// ── cc/anti-hallucination ───────────────────────────────────────────────────
+// ── cc/anti-hallucination (first-party built-in) ────────────────────────────
 /**
  * Stop hook: block the agent from stopping when its last message claims external facts without the
  * anti-hallucination protocol (source citations / confidence level / verification-tool evidence).
@@ -257,32 +422,49 @@ const ccAntiHallucination: HookRunner = {
 
 // ── Registry + dispatcher ────────────────────────────────────────────────────
 
+/**
+ * First-party built-in runners, compiled into the CLI (ADR-022). Only this repo's own plugin
+ * registers here; every other plugin's hooks resolve to the scripts the plugin ships.
+ */
 const HOOK_RUNNERS: Record<string, HookRunner> = {
-    ...Object.fromEntries(Object.entries(SP_SPUR_HOOKS).map(([id, opts]) => [`sp/${id}`, spurDelegate(id, opts)])),
     'cc/anti-hallucination': ccAntiHallucination,
 };
 
-/** Resolve and run a hook runner, writing its output to stdout and returning the exit code. */
+/** Resolve and run a hook, writing its output to stdout and returning the exit code. */
 export async function hookRun(
     plugin: string,
     hookId: string,
     env: NodeJS.ProcessEnv,
     stdinText: string,
     profile?: StopProfile,
+    location: HookScriptLocation = {},
 ): Promise<number> {
+    let result: HookRunResult;
     const runner = HOOK_RUNNERS[`${plugin}/${hookId}`];
-    if (!runner) {
-        // Fail open: an unknown hook id signals plugin/CLI version skew (the installed plugin
-        // emits a hook the running CLI doesn't recognize), not a policy violation. Blocking here
-        // would turn version skew into blocked Stops and stuck agent loops. Warn loudly and allow.
-        echoError(
-            `Warning: unknown hook '${plugin} ${hookId}' (superskill ${cliVersion}). ` +
-                `This usually means the installed plugin expects a newer CLI than the one on PATH. ` +
-                `Known hooks: ${Object.keys(HOOK_RUNNERS).join(', ')}. Failing open (exit 0).`,
-        );
-        return 0;
+    if (runner) {
+        result = await runner.run(env, stdinText, profile);
+    } else {
+        const resolved = resolveHookScript(plugin, hookId, env, location);
+        if (!resolved) {
+            // Fail open: no built-in runner and no hook script means plugin/CLI skew or an
+            // incomplete install, not a policy violation. Blocking here would turn skew into
+            // blocked Stops and stuck agent loops. Warn loudly and allow.
+            echoError(
+                `Warning: unknown hook '${plugin} ${hookId}' (superskill ${cliVersion}): no built-in runner ` +
+                    `and no hooks/${hookId}.{ts,mjs,js} or scripts/hooks/${hookId}.{ts,mjs,js} under an ` +
+                    `installed '${plugin}' plugin root (set SUPERSKILL_PLUGIN_ROOT to point at one). ` +
+                    `Built-in hooks: ${Object.keys(HOOK_RUNNERS).join(', ')}. Failing open (exit 0).`,
+            );
+            return 0;
+        }
+        result = await runHookScript(env, stdinText, {
+            plugin,
+            id: hookId,
+            resolved,
+            timeoutMs: hookScriptTimeoutMs(resolved.root, plugin, hookId, env),
+            profile,
+        });
     }
-    const result = await runner.run(env, stdinText, profile);
     // WHY conditional: echo('') writes '\n' (writeLine always appends a newline). A bare newline
     // on stdout makes Codex try to parse it as JSON and fail open noisily. Only emit when non-empty.
     if (result.output) echo(result.output);
@@ -293,7 +475,7 @@ export async function hookRun(
 /** Register `superskill hook run <plugin> <hook-id>` under the hook command group. */
 export function registerHookRun(cmd: Command, readInput?: () => string): void {
     cmd.command('run <plugin> <hook-id>')
-        .description('Run a registered plugin hook runner (the runtime command installed hook configs call)')
+        .description("Run a plugin hook: a built-in runner, else the plugin's own hooks/<hook-id> script")
         .option(
             '--profile <block|deny>',
             'prevent-stop output profile (block: Claude/Codex/Hermes; deny: Gemini/Antigravity)',

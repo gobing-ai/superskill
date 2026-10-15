@@ -7,6 +7,7 @@ export default (pi) => {
   pi.on('%%EVENT%%', (event) => {
 %%MATCHER_GUARD%%    const result = spawnSync(%%COMMAND_LITERAL%%, %%ARGS_LITERAL%%, {
       input: JSON.stringify(event),
+      env: { ...process.env, SUPERSKILL_HOOK_HOST: 'omp', SUPERSKILL_HOOK_EVENT: %%CANONICAL_EVENT_LITERAL%% },
       encoding: 'utf-8'%%TIMEOUT_ARG%%,
     });
 %%BLOCK_LOGIC%%  });

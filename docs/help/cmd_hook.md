@@ -64,14 +64,14 @@ superskill hook emit my-plugin --target hermes --dry-run
 superskill hook run <plugin> <hook-id>
 ```
 
-Installed hook configs invoke this stable PATH command instead of a plugin-checkout script path or a Claude-only `${CLAUDE_PLUGIN_ROOT}` reference. The dispatcher (`commands/hook-run.ts`) resolves a runner from its registry by `<plugin>/<hook-id>`, hands it stdin + the process env, writes the runner's Claude-canonical hook JSON to stdout, and exits with the runner's code.
+Installed hook configs invoke this stable PATH command instead of a plugin-checkout script path or a Claude-only `${CLAUDE_PLUGIN_ROOT}` reference. The dispatcher (`commands/hook-run.ts`) has no plugin-specific code. It runs a first-party built-in runner when one exists. Otherwise it runs the plugin's own `hooks/<hook-id>.ts` (or `scripts/hooks/<hook-id>.ts`, `.mjs`/`.js`) from the installed plugin root under Bun, with the payload on stdin.
 
 | Runner | Event | Behavior |
 |--------|-------|----------|
-| `sp/<id>` — `task-write-guard`, `careful-guard`, `context-post-tool`, `context-session-start`, `context-session-stop`, `agent-lifecycle`, `fleet-guest-stop` | per sp `hooks.json` | Delegated to `spur self hook <id>` (`spur self hook list` describes each id). superskill only transports the payload and fails open when spur is missing, times out, exits non-zero, or does not know the id; `task-write-guard` skips the spawn unless the path could be a task file. Shapes and deadlines: [04 §`sp/*` hook delegation](../04_DESIGN.md). |
-| `cc/anti-hallucination` | `Stop` | Blocks stop when the last assistant message claims external facts without source citations / confidence / verification-tool evidence. Fails open (allow stop) on empty/invalid `ARGUMENTS`. |
+| `<plugin>/<hook-id>` (any plugin) | per the plugin's `hooks.json` | Runs the plugin-shipped script. Pi/omp payloads are normalized to the canonical shape. A host-neutral `{"decision":"allow\|deny\|ask\|block","reason"}` result is rendered for Claude Code / Codex / omp / Pi. Fails open (exit 0 + one stderr line) on spawn failure, timeout (declared `timeout` − 500 ms) or a non-0/2 exit. Contract and tables: [04 §Plugin hook scripts](../04_DESIGN.md); author guide: [How to write a hook](how_to_organize_scripts_for_plugin_development.md#how-to-write-a-hook). |
+| `cc/anti-hallucination` (built-in) | `Stop` | Blocks stop when the last assistant message claims external facts without source citations / confidence / verification-tool evidence. Fails open (allow stop) on empty/invalid `ARGUMENTS`. |
 
-Runners emit Claude canonical hook JSON (PreToolUse `permissionDecision` / Stop `decision:"block"` on a block). Agents that cannot parse that shape fail open (treat as allow) — the intended cross-agent default. Unknown `<plugin>/<hook-id>` fails open: exit 0 plus a stderr warning naming the installed CLI version (ADR-020).
+`SUPERSKILL_PLUGIN_ROOT=<dir>` points `hook run` at a plugin checkout (no install needed). An id with neither a built-in runner nor a script fails open: exit 0 plus a stderr warning naming the searched layout and the installed CLI version (ADR-020).
 
 ## How it's implemented
 
@@ -174,6 +174,7 @@ For `pi` and `omp`, canonical hook event names (camelCase) map to Pi lifecycle e
 | `apps/cli/src/rubrics/hook.yaml` | Rubric criteria + weights + anchors |
 | `apps/cli/src/hooks.ts` | Canonical → Pi-hooks conversion; `emitPiStyleHooks` / `emitHermesHooks` |
 | `apps/cli/src/commands/install.ts` | `emitHooksForSurrogateTarget` (reused by `hook emit`) |
-| `apps/cli/src/commands/hook-run.ts` | `run` subcommand: dispatcher + runner registry (`sp/*` → `spurDelegate`, `cc/anti-hallucination`); `hookRun`, `registerHookRun` |
+| `apps/cli/src/commands/hook-run.ts` | `run` subcommand: built-in registry (`cc/anti-hallucination`), plugin hook-script resolution + runner; `hookRun`, `resolveHookScript`, `runHookScript`, `registerHookRun` |
+| `apps/cli/src/hook-host.ts` | Host adapters: Pi/omp payload normalization, neutral-result → Claude/Codex/omp/Pi translation |
 
 The shared modules (`operations/*.ts`, `commands/helpers.ts`, `quality/dimensions.ts`, `store/*`) are documented in [`cmd_agent.md`](cmd_agent.md#key-source-files).
