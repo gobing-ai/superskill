@@ -1,5 +1,7 @@
 # `superskill install`
 
+Confidence: HIGH — Pi version claims cite `@earendil-works/pi-coding-agent@…` package anchors verified by end-to-end RPC/print runs.
+
 Distribute a Claude Code plugin's skills, commands, subagents, **magents** (main-agent configs), hooks, and MCP config to any supported target coding agent. Hooks are routed through a separate rulesync pass so each target reaches its native hook generator.
 
 ## How to use it
@@ -241,7 +243,7 @@ flowchart LR
     end
 ```
 
-`omp` and `grok` install natively via their own plugin CLIs (no rulesync pass); `hermes` reuses `opencode`'s rulesync output (ADR-010). Claude, omp, grok, and hermes have no rulesync mapping and are skipped by `runRulesync()`. The hooks map omits `pi`/`omp`/`grok`/`hermes` — `pi`/`omp` get hooks via the pi-hooks surrogate shim; `grok` consumes `hooks.json` natively; `hermes` gets a verbatim `hooks.json` copy.
+`omp` and `grok` install natively via their own plugin CLIs (no rulesync pass); `hermes` reuses `opencode`'s rulesync output (ADR-010). Claude, omp, grok, and hermes have no rulesync mapping and are skipped by `runRulesync()`. The hooks map omits `pi`/`omp`/`grok`/`hermes` — `pi` gets generated native extension modules, `omp` native hook modules; `grok` consumes `hooks.json` natively; `hermes` gets a verbatim `hooks.json` copy.
 
 ### Stage 4 — Generate target outputs
 
@@ -259,7 +261,7 @@ For targets rulesync does not cover, superskill either installs natively (omp, g
 
 - **`hermes`** — copies `opencode` rulesync skills to `~/.hermes/skills/`, then `emitHermesHooks()` copies the canonical `hooks.json` to `~/.hermes/hooks.json`.
 - **`omp`** — installs natively via `omp plugin install` (full plugin tree at `~/.omp/plugins/cache/`); `generateOmpHookModules()` reconciles plugin-owned native modules under `hooks/pre/` and `hooks/post/`. The separate `hook emit` operation uses Pi-style `@vahor/pi-hooks` config at `~/.omp/agent/hooks.json`.
-- **`pi`** — rulesync emits skills (to `~/.agents/skills/`) but not hooks; `emitPiStyleHooks()` fills the gap with the `@vahor/pi-hooks` shim and replaces the installing plugin's previous projection while preserving user and foreign-plugin entries.
+- **`pi`** — rulesync emits skills (to `~/.agents/skills/`) but not hooks; `emitPiNativeHooks()` (`pi-hooks.ts`) generates one native Pi extension module per hook in `~/.pi/agent/extensions/` (project: `.pi/extensions/`). It replaces the installing plugin's previous modules and prunes its legacy `@vahor/pi-hooks` entries, preserving user and foreign-plugin files. Verified on `@earendil-works/pi-coding-agent@1.2.0` (also `@earendil-works/pi-coding-agent@0.85.1`). A plugin with `plugin.json` `extensions.pi` installs its own extensions instead.
 - **`grok`** — installs natively via `grok plugin install <path> --trust` (full plugin tree at `~/.grok/installed-plugins/<plugin>-<hash>/`); no hook shim, direct Claude-format plugin.
 
 Hook emission results are always surfaced (no silent drop) — each `EmitHooksResult.message` is printed to stdout.
@@ -295,8 +297,8 @@ sequenceDiagram
     RS->>FS: write skills/commands/subagents to ~/.agents, Pi dirs
     RS-->>CLI: GenerateResult counts
 
-    CLI->>H: emitPiStyleHooks(pi rulesync dir, ~, ".pi", "pi", options, plugin)
-    H->>FS: write ~/.pi/hooks.json (pi-hooks format)
+    CLI->>H: emitPiNativeHooks(pi rulesync dir, ~, options, plugin)
+    H->>FS: write ~/.pi/agent/extensions/superskill-<plugin>-<hook>.ts
     H-->>CLI: EmitHooksResult
 
     CLI-->>User: "Installed 'cc' to 2 target(s)."
@@ -307,7 +309,8 @@ sequenceDiagram
 | File | Role |
 | ------ | ------ |
 | `apps/cli/src/commands/install.ts` | Command registration, `executeInstall()` orchestration, target dispatch |
-| `apps/cli/src/hooks.ts` | Canonical → Pi-hooks conversion; `emitPiStyleHooks` / `emitHermesHooks` |
+| `apps/cli/src/hooks.ts` | Canonical → Pi-hooks conversion (omp `hook emit`); `emitPiStyleHooks` / `emitHermesHooks` |
+| `apps/cli/src/pi-hooks.ts` | Native Pi hook extension modules; `emitPiNativeHooks` |
 | `packages/core/src/marketplace.ts` | Plugin resolution from marketplace manifest (Zod-validated) |
 | `packages/core/src/mapper.ts` | Plugin → `.rulesync/` canonical layout mapping |
 | `packages/core/src/rulesync.ts` | Thin programmatic wrapper over `rulesync.generate()` |
@@ -322,7 +325,7 @@ sequenceDiagram
 
 ### Design notes
 
-- **ADR-010 (surrogate targets)** — `hermes` has no rulesync engine of its own; it reuses `opencode` rulesync output, then superskill copies the generated files and emits `hooks.json` verbatim. `omp` and `grok` install natively via their own plugin CLIs (no rulesync pass), so they receive the full Claude-format plugin tree. `pi` uses the `codexcli` rulesync output for skills (`~/.agents/skills/`) but needs `emitPiStyleHooks()` to convert hooks to `@vahor/pi-hooks` format.
+- **ADR-010 (surrogate targets)** — `hermes` has no rulesync engine of its own; it reuses `opencode` rulesync output, then superskill copies the generated files and emits `hooks.json` verbatim. `omp` and `grok` install natively via their own plugin CLIs (no rulesync pass), so they receive the full Claude-format plugin tree. `pi` uses the `codexcli` rulesync output for skills (`~/.agents/skills/`) but needs `emitPiNativeHooks()` to turn hooks into native Pi extension modules.
 - **`outputRoots` is mandatory** — `runRulesync()` always passes `outputRoots: [homedir() | cwd()]`. Relying on rulesync's default (`process.cwd()`) would write to the wrong place.
 - **Hooks are never silently dropped** — every `EmitHooksResult.message` is echoed, even in non-verbose mode, so the user knows what hook shims were installed.
 - **`--dry-run`** propagates through rulesync (`dryRun: true`) and skips all filesystem copies and the `claude plugin install` spawn.

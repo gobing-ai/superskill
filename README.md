@@ -102,8 +102,10 @@ rulesync output and adds a canonical `hooks.json` copy at `~/.hermes/hooks.json`
 
 Pi loads extensions natively from a plugin's `plugin.json` `extensions.pi` array (v0.3.12+),
 installing them to `.pi/agent/plugins/<plugin>/` with generated `package.json` and
-`settings.json` registration — no `@vahor/pi-hooks` dependency required. Plugins without
-`extensions.pi` fall back to the `@vahor/pi-hooks` hook-emit path.
+`settings.json` registration. Plugins without `extensions.pi` get their `hooks.json` hooks as
+generated native Pi extension modules (`~/.pi/agent/extensions/superskill-<plugin>-<hook>.ts`):
+deny blocks the tool call, `ask` opens Pi's confirm dialog, and a Stop block continues the run.
+No `@vahor/pi-hooks` dependency (ADR-039).
 
 Grok loads the Claude-format plugin natively — slash form is `/plugin:command`
 (e.g. `/cc:skill-add`). Codex/Pi-installed skills under `~/.agents/` may also

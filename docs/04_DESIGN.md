@@ -373,13 +373,13 @@ Project = `CLAUDE_PROJECT_DIR`, else cwd. Home = `HOME_DIR`, else the OS home.
 | --- | --- |
 | `SUPERSKILL_PLUGIN_ROOT` | the root the script resolved under |
 | `SUPERSKILL_HOOK_ID` | `<id>` |
-| `SUPERSKILL_HOOK_HOST` | `claude` \| `omp` \| `pi` \| `generic` (an inbound value wins; else `claude` when `CLAUDE_PROJECT_DIR` is set; generated omp modules set `omp`) |
+| `SUPERSKILL_HOOK_HOST` | `claude` \| `omp` \| `pi` \| `generic` (an inbound value wins; else `claude` when `CLAUDE_PROJECT_DIR` is set; generated omp modules set `omp`, generated Pi extensions set `pi`) |
 | `SUPERSKILL_HOOK_EVENT` | canonical event (`PreToolUse`, `Stop`, …): payload `hook_event_name`, else the inbound value (generated omp modules set it) |
 | `SUPERSKILL_HOOK_PROFILE` | `--profile` value (`block` default) |
 
 Deadline: `SUPERSKILL_HOOK_TIMEOUT_MS` (positive integer), else the smallest `timeout` (s) the root's `hooks/hooks.json` or `hooks.json` declares for `superskill hook run <plugin> <id>`, minus 500 ms (floor 1 s), else 10 s.
 
-**Payload in** (`normalizeHookPayload`, `apps/cli/src/hook-host.ts`). A payload carrying `hook_event_name` or `tool_name` passes through. A Pi/omp event becomes `{hook_event_name, tool_name, tool_input, tool_response?, session_id?, cwd, host_event}`. Tools map `read/write/edit/bash/grep/find|glob` → `Read/Write/Edit/Bash/Grep/Glob`, `path` → `file_path`, `edits[].oldText/newText` → `old_string/new_string`, and `content` text parts → `tool_response.content`. Events map `tool_call/tool_result/agent_end/session_start/session_shutdown/session_before_compact` → `PreToolUse/PostToolUse/Stop/SessionStart/SessionEnd/PreCompact`.
+**Payload in** (`normalizeHookPayload`, `apps/cli/src/hook-host.ts`). A payload carrying `hook_event_name` or `tool_name` passes through. A Pi/omp event becomes `{hook_event_name, tool_name, tool_input, tool_response?, session_id?, cwd, host_event}`. Tools map `read/write/edit/bash/grep/find|glob` → `Read/Write/Edit/Bash/Grep/Glob`, `path` → `file_path`, `edits[].oldText/newText` → `old_string/new_string`, and `content` text parts → `tool_response.content`. Events map `tool_call/tool_result/agent_end/session_start/session_shutdown/session_before_compact/input` → `PreToolUse/PostToolUse/Stop/SessionStart/SessionEnd/PreCompact/UserPromptSubmit`; a Pi `input` event's `text` becomes `prompt`, and a boolean `stop_hook_active` (set by the generated Pi Stop module) is carried through.
 
 **Result out.** Script exit 0 with stdout `{"decision":"allow"|"deny"|"ask"|"block","reason"?}` (`deny` ≡ `block`) is rendered by `translateHookResult`:
 
@@ -388,22 +388,37 @@ Deadline: `SUPERSKILL_HOOK_TIMEOUT_MS` (positive integer), else the smallest `ti
 | `PreToolUse`, host `claude` | `permissionDecision:"deny"` JSON + reason, exit 0 | `permissionDecision:"ask"` JSON, exit 0 | nothing, exit 0 |
 | `PreToolUse`, other hosts | exit 2, reason on stderr | exit 2, reason on stderr (cannot confirm; fails closed) | nothing, exit 0 |
 | `Stop`/`SubagentStop`/`UserPromptSubmit`/`PostToolUse`, host `claude`/`generic` | `{"decision":"block","reason"}` (`"deny"` under `--profile deny`, except `PostToolUse`), exit 0 | as allow | nothing, exit 0 |
-| same events, host `omp`/`pi`; any other or unknown event | exit 2, reason on stderr | as allow | nothing, exit 0 |
+| same events, host `omp`; any other or unknown event (non-Pi) | exit 2, reason on stderr | as allow | nothing, exit 0 |
+| any event, host `pi` | `{"decision":"deny","reason"}` on stdout, exit 0 | `PreToolUse`: `{"decision":"ask","reason"}`, exit 0; else as allow | nothing, exit 0 |
 
-An `ask` is a confirmation request. Only Claude Code (and a native Pi extension that reads the neutral decision and calls `ctx.ui.confirm`) can show one. On every other host — and on Pi when `hook run` is reached only via the exit-code channel — an unconfirmable ask is rendered as a deny carrying the reason, so a safety guard cannot silently pass. Hook errors, timeouts and missing scripts still fail open (ADR-020).
+An `ask` is a confirmation request. Only Claude Code and Pi (whose generated extension gets the neutral decision and calls `ctx.ui.confirm`, blocking when Pi has no UI) can show one. On every other host an unconfirmable ask is rendered as a deny carrying the reason, so a safety guard cannot silently pass. Hook errors, timeouts and missing scripts still fail open (ADR-020).
 
 Other script outcomes:
 
 | Script outcome | `hook run` result |
 | --- | --- |
-| exit 0, Claude-native JSON (`hookSpecificOutput…`) | host `claude`: verbatim, except a bare PreToolUse `permissionDecision:"allow"` (no `updatedInput`), which is dropped because it would auto-approve the call. Elsewhere a PreToolUse `permissionDecision` becomes deny/ask → exit 2 + reason (`permissionDecisionReason`, else `systemMessage`), allow → nothing |
+| exit 0, Claude-native JSON (`hookSpecificOutput…`) | host `claude`: verbatim, except a bare PreToolUse `permissionDecision:"allow"` (no `updatedInput`), which is dropped because it would auto-approve the call. Host `pi`: a PreToolUse `permissionDecision` is read as the neutral result (`neutralFromClaudePreToolUse`) and rendered as above, so a legacy `ask` still reaches the confirm. Elsewhere a PreToolUse `permissionDecision` becomes deny/ask → exit 2 + reason (`permissionDecisionReason`, else `systemMessage`), allow → nothing |
 | exit 0, any other stdout | forwarded (trailing newlines trimmed) |
 | exit 2 | stdout, stderr and exit 2 forwarded |
 | spawn failure, deadline hit (child `SIGKILL`ed), any other exit status | exit 0, no stdout, stderr `superskill hook run <plugin> <id>: <cause>; failing open (exit 0).` then the script's stderr (≤ 2000 chars) |
 
 The script's own stderr is always forwarded after any adapter stderr.
 
-**Pi (designed, not shipped).** Pi still gets `hooks.json` commands through the `@vahor/pi-hooks` shim, which cannot carry an `ask` confirm or a Stop continuation. The designed adapter reuses the omp generator, because omp is a Pi fork with the same `pi.on` API. It emits one native extension module per declared hook into Pi's extensions dir. Each module spawns `superskill hook run` with `SUPERSKILL_HOOK_HOST=pi` and `SUPERSKILL_HOOK_EVENT`. Exit 2 maps to `{block: true, reason}`, and a neutral `ask` maps to `ctx.ui.confirm`, which needs a structured channel back from `hook run` (for example `--host pi` emitting the neutral JSON as-is). That lets a plugin drop a bespoke Pi extension.
+**Pi native adapter (`apps/cli/src/pi-hooks.ts`, template `templates/pi-hook-extension.txt`).** Pi has no declarative hooks, so `superskill install --targets pi` (and `hook emit --target pi`) turns each command hook of the plugin's `hooks.json` into one generated extension module, `superskill-<plugin>-<hook>.ts`, in Pi's auto-discovered extensions dir: `~/.pi/agent/extensions/` (global) or `<project>/.pi/extensions/` (project; Pi loads it only once the project is trusted). Repeated stems get `-2`, `-3`, … in canonical order. The `@vahor/pi-hooks` shim is no longer used or required. A plugin that declares its own Pi extensions (`plugin.json` `extensions.pi`) keeps them and gets no generated modules.
+
+Each module subscribes `pi.on(<event>)`, runs the hook command through the shell (as every host does) with the Pi event as JSON on stdin (plus `sessionId` from `ctx.sessionManager.getSessionId()`), `cwd = ctx.cwd`, and `SUPERSKILL_HOOK_HOST=pi`, `SUPERSKILL_HOOK_EVENT=<canonical event>`. For `superskill hook run`, the host `pi` row above means the module receives the script's decision itself as JSON. It also understands a Claude-style PreToolUse `permissionDecision` and exit 2 + stderr, so non-superskill commands work too. The module's deadline is the hook's `timeout` (s), else 60 s; it kills the command's process group on expiry. A spawn failure, a timeout, any exit other than 0/2, or unparseable output allows (fail open).
+
+| Canonical event | Pi event | `deny`/`block` | `ask` |
+| --- | --- | --- | --- |
+| `PreToolUse` | `tool_call` | `{block: true, reason}` | `ctx.ui.confirm(title, reason)`: confirmed → allow, declined → `{block: true, reason: "Declined by user: …"}`; `ctx.hasUI` false (print/JSON mode) → block, reason says no UI was available |
+| `PostToolUse` | `tool_result` | the tool already ran: `[<plugin>/<hook>] <reason>` is appended to the result `content` the model sees; the tool's `structuredContent` (Pi 1.x, e.g. `bash`) is returned unchanged so the replacement does not drop it | allow |
+| `Stop` | `agent_end` | continuation: `pi.sendMessage({customType: "superskill-hook", content: reason, display: true}, {deliverAs: "followUp", triggerTurn: true})`; Pi runs another turn with the reason, and the next `agent_end` payload carries `stop_hook_active: true` (the loop guard Claude Code provides) | allow |
+| `UserPromptSubmit` (rulesync: `beforeSubmitPrompt`) | `input` (skips `source: "extension"`, i.e. the continuation itself) | `{action: "handled"}` (prompt dropped) + `ctx.ui.notify(reason)` | allow |
+| `SessionStart` / `SessionEnd` / `PreCompact` | `session_start` / `session_shutdown` / `session_before_compact` | not vetoable (as on Claude Code): `ctx.ui.notify(reason, "warning")` when a UI exists | allow |
+
+Matchers apply to `tool_call`/`tool_result`, as a case-insensitive regex tested against the Pi tool name and its canonical name (`find` ↔ `Glob`, `bash` ↔ `Bash`, …). Ownership: each module carries the superskill banner and `// Plugin: <plugin>`; a reinstall deletes that plugin's modules first and prunes its entries from the legacy shim config (`~/.pi/agent/hooks.json` / `.pi/hooks.json`) so no hook runs twice. User and other plugins' entries stay. Install receipts list the modules.
+
+Degraded by design, against Pi's extension API (`@earendil-works/pi-coding-agent@1.2.0`, `dist/core/extensions/types.d.ts`; same surface on `@earendil-works/pi-coding-agent@0.85.1`): `ask` with no UI blocks, since there is no one to confirm; `SubagentStop`, `Notification` and other Claude-only events have no Pi equivalent and are skipped; a hook cannot rewrite tool input (`updatedInput`) or inject `additionalContext` through this adapter. Verified end-to-end on `@earendil-works/pi-coding-agent@1.2.0` (and re-checked on `@earendil-works/pi-coding-agent@0.85.1`) in RPC mode (confirm answered over the extension UI protocol) and print mode, with a scripted OpenAI-compatible model: deny, ask confirmed / declined / no-UI block, PostToolUse annotation, UserPromptSubmit drop and Stop continuation with `stop_hook_active`.
 
 ### Stdin payload contract (`script run` / `hook run`)
 

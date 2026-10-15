@@ -89,5 +89,5 @@ Since `@gobing-ai/ts-ai-runner@0.3.21`, `omp`, `hermes`, and `antigravity-cli` a
 | **antigravity-cli** commands/subagents | Rulesync doesn't support `antigravity-cli` for commands/subagents (only `antigravity` project-level). |
 | **Hermes hooks format** | Superskill writes `hooks.json`; Hermes expects `~/.hermes/hooks/<name>/HOOK.yaml` + `handler.py`. |
 | **Hermes commands** | No `commands/` directory. Install commands as skills for slash-command auto-discovery. |
-| **Pi/omp hooks → extensions** | Legacy pi-hooks shim should migrate to the Extensions format. |
+| **omp hooks (`hook emit`)** | `hook emit --target omp` still writes the legacy pi-hooks shim config; `install` uses native omp modules. Pi hooks are native extensions (ADR-039). |
 | **OpenClaw agents/hooks** | OpenClaw reads skills from `~/.agents/skills/` (implicitly covered). Dedicated agent YAML config and webhook-based hooks are not managed by superskill. |

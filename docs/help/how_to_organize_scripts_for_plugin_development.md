@@ -217,9 +217,11 @@ Try it from a checkout without installing:
 
 Where superskill looks for the script (Claude Code / omp / Grok plugin caches, `CLAUDE_PLUGIN_ROOT`,
 staged roots), the exact host translation table and the fail-open rules:
-[04 §Plugin hook scripts](../04_DESIGN.md). Pi still runs hooks through the `@vahor/pi-hooks`
-command shim (no `ask` confirm, no Stop continuation); a generated native Pi adapter is designed
-there.
+[04 §Plugin hook scripts](../04_DESIGN.md). On Pi, `superskill install` generates one native
+extension module per hook, so the same script's `deny` blocks the tool call, its `ask` opens Pi's
+confirm dialog (it blocks when Pi runs without a UI), and a Stop `block` makes Pi take another turn
+with your reason. The next Stop payload has `stop_hook_active: true`; allow then to avoid a loop.
+No Pi-specific code and no `@vahor/pi-hooks` install are needed.
 
 ## Decision tree
 
@@ -279,4 +281,4 @@ Is it triggered by a host hook event (Stop/PreToolUse/…)?
 | `superskill script run <plugin> <id>` + `ScriptRunner` registry (optional contract, non-hook) | Shipped (task 0087); `cc/validate-response` registered |
 | `superskill hook run <plugin> <id>` (current hook form) | Shipped (v0.2.19+). Runs the plugin's own `hooks/<id>` script with host-neutral in/out (ADR-039); `cc/anti-hallucination` is a compiled built-in |
 | Hook-path unification (hooks on staged paths instead of `hook run`) | Superseded by ADR-039: the runtime form stays `hook run`, which resolves the plugin-shipped script under native plugin roots and staged `.agents/scripts/<plugin>/hooks/` |
-| Native Pi hook adapter (generated extension modules, `ask` → confirm) | **Designed** ([04 §Plugin hook scripts](../04_DESIGN.md)); Pi uses the `@vahor/pi-hooks` command shim meanwhile |
+| Native Pi hook adapter (generated extension modules, `ask` → confirm, Stop continuation) | Shipped ([04 §Plugin hook scripts](../04_DESIGN.md)); replaces the `@vahor/pi-hooks` shim. Reinstall a plugin to Pi to switch over |

@@ -153,17 +153,19 @@ sequenceDiagram
         Cmd->>Cmd: surrogate = hermes→opencode, else pi
         Cmd->>Cmd: prepareTargetRulesyncInput(".rulesync", surrogate)
         Cmd->>H: emitHooksForSurrogateTarget(target, surrogateDir, outputRoot, options, plugin)
-        H->>H: emitPiStyleHooks or emitHermesHooks
-        H->>FS: write ~/.pi/hooks.json or ~/.hermes/hooks.json
+        H->>H: emitPiNativeHooks (pi), emitPiStyleHooks (omp) or emitHermesHooks
+        H->>FS: write ~/.pi/agent/extensions/superskill-<plugin>-<hook>.ts, ~/.omp/agent/hooks.json or ~/.hermes/hooks.json
         H-->>Cmd: {count, message}
     end
 
     Cmd-->>User: "Emitted N hook(s) to pi."
 ```
 
-### Hook conversion (canonical → Pi format)
+### Hook conversion (canonical → Pi native extensions)
 
-For `pi` and `omp`, canonical hook event names (camelCase) map to Pi lifecycle events via `CANONICAL_HOOK_EVENTS` in `hooks.ts`. `emitPiStyleHooks` converts the canonical `hooks.json` into the `@vahor/pi-hooks` format and reconciles entries owned by the emitted plugin before adding its current target-policy result. This removes stale event mappings and policy-excluded hooks without touching user hooks or other plugins. For `hermes`, `emitHermesHooks` copies the canonical `hooks.json` verbatim.
+For `pi`, `emitPiNativeHooks` (`pi-hooks.ts`) writes one native Pi extension module per command hook, `superskill-<plugin>-<hook>.ts`, into `~/.pi/agent/extensions/` (global) or `.pi/extensions/` (project). Each module maps its Pi event (`tool_call`, `tool_result`, `agent_end`, `input`, `session_start`, `session_shutdown`, `session_before_compact`) to a `superskill hook run` invocation with `SUPERSKILL_HOOK_HOST=pi`. It then applies the returned decision: deny blocks, `ask` → `ctx.ui.confirm`, Stop block → follow-up continuation. Full table: [04 §Plugin hook scripts](../04_DESIGN.md). The plugin's previous modules and its legacy `@vahor/pi-hooks` entries in Pi's `hooks.json` are removed first; user hooks and other plugins are untouched. Existing Pi installs keep running through the shim until the plugin is reinstalled (or `hook emit --target pi` is run).
+
+For `omp`, `hook emit` still writes the Pi-style `@vahor/pi-hooks` config (`emitPiStyleHooks`, events via `CANONICAL_HOOK_EVENTS`); `superskill install` uses omp's native plugin CLI plus generated `hooks/pre|post` modules. For `hermes`, `emitHermesHooks` copies the canonical `hooks.json` verbatim.
 
 ### Key source files
 
@@ -172,9 +174,10 @@ For `pi` and `omp`, canonical hook event names (camelCase) map to Pi lifecycle e
 | `apps/cli/src/commands/hook.ts` | Commander registration (6 subcommands: validate/evaluate/refine/evolve/emit + `run` registered via `registerHookRun`) + `emitHook` |
 | `apps/cli/src/quality/hook.ts` | Hook-specific dimension evaluators (correctness, event-coverage, safety, pattern-match-quality) |
 | `apps/cli/src/rubrics/hook.yaml` | Rubric criteria + weights + anchors |
-| `apps/cli/src/hooks.ts` | Canonical → Pi-hooks conversion; `emitPiStyleHooks` / `emitHermesHooks` |
+| `apps/cli/src/hooks.ts` | Canonical → Pi-hooks (omp `hook emit`) conversion; `emitPiStyleHooks` / `emitHermesHooks`; per-target hook policy |
+| `apps/cli/src/pi-hooks.ts` + `templates/pi-hook-extension.txt` | Native Pi hook extensions: `emitPiNativeHooks`, ownership pruning, legacy shim pruning |
 | `apps/cli/src/commands/install.ts` | `emitHooksForSurrogateTarget` (reused by `hook emit`) |
 | `apps/cli/src/commands/hook-run.ts` | `run` subcommand: built-in registry (`cc/anti-hallucination`), plugin hook-script resolution + runner; `hookRun`, `resolveHookScript`, `runHookScript`, `registerHookRun` |
-| `apps/cli/src/hook-host.ts` | Host adapters: Pi/omp payload normalization, neutral-result → Claude/Codex/omp/Pi translation |
+| `apps/cli/src/hook-host.ts` | Host adapters: Pi/omp payload normalization, neutral-result → Claude/Codex/omp/Pi translation (Pi gets the neutral JSON itself) |
 
 The shared modules (`operations/*.ts`, `commands/helpers.ts`, `quality/dimensions.ts`, `store/*`) are documented in [`cmd_agent.md`](cmd_agent.md#key-source-files).
