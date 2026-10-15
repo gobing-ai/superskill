@@ -244,7 +244,7 @@ superskill hook evolve <name> --ingest <proposal.json> --accept <id>
 | `antigravity-ide` | `antigravity-ide` | ✅ | `runRulesync` emits native config |
 | `gemini` | `geminicli` | ✅ | `runRulesync` emits native config |
 | `cursor` | `cursor` | ✅ | `runRulesync` emits native config |
-| `pi` | — | shim | `emitPiStyleHooks` → `.pi/hooks.json` (`@vahor/pi-hooks` format) |
+| `pi` | — | native | `emitPiNativeHooks` → `~/.pi/agent/extensions/superskill-<plugin>-<hook>.ts` (one Pi extension per hook; deny/ask/Stop continuation) |
 | `omp` | — | shim | `emitPiStyleHooks` → `.omp/hooks.json` (reuses pi format) |
 | `hermes` | — | copy | `emitHermesHooks` → `.hermes/hooks.json` (canonical copy) |
 

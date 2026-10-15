@@ -127,9 +127,9 @@ describe('executeInstall — minCliVersion compat gate', () => {
         const output = stdout.mock.calls.map((call) => String(call[0])).join('');
         // No compat warning
         expect(output).not.toContain('Hooks will be skipped');
-        // Pi hooks written
-        expect(output).toContain('@vahor/pi-hooks');
-        expect(existsSync(join(workspace, '.pi', 'hooks.json'))).toBe(true);
+        // Pi hooks written as a native extension module
+        expect(output).toContain('native extension module');
+        expect(existsSync(join(workspace, '.pi', 'extensions', 'superskill-nofloor-g.ts'))).toBe(true);
 
         stdout.mockRestore();
     });
@@ -150,7 +150,7 @@ describe('executeInstall — minCliVersion compat gate', () => {
 
         const output = stdout.mock.calls.map((call) => String(call[0])).join('');
         expect(output).not.toContain('Hooks will be skipped');
-        expect(existsSync(join(workspace, '.pi', 'hooks.json'))).toBe(true);
+        expect(existsSync(join(workspace, '.pi', 'extensions', 'superskill-lowfloor-guard.ts'))).toBe(true);
 
         stdout.mockRestore();
     });

@@ -80,6 +80,7 @@ import {
     writeHooksForTarget,
 } from '../hooks';
 import { generateOmpHookModules, type OmpHookResult } from '../omp-hooks';
+import { emitPiNativeHooks, listPiHookModules, piExtensionsDir } from '../pi-hooks';
 import { SCRIPT_STAMP_FILENAME, snapshotScriptRootFiles, writeScriptStamp } from '../script-stamp';
 import { cliVersion } from '../version';
 import { createGrokBotRegisterAction, type GrokBotRegisterActionArgs } from './install-post-actions';
@@ -1094,7 +1095,8 @@ export async function executeInstall(
             }
 
             // Pi reaches generate() but rulesync emits no hooks for it (hooks column blank, §1 table).
-            // Rung (b): pi extensions from plugin.json or @vahor/pi-hooks format (design §1.2)
+            // A plugin's own Pi extensions (plugin.json `extensions.pi`) win; otherwise its hooks.json
+            // becomes generated native Pi extension modules (ADR-039, pi-hooks.ts).
             if (target === 'pi') {
                 // Try reading platform extensions from plugin.json first
                 // Format: { "extensions": { "pi": ["./hooks/pi/guard-extension.ts"], ... } }
@@ -1111,7 +1113,7 @@ export async function executeInstall(
                             piExtensions = platformExtensions.pi as string[];
                         }
                     } catch {
-                        // Unparseable plugin.json — ignore, fall through to emitPiStyleHooks
+                        // Unparseable plugin.json — ignore, fall through to emitPiNativeHooks
                     }
                 }
 
@@ -1173,17 +1175,15 @@ export async function executeInstall(
                         if (options.verbose) echo(`  Pi extensions: installed to ${piPluginsDir}`);
                     }
                 } else if (!hooksBlockedByCliVersion) {
-                    // Fallback: emit hooks for @vahor/pi-hooks format
-                    const hookResult = emitPiStyleHooks(
+                    // Native Pi hook extensions: one generated module per hook, no shim dependency.
+                    const hookResult = emitPiNativeHooks(
                         rulesyncSourceRoot(targetInputRoots.get('pi'), outputDir),
                         outputRoot,
-                        '.pi',
-                        'pi',
                         { dryRun: options.dryRun, global: options.global },
                         plugin,
                     );
                     hookEmitResults.push(hookResult);
-                    if (hookResult.path) addReceiptFiles(target, expandInstallPaths(outputRoot, [hookResult.path]));
+                    if (!options.dryRun && hookResult.files.length > 0) addReceiptFiles(target, hookResult.files);
                     if (options.verbose) echo(`  ${hookResult.message}`);
                 } else if (options.verbose) {
                     echo('  Pi hooks: skipped (CLI below plugin minCliVersion)');
@@ -2381,7 +2381,7 @@ export function emitHooksForSurrogateTarget(
     plugin: string,
 ): EmitHooksResult | null {
     if (target === 'pi') {
-        return emitPiStyleHooks(rulesyncSourceDir, outputRoot, '.pi', 'pi', options, plugin);
+        return emitPiNativeHooks(rulesyncSourceDir, outputRoot, options, plugin);
     }
     if (target === 'omp') {
         return emitPiStyleHooks(rulesyncSourceDir, outputRoot, '.omp', 'omp', options, plugin);
@@ -2503,6 +2503,7 @@ function enumeratePluginOwnedDests(
         files.push(...pluginPrefixedEntries(join(scopeRoot, '.pi', 'agent', 'agents'), plugin));
         const piPluginDir = join(scopeRoot, '.pi', 'agent', 'plugins', plugin);
         if (existsSync(piPluginDir)) files.push(...listRegularFilesUnder(piPluginDir));
+        files.push(...listPiHookModules(piExtensionsDir(scopeRoot, useGlobalSkillsLayout), plugin));
     }
     if (target === 'codex') {
         files.push(...pluginPrefixedEntries(join(scopeRoot, '.codex', 'agents'), plugin));

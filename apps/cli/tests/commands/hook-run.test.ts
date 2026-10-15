@@ -371,6 +371,24 @@ describe('hook run — script execution and host translation', () => {
         expect(await run('claude-allow', pre)).toEqual({ code: 0, out: '', err: '' });
     });
 
+    it('hands Pi the decision itself: neutral ask/deny JSON at exit 0, legacy Claude-native included', async () => {
+        const pi = { SUPERSKILL_HOOK_HOST: 'pi' };
+        expect(await run('ask', pre, pi)).toEqual({ code: 0, out: '{"decision":"ask","reason":"sure?"}\n', err: '' });
+        expect(await run('deny', pre, pi)).toEqual({ code: 0, out: '{"decision":"deny","reason":"nope"}\n', err: '' });
+        expect(await run('block', stop, pi)).toEqual({
+            code: 0,
+            out: '{"decision":"deny","reason":"inbox"}\n',
+            err: '',
+        });
+        expect(await run('claude-ask', pre, pi)).toEqual({
+            code: 0,
+            out: '{"decision":"ask","reason":"legacy ask"}\n',
+            err: '',
+        });
+        expect(await run('claude-allow', pre, pi)).toEqual({ code: 0, out: '', err: '' });
+        expect(await run('ask', stop, pi)).toEqual({ code: 0, out: '', err: '' });
+    });
+
     it('drops a legacy bare PreToolUse allow on Claude Code too (it would auto-approve the call)', async () => {
         expect(await run('claude-allow', pre, claude)).toEqual({ code: 0, out: '', err: '' });
     });

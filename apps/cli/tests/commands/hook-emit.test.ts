@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, spyOn } from 'bun:test';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { hookEmit } from '../../src/commands/hook';
@@ -42,7 +42,7 @@ afterEach(() => {
 });
 
 describe('hookEmit — single-target hook emission (F029)', () => {
-    it('emits pi hooks via the surrogate shim path in project scope', async () => {
+    it('emits pi hooks as native extension modules in project scope', async () => {
         const workspace = createTempWorkspace();
         createPlugin(workspace, 'pihooks');
 
@@ -51,15 +51,15 @@ describe('hookEmit — single-target hook emission (F029)', () => {
         const output = stdout.mock.calls.map((c) => String(c[0])).join('');
         stdout.mockRestore();
 
-        // Surrogate shim emits to .pi/hooks.json (project scope)
-        const piPath = join(workspace, '.pi', 'hooks.json');
-        expect(existsSync(piPath)).toBe(true);
-        const piHooks = JSON.parse(readFileSync(piPath, 'utf-8'));
-        // camelCase → snake_case event mapping (@vahor/pi-hooks format)
-        expect(piHooks.hooks.session_start).toContain('echo "session start"');
-        expect(piHooks.hooks.agent_end).toContain('echo "agent stop"');
-        // Message surfaces the rung-b result
-        expect(output).toContain('pi');
+        // Native modules land in Pi's project extensions dir, one per hook, Pi event per canonical event
+        const extDir = join(workspace, '.pi', 'extensions');
+        expect(existsSync(join(workspace, '.pi', 'hooks.json'))).toBe(false);
+        const modules = readdirSync(extDir).map((f) => readFileSync(join(extDir, f), 'utf-8'));
+        const session = modules.find((m) => m.includes('const EVENT = "session_start";'));
+        const stop = modules.find((m) => m.includes('const EVENT = "agent_end";'));
+        expect(session).toContain('const COMMAND = "echo \\"session start\\"";');
+        expect(stop).toContain('const COMMAND = "echo \\"agent stop\\"";');
+        expect(output).toContain('native extension module');
     });
 
     it('emits omp hooks via the surrogate shim path', async () => {

@@ -174,7 +174,7 @@ pi install npm:@hsingjui/pi-hooks
 | Tool input modification | Native `updatedInput` | N/A | Native (pi-hooks) | N/A |
 | Context injection | Native `additionalContext` | N/A | Native (pi-hooks) | N/A |
 
-> ¹ **Stop continuation on Pi:** `@hsingjui/pi-hooks` is a separate block-capable adapter. superskill's pi emitter generates `@vahor/pi-hooks` (fire-and-forget — no block), so superskill does **not** wire prevent-stop hooks to pi. The `cc/anti-hallucination` Stop hook is gated to Claude, Codex, Antigravity (CLI/IDE), and Hermes only — OpenCode/omp/pi/Grok cannot prevent stop, so it is not emitted there (no false-security no-op).
+> ¹ **Stop continuation on Pi:** superskill's Pi target generates native Pi extension modules (ADR-039). A Stop hook's `block` queues its reason as a follow-up message, so Pi takes another turn, and the next Stop payload carries `stop_hook_active: true`. The `cc/anti-hallucination` Stop hook stays gated to Claude, Codex, Antigravity (CLI/IDE), and Hermes, because the cc plugin ships its own native Pi settlement extension (`plugin.json` `extensions.pi`). OpenCode/omp/Grok cannot prevent stop, so it is not emitted there (no false-security no-op).
 
 ## Recommendations
 

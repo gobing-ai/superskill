@@ -835,9 +835,10 @@ result alongside plugin-manifest rows and never writes a lock directly.
    show a confirmation (Codex, omp, Hermes, …), so a safety guard cannot silently pass; only Claude
    Code and a native Pi `ctx.ui.confirm` honor ask as ask. Every failure to resolve, spawn or finish
    still fails open, with the deadline taken from the plugin's own declared `timeout` so `hook run`
-   exits before the host kills it. Pi still consumes hooks through the `@vahor/pi-hooks` command
-   shim. A generated native Pi extension (one module per declared hook, like the omp generator, with
-   `ctx.ui.confirm` for `ask`) is the designed next step; see 04 §Plugin hook scripts.
+   exits before the host kills it. Pi consumes hooks through generated native extension modules
+   (one per declared hook, `apps/cli/src/pi-hooks.ts`) that apply the neutral decision with Pi
+   primitives: block, `ctx.ui.confirm` for `ask` (blocked when Pi has no UI), a follow-up message
+   for Stop continuation. See 04 §Plugin hook scripts.
 10. **Config precedence is explicit.** CLI marketplace and target flags override JSONC defaults;
     configured plugin paths precede ambient discovery. Feature filters are applied during mapping,
     and native installers reject unsupported partial filters before mutation.

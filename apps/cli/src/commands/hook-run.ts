@@ -10,6 +10,7 @@ import {
     detectHookHost,
     hookEventOf,
     isPreToolUseAllow,
+    neutralFromClaudePreToolUse,
     normalizeHookPayload,
     parseNeutralResult,
     preToolUseByExitCode,
@@ -385,7 +386,7 @@ export async function runHookScript(
         return err ? { ...r, stderr: err } : { output: r.output, exitCode: r.exitCode };
     };
     if (exitCode === 0) {
-        const neutral = parseNeutralResult(output);
+        const neutral = parseNeutralResult(output) ?? (host === 'pi' ? neutralFromClaudePreToolUse(output) : null);
         if (neutral) return withScriptErr(translateHookResult(neutral, host, event, options.profile));
         // Legacy: Claude-native JSON. Verbatim on Claude Code, minus a bare PreToolUse allow (it
         // would auto-approve the call); elsewhere re-express the PreToolUse decision as an exit code.

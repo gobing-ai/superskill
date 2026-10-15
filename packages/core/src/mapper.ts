@@ -300,7 +300,8 @@ export function mapPluginToRulesync(
 
     // Plugin-level runtime library — a plugin may ship a `lib/` sibling next to
     // `scripts/` whose staged entrypoints import it as `../lib/<file>` from the
-    // shared scripts root (sp plugin). Stage it at the same relative position or
+    // shared scripts root (e.g. a plugin that bundles its hook entrypoints against a
+    // shared runtime). Stage it at the same relative position or
     // the staged entrypoints load a stale/absent lib. Verbatim copy: lib output is
     // generated, and the skill-reference rewrite could corrupt bundle content.
     const pluginLibDir = join(pluginPath, 'lib');
