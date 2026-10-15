@@ -386,15 +386,17 @@ Deadline: `SUPERSKILL_HOOK_TIMEOUT_MS` (positive integer), else the smallest `ti
 | Event | `deny`/`block` | `ask` | `allow` / no output |
 | --- | --- | --- | --- |
 | `PreToolUse`, host `claude` | `permissionDecision:"deny"` JSON + reason, exit 0 | `permissionDecision:"ask"` JSON, exit 0 | nothing, exit 0 |
-| `PreToolUse`, other hosts | exit 2, reason on stderr | nothing, exit 0 (cannot confirm; fails open) | nothing, exit 0 |
+| `PreToolUse`, other hosts | exit 2, reason on stderr | exit 2, reason on stderr (cannot confirm; fails closed) | nothing, exit 0 |
 | `Stop`/`SubagentStop`/`UserPromptSubmit`/`PostToolUse`, host `claude`/`generic` | `{"decision":"block","reason"}` (`"deny"` under `--profile deny`, except `PostToolUse`), exit 0 | as allow | nothing, exit 0 |
 | same events, host `omp`/`pi`; any other or unknown event | exit 2, reason on stderr | as allow | nothing, exit 0 |
+
+An `ask` is a confirmation request. Only Claude Code (and a native Pi extension that reads the neutral decision and calls `ctx.ui.confirm`) can show one. On every other host — and on Pi when `hook run` is reached only via the exit-code channel — an unconfirmable ask is rendered as a deny carrying the reason, so a safety guard cannot silently pass. Hook errors, timeouts and missing scripts still fail open (ADR-020).
 
 Other script outcomes:
 
 | Script outcome | `hook run` result |
 | --- | --- |
-| exit 0, Claude-native JSON (`hookSpecificOutput…`) | host `claude`: verbatim, except a bare PreToolUse `permissionDecision:"allow"` (no `updatedInput`), which is dropped because it would auto-approve the call. Elsewhere a PreToolUse `permissionDecision` becomes deny → exit 2 + reason (`permissionDecisionReason`, else `systemMessage`), allow/ask → nothing |
+| exit 0, Claude-native JSON (`hookSpecificOutput…`) | host `claude`: verbatim, except a bare PreToolUse `permissionDecision:"allow"` (no `updatedInput`), which is dropped because it would auto-approve the call. Elsewhere a PreToolUse `permissionDecision` becomes deny/ask → exit 2 + reason (`permissionDecisionReason`, else `systemMessage`), allow → nothing |
 | exit 0, any other stdout | forwarded (trailing newlines trimmed) |
 | exit 2 | stdout, stderr and exit 2 forwarded |
 | spawn failure, deadline hit (child `SIGKILL`ed), any other exit status | exit 0, no stdout, stderr `superskill hook run <plugin> <id>: <cause>; failing open (exit 0).` then the script's stderr (≤ 2000 chars) |

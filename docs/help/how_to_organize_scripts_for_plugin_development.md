@@ -185,9 +185,11 @@ That's all. The script contract:
 - **Output:** print nothing (allow / capture-only hooks), or one host-neutral JSON object
   `{"decision": "allow" | "deny" | "ask" | "block", "reason": "…"}` and exit 0. superskill renders it
   per host and event: a Claude `permissionDecision`, a Codex/omp exit 2, or a Stop
-  `decision:"block"`. Don't print Claude's `permissionDecision:"allow"`: it would bypass the user's
-  permission rules, so `hook run` drops it. Exit 2 + stderr remains a raw block; any other non-zero exit, a crash or a
-  timeout fails open.
+  `decision:"block"`. An `ask` is a confirmation request: Claude Code (and a native Pi extension
+  with `ctx.ui.confirm`) honor it; everywhere else it becomes a deny carrying the reason so a
+  safety guard cannot silently pass. Don't print Claude's `permissionDecision:"allow"`: it would
+  bypass the user's permission rules, so `hook run` drops it. Exit 2 + stderr remains a raw block;
+  any other non-zero exit, a crash or a timeout fails open.
 - **Deadline:** your declared `timeout` minus 500 ms, after which the script is killed and the hook
   fails open.
 

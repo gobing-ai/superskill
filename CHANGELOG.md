@@ -15,6 +15,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 - refactor(hook-run): all `sp`-specific code. That covers the in-CLI `sp/*` context runners, `runSpTaskWriteGuard`, the `couldBeTaskCorpusPath` pre-filter, the sp plugin-file import (`loadSpPluginDelegate`/`resolveSpPluginScript`) and the interim `spur self hook` delegate. sp's existing `hooks.json` works unchanged: its seven `hooks/<id>.ts` scripts now resolve and run through the generic path, including `careful-guard`, `agent-lifecycle` and `fleet-guest-stop`, which used to silently no-op.
 
+### Changed
+
+- fix(hook-run): an unconfirmable `ask` on `PreToolUse` fails closed as a deny carrying the reason (exit 2 + stderr) on hosts without a confirm UI (Codex, omp, Hermes, …). Claude Code still gets `permissionDecision:"ask"`. Hook errors/timeouts/missing scripts still fail open (ADR-020).
+
 ### Fixed
 
 - fix(grok-bot): treat host-rewritten bridge pointers as healthy when `canonical:` still targets the owned recipe (stops 113× owned-drift after Bot `update_state` register); still refuse canonical drift, full-mode edits, and unowned extras

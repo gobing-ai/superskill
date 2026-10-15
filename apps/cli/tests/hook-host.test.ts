@@ -142,9 +142,21 @@ describe('translateHookResult', () => {
             stderr: 'blocked by hook',
             exitCode: 2,
         });
+        // Hosts without a confirm UI (Codex/omp/pi-via-exit-code) fail closed on ask.
+        expect(translateHookResult({ decision: 'ask', reason: 'q' }, 'generic', 'PreToolUse')).toEqual({
+            output: '',
+            stderr: 'q',
+            exitCode: 2,
+        });
+        expect(translateHookResult({ decision: 'ask', reason: 'q' }, 'omp', 'PreToolUse')).toEqual({
+            output: '',
+            stderr: 'q',
+            exitCode: 2,
+        });
         expect(translateHookResult({ decision: 'ask', reason: 'q' }, 'pi', 'PreToolUse')).toEqual({
             output: '',
-            exitCode: 0,
+            stderr: 'q',
+            exitCode: 2,
         });
     });
 
@@ -173,11 +185,12 @@ describe('preToolUseByExitCode (legacy Claude-native output off Claude Code)', (
     const pre = (decision: string, extra: Record<string, unknown> = {}) =>
         JSON.stringify({ hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: decision, ...extra } });
 
-    it('drops allow/ask, turns deny into exit 2 + reason, and leaves other output alone', () => {
+    it('drops allow, turns deny/ask into exit 2 + reason, and leaves other output alone', () => {
         expect(preToolUseByExitCode(pre('allow'))).toEqual({ output: '', exitCode: 0 });
         expect(preToolUseByExitCode(pre('ask', { permissionDecisionReason: 'sure?' }))).toEqual({
             output: '',
-            exitCode: 0,
+            exitCode: 2,
+            stderr: 'sure?',
         });
         expect(preToolUseByExitCode(JSON.stringify({ ...JSON.parse(pre('deny')), systemMessage: 'via sm' }))).toEqual({
             output: '',
@@ -185,6 +198,7 @@ describe('preToolUseByExitCode (legacy Claude-native output off Claude Code)', (
             stderr: 'via sm',
         });
         expect(preToolUseByExitCode(pre('deny'))?.stderr).toBe('blocked by PreToolUse hook');
+        expect(preToolUseByExitCode(pre('ask'))?.stderr).toBe('blocked by PreToolUse hook');
         expect(preToolUseByExitCode(pre('allow', { updatedInput: { command: 'ls' } }))).toBeNull();
         expect(preToolUseByExitCode('{"decision":"block","reason":"x"}')).toBeNull();
         expect(preToolUseByExitCode('')).toBeNull();

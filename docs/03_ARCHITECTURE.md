@@ -831,11 +831,13 @@ result alongside plugin-manifest rows and never writes a lock directly.
    differences live in one adapter layer (`apps/cli/src/hook-host.ts`): Pi/omp payloads are
    normalized to the canonical Claude-style shape before the script reads stdin, and a host-neutral
    result is rendered per host and event afterwards. Scripts that print Claude-native JSON keep
-   working. Every failure to resolve, spawn or finish fails open, with the deadline taken from the
-   plugin's own declared `timeout` so `hook run` exits before the host kills it. Pi still consumes
-   hooks through the `@vahor/pi-hooks` command shim. A generated native Pi extension (one module per
-   declared hook, like the omp generator, with `ctx.ui.confirm` for `ask`) is the designed next
-   step; see 04 §Plugin hook scripts.
+   working. An `ask` on `PreToolUse` becomes a deny carrying the reason on any host that cannot
+   show a confirmation (Codex, omp, Hermes, …), so a safety guard cannot silently pass; only Claude
+   Code and a native Pi `ctx.ui.confirm` honor ask as ask. Every failure to resolve, spawn or finish
+   still fails open, with the deadline taken from the plugin's own declared `timeout` so `hook run`
+   exits before the host kills it. Pi still consumes hooks through the `@vahor/pi-hooks` command
+   shim. A generated native Pi extension (one module per declared hook, like the omp generator, with
+   `ctx.ui.confirm` for `ask`) is the designed next step; see 04 §Plugin hook scripts.
 10. **Config precedence is explicit.** CLI marketplace and target flags override JSONC defaults;
     configured plugin paths precede ambient discovery. Feature filters are applied during mapping,
     and native installers reject unsupported partial filters before mutation.

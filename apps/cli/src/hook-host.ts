@@ -144,9 +144,9 @@ export function normalizeHookPayload(stdinText: string, env: NodeJS.ProcessEnv, 
 /**
  * Re-express a Claude-native PreToolUse `permissionDecision` JSON through the exit-code channel
  * for hosts other than Claude Code. Codex rejects `permissionDecision:"allow"`/`"ask"` (it marks
- * the hook run failed) and omp's generated hook modules block only on exit 2, so: deny → exit 2 +
- * the reason on stderr, allow/ask → empty stdout at exit 0 (an unconfirmable ask fails open).
- * Returns null for any other output (Stop decisions, `updatedInput` rewrites, silence).
+ * the hook run failed) and omp's generated hook modules block only on exit 2, so: deny/ask →
+ * exit 2 + the reason on stderr (an unconfirmable ask fails closed), allow → empty stdout at
+ * exit 0. Returns null for any other output (Stop decisions, `updatedInput` rewrites, silence).
  */
 export function preToolUseByExitCode(output: string): HookHostOutput | null {
     let parsed: unknown;
@@ -161,7 +161,9 @@ export function preToolUseByExitCode(output: string): HookHostOutput | null {
         systemMessage?: unknown;
     };
     if (hso?.hookEventName !== 'PreToolUse' || hso.updatedInput !== undefined) return null;
-    if (hso.permissionDecision !== 'deny') return { output: '', exitCode: 0 };
+    if (hso.permissionDecision !== 'deny' && hso.permissionDecision !== 'ask') {
+        return { output: '', exitCode: 0 };
+    }
     const reason = [hso.permissionDecisionReason, systemMessage].find((r) => typeof r === 'string' && r.trim());
     return { output: '', exitCode: 2, stderr: (reason as string | undefined) ?? 'blocked by PreToolUse hook' };
 }
@@ -218,10 +220,14 @@ const DECISION_JSON_EVENTS = new Set(['Stop', 'SubagentStop', 'UserPromptSubmit'
  * | event | `deny`/`block` | `ask` | `allow` |
  * | --- | --- | --- | --- |
  * | `PreToolUse`, Claude Code | `permissionDecision:"deny"` JSON, exit 0 | `permissionDecision:"ask"` JSON, exit 0 | nothing |
- * | `PreToolUse`, other hosts | exit 2, reason on stderr | nothing (cannot confirm — fails open) | nothing |
+ * | `PreToolUse`, other hosts | exit 2, reason on stderr | exit 2, reason on stderr (cannot confirm — fails closed) | nothing |
  * | `Stop`/`SubagentStop`/`UserPromptSubmit`/`PostToolUse`, Claude Code / generic | `{"decision":"block","reason"}` (`"deny"` under `--profile deny`), exit 0 | as allow | nothing |
  * | the same events, omp/pi | exit 2, reason on stderr | as allow | nothing |
  * | any other or unknown event | exit 2, reason on stderr | as allow | nothing |
+ *
+ * An `ask` is a confirmation request. Only Claude Code (and a native Pi extension that reads the
+ * neutral decision itself) can show one; everywhere else it becomes a deny carrying the reason so
+ * a safety guard cannot silently pass. Hook errors / timeouts / missing scripts still fail open.
  *
  * `allow` never emits a Claude `permissionDecision:"allow"`: that would bypass the user's
  * permission rules, while a neutral allow only means "this hook has no objection".
@@ -247,7 +253,10 @@ export function translateHookResult(
                 exitCode: 0,
             };
         }
-        return stop ? { output: '', stderr: reason, exitCode: 2 } : { output: '', exitCode: 0 };
+        // Non-Claude hosts have no confirm UI: treat ask like deny (fail closed).
+        return stop || result.decision === 'ask'
+            ? { output: '', stderr: reason, exitCode: 2 }
+            : { output: '', exitCode: 0 };
     }
     if (!stop) return { output: '', exitCode: 0 };
     if (DECISION_JSON_EVENTS.has(event) && (host === 'claude' || host === 'generic')) {

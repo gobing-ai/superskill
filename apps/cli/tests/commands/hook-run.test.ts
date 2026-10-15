@@ -346,9 +346,14 @@ describe('hook run — script execution and host translation', () => {
         expect(JSON.parse(ask.out).hookSpecificOutput.permissionDecision).toBe('ask');
     });
 
-    it('renders a neutral PreToolUse deny as exit 2 + stderr elsewhere and drops an unconfirmable ask', async () => {
+    it('renders a neutral PreToolUse deny/ask as exit 2 + stderr elsewhere (unconfirmable ask fails closed)', async () => {
         expect(await run('deny', pre)).toEqual({ code: 2, out: '', err: 'nope\n' });
-        expect(await run('ask', pre, { SUPERSKILL_HOOK_HOST: 'omp' })).toEqual({ code: 0, out: '', err: '' });
+        expect(await run('ask', pre, { SUPERSKILL_HOOK_HOST: 'omp' })).toEqual({ code: 2, out: '', err: 'sure?\n' });
+        expect(await run('ask', pre, { SUPERSKILL_HOOK_HOST: 'generic' })).toEqual({
+            code: 2,
+            out: '',
+            err: 'sure?\n',
+        });
     });
 
     it('renders a neutral Stop block as decision JSON (deny under --profile deny), exit 2 on omp', async () => {

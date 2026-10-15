@@ -778,4 +778,6 @@ serialized by the operator.
 
 **Why.** Adding a hook to any plugin must be one script file plus one `hooks.json` line, with no superskill change or release; a registry of external ids and their logic drifts from the owning plugin and couples its fixes to superskill releases.
 
+**Amendment (2026-10-15).** An `ask` decision on `PreToolUse` is a confirmation request. Only Claude Code (native `permissionDecision:"ask"`) and a native Pi extension that calls `ctx.ui.confirm` can honor it. On every other host the ask is rendered as a deny carrying the reason (exit 2 + stderr, or the Claude-native ask projected through `preToolUseByExitCode`), so a safety guard cannot silently pass when no one can confirm. Hook errors, timeouts and missing scripts still fail open (ADR-020) — that is a different path.
+
 **Detail:** see 03 §Invariants 9; 04 §Plugin hook scripts (`hook run`).
