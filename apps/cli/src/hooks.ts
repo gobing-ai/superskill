@@ -143,8 +143,8 @@ export function readCanonicalHooks(rulesyncDir: string): CanonicalHooksConfig | 
  */
 export const HOOK_TARGET_POLICY: Record<string, Record<string, { profile: StopProfile }>> = {
     // cc/anti-hallucination (Stop): only command transports that can prevent stop.
-    // Pi uses the plugin's native settlement extension; its declarative hooks, like
-    // OpenCode/omp/Grok, cannot request continuation. Antigravity/Gemini use
+    // Pi uses the cc plugin's own native settlement extension (`extensions.pi`), which
+    // replaces generated hook modules; OpenCode/omp/Grok cannot request continuation. Antigravity/Gemini use
     // `decision:"deny"` (AfterAgent); Claude/Codex/Hermes use `decision:"block"`.
     'cc/anti-hallucination': {
         claude: { profile: 'block' },

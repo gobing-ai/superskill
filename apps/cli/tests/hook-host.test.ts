@@ -3,6 +3,7 @@ import {
     detectHookHost,
     hookEventOf,
     isPreToolUseAllow,
+    neutralFromClaudePreToolUse,
     normalizeHookPayload,
     parseNeutralResult,
     preToolUseByExitCode,
@@ -90,6 +91,23 @@ describe('normalizeHookPayload', () => {
         expect(JSON.parse(normalizeHookPayload('{"toolName":"custom_tool"}', {})).tool_name).toBe('custom_tool');
     });
 
+    it('maps a Pi input event to UserPromptSubmit with its prompt, and carries stop_hook_active', () => {
+        expect(
+            JSON.parse(normalizeHookPayload('{"type":"input","text":"hi","source":"interactive"}', {}, '/c')),
+        ).toEqual({
+            cwd: '/c',
+            host_event: { type: 'input', text: 'hi', source: 'interactive' },
+            hook_event_name: 'UserPromptSubmit',
+            prompt: 'hi',
+        });
+        const stop = JSON.parse(
+            normalizeHookPayload('{"type":"agent_end","messages":[],"stop_hook_active":true}', {}, '/c'),
+        );
+        expect(stop.hook_event_name).toBe('Stop');
+        expect(stop.stop_hook_active).toBe(true);
+        expect(stop.prompt).toBeUndefined();
+    });
+
     it('maps a tool-less Pi lifecycle event by its type', () => {
         const out = JSON.parse(normalizeHookPayload('{"type":"session_shutdown","session_id":"s2"}', {}, '/c'));
         expect(out).toEqual({
@@ -142,7 +160,7 @@ describe('translateHookResult', () => {
             stderr: 'blocked by hook',
             exitCode: 2,
         });
-        // Hosts without a confirm UI (Codex/omp/pi-via-exit-code) fail closed on ask.
+        // Hosts without a confirm UI (Codex/omp/…) fail closed on ask; Pi gets the neutral ask (next test).
         expect(translateHookResult({ decision: 'ask', reason: 'q' }, 'generic', 'PreToolUse')).toEqual({
             output: '',
             stderr: 'q',
@@ -153,11 +171,26 @@ describe('translateHookResult', () => {
             stderr: 'q',
             exitCode: 2,
         });
+    });
+
+    it('Pi: the neutral decision itself on stdout at exit 0 — deny anywhere, ask only for PreToolUse', () => {
         expect(translateHookResult({ decision: 'ask', reason: 'q' }, 'pi', 'PreToolUse')).toEqual({
-            output: '',
-            stderr: 'q',
-            exitCode: 2,
+            output: '{"decision":"ask","reason":"q"}',
+            exitCode: 0,
         });
+        expect(JSON.parse(translateHookResult({ decision: 'ask' }, 'pi', 'PreToolUse').output)).toEqual({
+            decision: 'ask',
+            reason: 'confirm this tool call',
+        });
+        expect(translateHookResult({ decision: 'block' }, 'pi', 'PreToolUse').output).toBe(
+            '{"decision":"deny","reason":"blocked by hook"}',
+        );
+        expect(translateHookResult(deny, 'pi', 'Stop', 'deny')).toEqual({
+            output: '{"decision":"deny","reason":"r"}',
+            exitCode: 0,
+        });
+        expect(translateHookResult({ decision: 'ask' }, 'pi', 'Stop')).toEqual({ output: '', exitCode: 0 });
+        expect(translateHookResult({ decision: 'allow' }, 'pi', 'PreToolUse')).toEqual({ output: '', exitCode: 0 });
     });
 
     it('Stop-like events: decision JSON on Claude/generic (deny profile except PostToolUse), exit 2 on omp/pi', () => {
@@ -203,6 +236,30 @@ describe('preToolUseByExitCode (legacy Claude-native output off Claude Code)', (
         expect(preToolUseByExitCode('{"decision":"block","reason":"x"}')).toBeNull();
         expect(preToolUseByExitCode('')).toBeNull();
         expect(preToolUseByExitCode('null')).toBeNull();
+    });
+});
+
+describe('neutralFromClaudePreToolUse', () => {
+    it('reads a PreToolUse permissionDecision (reason, else systemMessage) and rejects anything else', () => {
+        const hso = (o: object) => JSON.stringify({ hookSpecificOutput: { hookEventName: 'PreToolUse', ...o } });
+        expect(neutralFromClaudePreToolUse(hso({ permissionDecision: 'ask', permissionDecisionReason: 'q' }))).toEqual({
+            decision: 'ask',
+            reason: 'q',
+        });
+        expect(
+            neutralFromClaudePreToolUse(
+                JSON.stringify({
+                    hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny' },
+                    systemMessage: 'sm',
+                }),
+            ),
+        ).toEqual({ decision: 'deny', reason: 'sm' });
+        expect(neutralFromClaudePreToolUse(hso({ permissionDecision: 'allow' }))).toEqual({ decision: 'allow' });
+        expect(neutralFromClaudePreToolUse(hso({ permissionDecision: 'defer' }))).toBeNull();
+        expect(neutralFromClaudePreToolUse(hso({ permissionDecision: 'deny', updatedInput: {} }))).toBeNull();
+        expect(neutralFromClaudePreToolUse('{"hookSpecificOutput":{"hookEventName":"Stop"}}')).toBeNull();
+        expect(neutralFromClaudePreToolUse('null')).toBeNull();
+        expect(neutralFromClaudePreToolUse('not json')).toBeNull();
     });
 });
 

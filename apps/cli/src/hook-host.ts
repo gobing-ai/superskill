@@ -34,7 +34,7 @@ export interface NeutralHookResult {
 
 /**
  * Which host fired the hook. `SUPERSKILL_HOOK_HOST` wins (superskill's generated omp modules set
- * `omp`); else Claude Code is recognized by `CLAUDE_PROJECT_DIR`; anything else is `generic`
+ * `omp`, its generated Pi extensions set `pi`); else Claude Code is recognized by `CLAUDE_PROJECT_DIR`; anything else is `generic`
  * (Codex, Hermes, Antigravity, …), which honors Claude-style Stop JSON and the exit-2 block.
  */
 export type HookHost = 'claude' | 'omp' | 'pi' | 'generic';
@@ -54,6 +54,7 @@ const PI_EVENT_TO_CANONICAL: Record<string, string> = {
     session_start: 'SessionStart',
     session_shutdown: 'SessionEnd',
     session_before_compact: 'PreCompact',
+    input: 'UserPromptSubmit',
 };
 
 /** Pi/omp tool name → canonical (Claude) tool name. */
@@ -138,6 +139,9 @@ export function normalizeHookPayload(stdinText: string, env: NodeJS.ProcessEnv, 
     }
     const sessionId = str(event.sessionId) || str(event.session_id);
     if (sessionId) out.session_id = sessionId;
+    const prompt = str(event.text);
+    if (out.hook_event_name === 'UserPromptSubmit' && prompt) out.prompt = prompt;
+    if (typeof event.stop_hook_active === 'boolean') out.stop_hook_active = event.stop_hook_active;
     return JSON.stringify(out);
 }
 
@@ -166,6 +170,30 @@ export function preToolUseByExitCode(output: string): HookHostOutput | null {
     }
     const reason = [hso.permissionDecisionReason, systemMessage].find((r) => typeof r === 'string' && r.trim());
     return { output: '', exitCode: 2, stderr: (reason as string | undefined) ?? 'blocked by PreToolUse hook' };
+}
+
+/**
+ * Read a Claude-native PreToolUse `permissionDecision` (no `updatedInput` rewrite) as a
+ * {@link NeutralHookResult}, so hosts with a structured channel (Pi) get the script's ask/deny
+ * rather than its exit-code projection. Null for any other output.
+ */
+export function neutralFromClaudePreToolUse(output: string): NeutralHookResult | null {
+    let parsed: unknown;
+    try {
+        parsed = JSON.parse(output);
+    } catch {
+        return null;
+    }
+    if (typeof parsed !== 'object' || parsed === null) return null;
+    const { hookSpecificOutput: hso, systemMessage } = parsed as {
+        hookSpecificOutput?: Record<string, unknown>;
+        systemMessage?: unknown;
+    };
+    if (hso?.hookEventName !== 'PreToolUse' || hso.updatedInput !== undefined) return null;
+    const decision = hso.permissionDecision;
+    if (decision !== 'allow' && decision !== 'deny' && decision !== 'ask') return null;
+    const reason = [hso.permissionDecisionReason, systemMessage].find((r) => typeof r === 'string' && r.trim());
+    return typeof reason === 'string' ? { decision, reason } : { decision };
 }
 
 /**
@@ -222,12 +250,15 @@ const DECISION_JSON_EVENTS = new Set(['Stop', 'SubagentStop', 'UserPromptSubmit'
  * | `PreToolUse`, Claude Code | `permissionDecision:"deny"` JSON, exit 0 | `permissionDecision:"ask"` JSON, exit 0 | nothing |
  * | `PreToolUse`, other hosts | exit 2, reason on stderr | exit 2, reason on stderr (cannot confirm — fails closed) | nothing |
  * | `Stop`/`SubagentStop`/`UserPromptSubmit`/`PostToolUse`, Claude Code / generic | `{"decision":"block","reason"}` (`"deny"` under `--profile deny`), exit 0 | as allow | nothing |
- * | the same events, omp/pi | exit 2, reason on stderr | as allow | nothing |
+ * | the same events, omp | exit 2, reason on stderr | as allow | nothing |
+ * | any event, Pi | `{"decision":"deny","reason"}` stdout, exit 0 | PreToolUse: `{"decision":"ask","reason"}`; else as allow | nothing |
  * | any other or unknown event | exit 2, reason on stderr | as allow | nothing |
  *
- * An `ask` is a confirmation request. Only Claude Code (and a native Pi extension that reads the
- * neutral decision itself) can show one; everywhere else it becomes a deny carrying the reason so
- * a safety guard cannot silently pass. Hook errors / timeouts / missing scripts still fail open.
+ * An `ask` is a confirmation request. Only Claude Code and Pi can show one: Pi gets the decision
+ * itself, not a projection — superskill's generated Pi extension reads it and applies it with Pi's
+ * primitives (block the tool call, `ctx.ui.confirm` an ask, queue a Stop continuation), none of
+ * which an exit code can express. Everywhere else an ask becomes a deny carrying the reason so a
+ * safety guard cannot silently pass. Hook errors / timeouts / missing scripts still fail open.
  *
  * `allow` never emits a Claude `permissionDecision:"allow"`: that would bypass the user's
  * permission rules, while a neutral allow only means "this hook has no objection".
@@ -240,6 +271,16 @@ export function translateHookResult(
 ): HookHostOutput {
     const reason = result.reason ?? 'blocked by hook';
     const stop = result.decision === 'deny' || result.decision === 'block';
+    if (host === 'pi') {
+        if (stop) return { output: JSON.stringify({ decision: 'deny', reason }), exitCode: 0 };
+        if (result.decision === 'ask' && event === 'PreToolUse') {
+            return {
+                output: JSON.stringify({ decision: 'ask', reason: result.reason ?? 'confirm this tool call' }),
+                exitCode: 0,
+            };
+        }
+        return { output: '', exitCode: 0 };
+    }
     if (event === 'PreToolUse') {
         if (host === 'claude' && (stop || result.decision === 'ask')) {
             return {
