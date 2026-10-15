@@ -39,6 +39,7 @@ export interface NeutralHookResult {
  */
 export type HookHost = 'claude' | 'omp' | 'pi' | 'generic';
 
+/** Resolve the {@link HookHost} for this invocation from its environment (see {@link HookHost}). */
 export function detectHookHost(env: NodeJS.ProcessEnv): HookHost {
     const declared = env.SUPERSKILL_HOOK_HOST;
     if (declared === 'claude' || declared === 'omp' || declared === 'pi' || declared === 'generic') return declared;
