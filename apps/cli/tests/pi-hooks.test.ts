@@ -1,5 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import {
+    existsSync,
+    mkdirSync,
+    mkdtempSync,
+    readdirSync,
+    readFileSync,
+    realpathSync,
+    rmSync,
+    writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { getEnvVar } from '@gobing-ai/superskill-core';
@@ -334,7 +343,7 @@ describe('generated Pi extension — PreToolUse (tool_call)', () => {
         expect(call?.host).toBe('pi');
         expect(call?.event).toBe('PreToolUse');
         expect(call?.payload).toMatchObject({ ...bash, sessionId: 'sess-1' });
-        expect(call?.cwd).toBe(dir);
+        expect(call?.cwd).toBe(realpathSync(dir));
     });
 
     it('asks through ctx.ui.confirm: approve allows, decline blocks, no UI blocks', () => {
