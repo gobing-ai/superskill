@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
+## [0.3.39] - 2026-10-15
+
+### Fixed
+
+- Preserve declared plugin hook deadlines in flattened installs by staging the canonical registry beside hook entrypoints, covered by script-root stamps and install receipts. Reinstall flattened targets to activate the fix.
+
 ## [0.3.38] - 2026-10-15
 
 ### Added

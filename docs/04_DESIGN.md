@@ -379,6 +379,8 @@ Project = `CLAUDE_PROJECT_DIR`, else cwd. Home = `HOME_DIR`, else the OS home.
 
 Deadline: `SUPERSKILL_HOOK_TIMEOUT_MS` (positive integer), else the smallest `timeout` (s) the root's `hooks/hooks.json` or `hooks.json` declares for `superskill hook run <plugin> <id>`, minus 500 ms (floor 1 s), else 10 s.
 
+Flattened installs copy the mapped canonical registry into `.agents/scripts/<plugin>/hooks/hooks.json` beside staged hook entrypoints. The script-root stamp and target receipt hash this metadata, so declared deadlines survive staging. Reinstall existing flattened targets to pick up the registry.
+
 **Payload in** (`normalizeHookPayload`, `apps/cli/src/hook-host.ts`). A payload carrying `hook_event_name` or `tool_name` passes through. A Pi/omp event becomes `{hook_event_name, tool_name, tool_input, tool_response?, session_id?, cwd, host_event}`. Tools map `read/write/edit/bash/grep/find|glob` → `Read/Write/Edit/Bash/Grep/Glob`, `path` → `file_path`, `edits[].oldText/newText` → `old_string/new_string`, and `content` text parts → `tool_response.content`. Events map `tool_call/tool_result/agent_end/session_start/session_shutdown/session_before_compact/input` → `PreToolUse/PostToolUse/Stop/SessionStart/SessionEnd/PreCompact/UserPromptSubmit`; a Pi `input` event's `text` becomes `prompt`, and a boolean `stop_hook_active` (set by the generated Pi Stop module) is carried through.
 
 **Result out.** Script exit 0 with stdout `{"decision":"allow"|"deny"|"ask"|"block","reason"?}` (`deny` ≡ `block`) is rendered by `translateHookResult`:

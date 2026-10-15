@@ -20,6 +20,7 @@ import {
     removeEnvVar,
     setEnvVar,
 } from '@gobing-ai/superskill-core';
+import { hookScriptTimeoutMs, resolveHookScript } from '../../src/commands/hook-run';
 import { executeInstall } from '../../src/commands/install';
 import { cliVersion } from '../../src/version';
 
@@ -1120,6 +1121,53 @@ describe('executeInstall', () => {
         expect(readFileSync(join(scriptsDest, 'anti-hallucination', 'check.sh'), 'utf-8')).toContain(
             '#!/usr/bin/env bash',
         );
+    });
+
+    it('preserves declared hook deadlines and receipts in a flattened Codex install', async () => {
+        const { marketplacePath, pluginDir } = setupPluginDir();
+        const hooksDir = join(pluginDir, 'scripts', 'hooks');
+        mkdirSync(hooksDir, { recursive: true });
+        const timeouts = [5, 10, 15];
+        for (const timeout of timeouts) {
+            writeFileSync(join(hooksDir, `guard-${timeout}.mjs`), 'process.exit(0);');
+        }
+        writeFileSync(
+            join(pluginDir, 'hooks.json'),
+            JSON.stringify({
+                hooks: {
+                    PreToolUse: [
+                        {
+                            matcher: '*',
+                            hooks: timeouts.map((timeout) => ({
+                                type: 'command',
+                                command: `superskill hook run demo guard-${timeout}`,
+                                timeout,
+                            })),
+                        },
+                    ],
+                },
+            }),
+        );
+        const outRoot = join(tmpDir, 'out-hook-deadlines');
+        mkdirSync(outRoot, { recursive: true });
+        await executeInstall(
+            'demo',
+            ['codex'],
+            { marketplacePath, global: false, dryRun: false, verbose: false, outputRoot: outRoot },
+            { runRulesync: async () => mockEmptyRulesyncResult() },
+        );
+        const stagedRoot = join(outRoot, '.agents', 'scripts', 'demo');
+        for (const timeout of timeouts) {
+            const resolved = resolveHookScript('demo', `guard-${timeout}`, {}, { home: outRoot, cwd: outRoot });
+            expect(resolved?.source).toBe('staged');
+            expect(resolved?.root).toBe(stagedRoot);
+            expect(hookScriptTimeoutMs(stagedRoot, 'demo', `guard-${timeout}`, {})).toBe(timeout * 1000 - 500);
+        }
+        const configHash = computeContentHash(readFileSync(join(stagedRoot, 'hooks', 'hooks.json')));
+        const stamp = JSON.parse(readFileSync(join(stagedRoot, STAMP_FILENAME), 'utf-8'));
+        expect(stamp.files['hooks/hooks.json']).toBe(configHash);
+        const receipt = readInstallManifest(installManifestPath(outRoot, 'codex', 'demo'));
+        expect(receipt.installed.files['.agents/scripts/demo/hooks/hooks.json']).toBe(configHash);
     });
 
     it('stages a plugin lib/ sibling to .agents/scripts/lib/, overwriting stale content and preserving foreign files', async () => {

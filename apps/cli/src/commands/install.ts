@@ -1958,6 +1958,12 @@ function stagePluginScripts(
         copyDirectory(stagedSource, dest);
     }
 
+    // Hook deadlines must survive flattened installs, whose root has no plugin manifest tree.
+    const hookConfig = join(outputDir, 'hooks.json');
+    if (existsSync(join(dest, 'hooks')) && existsSync(hookConfig)) {
+        copyFileSync(hookConfig, join(dest, 'hooks', 'hooks.json'));
+    }
+
     // Sibling runtime library (mapper stages <plugin>/lib → .rulesync/scripts/lib).
     // Entrypoints import it as `../lib/<file>` from the staged scripts root, so it must
     // land beside <plugin>/. Overlay copy, never rm — the dir is shared across plugins.
