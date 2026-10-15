@@ -397,13 +397,12 @@ Installed hook configs invoke a stable PATH command instead of a plugin-checkout
 superskill hook run <plugin> <hook-id>
 ```
 
-The dispatcher (`apps/cli/src/commands/hook-run.ts`) resolves a runner from the `HOOK_RUNNERS` registry by `<plugin>/<hook-id>`, hands it stdin + the process env, writes the runner's Claude-canonical hook JSON to stdout, and exits with the runner's code. Unknown `<plugin>/<hook-id>` is treated as **plugin/CLI version skew** (the installed plugin emits a hook this CLI doesn't know yet) — the dispatcher logs a warning naming the installed CLI version and the known-hook list, then exits 0 to fail open. Version skew must not turn into blocked Stops and agent loops.
+The dispatcher (`apps/cli/src/commands/hook-run.ts`) runs a compiled built-in runner when one exists, else the script the plugin ships at `hooks/<hook-id>.ts` (or `scripts/hooks/<hook-id>.ts`) under its installed root. Hook scripts answer host-neutrally (`{"decision":"deny","reason":"…"}`) and superskill renders that for each host. An id with neither is treated as **plugin/CLI version skew** or an incomplete install: the dispatcher logs a warning naming the installed CLI version, then exits 0 to fail open. Version skew must not turn into blocked Stops and agent loops.
 
-Registered runners:
+Built-in runners:
 
 | Runner | Event | Behavior |
 |--------|-------|----------|
-| `sp/<id>` (`task-write-guard`, `careful-guard`, `context-post-tool`, `context-session-start`, `context-session-stop`, `agent-lifecycle`, `fleet-guest-stop`) | per the sp plugin's `hooks.json` | Delegated to `spur self hook <id>`, which owns the behavior (`spur self hook list`). Fails open — exit 0, one stderr line — when spur is missing, times out, or does not know the id. |
-| `cc/anti-hallucination` | `Stop` | Blocks stop when the last assistant message claims external facts without source citations / confidence / verification-tool evidence. Reuses `resolveStopContext` + `verifyAntiHallucinationProtocol` from `ah_guard.ts`; honors Claude's `stop_hook_active` block-loop guard. Fails open (allow stop) on empty/invalid payloads. |
+| `cc/anti-hallucination` | `Stop` | Blocks stop when the last assistant message claims external facts without source citations / confidence level / verification-tool evidence. Reuses `resolveStopContext` + `verifyAntiHallucinationProtocol` from `ah_guard.ts`; honors Claude's `stop_hook_active` block-loop guard. Fails open (allow stop) on empty/invalid payloads. |
 
-This is the cross-agent default for non-trivial command hooks: author the hook as a registered runner and invoke the PATH command, never a `${CLAUDE_PLUGIN_ROOT}/<script>` reference (the latter resolves on Claude Code only and silently fails everywhere else). See the `cc-hooks` skill for the full authoring guidance.
+This is the cross-agent default for non-trivial command hooks: ship the hook as `hooks/<hook-id>.ts` in your plugin and invoke the PATH command, never a `${CLAUDE_PLUGIN_ROOT}/<script>` reference (the latter resolves on Claude Code only and silently fails everywhere else). See the `cc-hooks` skill for the full authoring guidance.
