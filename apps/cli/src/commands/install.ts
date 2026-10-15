@@ -1960,8 +1960,9 @@ function stagePluginScripts(
 
     // Hook deadlines must survive flattened installs, whose root has no plugin manifest tree.
     const hookConfig = join(outputDir, 'hooks.json');
-    if (existsSync(join(dest, 'hooks')) && existsSync(hookConfig)) {
-        copyFileSync(hookConfig, join(dest, 'hooks', 'hooks.json'));
+    const hooksDir = join(dest, 'hooks');
+    if (existsSync(hooksDir) && statSync(hooksDir).isDirectory() && existsSync(hookConfig)) {
+        copyFileSync(hookConfig, join(hooksDir, 'hooks.json'));
     }
 
     // Sibling runtime library (mapper stages <plugin>/lib → .rulesync/scripts/lib).

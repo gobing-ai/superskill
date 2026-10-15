@@ -1102,6 +1102,7 @@ describe('executeInstall', () => {
         mkdirSync(scriptsDir, { recursive: true });
         writeFileSync(join(scriptsDir, 'validate.js'), '#!/usr/bin/env node\nconsole.log("validating");');
         writeFileSync(join(scriptsDir, 'check.sh'), '#!/usr/bin/env bash\necho "checking"');
+        writeFileSync(join(pluginDir, 'scripts', 'hooks'), '#!/bin/sh\nexit 0');
 
         const outRoot = join(tmpDir, 'out');
         mkdirSync(outRoot, { recursive: true });
@@ -1117,6 +1118,7 @@ describe('executeInstall', () => {
         const scriptsDest = join(outRoot, '.agents', 'scripts', 'demo');
         expect(existsSync(join(scriptsDest, 'anti-hallucination', 'validate.js'))).toBe(true);
         expect(existsSync(join(scriptsDest, 'anti-hallucination', 'check.sh'))).toBe(true);
+        expect(readFileSync(join(scriptsDest, 'hooks'), 'utf-8')).toBe('#!/bin/sh\nexit 0');
         // Content preserved
         expect(readFileSync(join(scriptsDest, 'anti-hallucination', 'check.sh'), 'utf-8')).toContain(
             '#!/usr/bin/env bash',
