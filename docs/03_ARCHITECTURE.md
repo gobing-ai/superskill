@@ -2,10 +2,10 @@
 doc: 03_ARCHITECTURE
 owns: HOW — module boundaries, data flow, runtime model, invariants, rationale-in-depth
 authority: derived
-version: 2.22.0
+version: 2.23.0
 derived_from: [00_ADR, 01_PRD]
 owner: Robin Min
-updated_at: 2026-10-12
+updated_at: 2026-10-15
 read_before: cross-module, seam, or schema work
 edit_rules: 99 §6.4
 sync: [T1]
@@ -823,9 +823,10 @@ result alongside plugin-manifest rows and never writes a lock directly.
 8. **Owned hook reconciliation.** Pi and Hermes remove stale entries owned by the plugin across all
    events before adding the desired set. User hooks and hooks owned by other plugins are preserved;
    reinstalling unchanged input is byte-idempotent, including the zero-hook case.
-9. **Scoped hook sessions.** Context hook state is stored in `.session-<identity-hash>.json`, keyed
-   from payload `session_id` or `transcript_path`. A payload without identity may use the sole active
-   session for compatibility; multiple candidates are ambiguous and fail open.
+9. **`sp/*` hooks are transport-only (ADR-039).** `hook run sp <id>` holds no sp hook logic and
+   reads no sp plugin file: it spawns `spur self hook <id>`, forwards spur's decision, and fails open
+   on every transport failure. Context-ledger session state belongs to spur. The only in-process sp
+   knowledge is the id list, per-id deadlines, and the task-write-guard path pre-filter.
 10. **Config precedence is explicit.** CLI marketplace and target flags override JSONC defaults;
     configured plugin paths precede ambient discovery. Feature filters are applied during mapping,
     and native installers reject unsupported partial filters before mutation.

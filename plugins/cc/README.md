@@ -403,10 +403,7 @@ Registered runners:
 
 | Runner | Event | Behavior |
 |--------|-------|----------|
-| `sp/task-write-guard` | `PreToolUse` | Denies raw `Write`/`Edit` on paths owned by the Spur task corpus; ownership is delegated to `spur task resolve --strict`'s exit code. Fails open on every other condition; `SPUR_WRITE_GUARD=off` short-circuits to allow. |
-| `sp/context-post-tool` | `PostToolUse` | Appends a token-budget event to the per-session ledger so `sp/context-session-stop` can roll up at session end. Fails open; never blocks. |
-| `sp/context-session-start` | `SessionStart` | Initializes a per-session ledger file at `.spur/context/token-ledger.jsonl` and stamps the session id. Fails open. |
-| `sp/context-session-stop` | `SessionStop` | Reads the ledger written by `sp/context-post-tool`, sums reads/writes/tokens for the session, emits a final `session_end` event, and clears the session file. Fails open. |
+| `sp/<id>` (`task-write-guard`, `careful-guard`, `context-post-tool`, `context-session-start`, `context-session-stop`, `agent-lifecycle`, `fleet-guest-stop`) | per the sp plugin's `hooks.json` | Delegated to `spur self hook <id>`, which owns the behavior (`spur self hook list`). Fails open — exit 0, one stderr line — when spur is missing, times out, or does not know the id. |
 | `cc/anti-hallucination` | `Stop` | Blocks stop when the last assistant message claims external facts without source citations / confidence / verification-tool evidence. Reuses `resolveStopContext` + `verifyAntiHallucinationProtocol` from `ah_guard.ts`; honors Claude's `stop_hook_active` block-loop guard. Fails open (allow stop) on empty/invalid payloads. |
 
 This is the cross-agent default for non-trivial command hooks: author the hook as a registered runner and invoke the PATH command, never a `${CLAUDE_PLUGIN_ROOT}/<script>` reference (the latter resolves on Claude Code only and silently fails everywhere else). See the `cc-hooks` skill for the full authoring guidance.

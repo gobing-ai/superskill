@@ -143,9 +143,8 @@ printf '%s' "$FINAL_ANSWER" | superskill script run cc validate-response
   `SCRIPT_RUNNERS` is a hardcoded object populated by static top-level imports, and there is no
   dynamic or third-party registration path. A plugin maintained in another repository therefore
   cannot self-register: its logic must be ported into (or imported into) superskill's own tree, and
-  every subsequent fix requires a superskill release. The `sp` plugin's *hooks* are registered this
-  way — `runSpTaskWriteGuard` is implemented inside `hook-run.ts`, not imported from the plugin's
-  home repo. Weigh this before choosing the optional contract for an external plugin.
+  every subsequent fix requires a superskill release. Weigh this before choosing the optional
+  contract for an external plugin.
 - **The runner signature is argv-less and synchronous:** `run({ stdinText, env }) => { stdout, exitCode }`.
   There is no argument channel, so a flag-driven CLI (`--wbs`, subcommands) does not fit without
   smuggling argv through environment variables, and a runner cannot `await`. (`HookRunner` *may* be
@@ -160,6 +159,12 @@ printf '%s' "$FINAL_ANSWER" | superskill script run cc validate-response
 - Portable PATH form; install translates to each host's native hook format.
 - `minCliVersion` in `hooks.json` gates emission: an older CLI skips hook emission with a warning while skills/commands still install.
 - Register a `HookRunner` in `apps/cli/src/commands/hook-run.ts`.
+- **An externally maintained plugin that ships its own CLI delegates instead of porting.** The `sp`
+  plugin's hooks are one registry line each: a generic `spurDelegate(id)` runner spawns
+  `spur self hook <id>` with the payload on stdin, forwards its decision, and fails open when the
+  CLI is missing, slow, or too old (ADR-039; shapes in [04 §`sp/*` hook delegation](../04_DESIGN.md)).
+  The logic ships with the plugin's CLI, so a hook fix needs no superskill release; the plugin
+  must not expect superskill to import its hook files by path.
 
 **Hooks stay on `hook run` for now.** Hook-path unification (migrating hooks off the binary registry onto staged paths) is feature A work item R6-B and is **not done**; do not stage a hook via `script path` until that design lands.
 

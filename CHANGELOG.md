@@ -6,7 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
+### Changed
+
+- refactor(hook-run): `sp/*` hooks delegate to `spur self hook <id>` through one generic `spurDelegate` runner (ADR-039). It forwards spur's decision; off Claude Code a PreToolUse deny becomes exit 2 + stderr. It fails open (exit 0, one stderr line) when spur is missing, times out (5 s guards / 10 s capture), exits non-zero, or does not know the command/id. The in-CLI context runners, `runSpTaskWriteGuard`, and the import of sp plugin hook files by path (`loadSpPluginDelegate`) are removed. The `task-write-guard` path pre-filter stays. Needs a spur that ships `spur self hook` (gobing-ai/spur#16); older spur fails open.
+
 ### Fixed
+
+- fix(hook-run): register `sp/careful-guard`, `sp/agent-lifecycle` and `sp/fleet-guest-stop`. They used to resolve as unknown hooks and silently no-op.
 
 - fix(grok-bot): treat host-rewritten bridge pointers as healthy when `canonical:` still targets the owned recipe (stops 113× owned-drift after Bot `update_state` register); still refuse canonical drift, full-mode edits, and unowned extras
 - fix(grok-bot): handoff/doctor/README copy — slash fill is NOT automatic, Shell fallback for `.superskill` Read denial, soft-pedal unverified Settings > Plugins path

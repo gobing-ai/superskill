@@ -72,8 +72,8 @@ const ccValidateResponse: ScriptRunner = {
 // bundled into the CLI at build time (`bun build --compile`, ADR-022), so registration requires code
 // inside superskill's compile graph. The `<plugin>` argument is a **namespace key**, not an
 // extension point: an externally-maintained plugin cannot self-register without vendoring its logic
-// into this repo. Precedent: `sp`'s hooks reimplement `runSpTaskWriteGuard` inside `hook-run.ts`.
-// External plugins use the standard contract instead.
+// into this repo. External plugins use the standard contract instead (or, like `sp`'s hooks in
+// `hook-run.ts`, delegate to the plugin's own CLI).
 const SCRIPT_RUNNERS: Record<string, ScriptRunner> = {
     'cc/validate-response': ccValidateResponse,
 };

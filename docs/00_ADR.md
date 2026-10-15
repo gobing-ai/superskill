@@ -2,9 +2,9 @@
 doc: 00_ADR
 owns: WHY — which cross-cutting decision was made, and the one-line reason
 authority: authoritative
-version: 1.17.0
+version: 1.18.0
 owner: Robin Min
-updated_at: 2026-10-12
+updated_at: 2026-10-15
 read_before: any structural change; add a dated entry before diverging from a decision
 edit_rules: 99 §6.1
 sync: [T1, T2]
@@ -767,3 +767,16 @@ serialized by the operator.
 **Why.** One build should yield the reviewed plugin upload from the same source and version as the CLI.
 
 **Detail:** see 03 §Codex plugin archive build.
+
+---
+
+## ADR-039: `sp/*` hooks delegate to `spur self hook`; superskill keeps no copy of their logic
+
+**Status:** Accepted · **Date:** 2026-10-15
+
+**Decision.** Every `sp/<id>` runner in `hook run` is one generic transport that spawns `${SPUR_BIN:-spur} self hook <id>` with the host payload on stdin and forwards its output; superskill no longer reimplements sp hook logic in-CLI or imports sp plugin files by path. Transport failures (spur missing, timeout, non-zero exit, unknown command/id) fail open per ADR-020. Supersedes the in-CLI sp runners and the plugin-script delegation of spur task 1166.
+
+**Why.** Two drifted copies (CLI fallback + plugin scripts) diverged on session ownership and recorded tools; one owner — the spur CLI — removes the drift and lets sp hook fixes ship without a superskill release.
+
+**Detail:** see 03 §Invariants 9; 04 §`sp/*` hook delegation.
+

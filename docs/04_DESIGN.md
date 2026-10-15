@@ -2,10 +2,10 @@
 doc: 04_DESIGN
 owns: SURFACE — concrete shapes: every CLI command, flag, config key, env var, table, DTO
 authority: derived
-version: 2.22.0
+version: 2.23.0
 derived_from: [00_ADR, 01_PRD, 02_ROADMAP]
 owner: Robin Min
-updated_at: 2026-10-12
+updated_at: 2026-10-15
 read_before: changing a command, flag, env var, or schema
 edit_rules: 99 §6.5
 sync: [T3]
@@ -350,6 +350,22 @@ Written after the copy (atomic temp + rename), only when at least one regular fi
 
 `script verify <plugin>` selects **one** scripts root — project first by directory existence, else global; explicit `--project`/`--global` never falls back — reads that root's stamp, and compares it with a fresh regular-file snapshot excluding the stamp. Every result is `{plugin, source, status, added, removed, changed}` with `source` ∈ `project | global | null` and `status` ∈ `ok | drift | missing_root | missing_stamp | invalid_stamp | unreadable`; the arrays are sorted and empty unless a valid baseline was read. `unreadable` means the baseline is valid but a staged file could not be read (the snapshot is wrapped, so a filesystem failure is a verification outcome, never an escaping error) and adds `error: <filesystem message naming the file>`. Failure diagnostics name each differing path and give reinstall guidance; stdout keeps the JSON result in `--json` mode and stderr carries the diagnostics.
 
+### `sp/*` hook delegation (ADR-039)
+
+`hook run sp <id>` runs `${SPUR_BIN:-spur} self hook <id> --host <host>` (`spurDelegate`, `apps/cli/src/commands/hook-run.ts`) with the payload on stdin. `SPUR_BIN` may carry leading arguments; quote a path containing spaces. `--host` is `claude` when `CLAUDE_PROJECT_DIR` is set, else `auto`.
+
+| Id | Deadline | Pre-filter (no spawn when false) |
+| --- | --- | --- |
+| `task-write-guard` | 5 s | `tool_input.file_path` is `.md` under a `tasks<N>` path segment (`couldBeTaskCorpusPath`) |
+| `careful-guard`, `agent-lifecycle` | 5 s | — |
+| `context-post-tool`, `context-session-start`, `context-session-stop`, `fleet-guest-stop` | 10 s | — |
+
+| spur outcome | `hook run` result |
+| --- | --- |
+| exit 0 | spur's stdout (trailing newlines trimmed) + exit 0; spur's stderr passes through |
+| exit 0, PreToolUse `permissionDecision` JSON, no `CLAUDE_PROJECT_DIR` | `deny` → exit 2 + reason on stderr; `allow`/`ask` → empty stdout, exit 0 (Codex rejects those JSON shapes; omp blocks only on exit 2) |
+| not found (ENOENT), deadline hit (child killed), non-zero exit, or stderr reports an unknown command/option/hook id | exit 0, no stdout, one stderr line `superskill hook run sp <id>: <cause>; failing open (exit 0).` |
+
 ### Stdin payload contract (`script run` / `hook run`)
 
 Hook and script runners receive their payload on fd 0 from the spawning host. `readStdinNonBlocking`
@@ -368,7 +384,7 @@ observed with Antigravity, and it hangs the agent mid-run.
 
 The budget is an **idle** timeout, never a deadline on the whole read. This is a correctness
 requirement, not a tuning choice: every runner fails open on an unparseable payload
-(`runSpTaskWriteGuard`, `runStopGuard`), so a truncated read silently converts a guard `deny` into an
+(spur's guards behind `sp/*`, `runStopGuard`), so a truncated read silently converts a guard `deny` into an
 `allow`. Default `250` ms, overridable with **`SUPERSKILL_STDIN_TIMEOUT_MS`** (positive integer;
 invalid values fall back to the default).
 

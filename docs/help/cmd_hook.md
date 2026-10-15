@@ -68,10 +68,10 @@ Installed hook configs invoke this stable PATH command instead of a plugin-check
 
 | Runner | Event | Behavior |
 |--------|-------|----------|
-| `sp/task-write-guard` | `PreToolUse` | Denies raw `Write`/`Edit` on paths owned by the Spur task corpus; ownership is delegated to `spur task resolve --strict`. Fails open on every other condition; `SPUR_WRITE_GUARD=off` short-circuits. |
+| `sp/<id>` — `task-write-guard`, `careful-guard`, `context-post-tool`, `context-session-start`, `context-session-stop`, `agent-lifecycle`, `fleet-guest-stop` | per sp `hooks.json` | Delegated to `spur self hook <id>` (`spur self hook list` describes each id). superskill only transports the payload and fails open when spur is missing, times out, exits non-zero, or does not know the id; `task-write-guard` skips the spawn unless the path could be a task file. Shapes and deadlines: [04 §`sp/*` hook delegation](../04_DESIGN.md). |
 | `cc/anti-hallucination` | `Stop` | Blocks stop when the last assistant message claims external facts without source citations / confidence / verification-tool evidence. Fails open (allow stop) on empty/invalid `ARGUMENTS`. |
 
-Runners emit Claude canonical hook JSON (PreToolUse `permissionDecision` / Stop `hookSpecificOutput.hookEventName` + `decision:"block"` on a block). Agents that cannot parse that shape fail open (treat as allow) — the intended cross-agent default. Unknown `<plugin>/<hook-id>` exits 2 (never fails open — a config bug, not a runtime payload).
+Runners emit Claude canonical hook JSON (PreToolUse `permissionDecision` / Stop `decision:"block"` on a block). Agents that cannot parse that shape fail open (treat as allow) — the intended cross-agent default. Unknown `<plugin>/<hook-id>` fails open: exit 0 plus a stderr warning naming the installed CLI version (ADR-020).
 
 ## How it's implemented
 
@@ -174,6 +174,6 @@ For `pi` and `omp`, canonical hook event names (camelCase) map to Pi lifecycle e
 | `apps/cli/src/rubrics/hook.yaml` | Rubric criteria + weights + anchors |
 | `apps/cli/src/hooks.ts` | Canonical → Pi-hooks conversion; `emitPiStyleHooks` / `emitHermesHooks` |
 | `apps/cli/src/commands/install.ts` | `emitHooksForSurrogateTarget` (reused by `hook emit`) |
-| `apps/cli/src/commands/hook-run.ts` | `run` subcommand: dispatcher + runner registry (`sp/task-write-guard`, `cc/anti-hallucination`); `hookRun`, `registerHookRun` |
+| `apps/cli/src/commands/hook-run.ts` | `run` subcommand: dispatcher + runner registry (`sp/*` → `spurDelegate`, `cc/anti-hallucination`); `hookRun`, `registerHookRun` |
 
 The shared modules (`operations/*.ts`, `commands/helpers.ts`, `quality/dimensions.ts`, `store/*`) are documented in [`cmd_agent.md`](cmd_agent.md#key-source-files).
