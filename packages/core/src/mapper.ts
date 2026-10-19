@@ -220,10 +220,17 @@ export function mapPluginToRulesync(
         }
     }
 
-    // Commands: adapt each .md into a skill directory → skills/<plugin>-<cmd>/SKILL.md
+    // Commands: adapt each .md into a skill directory → skills/<plugin>-<cmd>/SKILL.md,
+    // and publish it to rulesync's canonical commands/ tree as well. The skills
+    // copy is what codex/pi/antigravity slash-expose (via ~/.agents/skills); the
+    // commands/ copy is what a target with no slash form in its skills adaptation
+    // needs — opencode reads ~/.config/opencode/commands/<name>.md for `/name`.
+    // rulesync decides per target whether to emit it, so writing the tree is safe
+    // for every rulesync target (the install passes `commands` to opencode only).
     const commandsDir = join(pluginPath, 'commands');
     if (features.has('commands') && existsSync(commandsDir)) {
         const skillsOut = join(outputDir, 'skills');
+        const commandsOut = join(outputDir, 'commands');
         for (const entry of readdirSync(commandsDir)) {
             if (!entry.endsWith('.md')) continue;
             const cmdName = entry.replace(/\.md$/, '');
@@ -233,6 +240,10 @@ export function mapPluginToRulesync(
             const source = readFileSync(join(commandsDir, entry), 'utf-8');
             const adapted = adaptCommandToSkill(source, expectedName, pluginName);
             writeFileSync(join(dir, 'SKILL.md'), adapted);
+            // rulesync strips the skill-only `name:` / `disable-model-invocation:`
+            // fields and keys the emitted command off this filename.
+            mkdirSync(commandsOut, { recursive: true });
+            writeFileSync(join(commandsOut, `${expectedName}.md`), adapted);
             result.commands++;
         }
     }

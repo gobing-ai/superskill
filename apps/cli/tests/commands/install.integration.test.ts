@@ -71,6 +71,7 @@ describe('executeInstall', () => {
 
         let capturedOptions: RulesyncOptions | undefined;
         const inputRoots: string[] = [];
+        const featureSets: string[][] = [];
         const mockRunRulesync = async (
             _targets: Target[],
             _features: string[],
@@ -79,12 +80,15 @@ describe('executeInstall', () => {
         ) => {
             capturedOptions = options;
             inputRoots.push(inputRoot);
+            featureSets.push(_features);
             const staged = join(inputRoot, '.rulesync');
             // Staging exists only while the installer invokes its target adapter.
             expect(existsSync(join(staged, 'skills', 'demo-a', 'SKILL.md'))).toBe(true);
             expect(existsSync(join(staged, 'skills', 'demo-run', 'SKILL.md'))).toBe(true);
             expect(existsSync(join(staged, 'skills', 'demo-coder', 'SKILL.md'))).toBe(true);
-            expect(existsSync(join(staged, 'commands'))).toBe(false);
+            // Commands are published to rulesync's canonical commands/ tree; the
+            // per-target feature gate below decides which targets emit them.
+            expect(existsSync(join(staged, 'commands', 'demo-run.md'))).toBe(true);
             expect(existsSync(join(staged, 'subagents'))).toBe(false);
             return {
                 rulesCount: 0,
@@ -117,6 +121,11 @@ describe('executeInstall', () => {
 
         expect(inputRoots).toHaveLength(2);
         for (const inputRoot of inputRoots) expect(existsSync(inputRoot)).toBe(false);
+
+        // Scoping guard: codex/pi get commands only via their ~/.agents/skills
+        // adaptation (slash /plugin-cmd), so `commands` must NOT be handed to
+        // rulesync for them — only opencode needs the native command files.
+        expect(featureSets.every((features) => !features.includes('commands'))).toBe(true);
 
         // Verify rulesync called with correct options (ADR-010)
         expect(capturedOptions).toBeDefined();

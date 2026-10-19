@@ -914,9 +914,17 @@ export async function executeInstall(
             if (options.verbose) echo(`Running rulesync for ${rulesyncTargets.join(', ')}...`);
             if (rulesyncFeatures.length > 0) {
                 for (const target of rulesyncTargets) {
+                    // Commands: opencode is the only rulesync target whose commands-as-skills
+                    // adaptation yields no native slash form — codex/pi/antigravity slash-expose the
+                    // skill as /plugin-cmd via ~/.agents/skills, while opencode ignores
+                    // `disable-model-invocation` and reads slash commands only from
+                    // ~/.config/opencode/commands/. So it alone receives the canonical commands/
+                    // tree the mapper now writes.
+                    const targetFeatures =
+                        target === 'opencode' ? [...rulesyncFeatures, 'commands' as const] : rulesyncFeatures;
                     const result = await runRulesyncImpl(
                         [target],
-                        rulesyncFeatures,
+                        targetFeatures,
                         targetInputRoots.get(target) ?? outputDir,
                         {
                             global: options.global,

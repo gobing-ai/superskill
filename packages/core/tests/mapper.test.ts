@@ -49,8 +49,10 @@ describe('mapPluginToRulesync', () => {
 
         expect(result.commands).toBe(1);
         expect(existsSync(join(outDir, 'skills', 'demo-run', 'SKILL.md'))).toBe(true);
-        // No separate commands/ directory
-        expect(existsSync(join(outDir, 'commands'))).toBe(false);
+        // Commands are ALSO published to rulesync's canonical commands/ tree: the
+        // skills copy has no slash form for opencode, which reads
+        // ~/.config/opencode/commands/<name>.md for `/name`.
+        expect(existsSync(join(outDir, 'commands', 'demo-run.md'))).toBe(true);
     });
 
     it('maps agents → .rulesync/skills/<plugin>-<name>/SKILL.md (adapted as skill)', () => {
@@ -77,6 +79,21 @@ describe('mapPluginToRulesync', () => {
         expect(existsSync(join(outDir, 'skills', 'demo-run', 'SKILL.md'))).toBe(true);
         expect(existsSync(join(outDir, 'skills', 'demo-a', 'SKILL.md'))).toBe(false);
         expect(existsSync(join(outDir, 'skills', 'demo-coder', 'SKILL.md'))).toBe(false);
+    });
+
+    it('also publishes commands to the canonical commands/ tree rulesync reads', () => {
+        tmpDir = mkdtempSync('superskill-mapper-');
+        const outDir = join(tmpDir, '.rulesync');
+        const result = mapPluginToRulesync(FIXTURE_DIR, 'demo', outDir, { features: ['commands'] });
+
+        expect(result.commands).toBe(1);
+        // Without this tree, rulesync emits commandsCount 0 for every target and
+        // opencode gets no /demo-run — its skills adaptation has no slash form.
+        const commandPath = join(outDir, 'commands', 'demo-run.md');
+        expect(existsSync(commandPath)).toBe(true);
+        expect(readFileSync(commandPath, 'utf-8')).toBe(
+            readFileSync(join(outDir, 'skills', 'demo-run', 'SKILL.md'), 'utf-8'),
+        );
     });
 
     it('returns zero counts for missing hooks.json and mcp.json', () => {
