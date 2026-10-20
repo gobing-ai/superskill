@@ -2,10 +2,10 @@
 doc: 04_DESIGN
 owns: SURFACE — concrete shapes: every CLI command, flag, config key, env var, table, DTO
 authority: derived
-version: 2.23.0
+version: 2.24.0
 derived_from: [00_ADR, 01_PRD, 02_ROADMAP]
 owner: Robin Min
-updated_at: 2026-10-15
+updated_at: 2026-10-20
 read_before: changing a command, flag, env var, or schema
 edit_rules: 99 §6.5
 sync: [T3]
@@ -505,7 +505,12 @@ Non-`hooks` top-level fields (including `minCliVersion`) survive round-trip conv
 
 ## Repository feature verification
 
-`.spur/workflows/feature-verification.yaml` runs the installed verification receipt script under Bun,
-because its application dependencies use Bun APIs. Its `verificationCmd` is `bun run spur-check-feature`,
-an alias of the full `spur-check` gate. Biome excludes generated `.spur/memory` evidence and run records;
-the verification workflow validates their identity, input digest and outcome at feature completion.
+Feature verification runs through the bundled `feature-lifecycle` FSM — no project workflow override.
+Entering `verifying` executes `spur feature verify <id>`, whose default command resolves the SDLC
+action `check-feature` → `bun run spur-check-feature` (alias of the full `spur-check` gate, bound via
+the `bun` preset). The verb writes a v1 receipt (feature identity, verifier contract, input digest,
+outcome) to `.spur/memory/evidence/` plus `.spur/run/<runId>-feature-verification.status`; the
+`verifying → done` guard denies completion without a current PASS receipt. Biome excludes generated
+`.spur/memory` evidence and run records. The retired `feature-verification` wrapper workflow (removed
+by spur's script-absorption upgrade, ADR-142, live in @gobing-ai/spur@0.4.18) must not be re-added: its
+receipt contract binds to `feature-lifecycle` only.

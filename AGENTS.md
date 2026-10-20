@@ -101,7 +101,7 @@ bun run dev        # watch mode (runs CLI from source)
 bun run check      # lint + test (CI gate)
 bun run corpus-check # explicit corpus audit (spur >=0.3.78: unsuppressed, advisory — not part of the gate)
 bun run spur-check # lint + pre-check rules + test + post-check rules
-bun run spur-check-feature # feature-verification workflow entry; runs spur-check
+bun run spur-check-feature # feature-verification pass (SDLC action `check-feature`); runs spur-check
 ```
 
 CLI binary: `apps/cli` exposes `bin: { superskill: "dist/index.js" }`. Root `bun run build` compiles the standalone executable to `dist/superskill` and the versioned Codex plugin ZIP; package `prepack` runs `build:bundle` to create the published `apps/cli/dist/index.js` bundle and package assets.
@@ -112,7 +112,7 @@ CLI binary: `apps/cli` exposes `bin: { superskill: "dist/index.js" }`. Root `bun
 2. `bun run test` passes; no test skipped, `.skip`'d, or commented out to go green.
 3. `bun run build` succeeds across all workspaces that declare a `build` script.
 4. `git status` shows only intentional changes.
-5. `bun run spur-check` — recommended pre-check rules (33) + post-check rules (coverage-gate + tsdoc-export + skill-citations-resolve) all green. (`spur task check --corpus` stays available via `bun run corpus-check` as an explicit, unsuppressed audit — spur 0.3.78 retired the `config/corpus-baseline.json` ratchet, so it is advisory and no longer part of the gate.)
+5. `bun run spur-check` — recommended pre-check rules (43) + post-check rules (coverage-gate + tsdoc-export + skill-citations) all green. (`spur task check --corpus` stays available via `bun run corpus-check` as an explicit, unsuppressed audit — spur 0.3.78 retired the `config/corpus-baseline.json` ratchet, so it is advisory and no longer part of the gate.)
 
 ## Testing
 
