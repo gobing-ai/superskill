@@ -612,6 +612,33 @@ export async function executeInstall(
         );
     }
 
+    // Native targets need their host CLI. A missing one is skipped, never fatal: `claude`,
+    // `omp` and `grok` are all in the default expansion (`TARGETS`), so a fresh box without
+    // omp would otherwise lose the whole install — including the rulesync targets that had
+    // already been written but never got a manifest (`update` then reports them `legacy`).
+    const unavailableNative = new Map<Target, string>();
+    for (const { target, cli, injected } of nativeHostClis(dependencies)) {
+        if (injected || !execTargets.includes(target)) continue;
+        if (resolveHostCli(cli) === undefined) unavailableNative.set(target, cli);
+    }
+    const skippedTargets: ReadonlySet<string> = new Set(unavailableNative.keys());
+    const installedTargets = execTargets.filter((target) => !skippedTargets.has(target));
+    // `execTargets` is empty for a grok-bot-only install (install-only target, handled below),
+    // which is legitimate — only a non-empty request with nothing installable is an error.
+    if (execTargets.length > 0 && installedTargets.length === 0) {
+        // Nothing left to install — name every missing CLI and the PATH fix.
+        throw new Error(
+            `No installable targets: ${[...unavailableNative]
+                .map(([target, cli]) => `'${cli}' CLI not found (target '${target}')`)
+                .join(', ')}. Install the host CLI, add its directory to PATH, or pass --targets <list>`,
+        );
+    }
+    for (const [target, cli] of unavailableNative) {
+        echoError(
+            `Warning: skipping target '${target}': '${cli}' CLI not found on PATH or in ${hostCliSearchDirs().join(', ')} — install ${cli} to include it`,
+        );
+    }
+
     if (options.verbose) echo(`Resolving plugin '${plugin}'...`);
 
     // Step 1: Resolve plugin root (+ marketplace metadata for Claude target).
@@ -1005,6 +1032,9 @@ export async function executeInstall(
         );
         const hookEmitResults: EmitHooksResult[] = [];
         for (const target of targets) {
+            // A host CLI that is absent was already named above; its dispatch would only fail.
+            if (skippedTargets.has(target)) continue;
+
             if (target === 'claude') {
                 if (options.verbose) echo('Claude Code: registering marketplace and installing plugin...');
                 if (!options.dryRun) {
@@ -1300,7 +1330,7 @@ export async function executeInstall(
         } else {
             writeInstallProvenance({
                 plugin,
-                targets: execTargets,
+                targets: installedTargets,
                 outputRoot,
                 pluginRoot,
                 resolution,
@@ -1312,7 +1342,8 @@ export async function executeInstall(
                 writer: dependencies.writeInstallManifest ?? writeInstallManifest,
                 nowIso: installedAt,
             });
-            echo(`Installed '${plugin}' to ${targets.length} target(s).`);
+            const suffix = skippedTargets.size > 0 ? ` (skipped: ${[...skippedTargets].join(', ')})` : '';
+            echo(`Installed '${plugin}' to ${installedTargets.length} target(s)${suffix}.`);
         }
     } finally {
         rmSync(stageParent, { recursive: true, force: true });
@@ -1328,6 +1359,57 @@ export async function executeInstall(
 const defaultProcessExecutor: ProcessExecutor = new NodeProcessExecutor({ output: { mode: 'stream', isTTY: true } });
 
 /**
+ * Directories a host CLI lands in without being on `PATH`: Claude Code's native installer
+ * (`~/.local/bin`), its legacy local-npm install (`~/.claude/local`), bun globals, and the
+ * conventional system bin.
+ */
+function hostCliSearchDirs(): string[] {
+    const home = resolveHomeDir();
+    return [join(home, '.local', 'bin'), join(home, '.claude', 'local'), join(home, '.bun', 'bin'), '/usr/local/bin'];
+}
+
+/**
+ * Resolve a host CLI (`claude`/`omp`/`grok`) to an absolute path.
+ *
+ * `PATH` alone is not enough: the Claude Code native installer writes `~/.local/bin/claude`
+ * and does not edit `PATH`, so a bare `claude` spawn fails with ENOENT on a correctly
+ * installed host (and ts-runtime reports that as a signal-less null exit code, losing the cause).
+ */
+export function resolveHostCli(name: string): string | undefined {
+    const onPath = Bun.which(name, { PATH: getEnvVar('PATH') ?? '' });
+    if (onPath !== null) return onPath;
+    for (const dir of hostCliSearchDirs()) {
+        const candidate = join(dir, name);
+        try {
+            // Executable only: parity with Bun.which, which never returns a non-executable hit.
+            if ((statSync(candidate).mode & 0o111) !== 0) return candidate;
+        } catch {
+            // Absent — try the next directory.
+        }
+    }
+    return undefined;
+}
+
+/** Resolve a host CLI or throw an actionable error naming the install/PATH fix and the target opt-out. */
+export function requireHostCli(name: string, target: Target): string {
+    const resolved = resolveHostCli(name);
+    if (resolved !== undefined) return resolved;
+    throw new Error(
+        `'${name}' CLI not found: not on PATH and not in ${hostCliSearchDirs().join(', ')}. ` +
+            `Install ${name}, add its directory to PATH, or install without it: --targets <list> (drop '${target}')`,
+    );
+}
+
+/** Native (non-rulesync) targets that need a host CLI, and whether a caller injected the installer. */
+function nativeHostClis(dependencies: InstallDependencies): Array<{ target: Target; cli: string; injected: boolean }> {
+    return [
+        { target: 'claude', cli: 'claude', injected: dependencies.runClaudeInstall !== undefined },
+        { target: 'omp', cli: 'omp', injected: dependencies.runOmpInstall !== undefined },
+        { target: 'grok', cli: 'grok', injected: dependencies.runGrokInstall !== undefined },
+    ];
+}
+
+/**
  * Spawn a CLI step and fail loudly on a non-zero exit. A swallowed failure here
  * would let `executeInstall` report "Installed" for a target that never installed.
  */
@@ -1338,10 +1420,14 @@ export async function runCheckedCommand(
 ): Promise<void> {
     const result = await executor.run({ command: argv[0], args: argv.slice(1), label });
     if (result.exitCode !== 0) {
+        // A signal-less null exit code means the process never started (ts-runtime drops the
+        // execa ENOENT cause), so name the real reason instead of "spawn failure".
         const why =
-            result.exitCode === null
-                ? `no exit code (${result.signal ?? 'spawn failure'})`
-                : `exit code ${result.exitCode}`;
+            result.exitCode !== null
+                ? `exit code ${result.exitCode}`
+                : result.signal !== undefined
+                  ? `signal ${result.signal}`
+                  : 'command not found or not executable (spawn failed before start) — check PATH';
         throw new Error(`${label} failed with ${why}: ${argv.join(' ')}`);
     }
 }
@@ -1364,18 +1450,21 @@ async function defaultRunClaudeInstall(
     assertSafePathSegment(marketplaceName, 'marketplace name');
     assertSafePathSegment(plugin, 'plugin name');
 
+    // Absolute path: `PATH` may omit the native installer's `~/.local/bin`.
+    const claudeCli = requireHostCli('claude', 'claude');
+
     // marketplace add is idempotent — if already registered, claude CLI exits 0
     // with a notice. source is either an absolute path (directory mode) or an
     // `owner/repo` slug (github mode).
     await runCheckedCommand(
-        ['claude', 'plugin', 'marketplace', 'add', registration.source],
+        [claudeCli, 'plugin', 'marketplace', 'add', registration.source],
         'claude plugin marketplace add',
         executor,
     );
 
     // Install the plugin from the registered marketplace.
     await runCheckedCommand(
-        ['claude', 'plugin', 'install', `${plugin}@${marketplaceName}`, '--scope', global ? 'user' : 'project'],
+        [claudeCli, 'plugin', 'install', `${plugin}@${marketplaceName}`, '--scope', global ? 'user' : 'project'],
         'claude plugin install',
         executor,
     );
@@ -1464,7 +1553,13 @@ export async function resolveGrokInstallPath(
     executor: ProcessExecutor = defaultProcessExecutor,
 ): Promise<string | undefined> {
     try {
-        const result = await executor.run({ command: 'grok', args: ['plugin', 'list', '--json'], forceBuffered: true });
+        const resolved = resolveHostCli('grok');
+        if (resolved === undefined) return undefined;
+        const result = await executor.run({
+            command: resolved,
+            args: ['plugin', 'list', '--json'],
+            forceBuffered: true,
+        });
         if (result.exitCode !== 0) return undefined;
         return resolveGrokInstallPathFromList(parseGrokPluginListJson(result.stdout), plugin);
     } catch {
@@ -1494,8 +1589,9 @@ export async function defaultRunGrokInstall(
     assertSafePathSegment(marketplaceName, 'marketplace name');
     assertSafePathSegment(plugin, 'plugin name');
 
+    const grokCli = requireHostCli('grok', 'grok');
     const add = await executor.run({
-        command: 'grok',
+        command: grokCli,
         args: ['plugin', 'marketplace', 'add', registration.source],
         forceBuffered: true,
     });
@@ -1510,11 +1606,15 @@ export async function defaultRunGrokInstall(
 
     // Re-install is non-idempotent without remove: "repo '…' already installed".
     // Best-effort uninstall (exit non-zero when absent — first install).
-    await executor.run({ command: 'grok', args: ['plugin', 'uninstall', plugin, '--confirm'], forceBuffered: true });
+    await executor.run({
+        command: grokCli,
+        args: ['plugin', 'uninstall', plugin, '--confirm'],
+        forceBuffered: true,
+    });
 
     // Install from the plugin directory path (Claude-format layout). Do NOT pass
     // plugin@marketplace — Grok 0.2.93 does not accept that addressing form.
-    await runCheckedCommand(['grok', 'plugin', 'install', pluginRoot, '--trust'], 'grok plugin install', executor);
+    await runCheckedCommand([grokCli, 'plugin', 'install', pluginRoot, '--trust'], 'grok plugin install', executor);
 }
 
 /**
@@ -1536,18 +1636,20 @@ export async function defaultRunOmpInstall(
     assertSafePathSegment(marketplaceName, 'marketplace name');
     assertSafePathSegment(plugin, 'plugin name');
 
+    const ompCli = requireHostCli('omp', 'omp');
+
     // Idempotent re-registration: `omp plugin marketplace add` exits 1 when the marketplace
     // is already registered (omp 16.x; `--force` does not bypass the check), so remove it
     // first. The remove exits 1 when the marketplace is absent — the expected first-install
     // case — so it is best-effort with output suppressed.
     await executor.run({
-        command: 'omp',
+        command: ompCli,
         args: ['plugin', 'marketplace', 'remove', marketplaceName],
         forceBuffered: true,
     });
 
     await runCheckedCommand(
-        ['omp', 'plugin', 'marketplace', 'add', registration.source],
+        [ompCli, 'plugin', 'marketplace', 'add', registration.source],
         'omp plugin marketplace add',
         executor,
     );
@@ -1555,7 +1657,7 @@ export async function defaultRunOmpInstall(
     // --force: reinstall over an existing registry entry AND refresh the cached plugin dir
     // (verified against omp 16.4.2: a plain install exits 1 with "already installed" and
     // never refreshes the cache, so stale source would survive a re-install without it).
-    const installArgs: [string, ...string[]] = ['omp', 'plugin', 'install', `${plugin}@${marketplaceName}`, '--force'];
+    const installArgs: [string, ...string[]] = [ompCli, 'plugin', 'install', `${plugin}@${marketplaceName}`, '--force'];
     if (!global) installArgs.push('--scope', 'project');
     await runCheckedCommand(installArgs, 'omp plugin install', executor);
 }

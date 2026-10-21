@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, spyOn } from 'bun:test';
 import * as nodeFs from 'node:fs';
 import {
+    chmodSync,
     existsSync,
     mkdirSync,
     mkdtempSync,
@@ -24,6 +25,8 @@ import {
     parseRemoteMarketplaceLocator,
     parseTargets,
     registerInstall,
+    requireHostCli,
+    resolveHostCli,
     resolveInstalledPackageRoot,
     resolvePluginRoot,
     resolveRemoteMarketplace,
@@ -740,11 +743,12 @@ describe('executeInstall', () => {
         const c0 = spawnCalls[0];
         const c1 = spawnCalls[1];
         if (!c0 || !c1) throw new Error('expected 2 spawn calls');
-        expect(c0.command).toBe('claude');
+        // Absolute path by design: PATH may omit the native installer's ~/.local/bin.
+        expect(c0.command.endsWith('/claude')).toBe(true);
         expect(c0.args[0]).toBe('plugin');
         expect(c0.args[1]).toBe('marketplace');
         expect(c0.args[2]).toBe('add');
-        expect(c1.command).toBe('claude');
+        expect(c1.command).toBe(c0.command);
         expect(c1.args[0]).toBe('plugin');
         expect(c1.args[1]).toBe('install');
         expect(c1.args[2]).toBe('market@test-mkp');
@@ -2035,5 +2039,143 @@ describe('runCheckedCommand', () => {
         await expect(runCheckedCommand(['false'], 'failing step')).rejects.toThrow(
             'failing step failed with exit code 1',
         );
+    });
+});
+
+describe('host CLI resolution', () => {
+    const savedPath = getEnvVar('PATH');
+
+    afterEach(() => {
+        if (savedPath === undefined) removeEnvVar('PATH');
+        else setEnvVar('PATH', savedPath);
+    });
+
+    it('resolves a CLI from the native installer dir when PATH omits it', () => {
+        // Claude Code's native installer writes ~/.local/bin/claude and never edits PATH —
+        // a bare `claude` spawn ENOENTs on a correctly installed host.
+        const claudeDir = join(fileLevelHome as string, '.local', 'bin');
+        mkdirSync(claudeDir, { recursive: true });
+        writeFileSync(join(claudeDir, 'claude'), '#!/bin/sh\n');
+        chmodSync(join(claudeDir, 'claude'), 0o755);
+        setEnvVar('PATH', join(fileLevelHome as string, 'empty-path'));
+
+        expect(resolveHostCli('claude')).toBe(join(claudeDir, 'claude'));
+    });
+
+    it('prefers the PATH hit when the CLI is on PATH', () => {
+        const pathDir = join(fileLevelHome as string, 'on-path');
+        mkdirSync(pathDir, { recursive: true });
+        writeFileSync(join(pathDir, 'claude'), '#!/bin/sh\n');
+        chmodSync(join(pathDir, 'claude'), 0o755);
+        setEnvVar('PATH', pathDir);
+
+        expect(resolveHostCli('claude')).toBe(join(pathDir, 'claude'));
+    });
+
+    it('returns undefined when the CLI is nowhere', () => {
+        setEnvVar('PATH', join(fileLevelHome as string, 'empty-path'));
+
+        expect(resolveHostCli('claude')).toBeUndefined();
+    });
+
+    it('requireHostCli names the searched dirs, the PATH fix and the target opt-out', () => {
+        setEnvVar('PATH', join(fileLevelHome as string, 'empty-path'));
+
+        expect(() => requireHostCli('claude', 'claude')).toThrow(/CLI not found/);
+        expect(() => requireHostCli('claude', 'claude')).toThrow(/add its directory to PATH/);
+        expect(() => requireHostCli('claude', 'claude')).toThrow(/--targets <list> \(drop 'claude'\)/);
+        expect(() => requireHostCli('claude', 'claude')).toThrow(/\.local[/\\]bin/);
+    });
+
+    it('throws naming every missing CLI when no requested target is installable', async () => {
+        // Nothing written: a run with zero installable targets is a usage error, not a no-op.
+        const workspace = createTempWorkspace();
+        const pluginRoot = createPlugin(workspace);
+        setEnvVar('PATH', join(fileLevelHome as string, 'empty-path'));
+
+        await expect(
+            executeInstall('demo', ['claude', 'omp'], {
+                marketplacePath: pluginRoot,
+                global: true,
+                dryRun: false,
+                verbose: false,
+            }),
+        ).rejects.toThrow(/No installable targets: .*'claude' CLI not found \(target 'claude'\).*'omp' CLI not found/);
+        expect(existsSync(join(fileLevelHome as string, '.agents'))).toBe(false);
+        expect(existsSync(join(fileLevelHome as string, '.superskill'))).toBe(false);
+    });
+
+    it('skips a native target whose CLI is absent and still installs the rest', async () => {
+        // `claude`/`omp`/`grok` are all in the default TARGETS expansion, so a box without omp
+        // must not lose the whole install — and the skipped target must be named, never dropped
+        // silently (design section 6 exit #2).
+        const workspace = createTempWorkspace();
+        createPlugin(workspace);
+        mkdirSync(join(workspace, '.claude-plugin'), { recursive: true });
+        writeFileSync(
+            join(workspace, '.claude-plugin', 'marketplace.json'),
+            JSON.stringify({ name: 'superskill', plugins: [{ name: 'demo', source: './plugins/demo' }] }),
+        );
+        const home = fileLevelHome as string;
+        setEnvVar('PATH', join(home, 'empty-path'));
+        const claudeDir = join(home, '.local', 'bin');
+        mkdirSync(claudeDir, { recursive: true });
+        writeFileSync(join(claudeDir, 'claude'), '#!/bin/sh\n');
+        chmodSync(join(claudeDir, 'claude'), 0o755);
+
+        const stderr = spyOn(process.stderr, 'write').mockImplementation(() => true);
+        const stdout = spyOn(process.stdout, 'write').mockImplementation(() => true);
+        const installed: string[] = [];
+
+        await executeInstall(
+            'demo',
+            ['claude', 'omp'],
+            { marketplacePath: workspace, global: true, dryRun: false, verbose: false },
+            {
+                runClaudeInstall: async (_r, m, p) => {
+                    installed.push(`${p}@${m}`);
+                    // The real host writes the plugin into its own cache; provenance inventories it.
+                    const cache = join(home, '.claude', 'plugins', 'cache', m, p);
+                    mkdirSync(cache, { recursive: true });
+                    writeFileSync(join(cache, 'plugin.json'), JSON.stringify({ name: p }));
+                },
+            },
+        );
+        const errText = stderr.mock.calls.map((c) => String(c[0])).join('');
+        const outText = stdout.mock.calls.map((c) => String(c[0])).join('');
+        stderr.mockRestore();
+        stdout.mockRestore();
+
+        expect(installed).toEqual(['demo@superskill']);
+        expect(errText).toContain("skipping target 'omp'");
+        expect(errText).toContain("'omp' CLI not found");
+        expect(outText).toContain("Installed 'demo' to 1 target(s) (skipped: omp).");
+        // The skipped target must not own a manifest: `update` cannot reconcile what never ran.
+        expect(existsSync(join(home, '.superskill', 'manifests', 'omp'))).toBe(false);
+    });
+});
+
+describe('runCheckedCommand spawn-failure message', () => {
+    it('names a never-started process instead of "spawn failure"', async () => {
+        // ts-runtime reports an ENOENT spawn as a signal-less null exit code and drops the
+        // execa cause, so the message must say what actually happened.
+        const executor = {
+            run: async () => ({
+                command: 'claude',
+                args: ['plugin', 'marketplace', 'add', '/tmp'],
+                exitCode: null,
+                stdout: '',
+                stderr: '',
+                durationMs: 1,
+            }),
+        } as unknown as ProcessExecutor;
+
+        await expect(
+            runCheckedCommand(
+                ['claude', 'plugin', 'marketplace', 'add', '/tmp'],
+                'claude plugin marketplace add',
+                executor,
+            ),
+        ).rejects.toThrow(/command not found or not executable .* check PATH/);
     });
 });

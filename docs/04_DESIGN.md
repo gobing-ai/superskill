@@ -102,6 +102,20 @@ superskill update [name] [--check] [--json] [--targets <list>] [--marketplace <l
 | `targets` | `Target[]`; an empty array means all targets |
 | `features` | Any of `skills`, `commands`, `subagents`, `hooks`, `mcp`; defaults to all five |
 
+### Host CLI resolution + preflight (native targets)
+
+`install.ts` `resolveHostCli` / `requireHostCli` / `runCheckedCommand`.
+
+| Aspect | Behavior |
+| --- | --- |
+| Resolution order | `Bun.which` on the ambient `PATH`, then `~/.local/bin`, `~/.claude/local`, `~/.bun/bin`, `/usr/local/bin` (`HOME_DIR` when set). A candidate must be executable (mode `& 0o111`), matching `Bun.which`. The resolved **absolute path** is spawned, never the bare name |
+| Why | Claude Code's native installer writes `~/.local/bin/claude` and does not edit `PATH`, so a bare `claude` spawn ENOENTs on a correctly installed host |
+| Preflight | Before step 1 resolves the plugin, every requested native target (`claude`/`omp`/`grok`) whose installer was **not** injected through `InstallDependencies` is resolved. Since all three are in the default `TARGETS` expansion, a missing CLI **skips that target** with a stderr `Warning: skipping target '<t>': '<cli>' CLI not found …` — never a fatal error, so a box without omp still installs the rulesync targets. Only when *nothing* is installable does the run throw (`No installable targets: …`). The per-target dispatch is step 4 — after the rulesync writes — so a fatal late ENOENT used to leave a manifest-less half-install that `update` then reported as `legacy` |
+| Skip accounting | Skipped targets get no receipt and no provenance entry (`writeInstallProvenance` receives the installable subset), and the closing line names them: `Installed '<plugin>' to <n> target(s) (skipped: omp, grok).` A skip is always announced, never silent (design §6 exit #2) |
+| Failure text | ``'<cli>' CLI not found: not on PATH and not in <dirs>. Install <cli>, add its directory to PATH, or install without it: --targets <list> (drop '<target>')`` |
+| Spawn-failure text | A signal-less null exit code means the process never started (`ts-runtime` drops the execa `ENOENT` cause), so `runCheckedCommand` says `command not found or not executable (spawn failed before start) — check PATH`; a signaled exit says `signal <name>`, a plain failure `exit code <n>` |
+| Coverage | `claude` and `omp` installers, `grok` install/list. `resolveGrokInstallPath` returns `undefined` (no spawn) when `grok` is absent |
+
 ### Remote marketplace cache freshness (task 0145)
 
 Mechanism and invariants: [03 §Plugin resolution](03_ARCHITECTURE.md#plugin-resolution). No new

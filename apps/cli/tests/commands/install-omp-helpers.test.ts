@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import { getEnvVars, removeEnvVar, setEnvVar } from '@gobing-ai/superskill-core';
 import type { ProcessExecutor, ProcessOptions, ProcessResult } from '@gobing-ai/ts-runtime';
 import {
@@ -42,7 +42,9 @@ function recordingExecutor(exitFor?: (call: RecordedRun) => number) {
 
 /** Full argv of a recorded run, for argv-shape assertions. */
 function argv(call: RecordedRun): string[] {
-    return [call.command, ...call.args];
+    // Native installs resolve the host CLI to an absolute path (PATH may omit ~/.local/bin),
+    // so assertions compare the basename.
+    return [basename(call.command), ...call.args];
 }
 
 // ── Env fixtures ─────────────────────────────────────────────────────────────
