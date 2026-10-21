@@ -78,7 +78,8 @@ Feature: CC plugin security and contract integrity
 | WBS | Task | Status |
 | --- | ---- | ------ |
 | 0108 | Fix cc plugin security, contract drift, and structural review findings | done |
-| 0147 | Fix cc plugin review findings across Stop-guard blanks, sentence dots, couplers, stdin twin, expert tools, confidence, and transcript tail | todo |
+| 0147 | Fix cc plugin review findings across Stop-guard blanks, sentence dots, couplers, stdin twin, expert tools, confidence, and transcript tail | done |
+| 0154 | Enforce the vendor-citation boundary in the gate for shipped plugin content | done |
 <!-- END AUTO-GENERATED -->
 
 ## Notes

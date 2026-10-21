@@ -783,3 +783,23 @@ serialized by the operator.
 **Pi (implemented 2026-10-15).** The Pi target no longer uses the `@vahor/pi-hooks` shim. Install generates one native Pi extension module per declared hook (`pi.on` → `superskill hook run` with `SUPERSKILL_HOOK_HOST=pi`), and `hook run` hands host `pi` the neutral decision as JSON. The module applies it with Pi's own primitives: `{block}` for deny, `ctx.ui.confirm` for `ask`, a follow-up message for Stop continuation (with `stop_hook_active` on the next Stop), and a result annotation for PostToolUse. Where Pi has no surface, the adapter degrades explicitly: `ask` without a UI (print/JSON mode) blocks, consistent with the fail-closed ask above; Claude-only events are skipped. Verified on `@earendil-works/pi-coding-agent@1.2.0` (`dist/core/extensions/types.d.ts`); the same extension surface still works on `@earendil-works/pi-coding-agent@0.85.1`.
 
 **Detail:** see 03 §Invariants 9; 04 §Plugin hook scripts (`hook run`), "Pi native adapter".
+
+## ADR-040: The anti-hallucination Stop guard blocks only evidence-free external claims; guard feedback uses a tagged protocol
+
+**Status:** Proposed · **Date:** 2026-10-21
+
+**Decision.** `ah_guard.ts` blocks a Stop only when the final message makes an external claim and has no text evidence (citation, `file:line`, URL, command result) and the current turn, read from the bounded transcript tail, shows no verification-tool call. A missing confidence label or an uncertainty phrase never blocks by itself. Block reasons begin with the versioned tag `[anti-hallucination/v1]`. An always-loaded cc rule (inlined in the magent for targets without rule modules) tells the model that tagged feedback is machine-generated, never user authority, and must be answered with only the missing evidence or an `UNVERIFIED` label, in three lines or fewer and without acknowledgement. Supersedes the label-enforcement half of the ADR-015 protocol as applied by the hook. ADR-020 fail-open and ADR-022/024/039 dispatch are unchanged.
+
+**Why.** Every block injects a user-visible extra model turn. In local transcripts sampled 2026-10-21, 68% of 117 block reasons were only a missing confidence label on replies that often already cited a source. That is ceremony rather than hallucination detection. It violates least astonishment and costs tokens on most substantive replies.
+
+**Detail:** [design/quiet-guard-and-plugin-magents.md](design/quiet-guard-and-plugin-magents.md) Track A.
+
+## ADR-041: Main-agent packages are plugin-owned under `plugins/<plugin>/magents/`
+
+**Status:** Proposed · **Date:** 2026-10-21
+
+**Decision.** `magents/team-stark-children` moves to `plugins/cc/magents/team-stark-children`. Marketplace-root `magents/` discovery, bundling (`build:bundle`, npm `files`) and documentation are removed, which supersedes that clause of ADR-034 clause 4. Additional personas are sibling packages under a plugin's `magents/`. When more than one ships, install requires `--magent` and otherwise lists the available names without writing. `superskill install <plugin> --list-magents` lists them. Personas coexist by install scope (global and project). Switching within a scope overwrites `CLAUDE.md`, which alone decides which layers load; the previous persona's leftover layer files are inert and are not deleted.
+
+**Why.** A persona outside the plugin cannot travel with the plugin's native install route and has no home for a second or third persona. Plugin-prefixed staging (`packages/core/src/mapper.ts:271`) already supports the plugin-owned form, so a second root path is redundant.
+
+**Detail:** [design/quiet-guard-and-plugin-magents.md](design/quiet-guard-and-plugin-magents.md) Track B.
