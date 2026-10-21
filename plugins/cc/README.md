@@ -200,7 +200,7 @@ The guard checks for:
 | Target | Directory |
 |--------|-----------|
 | claude | `.claude/rules/` (global: `~/.claude/rules/`) |
-| antigravity-cli / -ide | `.agents/rules/` |
+| antigravity-cli / -ide | `.agents/rules/` (global: `~/.gemini/antigravity-cli/rules/` and `~/.gemini/config/rules/`) |
 | codex, pi, opencode, hermes, omp, grok | skipped (no modular rules folder) |
 
 **Design principle:** Rules are **harness constraints, not persona content**. They live outside the magent tree so they apply on every install, even with `--magent <name>`. Targets without a modular rules folder (codex, pi, omp, grok, …) silently skip — rules never block an install.
@@ -335,7 +335,7 @@ OpenClaw is implicitly supported — it reads skills from `~/.agents/skills/`, t
 | `agents/*.md` | `~/.claude/agents/` | In the native plugin tree | Adapted as Skills 2.0 skill entries (model-invocable) via `pipeline/adapt-subagent.ts`; Pi additionally gets native agent format via `pipeline/pi-subagent.ts` |
 | `hooks/hooks.json` | `~/.claude/hooks/` | In the native plugin tree | Routed in a separate `hooks`-only pass through `TARGET_TO_RULESYNC_HOOKS` so Antigravity reaches its native generator (`.agents/hooks.json` project / `.gemini/config/hooks.json` global). Pi gets generated native extension modules, omp generated `hooks/pre|post` modules; Hermes gets `hooks.json` copied verbatim. Hook commands resolve to `superskill hook run …` (PATH), not plugin-root scripts |
 | `scripts/` | `${CLAUDE_PLUGIN_ROOT}/scripts/` (in the native plugin tree) | In the native plugin tree | Staged to `.agents/scripts/cc/` (project) or `~/.agents/scripts/cc/` (global) for rulesync+hermes via `stagePluginScripts`; resolved at runtime via `$(superskill script path cc <rel>)` (fail-closed, exit 2 if missing) or invoked directly via `superskill script run cc <id>` (fail-open on version skew). See ADR-023 |
-| `rules/*.md` | `.claude/rules/` (or `~/.claude/rules/`) | skipped | `.agents/rules/` for antigravity-cli/-ide; skipped on codex/pi/opencode/hermes/omp/grok (no modular rules folder). Emitted via `emitPluginRules`, independent of `--magent` |
+| `rules/*.md` | `.claude/rules/` (global: `~/.claude/rules/`) | skipped | project `.agents/rules/`; global `~/.gemini/antigravity-cli/rules/` and `~/.gemini/config/rules/`. Skipped on codex/pi/opencode/hermes/omp/grok (no modular rules folder). Emitted via `emitPluginRules`, independent of `--magent` |
 
 Each skill declares its own platform support in `metadata.platforms` frontmatter — not all skills support all platforms. See the per-skill table above.
 

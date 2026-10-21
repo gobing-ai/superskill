@@ -253,7 +253,13 @@ describe('isClaudeImportStyle / rules helpers', () => {
         expect(listRuleMarkdownFiles(dir).map((p) => p.split(/[/\\]/).pop())).toEqual(['01-a.md', '02-b.md']);
         expect(magentRulesRelDir('claude')).toBe(join('.claude', 'rules'));
         expect(magentRulesRelDir('antigravity-cli')).toBe(join('.agents', 'rules'));
+        expect(magentRulesRelDir('antigravity-ide')).toBe(join('.agents', 'rules'));
         expect(magentRulesRelDir('codex')).toBeNull();
+        // Global scope is relative to the tool config root, not the project prefix.
+        expect(magentRulesRelDir('claude', { global: true })).toBe('rules');
+        expect(magentRulesRelDir('antigravity-cli', { global: true })).toBe('rules');
+        expect(magentRulesRelDir('antigravity-ide', { global: true })).toBe('rules');
+        expect(magentRulesRelDir('grok', { global: true })).toBeNull();
         rmSync(dir, { recursive: true, force: true });
     });
 });

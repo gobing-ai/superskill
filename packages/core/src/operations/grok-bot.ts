@@ -406,6 +406,7 @@ export function botBootstrapMessages(args: {
             `First use (empty slash picker is expected): ask any Grok Bot on this Sand root to`,
             `read and follow ${JSON.stringify(botRecoveryWorkflowSkillPath(args.dataRoot))} with --plugin ${args.plugin}.`,
             `Consume only ${JSON.stringify(handoffPath)}; report registration pending if no verified host method is available.`,
+            `A new skill id stays pending when the host skill-save API cannot create it (it may only update existing ids).`,
             `If the Bot's Read tool denies the hidden canonical file under .superskill (bridge installs),`,
             `use the Bot's authorized Shell tool to read that exact path instead.`,
         ];
@@ -417,9 +418,10 @@ export function botBootstrapMessages(args: {
         `nonempty id/name/description/body, safe single-segment ids, frontmatter objects and resources string maps.`,
         `Resolve recipe/resource paths within this Sand root; reject symlink escapes, stale content,`,
         `foreign ownership markers or hashes, and conflicting duplicate ids before any write.`,
-        `Using only a verified host schema with confirmed registry ownership and preserving upsert behavior,`,
-        `register each listed skill id at most once in stable order with its exact name, description, body,`,
-        `frontmatter and resources. Preserve full recipes; never replace them with a self-pointer.`,
+        `Using only a verified host schema with confirmed registry ownership and preserving update behavior,`,
+        `update each existing skill id at most once, in stable order, with its exact name, description, body,`,
+        `frontmatter and resources. A new id stays pending when the host skill-save API cannot create it.`,
+        `Preserve full recipes; never replace them with a self-pointer.`,
         `For bridge recipes, use the Bot's authorized Shell tool if Read denies the exact canonical path;`,
         `keep arguments unchanged and resources beside that recipe. Ignore unrelated shared skills.`,
         `Never delete/recreate or reset ownership hashes. Continue independent failures; report each id as`,
@@ -434,7 +436,8 @@ export function botBootstrapMessages(args: {
 export const BOT_SLASH_CAVEAT =
     'Slash registration is NOT automatic: have the host agent consume the handoff with a verified ' +
     'host method (one registration attempt per id, never delete-and-recreate). ' +
-    'Filesystem install does not fill chat `/`; picker visibility and enablement stay unverified until observed.';
+    'Filesystem install does not fill chat `/`; picker visibility and enablement stay unverified until observed. ' +
+    'New skill ids may stay pending when the host skill-save API only updates existing ids and refuses to create them.';
 
 function bridgeRecordBody(recipePath: string): string {
     return (
@@ -950,6 +953,7 @@ export interface GrokBotDoctorSlashRegistry {
 export const BOT_DOCTOR_SLASH_GUIDANCE = [
     'Healthy on-disk files do not prove slash visibility; the CLI cannot verify host registration, so slash-registry status stays unknown.',
     'Install/update prepares a handoff at <dataRoot>/.superskill/grok-bot/register/<plugin>.json — have the host agent consume it with a verified registration method (one attempt per id, never delete-and-recreate).',
+    'New skill ids may stay pending when the host skill-save API only updates existing ids and refuses to create them.',
     'First use: ask any Grok Bot on this Sand root to read and follow <dataRoot>/workflows/cc-grok-bot-register/SKILL.md (when the bundled recovery skill is installed it consumes all handoffs); otherwise ask it to read and follow the handoff file directly.',
     'Bridge recipes live under the hidden .superskill tree: if the Bot Read tool denies them, use the Bot authorized Shell tool to read the exact same path. Do not rewrite recipes onto ~/.agents/skills.',
     'A host write acknowledgement does not prove enablement, picker visibility or invocation; those remain pending/unknown or unverified until observed.',

@@ -181,7 +181,7 @@ After selection, emission:
 
 1. **Claude import-style** (`CLAUDE.md` contains `@IDENTITY.md` etc.): copy modular package files + `CLAUDE.md` into dest (`~/.claude` global or project root). Claude expands `@` at session start.
 2. **Other targets / non-import packages:** `assembleMagentContent` — multi-file concat `IDENTITY → SOUL → AGENTS → USER` (overrides win) or single-file `AGENTS.<target>.md`. Codex strips bare `@file` lines.
-3. **Plugin rules:** copy `plugins/<plugin>/rules/*.md` into each target’s rules directory when one exists (claude → `.claude/rules/`; antigravity → `.agents/rules/`). Independent of `--magent`. Skip with a verbose note when the target has no rules folder.
+3. **Plugin rules:** copy `plugins/<plugin>/rules/*.md` into each target’s rules directory when one exists. Project: claude → `.claude/rules/`; antigravity → `.agents/rules/`. Global: claude → `~/.claude/rules/`; antigravity-cli → `~/.gemini/antigravity-cli/rules/`; antigravity-ide → `~/.gemini/config/rules/`. Independent of `--magent`. Skip with a verbose note when the target has no rules folder. A skipped target (host CLI absent) gets no rules and no magent write.
 
 Examples:
 

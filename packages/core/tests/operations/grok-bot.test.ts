@@ -16,8 +16,10 @@ import { getEnvVar, removeEnvVar, setEnvVar } from '@gobing-ai/superskill-core';
 import type { SandRootResolution } from '../../src/operations/grok-bot';
 import {
     applyGrokBotDialect,
+    BOT_DOCTOR_SLASH_GUIDANCE,
     BOT_ORIGIN_MARKER,
     BOT_SAND_DATA_ENV,
+    BOT_SLASH_CAVEAT,
     botBootstrapMessages,
     botCanonicalSkillDir,
     botRegisterHandoffPath,
@@ -1087,13 +1089,25 @@ describe('botBootstrapMessages (task 0132 R3/R10)', () => {
         });
         const text = lines.join(' ');
         expect(text).toContain(join(realpathSync(root), '.superskill', 'grok-bot', 'register', 'sp.json'));
-        expect(text).toMatch(/register each listed skill/);
+        expect(text).toMatch(/update each existing skill id/);
+        expect(text).toMatch(/cannot create it/);
         expect(text).toMatch(/superskill install cc --targets grok-bot/); // optional explicit instruction
         expect(text).not.toContain(join(root, 'workflows', 'cc-grok-bot-register', 'SKILL.md'));
         expect(text).toContain('confirmed registry ownership');
         expect(text).toContain('frontmatter and resources');
         expect(text).toContain('conflicting duplicate ids');
         expect(text).toContain('leave registration pending');
+    });
+
+    it('tells operators that new skill ids may stay pending when the host cannot create them', () => {
+        expect(BOT_SLASH_CAVEAT).toContain('refuses to create them');
+        expect(BOT_DOCTOR_SLASH_GUIDANCE.join('\n')).toContain('refuses to create them');
+        const withRecovery = botBootstrapMessages({
+            dataRoot: tmp,
+            plugin: 'cc',
+            entries: [entry('cc-grok-bot-register')],
+        }).join(' ');
+        expect(withRecovery).toContain('cannot create it');
     });
 
     it('bare agent-data fallback never silently selects a different root (existing resolver contract)', () => {

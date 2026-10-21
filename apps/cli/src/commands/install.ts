@@ -8,6 +8,7 @@ import {
     readFileSync,
     realpathSync,
     renameSync,
+    rmdirSync,
     rmSync,
     statSync,
     writeFileSync,
@@ -79,7 +80,13 @@ import {
     writeHooksForTarget,
 } from '../hooks';
 import { generateOmpHookModules, type OmpHookResult } from '../omp-hooks';
-import { emitPiNativeHooks, listPiHookModules, piExtensionsDir } from '../pi-hooks';
+import {
+    emitPiNativeHooks,
+    listPiHookModules,
+    piExtensionsDir,
+    prunePiHookModules,
+    prunePiShimHooks,
+} from '../pi-hooks';
 import { SCRIPT_STAMP_FILENAME, snapshotScriptRootFiles, writeScriptStamp } from '../script-stamp';
 import { cliVersion } from '../version';
 import { createGrokBotRegisterAction, type GrokBotRegisterActionArgs } from './install-post-actions';
@@ -911,12 +918,13 @@ export async function executeInstall(
         }
 
         // R6 dual-path hygiene: Grok loads both native plugins (/plugin:cmd) and
-        // ~/.agents skills (/plugin-cmd). Warn when both land in the same install.
-        const dualPathRulesyncTargets = targets.filter(
+        // ~/.agents skills (/plugin-cmd). Warn only when both are actually installed.
+        // A skipped grok (CLI absent) must not warn — it writes nothing.
+        const dualPathRulesyncTargets = installedTargets.filter(
             (t) =>
                 t === 'codex' || t === 'pi' || t === 'opencode' || t === 'antigravity-cli' || t === 'antigravity-ide',
         );
-        if (options.verbose && targets.includes('grok') && dualPathRulesyncTargets.length > 0) {
+        if (options.verbose && installedTargets.includes('grok') && dualPathRulesyncTargets.length > 0) {
             echo(
                 'Warning: installing both grok (native plugin slash /plugin:cmd) and rulesync targets ' +
                     'that adapt commands into ~/.agents/skills (slash /plugin-cmd). Grok scans both; prefer ' +
@@ -1159,8 +1167,21 @@ export async function executeInstall(
                     }
                 }
 
-                if (piExtensions && piExtensions.length > 0) {
-                    // Install Pi extensions natively — no @vahor/pi-hooks dependency
+                const declared = (piExtensions ?? []).filter((ext): ext is string => typeof ext === 'string');
+                // A declared path whose source file is gone is not provided. Missing sources
+                // used to keep the old package entry, so a dropped extension kept running.
+                const provided = declared.filter((ext) => {
+                    try {
+                        return lstatSync(join(pluginRoot, ext)).isFile();
+                    } catch {
+                        return false;
+                    }
+                });
+                const desiredBasenames = provided.map((ext) => basename(ext));
+
+                if (provided.length > 0) {
+                    // Install Pi extensions natively — no @vahor/pi-hooks dependency.
+                    // Declared extensions replace generated hook modules for this plugin.
                     const piPluginsDir = join(outputRoot, '.pi', 'agent', 'plugins', plugin);
                     if (!options.dryRun) {
                         mkdirSync(piPluginsDir, { recursive: true });
@@ -1172,9 +1193,8 @@ export async function executeInstall(
                         // Output keeps the declared basename (naming: '[name].ts') so the
                         // generated package.json ref stays valid and Bun loads it as ESM
                         // (.ts is always ESM under Bun, regardless of package.json "type").
-                        for (const ext of piExtensions) {
+                        for (const ext of provided) {
                             const source = join(pluginRoot, ext);
-                            if (!existsSync(source)) continue;
                             const result = await Bun.build({
                                 entrypoints: [source],
                                 target: 'bun',
@@ -1188,12 +1208,14 @@ export async function executeInstall(
                                 throw new Error(`Failed to bundle Pi extension ${ext}${logs ? `:\n${logs}` : ''}`);
                             }
                         }
-                        // Create package.json for Pi to load the extension
+                        // Ownership is the previous package.json. Reconcile before rewriting it,
+                        // and only after every bundle succeeded, so a failed bundle keeps the old set.
+                        reconcileOwnedPiPackage(outputRoot, plugin, desiredBasenames, options);
                         const pkgJson = {
                             name: plugin,
                             version: '0.1.0',
                             private: true,
-                            pi: { extensions: piExtensions.map((e) => `./${basename(e)}`) },
+                            pi: { extensions: desiredBasenames.map((name) => `./${name}`) },
                         };
                         writeFileSync(join(piPluginsDir, 'package.json'), `${JSON.stringify(pkgJson, null, 2)}\n`);
                         addReceiptFiles(target, listRegularFilesUnder(piPluginsDir));
@@ -1214,10 +1236,16 @@ export async function executeInstall(
                         } catch {
                             // settings.json read/write failure — non-fatal
                         }
+                        prunePiHookModules(piExtensionsDir(outputRoot, options.global), plugin);
+                        prunePiShimHooks(outputRoot, options.global, plugin);
                         if (options.verbose) echo(`  Pi extensions: installed to ${piPluginsDir}`);
+                    } else {
+                        reconcileOwnedPiPackage(outputRoot, plugin, desiredBasenames, options);
                     }
                 } else if (!hooksBlockedByCliVersion) {
-                    // Native Pi hook extensions: one generated module per hook, no shim dependency.
+                    // The plugin no longer ships extensions.pi. Drop the package entry we own
+                    // before installing native modules, or the old extension runs beside them.
+                    reconcileOwnedPiPackage(outputRoot, plugin, [], options);
                     const hookResult = emitPiNativeHooks(
                         rulesyncSourceRoot(targetInputRoots.get('pi'), outputDir),
                         outputRoot,
@@ -1227,8 +1255,9 @@ export async function executeInstall(
                     hookEmitResults.push(hookResult);
                     if (!options.dryRun && hookResult.files.length > 0) addReceiptFiles(target, hookResult.files);
                     if (options.verbose) echo(`  ${hookResult.message}`);
-                } else if (options.verbose) {
-                    echo('  Pi hooks: skipped (CLI below plugin minCliVersion)');
+                } else {
+                    reconcileOwnedPiPackage(outputRoot, plugin, [], options);
+                    if (options.verbose) echo('  Pi hooks: skipped (CLI below plugin minCliVersion)');
                 }
 
                 // Pi native agent dispatch: adapt each subagent to Pi format → ~/.pi/agent/agents/
@@ -1284,19 +1313,20 @@ export async function executeInstall(
             }
         }
         // Magents optional: plugins without magents/ (and no --magent) no-op cleanly.
-        const magentFiles = emitMagents(plugin, execTargets, outputDir, outputRoot, options);
+        // Skipped native targets (missing host CLI) get no magent or rules writes.
+        const magentFiles = emitMagents(plugin, installedTargets, outputDir, outputRoot, options);
         for (const [target, files] of magentFiles) {
             addReceiptFiles(target, files);
         }
         // Plugin-level rules optional: plugins without rules/ no-op cleanly.
-        const ruleFilesWritten = emitPluginRules(pluginRoot, execTargets, outputRoot, options);
+        const ruleFilesWritten = emitPluginRules(pluginRoot, installedTargets, outputRoot, options);
         for (const [target, files] of ruleFilesWritten) {
             addReceiptFiles(target, files);
         }
         // Plugin-level scripts → shared agents scripts root for rulesync + hermes only.
         // Native class (claude/omp/grok) already receives scripts/ via host plugin install (R3-B / R6);
         // do not invent ~/.agents/scripts as a required second tree for native-only installs (AC5).
-        const needsSharedScriptsRoot = execTargets.some((t) => t !== 'claude' && t !== 'omp' && t !== 'grok');
+        const needsSharedScriptsRoot = installedTargets.some((t) => t !== 'claude' && t !== 'omp' && t !== 'grok');
         if (needsSharedScriptsRoot) {
             const scriptCount = stagePluginScripts(outputDir, plugin, outputRoot, options, mapResult.scripts, {
                 resolution,
@@ -1306,7 +1336,7 @@ export async function executeInstall(
             if (scriptCount > 0 && !options.dryRun) {
                 const scriptDest = join(outputRoot, '.agents', 'scripts', plugin);
                 const scriptFiles = listRegularFilesUnder(scriptDest);
-                for (const target of execTargets) {
+                for (const target of installedTargets) {
                     if (target !== 'claude' && target !== 'omp' && target !== 'grok') {
                         addReceiptFiles(target, scriptFiles);
                     }
@@ -1347,7 +1377,10 @@ export async function executeInstall(
                 nowIso: installedAt,
             });
             const suffix = skippedTargets.size > 0 ? ` (skipped: ${[...skippedTargets].join(', ')})` : '';
-            echo(`Installed '${plugin}' to ${installedTargets.length} target(s)${suffix}.`);
+            // grok-bot is partitioned out of installedTargets, but a throw above means
+            // reaching this line installed it. Count it in the summary.
+            const summarized = installedTargets.length + (botRequested ? 1 : 0);
+            echo(`Installed '${plugin}' to ${summarized} target(s)${suffix}.`);
         }
     } finally {
         rmSync(stageParent, { recursive: true, force: true });
@@ -1998,7 +2031,7 @@ export function emitPluginRules(
     if (ruleFiles.length === 0) return written;
 
     for (const target of targets) {
-        const rel = magentRulesRelDir(target);
+        const rel = magentRulesRelDir(target, { global: options.global });
         if (!rel) {
             if (options.verbose) {
                 echo(`  ${target}: ${ruleFiles.length} plugin rule(s) skipped (no rules directory for this target)`);
@@ -2020,8 +2053,254 @@ export function emitPluginRules(
             destFiles.push(destPath);
         }
         written.set(target, destFiles);
+        if (options.global) retireDoubledGlobalRules(target, resolveHomeDir(), rulesDest, ruleFiles);
     }
     return written;
+}
+
+/**
+ * Remove plugin rule files a previous global install wrote to the doubled path
+ * (`<magentGlobalDir>` + the project-relative rules dir). Only regular files whose
+ * basename this plugin is installing and whose bytes still match the plugin source
+ * are removed. Anything else at that path is left, with a note.
+ */
+function retireDoubledGlobalRules(
+    target: Target,
+    homeDir: string,
+    correctDir: string,
+    sources: readonly string[],
+): void {
+    const globalRoot = magentGlobalDir(target, homeDir);
+    const projectRel = magentRulesRelDir(target);
+    if (!globalRoot || !projectRel) return;
+    const legacyDir = join(globalRoot, projectRel);
+    if (resolve(legacyDir) === resolve(correctDir) || !existsSync(legacyDir)) return;
+
+    const ownedNames = new Set(sources.map((src) => basename(src)));
+    let removed = 0;
+    for (const name of ownedNames) {
+        const legacyPath = join(legacyDir, name);
+        if (!existsSync(legacyPath)) continue;
+        let legacyStat: ReturnType<typeof lstatSync>;
+        try {
+            legacyStat = lstatSync(legacyPath);
+        } catch {
+            continue;
+        }
+        if (!legacyStat.isFile()) {
+            echo(`Plugin rules: left ${legacyPath} in place (not a superskill-owned rule file).`);
+            continue;
+        }
+        const source = sources.find((src) => basename(src) === name);
+        if (!source) continue;
+        if (!readFileSync(legacyPath).equals(readFileSync(source))) {
+            echo(
+                `Plugin rules: left ${legacyPath} in place (content differs from the plugin rule); ` +
+                    `the loaded copy is ${join(correctDir, name)}.`,
+            );
+            continue;
+        }
+        rmSync(legacyPath);
+        removed++;
+    }
+    if (removed > 0) {
+        echo(
+            `Plugin rules: removed ${removed} superseded file(s) from ${legacyDir} ` +
+                `(global rules now live at ${correctDir}).`,
+        );
+    }
+    removeEmptyDir(legacyDir);
+    const extra = dirname(legacyDir);
+    if (extra !== resolve(globalRoot) && extra !== globalRoot) removeEmptyDir(extra);
+}
+
+/** Remove `dir` when it exists and has no entries. A non-empty directory is left alone. */
+function removeEmptyDir(dir: string): void {
+    if (!existsSync(dir)) return;
+    let entries: string[];
+    try {
+        entries = readdirSync(dir);
+    } catch {
+        return;
+    }
+    if (entries.length === 0) rmdirSync(dir);
+}
+
+interface OwnedPiPackage {
+    ours: boolean;
+    basenames: string[];
+}
+
+/** package.json superskill wrote for a Pi plugin package: `name` is the plugin and `pi.extensions` is a string array. */
+function readOwnedPiPackage(pluginDir: string, plugin: string): OwnedPiPackage {
+    const pkgPath = join(pluginDir, 'package.json');
+    if (!existsSync(pkgPath)) return { ours: false, basenames: [] };
+    let parsed: unknown;
+    try {
+        if (!lstatSync(pkgPath).isFile()) return { ours: false, basenames: [] };
+        parsed = JSON.parse(readFileSync(pkgPath, 'utf-8'));
+    } catch {
+        return { ours: false, basenames: [] };
+    }
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return { ours: false, basenames: [] };
+    const record = parsed as Record<string, unknown>;
+    if (record.name !== plugin) return { ours: false, basenames: [] };
+    const pi = record.pi;
+    if (!pi || typeof pi !== 'object' || Array.isArray(pi)) return { ours: false, basenames: [] };
+    const extensions = (pi as Record<string, unknown>).extensions;
+    if (!Array.isArray(extensions)) return { ours: false, basenames: [] };
+    const basenames: string[] = [];
+    for (const entry of extensions) {
+        if (typeof entry !== 'string' || entry.includes('..')) continue;
+        const base = basename(entry);
+        if (!base || base === '.' || base === '..') continue;
+        basenames.push(base);
+    }
+    return { ours: true, basenames };
+}
+
+interface PiPackageLayout {
+    agentDir: string;
+    pluginDir: string;
+    settingsPath: string;
+    packageRef: string;
+}
+
+function piPackageLayout(outputRoot: string, plugin: string): PiPackageLayout {
+    const agentDir = join(outputRoot, '.pi', 'agent');
+    const pluginDir = join(agentDir, 'plugins', plugin);
+    return {
+        agentDir,
+        pluginDir,
+        settingsPath: join(agentDir, 'settings.json'),
+        packageRef: relative(agentDir, pluginDir),
+    };
+}
+
+function piEntryPath(entry: string, agentDir: string): string {
+    return isAbsolute(entry) ? resolve(entry) : resolve(agentDir, entry);
+}
+
+function isPiDirectoryEntry(entry: string, layout: PiPackageLayout): boolean {
+    const normalized = entry.replace(/\\/g, '/').replace(/\/+$/, '');
+    const ref = layout.packageRef.replace(/\\/g, '/');
+    if (normalized === ref || normalized === `./${ref}`) return true;
+    try {
+        return piEntryPath(entry, layout.agentDir) === resolve(layout.pluginDir);
+    } catch {
+        return false;
+    }
+}
+
+function isPiOwnedFileEntry(entry: string, layout: PiPackageLayout, stale: ReadonlySet<string>): boolean {
+    if (!stale.has(basename(entry))) return false;
+    try {
+        return dirname(piEntryPath(entry, layout.agentDir)) === resolve(layout.pluginDir);
+    } catch {
+        return false;
+    }
+}
+
+/**
+ * Reconcile the Pi package install superskill owns for `plugin`
+ * (`<root>/.pi/agent/plugins/<plugin>` and its `settings.json` `packages` entry).
+ *
+ * `desiredBasenames` is what the plugin provides now. Extension files listed in a
+ * package.json we wrote (`name` equals the plugin and `pi.extensions` is a string
+ * array) and absent from that set are removed. The directory `packages` entry is
+ * removed only when the plugin provides nothing and that package.json is ours.
+ * Other `packages` entries, and files not listed in our package.json, stay.
+ */
+export function reconcileOwnedPiPackage(
+    outputRoot: string,
+    plugin: string,
+    desiredBasenames: readonly string[],
+    options: { dryRun: boolean; verbose: boolean },
+): void {
+    const layout = piPackageLayout(outputRoot, plugin);
+    try {
+        if (existsSync(layout.pluginDir) && lstatSync(layout.pluginDir).isSymbolicLink()) return;
+    } catch {
+        return;
+    }
+    const owned = readOwnedPiPackage(layout.pluginDir, plugin);
+    if (!owned.ours) return;
+
+    const desired = new Set(desiredBasenames);
+    const stale = owned.basenames.filter((name) => !desired.has(name));
+    const staleSet = new Set(stale);
+    const dropDirectory = desiredBasenames.length === 0;
+    const removedFiles: string[] = [];
+
+    for (const name of stale) {
+        const filePath = join(layout.pluginDir, name);
+        if (!existsSync(filePath)) continue;
+        let st: ReturnType<typeof lstatSync>;
+        try {
+            st = lstatSync(filePath);
+        } catch {
+            continue;
+        }
+        if (!st.isFile()) {
+            if (options.verbose) echo(`Pi: left ${filePath} in place (not a regular file superskill installed).`);
+            continue;
+        }
+        removedFiles.push(filePath);
+        if (!options.dryRun) rmSync(filePath);
+    }
+
+    const pkgPath = join(layout.pluginDir, 'package.json');
+    let removedPackage = false;
+    if (dropDirectory && existsSync(pkgPath)) {
+        try {
+            if (lstatSync(pkgPath).isFile()) {
+                removedPackage = true;
+                if (!options.dryRun) rmSync(pkgPath);
+            }
+        } catch {
+            // unreadable package.json — leave it
+        }
+    }
+    if (!options.dryRun && dropDirectory) removeEmptyDir(layout.pluginDir);
+
+    let removedSettings = false;
+    if (existsSync(layout.settingsPath)) {
+        try {
+            const parsed = JSON.parse(readFileSync(layout.settingsPath, 'utf-8')) as unknown;
+            if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+                const existing = parsed as Record<string, unknown>;
+                if (Array.isArray(existing.packages)) {
+                    const next = existing.packages.filter((entry) => {
+                        if (typeof entry !== 'string') return true;
+                        if (dropDirectory && isPiDirectoryEntry(entry, layout)) return false;
+                        if (isPiOwnedFileEntry(entry, layout, staleSet)) return false;
+                        return true;
+                    });
+                    if (JSON.stringify(next) !== JSON.stringify(existing.packages)) {
+                        removedSettings = true;
+                        if (!options.dryRun) {
+                            existing.packages = next;
+                            writeFileSync(layout.settingsPath, `${JSON.stringify(existing, null, 2)}\n`);
+                        }
+                    }
+                }
+            }
+        } catch {
+            // unparseable settings.json — leave it; owned files are still reconciled
+        }
+    }
+
+    if (removedFiles.length > 0 || removedPackage || removedSettings) {
+        const detail = [
+            removedFiles.length > 0 ? `${removedFiles.length} extension file(s)` : null,
+            removedPackage ? 'package.json' : null,
+            removedSettings ? `settings entry ${layout.packageRef}` : null,
+        ]
+            .filter((part): part is string => part !== null)
+            .join(', ');
+        const verb = options.dryRun ? 'would remove' : 'removed';
+        echo(`Pi: ${verb} superseded package install for '${plugin}' (${detail}).`);
+    }
 }
 
 /**

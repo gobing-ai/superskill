@@ -37,8 +37,15 @@ async function runDoctor(args: string[]): Promise<{ code: number; output: string
 
 describe('doctor command (task 0128 / R6)', () => {
     it('exits 2 on usage errors and 1 when no root resolves, 0 when healthy', async () => {
-        expect((await runDoctor([])).code).toBe(2);
-        expect((await runDoctor(['--targets', 'codex'])).code).toBe(2);
+        const missing = await runDoctor([]);
+        expect(missing.code).toBe(2);
+        expect(missing.output).toContain('Pass --targets grok-bot');
+        expect(missing.output).toContain('Other install targets have no doctor');
+        const other = await runDoctor(['--targets', 'codex']);
+        expect(other.code).toBe(2);
+        expect(other.output).toContain('only inspects the grok-bot target');
+        const help = await runDoctor(['--help']);
+        expect(help.output.replace(/\s+/g, ' ')).toContain('other install targets have no doctor');
 
         const home = mkdtempSync(join(tmpdir(), 'superskill-doctor-home-'));
         const savedHome = getEnvVar('HOME_DIR');

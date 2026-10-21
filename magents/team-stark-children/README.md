@@ -44,18 +44,23 @@ The second review reproduced two pre-existing installer defects:
 | Priority | Defect | Observed result / boundary |
 | --- | --- | --- |
 | High | Claude and non-Claude project installs share root `AGENTS.md` | Claude-first duplicates IDENTITY/SOUL/USER through its imports; Claude-last leaves non-Claude hosts with operations only. Both combined and sequential installs reproduce it. Avoid this mixed project layout. |
-| High | Global Claude rule path is joined twice | Emits `~/.claude/.claude/rules/`; native `~/.claude/rules/` is absent. The existing regression expects the incorrect path. Project rules emit correctly. See [rule notes](../../plugins/cc/rules/README.md). |
+| High | Global Claude rule path was joined twice | Fixed 2026-10-21. Global rules now emit to `~/.claude/rules/`, `~/.gemini/antigravity-cli/rules/`, and `~/.gemini/config/rules/`. See [rule notes](../../plugins/cc/rules/README.md). |
 
-Both defects exist at base revision `fc87823f32d540ef4fcd7785433e27b362b9f7c9`; deleting
-overrides and simplifying the Claude wrapper did not introduce them. Instruction wording cannot
-repair their runtime paths. The common package retains the essential rule content inline.
+**Update (2026-10-21):** the doubled global rules path is fixed. A reinstall removes a
+byte-identical superskill-owned copy at the old doubled path and leaves any other file
+there with a note. The shared project `AGENTS.md` collision above is unchanged.
+
+Both defects existed at base revision `fc87823f32d540ef4fcd7785433e27b362b9f7c9`; deleting
+overrides and simplifying the Claude wrapper did not introduce them. The rules-path defect
+was later corrected in the installer. The project `AGENTS.md` collision remains. Instruction
+wording cannot repair that runtime path. The common package retains the essential rule content inline.
 
 Additional native-discovery questions remain. These are installer/local-vendor findings, not
 claims that every vendor snapshot represents the latest host release:
 
 | Target | Current global emission | Remaining compatibility question |
 | --- | --- | --- |
-| Claude | `~/.claude/` entry and layers | Rules path defect above; actual loaded context needs a host check |
+| Claude | `~/.claude/` entry and layers; rules in `~/.claude/rules/` | Actual loaded context still needs a host check |
 | Codex | `~/.codex/AGENTS.md` | Custom `CODEX_HOME` is not represented |
 | Pi | `~/.pi/agent/AGENTS.md` | Custom agent directory is not represented |
 | OpenCode | `~/.config/opencode/AGENTS.md` | Custom configuration roots are not represented |

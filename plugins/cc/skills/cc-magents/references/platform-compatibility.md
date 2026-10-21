@@ -103,7 +103,7 @@ vendor behavior:
 | Boundary | Consequence |
 | --- | --- |
 | Claude and non-Claude project installs both use a root `AGENTS.md` path | Sequential or combined installs can overwrite or duplicate persona layers; use separate destinations and inspect the dry run |
-| The global Claude rules path is currently joined twice | The emitted path can be `~/.claude/.claude/rules/`; a source test passing does not prove native global rule loading |
+| Global rules use each target's native directory | Claude `~/.claude/rules/`; Antigravity CLI `~/.gemini/antigravity-cli/rules/`; Antigravity IDE `~/.gemini/config/rules/`. A file landing there is not proof the host loaded it |
 | OMP and Grok have no pinned global magent destination in the emitter | A global install can fall back to a shared `~/AGENTS.md`; separate personas need a host-verified destination |
 | Codex, Pi, and OpenCode custom roots are not modeled | `CODEX_HOME`, a custom Pi agent directory, or a custom OpenCode config root may cause the emitted file to be missed |
 | Antigravity and Hermes adapters have distinct native conventions | A rulesync or copied filename can be syntactically valid while remaining undiscovered by the host |
