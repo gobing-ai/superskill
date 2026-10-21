@@ -1,6 +1,5 @@
 import {
     copyFileSync,
-    cpSync,
     existsSync,
     lstatSync,
     mkdirSync,
@@ -1374,13 +1373,6 @@ function hostCliSearchDirs(): string[] {
 }
 
 /**
- * Resolve a host CLI (`claude`/`omp`/`grok`) to an absolute path.
- *
- * `PATH` alone is not enough: the Claude Code native installer writes `~/.local/bin/claude`
- * and does not edit `PATH`, so a bare `claude` spawn fails with ENOENT on a correctly
- * installed host (and ts-runtime reports that as a signal-less null exit code, losing the cause).
- */
-/**
  * True when this process owns the host CLI spawn. An injected executor (container, remote
  * runner, test recorder) resolves the CLI in its own environment; probing this machine's FS
  * for it would skip targets that exist where the launch really happens.
@@ -1394,6 +1386,13 @@ function hostCliFor(executor: ProcessExecutor, target: 'claude' | 'omp' | 'grok'
     return ownsHostLaunch(executor) ? requireHostCli(target, target) : target;
 }
 
+/**
+ * Resolve a host CLI (`claude`/`omp`/`grok`) to an absolute path.
+ *
+ * `PATH` alone is not enough: the Claude Code native installer writes `~/.local/bin/claude`
+ * and does not edit `PATH`, so a bare `claude` spawn fails with ENOENT on a correctly
+ * installed host (and ts-runtime reports that as a signal-less null exit code, losing the cause).
+ */
 export function resolveHostCli(name: string): string | undefined {
     const onPath = Bun.which(name, { PATH: getEnvVar('PATH') ?? '' });
     if (onPath !== null) return onPath;
@@ -2034,6 +2033,10 @@ export function emitPluginRules(
  * (caller gates on target class). File count comes from {@link MapResult.scripts} so
  * we do not re-walk the tree (mapper already counted).
  *
+ * A plugin's sibling `lib/` is staged inside that tree (`<plugin>/lib/`), so relative entrypoint
+ * imports resolve without a shared `scripts/lib/` leaf. A shared leaf left by a pre-0.4 install is
+ * reported as removable and otherwise left alone — this installer never reads it again.
+ *
  * After the copy the shared root carries a schema-v1 stamp (task 0149 R1) built from the same
  * resolved source metadata and `installedAt` instant as the target receipts. The stamp is
  * metadata, not script content: it is never part of the returned/reported count, and a source
@@ -2058,8 +2061,7 @@ function stagePluginScripts(
     // pluginName is the leaf of a recursive rmSync target under .agents/scripts/.
     assertSafePathSegment(pluginName, 'plugin name');
     const stagedSource = join(outputDir, 'scripts', pluginName);
-    const stagedLib = join(outputDir, 'scripts', 'lib');
-    if (!existsSync(stagedSource) && !existsSync(stagedLib)) return 0;
+    if (!existsSync(stagedSource)) return 0;
 
     // R4: fail before the replace below. The stamp is install metadata living at the root of the
     // same directory, so a colliding source script would be erased (or worse, silently overwritten)
@@ -2080,11 +2082,19 @@ function stagePluginScripts(
     if (options.dryRun) return stagedFileCount;
 
     // Replace only <plugin>/ subdir — never the entire .agents/scripts/ tree (other plugins).
-    if (existsSync(stagedSource)) {
-        if (existsSync(dest)) {
-            rmSync(dest, { recursive: true, force: true });
-        }
-        copyDirectory(stagedSource, dest);
+    // The staged tree now carries the plugin's sibling lib/ too, so replacing the whole subtree
+    // also removes lib files a newer plugin version dropped.
+    if (existsSync(dest)) {
+        rmSync(dest, { recursive: true, force: true });
+    }
+    copyDirectory(stagedSource, dest);
+
+    // Pre-0.4 installs staged a plugin's lib/ at the shared scripts root; staged entrypoints now
+    // resolve `<plugin>/lib/`. That path is dead weight, but it may hold operator files, so it is
+    // flagged rather than deleted.
+    const legacySharedLib = join(outputRoot, '.agents', 'scripts', 'lib');
+    if (existsSync(legacySharedLib)) {
+        echo(`  Legacy shared script lib ${legacySharedLib} is no longer used — safe to remove.`);
     }
 
     // Hook deadlines must survive flattened installs, whose root has no plugin manifest tree.
@@ -2092,15 +2102,6 @@ function stagePluginScripts(
     const hooksDir = join(dest, 'hooks');
     if (existsSync(hooksDir) && statSync(hooksDir).isDirectory() && existsSync(hookConfig)) {
         copyFileSync(hookConfig, join(hooksDir, 'hooks.json'));
-    }
-
-    // Sibling runtime library (mapper stages <plugin>/lib → .rulesync/scripts/lib).
-    // Entrypoints import it as `../lib/<file>` from the staged scripts root, so it must
-    // land beside <plugin>/. Overlay copy, never rm — the dir is shared across plugins.
-    // ponytail: overlay can leave a removed lib file behind; full replace needs
-    // per-plugin ownership tracking if a second lib-shipping plugin appears.
-    if (existsSync(stagedLib)) {
-        cpSync(stagedLib, join(outputRoot, '.agents', 'scripts', 'lib'), { recursive: true });
     }
 
     // Snapshot before writing, so the stamp can never hash itself. No staged regular file → no

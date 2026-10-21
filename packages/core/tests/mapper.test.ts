@@ -490,7 +490,7 @@ describe('mapPluginToRulesync', () => {
         expect(existsSync(join(outDir, 'skills', 'cc-anti-hallucination'))).toBe(false);
     });
 
-    it('stages a plugin-level lib/ sibling verbatim into .rulesync/scripts/lib/', () => {
+    it('stages a plugin-level lib/ inside the plugin tree and retargets a scripts-root import', () => {
         tmpDir = mkdtempSync('superskill-mapper-');
         const pluginDir = join(tmpDir, 'plugin');
         mkdirSync(join(pluginDir, 'scripts'), { recursive: true });
@@ -505,8 +505,50 @@ describe('mapPluginToRulesync', () => {
 
         expect(result.scripts).toBe(1);
         expect(result.scriptLibs).toBe(1);
-        // Staged beside <plugin>/ so a staged `../lib/` import resolves.
-        expect(readFileSync(join(outDir, 'scripts', 'lib', 'run.generated.mjs'), 'utf-8')).toBe(libBody);
+        // Inside the plugin's own root, so two lib-shipping plugins cannot collide.
+        expect(readFileSync(join(outDir, 'scripts', 'sp', 'lib', 'run.generated.mjs'), 'utf-8')).toBe(libBody);
+        // `scripts/` collapses, so a climb out of it loses exactly one level.
+        expect(readFileSync(join(outDir, 'scripts', 'sp', 'entry.mjs'), 'utf-8')).toBe(
+            'import "./lib/run.generated.mjs";',
+        );
+        expect(existsSync(join(outDir, 'scripts', 'lib'))).toBe(false);
+    });
+
+    it('retargets deep climbs out of scripts/ for the staged plugin root', () => {
+        tmpDir = mkdtempSync('superskill-mapper-');
+        const pluginDir = join(tmpDir, 'plugin');
+        mkdirSync(join(pluginDir, 'scripts', 'hooks'), { recursive: true });
+        mkdirSync(join(pluginDir, 'scripts', 'feature', 'tests'), { recursive: true });
+        writeFileSync(
+            join(pluginDir, 'scripts', 'hooks', 'session.ts'),
+            [
+                "import { a } from '../../lib/env';",
+                "export const b = await import('../../lib/session');",
+                'export * from "../../lib/policy";',
+            ].join('\n'),
+        );
+        writeFileSync(join(pluginDir, 'scripts', 'feature', 'deep.ts'), "import { c } from '../../../lib/env';");
+        // Residual-proof negative: a climb that stays inside the scripts tree must not move.
+        writeFileSync(
+            join(pluginDir, 'scripts', 'feature', 'tests', 'unit.test.ts'),
+            "import { d } from '../lib/env';",
+        );
+        mkdirSync(join(pluginDir, 'lib'), { recursive: true });
+        writeFileSync(join(pluginDir, 'lib', 'env.ts'), 'export const a = 1;');
+
+        const outDir = join(tmpDir, '.rulesync');
+        mapPluginToRulesync(pluginDir, 'sp', outDir);
+
+        const hooksStaged = readFileSync(join(outDir, 'scripts', 'sp', 'hooks', 'session.ts'), 'utf-8');
+        expect(hooksStaged).toContain("from '../lib/env'");
+        expect(hooksStaged).toContain("import('../lib/session')");
+        expect(hooksStaged).toContain('from "../lib/policy"');
+        expect(readFileSync(join(outDir, 'scripts', 'sp', 'feature', 'deep.ts'), 'utf-8')).toBe(
+            "import { c } from '../../lib/env';",
+        );
+        expect(readFileSync(join(outDir, 'scripts', 'sp', 'feature', 'tests', 'unit.test.ts'), 'utf-8')).toBe(
+            "import { d } from '../lib/env';",
+        );
     });
 
     it('returns scripts: 0 when plugin has no scripts/ directory', () => {

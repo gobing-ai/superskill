@@ -1181,20 +1181,21 @@ describe('executeInstall', () => {
         expect(receipt.installed.files['.agents/scripts/demo/hooks/hooks.json']).toBe(configHash);
     });
 
-    it('stages a plugin lib/ sibling to .agents/scripts/lib/, overwriting stale content and preserving foreign files', async () => {
+    it('stages a plugin lib/ inside the plugin tree and leaves no shared scripts/lib', async () => {
         const { marketplacePath, pluginDir } = setupPluginDir();
-        mkdirSync(join(pluginDir, 'scripts'), { recursive: true });
-        writeFileSync(join(pluginDir, 'scripts', 'entry.mjs'), 'import "../lib/run.generated.mjs";');
+        mkdirSync(join(pluginDir, 'scripts', 'hooks'), { recursive: true });
+        writeFileSync(join(pluginDir, 'scripts', 'hooks', 'guard.ts'), "import { v } from '../../lib/policy';");
+        mkdirSync(join(pluginDir, 'scripts', 'feature', 'tests'), { recursive: true });
+        // Residual-proof negative: a climb that stays inside scripts/ must not move.
+        writeFileSync(join(pluginDir, 'scripts', 'feature', 'tests', 'unit.test.ts'), "import { x } from '../helper';");
         mkdirSync(join(pluginDir, 'lib'), { recursive: true });
-        writeFileSync(join(pluginDir, 'lib', 'run.generated.mjs'), 'export const v = "fresh";');
+        writeFileSync(join(pluginDir, 'lib', 'policy.ts'), 'export const v = "fresh";');
 
-        const outRoot = join(tmpDir, 'out');
-        // Pre-seed the shared lib root: a stale same-name file (the defect shape) and a
-        // foreign file the overlay must not remove.
-        const sharedLib = join(outRoot, '.agents', 'scripts', 'lib');
-        mkdirSync(sharedLib, { recursive: true });
-        writeFileSync(join(sharedLib, 'run.generated.mjs'), 'export const v = "stale";');
-        writeFileSync(join(sharedLib, 'other-plugin.mjs'), 'export const v = "foreign";');
+        const outRoot = join(tmpDir, 'out-plugin-lib');
+        // A stale shared lib from a pre-0.4 install must never be read or written again.
+        const legacySharedLib = join(outRoot, '.agents', 'scripts', 'lib');
+        mkdirSync(legacySharedLib, { recursive: true });
+        writeFileSync(join(legacySharedLib, 'policy.ts'), 'export const v = "stale";');
 
         await executeInstall(
             'demo',
@@ -1203,9 +1204,39 @@ describe('executeInstall', () => {
             { runRulesync: async () => mockEmptyRulesyncResult() },
         );
 
-        // Stale same-name content overwritten; foreign file preserved (overlay, never rm).
-        expect(readFileSync(join(sharedLib, 'run.generated.mjs'), 'utf-8')).toBe('export const v = "fresh";');
-        expect(readFileSync(join(sharedLib, 'other-plugin.mjs'), 'utf-8')).toBe('export const v = "foreign";');
+        const stagedLib = join(outRoot, '.agents', 'scripts', 'demo', 'lib', 'policy.ts');
+        expect(readFileSync(stagedLib, 'utf-8')).toBe('export const v = "fresh";');
+        expect(readFileSync(join(outRoot, '.agents', 'scripts', 'demo', 'hooks', 'guard.ts'), 'utf-8')).toBe(
+            "import { v } from '../lib/policy';",
+        );
+        expect(
+            readFileSync(join(outRoot, '.agents', 'scripts', 'demo', 'feature', 'tests', 'unit.test.ts'), 'utf-8'),
+        ).toBe("import { x } from '../helper';");
+        // Legacy directory untouched: flagged, never deleted.
+        expect(readFileSync(join(legacySharedLib, 'policy.ts'), 'utf-8')).toBe('export const v = "stale";');
+    });
+
+    it('replaces the staged plugin tree wholesale so dropped lib files cannot survive', async () => {
+        const { marketplacePath, pluginDir } = setupPluginDir();
+        mkdirSync(join(pluginDir, 'scripts'), { recursive: true });
+        writeFileSync(join(pluginDir, 'scripts', 'entry.mjs'), 'export const v = 1;');
+        mkdirSync(join(pluginDir, 'lib'), { recursive: true });
+        writeFileSync(join(pluginDir, 'lib', 'current.ts'), 'export const v = "current";');
+
+        const outRoot = join(tmpDir, 'out-lib-replace');
+        const stagedLib = join(outRoot, '.agents', 'scripts', 'demo', 'lib');
+        mkdirSync(stagedLib, { recursive: true });
+        writeFileSync(join(stagedLib, 'retired.generated.mjs'), '// dropped by a newer plugin version');
+
+        await executeInstall(
+            'demo',
+            ['codex'],
+            { marketplacePath, global: false, dryRun: false, verbose: false, outputRoot: outRoot },
+            { runRulesync: async () => mockEmptyRulesyncResult() },
+        );
+
+        expect(existsSync(join(stagedLib, 'current.ts'))).toBe(true);
+        expect(existsSync(join(stagedLib, 'retired.generated.mjs'))).toBe(false);
     });
 
     it('skips scripts staging when plugin has no scripts/ directory', async () => {

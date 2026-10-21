@@ -302,27 +302,51 @@ export function mapPluginToRulesync(
     // hermes target classes. Native targets (claude/omp/grok) receive the full plugin
     // tree including scripts/ through their own plugin install CLIs — no staging needed.
     // See task 0090 + Entrypoint Contract v1 (task 0089).
+    //
+    // Staging drops the `scripts/` level (`scripts/<rest>` → `<plugin>/<rest>`), so a relative
+    // specifier that climbs out of scripts/ must climb one level less — see
+    // {@link rewriteStagedScriptReferences}.
     const pluginScriptsDir = join(pluginPath, 'scripts');
     if (existsSync(pluginScriptsDir)) {
         const scriptsOut = join(outputDir, 'scripts', pluginName);
-        copyAndRewriteDirectory(pluginScriptsDir, scriptsOut, pluginName);
+        copyAndRewriteDirectory(pluginScriptsDir, scriptsOut, pluginName, 0);
         result.scripts = countFilesInDir(scriptsOut);
     }
 
-    // Plugin-level runtime library — a plugin may ship a `lib/` sibling next to
-    // `scripts/` whose staged entrypoints import it as `../lib/<file>` from the
-    // shared scripts root (e.g. a plugin that bundles its hook entrypoints against a
-    // shared runtime). Stage it at the same relative position or
-    // the staged entrypoints load a stale/absent lib. Verbatim copy: lib output is
-    // generated, and the skill-reference rewrite could corrupt bundle content.
+    // Plugin-level runtime library — a plugin may ship a `lib/` sibling next to `scripts/` that
+    // its entrypoints import relatively (`../lib/<file>` from `scripts/`, `../../lib/<file>` from
+    // `scripts/<feature>/`). Stage it inside the plugin's own staged root so those imports resolve
+    // without a shared `scripts/lib/` leaf that two plugins would collide in. Verbatim copy: lib
+    // output is generated, and the skill-reference rewrite could corrupt bundle content.
     const pluginLibDir = join(pluginPath, 'lib');
     if (existsSync(pluginLibDir)) {
-        const libOut = join(outputDir, 'scripts', 'lib');
+        const libOut = join(outputDir, 'scripts', pluginName, 'lib');
         cpSync(pluginLibDir, libOut, { recursive: true });
         result.scriptLibs = countFilesInDir(libOut);
     }
 
     return result;
+}
+
+/**
+ * Rewrite one staged script file for the `scripts/` → `<plugin>/` collapse.
+ *
+ * `plugins/<p>/scripts/<rest>` stages to `<plugin>/<rest>`, dropping one directory level. A
+ * specifier that climbs `P` levels from a file `D` levels deep inside `scripts/` therefore lands
+ * one level lower than the source did whenever `P > D`, so it loses exactly one climb (`./` when
+ * that reaches zero). Climbs that stay inside the scripts tree (`P <= D`) are untouched.
+ */
+function rewriteStagedScriptReferences(content: string, pluginName: string, depth: number): string {
+    return rewriteSkillReferences(content, pluginName).replace(
+        /(\bfrom\s*|\bimport\s*\(\s*|\bimport\s+|\brequire\s*\(\s*)(['"])((?:\.\.\/)+)([^'"]*)\2/g,
+        (match, prefix: string, quote: string, climbs: string, rest: string) => {
+            const levels = climbs.split('../').length - 1;
+            if (levels <= depth) return match;
+            const next = levels - 1;
+            const target = next === 0 ? `./${rest}` : `${'../'.repeat(next)}${rest}`;
+            return `${prefix}${quote}${target}${quote}`;
+        },
+    );
 }
 
 function deepMergeJsonFile(sourcePath: string, targetPath: string): void {
@@ -435,8 +459,13 @@ export function stageMagentsFromDir(
 }
 
 /** Recursively copy a directory, rewriting skill references in text files.
- *  Binary files are copied byte-for-byte; symlinks are skipped to prevent loops. */
-function copyAndRewriteDirectory(source: string, destination: string, pluginName: string): void {
+ *  Binary files are copied byte-for-byte; symlinks are skipped to prevent loops.
+ *
+ *  `stagedDepth` is the collapsing case only: plugin-level `scripts/` staging maps
+ *  `scripts/<rest>` → `<plugin>/<rest>` and loses one directory level, so relative specifiers are
+ *  retargeted with {@link rewriteStagedScriptReferences}. Skill support subdirs and magents keep
+ *  their depth and pass nothing. */
+function copyAndRewriteDirectory(source: string, destination: string, pluginName: string, stagedDepth?: number): void {
     mkdirSync(destination, { recursive: true });
     for (const entry of readdirSync(source)) {
         const srcPath = join(source, entry);
@@ -444,13 +473,23 @@ function copyAndRewriteDirectory(source: string, destination: string, pluginName
         const stat = lstatSync(srcPath);
         if (stat.isSymbolicLink()) continue; // skip symlinks — prevent infinite recursion
         if (stat.isDirectory()) {
-            copyAndRewriteDirectory(srcPath, destPath, pluginName);
+            copyAndRewriteDirectory(
+                srcPath,
+                destPath,
+                pluginName,
+                stagedDepth === undefined ? undefined : stagedDepth + 1,
+            );
         } else {
             const bytes = readFileSync(srcPath);
             // Only rewrite text files; copy binaries (images, fonts, archives) verbatim.
             if (isTextFile(entry, bytes)) {
                 const content = bytes.toString('utf-8');
-                writeFileSync(destPath, rewriteSkillReferences(content, pluginName));
+                writeFileSync(
+                    destPath,
+                    stagedDepth === undefined
+                        ? rewriteSkillReferences(content, pluginName)
+                        : rewriteStagedScriptReferences(content, pluginName, stagedDepth),
+                );
             } else {
                 writeFileSync(destPath, bytes);
             }

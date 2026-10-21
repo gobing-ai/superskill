@@ -117,8 +117,11 @@ runner's canonical hook JSON to stdout; unknown ids exit `2` (a config bug, neve
 - **Rulesync and surrogate targets** (`codex`, `pi`, `opencode`, `antigravity-cli`,
   `antigravity-ide`, `hermes`) — install stages the tree once to the shared agents scripts root
   (`~/.agents/scripts/<plugin>/` global, or the project equivalent), regardless of how many targets
-  an install touches. Sibling `lib/` dependencies are staged alongside (`.agents/scripts/lib/`).
-  Re-install replaces only that plugin's subtree while keeping shared dependencies intact.
+  an install touches. Sibling `lib/` dependencies are staged **inside** the plugin's own root
+  (`~/.agents/scripts/<plugin>/lib/`) so relative entrypoint imports resolve there and two
+  lib-shipping plugins cannot collide. Re-install replaces only that plugin's subtree — lib
+  included — so files a newer plugin version dropped do not survive. The pre-0.4 shared
+  `.agents/scripts/lib/` is unused; an install flags a leftover there as removable.
 
 ## Anti-patterns
 
