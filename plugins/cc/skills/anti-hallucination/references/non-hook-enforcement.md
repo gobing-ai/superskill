@@ -119,9 +119,9 @@ When the host platform can enforce schemas, require fields like:
 }
 ```
 
-The current validator reads answer text, not the structured schema. Include the actual source,
-confidence and verification fields in the text submitted for validation; passing only `answer`
-would discard the evidence fields. Use
+The current validator reads answer text, not the structured schema. Include the actual source in
+the text submitted for validation — passing only `answer` would discard the evidence the check
+reads. Confidence and verification fields are prose the validator does not require. Use
 `node "$(superskill script path cc anti-hallucination/validate_response.mjs)"` (or the optional
 `superskill script run cc validate-response`) for the text check. Schema validity is a separate check.
 
