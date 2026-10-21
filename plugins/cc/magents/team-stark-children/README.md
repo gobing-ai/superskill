@@ -1,7 +1,7 @@
 # team-stark-children
 
 Robin Min's shared coding-agent instructions (“Lord Robb”). Author in this repository's
-`magents/`; packaged copies and installed host files are distribution outputs.
+`plugins/cc/magents/`; packaged copies and installed host files are distribution outputs.
 
 ## Package and loading
 
@@ -22,9 +22,9 @@ a layer rather than extending it, so an independent copy can silently omit a com
 Introduce one only for a demonstrated incompatibility and inspect its complete assembled output.
 Measure context size, but do not impose an arbitrary byte ceiling or equate brevity with quality.
 
-The [cc rule modules](../../plugins/cc/rules/README.md) also serve other personas. Some targets
+The [cc rule modules](../../../../plugins/cc/rules/README.md) also serve other personas. Some targets
 receive no modules, so essential safety, tools and verification stay inline here. Keep overlapping
-policies consistent. The referenced [anti-hallucination skill](../../plugins/cc/skills/anti-hallucination/SKILL.md)
+policies consistent. The referenced [anti-hallucination skill](../../../../plugins/cc/skills/anti-hallucination/SKILL.md)
 supplies specialist verification guidance when external claims require it. Skills do not supersede
 the host hierarchy, actual request or available tools.
 
@@ -35,16 +35,16 @@ the operator changes them; generic model advice does not justify deleting person
 ## Deployment status
 
 **Source emission is tested; universal native-host loading is not established.** Placement is
-implemented by [select-magent.ts](../../packages/core/src/pipeline/select-magent.ts) and
-[install.ts](../../apps/cli/src/commands/install.ts), with targets in
-[targets.ts](../../packages/core/src/targets.ts).
+implemented by [select-magent.ts](../../../../packages/core/src/pipeline/select-magent.ts) and
+[install.ts](../../../../apps/cli/src/commands/install.ts), with targets in
+[targets.ts](../../../../packages/core/src/targets.ts).
 
 The second review reproduced two pre-existing installer defects:
 
 | Priority | Defect | Observed result / boundary |
 | --- | --- | --- |
 | High | Claude and non-Claude project installs share root `AGENTS.md` | Claude-first duplicates IDENTITY/SOUL/USER through its imports; Claude-last leaves non-Claude hosts with operations only. Both combined and sequential installs reproduce it. Avoid this mixed project layout. |
-| High | Global Claude rule path is joined twice | Emits `~/.claude/.claude/rules/`; native `~/.claude/rules/` is absent. The existing regression expects the incorrect path. Project rules emit correctly. See [rule notes](../../plugins/cc/rules/README.md). |
+| High | Global Claude rule path is joined twice | Emits `~/.claude/.claude/rules/`; native `~/.claude/rules/` is absent. The existing regression expects the incorrect path. Project rules emit correctly. See [rule notes](../../../../plugins/cc/rules/README.md). |
 
 Both defects exist at base revision `fc87823f32d540ef4fcd7785433e27b362b9f7c9`; deleting
 overrides and simplifying the Claude wrapper did not introduce them. Instruction wording cannot
@@ -63,11 +63,10 @@ claims that every vendor snapshot represents the latest host release:
 | Hermes | `~/.hermes/AGENTS.md` | Vendor global identity loader reads `SOUL.md`; project `AGENTS.md` discovery differs |
 | OMP / Grok | `~/AGENTS.md` shared fallback | Later installs overwrite the same file; distinct personas require separate, host-verified destinations. OMP vendor has a dedicated global loader; Grok discovery is unverified |
 
-Local reference loaders: [Pi](../../vendors/pi/packages/coding-agent/src/config.ts),
-[OMP](../../vendors/oh-my-pi/packages/coding-agent/src/discovery/builtin.ts),
-[Hermes](../../vendors/hermes-agent/agent/prompt_builder.py), and the
-[Antigravity CLI](../../vendors/rulesync/src/features/rules/antigravity-cli-rule.ts) /
-[IDE](../../vendors/rulesync/src/features/rules/antigravity-ide-rule.ts) adapters.
+The rows above were read from upstream loaders in local reference checkouts, which are never
+shipped and so are not linked from plugin content: the Pi coding-agent config loader, the OMP
+builtin discovery module, the Hermes prompt builder, and the rulesync Antigravity CLI / IDE rule
+adapters. Re-verify them in the upstream sources before relying on a row.
 
 Preview explicit targets and destinations before applying an installation. For example, default
 global Claude/Codex paths separate their persona files and avoid the project collision:
@@ -81,7 +80,7 @@ loading. Remove `--dry-run` only for an authorized installation after reviewing 
 files. `--no-global` selects project installation, where the mixed-layout defect applies.
 Do not replace an unrelated project's instructions. No host installation was performed by this review.
 
-Packaged assets are a separate boundary: [build:bundle / prepack](../../apps/cli/package.json)
+Packaged assets are a separate boundary: [build:bundle / prepack](../../../../apps/cli/package.json)
 refresh `apps/cli/magents/` and bundled plugin copies. Ordinary `bun run build` does not refresh
 those copies. A source test or successful standalone build does not certify an installed release.
 
@@ -157,7 +156,7 @@ The verification skill passes structural validation and heuristic evaluation (0.
 Its research citations were checked against primary sources; native host sessions and model A/B
 trials were not run. The high-priority installer defects above remain open.
 
-The [source emission regression](../../apps/cli/tests/commands/install-magents-rules.test.ts)
+The [source emission regression](../../../../apps/cli/tests/commands/install-magents-rules.test.ts)
 stages the real package, emits nine targets into **separate fresh project destinations**, expands
 this package's simple Claude imports and compares their content. It detects overrides dropping
 the shared contract. It does not test mixed/sequential installation, native host discovery, custom
@@ -165,8 +164,8 @@ configuration roots, existing-content preservation, distribution assets or model
 Existing tests retain generic override support for other packages.
 
 ```bash
-superskill magent validate magents/team-stark-children/AGENTS.md --strict --json
-superskill magent evaluate magents/team-stark-children/AGENTS.md --json
+superskill magent validate plugins/cc/magents/team-stark-children/AGENTS.md --strict --json
+superskill magent evaluate plugins/cc/magents/team-stark-children/AGENTS.md --json
 bun run spur-check
 bun run build
 ```

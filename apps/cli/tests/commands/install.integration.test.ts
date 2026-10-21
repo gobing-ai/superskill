@@ -722,17 +722,13 @@ describe('executeInstall', () => {
         expect(existsSync(join(outRoot, 'AGENTS.md'))).toBe(false);
     });
 
-    it('marketplace-only bare magent is not auto-installed without --magent', async () => {
-        // Simulates monorepo magents/ next to plugins when installing a plugin that
-        // has no magents of its own (e.g. install sp while team-stark-children exists).
+    it('0156 AC4: several plugin personas without --magent list the choices and write nothing', async () => {
         const { marketplacePath, pluginDir } = setupPluginDir();
-        rmSync(join(pluginDir, 'magents'), { recursive: true, force: true });
-        // marketplacePath is …/.claude-plugin/marketplace.json → root is two levels up
-        const marketplaceRoot = join(marketplacePath, '..', '..');
-        const bare = join(marketplaceRoot, 'magents', 'team-stark-children');
-        mkdirSync(bare, { recursive: true });
-        writeFileSync(join(bare, 'AGENTS.md'), '# bare marketplace persona\n');
-        const outRoot = join(tmpDir, 'bare-magent-out');
+        // A second persona under the PLUGIN tree (ADR-041) — the only discovery root.
+        const second = join(pluginDir, 'magents', 'second-agent');
+        mkdirSync(second, { recursive: true });
+        writeFileSync(join(second, 'AGENTS.md'), '# second persona\n');
+        const outRoot = join(tmpDir, 'ac4-out');
         const captured: string[] = [];
         const spy = spyOn(process.stdout, 'write').mockImplementation((chunk: string | Uint8Array) => {
             captured.push(typeof chunk === 'string' ? chunk : new TextDecoder().decode(chunk));
@@ -743,13 +739,190 @@ describe('executeInstall', () => {
             marketplacePath,
             global: false,
             dryRun: false,
-            verbose: true,
+            verbose: false,
             outputRoot: outRoot,
         });
         spy.mockRestore();
 
+        // Exactly one non-verbose stdout line naming both bare names (prefix stripped).
+        const lines = captured
+            .join('')
+            .split('\n')
+            .filter((l) => l.includes('Magents:'));
+        expect(lines).toEqual(['  Magents: my-agent, second-agent available — pass --magent <name> to install one']);
+        // Nothing was written: the user must learn why no main-agent file appeared.
         expect(existsSync(join(outRoot, 'AGENTS.md'))).toBe(false);
-        expect(captured.join('')).toMatch(/pass --magent/);
+        expect(existsSync(join(outRoot, 'CLAUDE.md'))).toBe(false);
+    });
+
+    it('0156 AC3 negative: a marketplace-root magents/ directory is not a discovery root', async () => {
+        // ADR-041: persona packages are plugin-owned. A leftover root `magents/` next to the
+        // plugins must NOT be staged, or `install sp` would overwrite AGENTS.md with a
+        // persona the plugin never shipped.
+        const { marketplacePath, pluginDir } = setupPluginDir();
+        rmSync(join(pluginDir, 'magents'), { recursive: true, force: true });
+        // marketplacePath is …/.claude-plugin/marketplace.json → root is two levels up
+        const marketplaceRoot = join(marketplacePath, '..', '..');
+        const bare = join(marketplaceRoot, 'magents', 'team-stark-children');
+        mkdirSync(bare, { recursive: true });
+        writeFileSync(join(bare, 'AGENTS.md'), '# bare marketplace persona\n');
+        const outRoot = join(tmpDir, 'root-magent-negative-out');
+
+        await executeInstall('demo', ['pi'], {
+            marketplacePath,
+            global: false,
+            dryRun: false,
+            verbose: false,
+            outputRoot: outRoot,
+        });
+
+        expect(existsSync(join(outRoot, 'AGENTS.md'))).toBe(false);
+    });
+
+    it('0156 AC7: --list-magents prints one name<TAB>description line per package and writes nothing', async () => {
+        const { marketplacePath, pluginDir } = setupPluginDir();
+        const second = join(pluginDir, 'magents', 'second-agent');
+        mkdirSync(second, { recursive: true });
+        writeFileSync(join(second, 'AGENTS.md'), '# second persona\n');
+        writeFileSync(
+            join(second, 'README.md'),
+            '# second-agent\n\nA travel-planning persona.\n\nLonger detail that must not be printed.\n',
+        );
+        const outRoot = join(tmpDir, 'ac7-out');
+        const captured: string[] = [];
+        const spy = spyOn(process.stdout, 'write').mockImplementation((chunk: string | Uint8Array) => {
+            captured.push(typeof chunk === 'string' ? chunk : new TextDecoder().decode(chunk));
+            return true;
+        });
+
+        await executeInstall('demo', ['pi'], {
+            marketplacePath,
+            global: false,
+            dryRun: false,
+            verbose: false,
+            outputRoot: outRoot,
+            listMagents: true,
+        });
+        spy.mockRestore();
+
+        const out = captured.join('');
+        // `my-agent` ships no README, so its description cell is empty but the line still appears.
+        expect(out).toContain('my-agent\t\n');
+        expect(out).toContain('second-agent\tA travel-planning persona.\n');
+        expect(out).not.toContain('Longer detail');
+        // Nothing was staged or written.
+        expect(existsSync(outRoot) && readdirSync(outRoot).length > 0).toBe(false);
+    });
+
+    it('0156 AC7: --list-magents says so when the plugin ships no persona', async () => {
+        const { marketplacePath, pluginDir } = setupPluginDir();
+        rmSync(join(pluginDir, 'magents'), { recursive: true, force: true });
+        const captured: string[] = [];
+        const spy = spyOn(process.stdout, 'write').mockImplementation((chunk: string | Uint8Array) => {
+            captured.push(typeof chunk === 'string' ? chunk : new TextDecoder().decode(chunk));
+            return true;
+        });
+
+        await executeInstall('demo', ['pi'], {
+            marketplacePath,
+            global: false,
+            dryRun: false,
+            verbose: false,
+            outputRoot: join(tmpDir, 'ac7-empty-out'),
+            listMagents: true,
+        });
+        spy.mockRestore();
+
+        expect(captured.join('')).toContain("No magents in plugin 'demo'");
+    });
+
+    it('0156 AC5: personas coexist by install scope', async () => {
+        const { marketplacePath, pluginDir } = setupPluginDir();
+        const second = join(pluginDir, 'magents', 'second-agent');
+        mkdirSync(second, { recursive: true });
+        writeFileSync(join(second, 'CLAUDE.md'), '@IDENTITY.md\n@SOUL.md\n');
+        writeFileSync(join(second, 'IDENTITY.md'), '# Second identity\n');
+        writeFileSync(join(second, 'SOUL.md'), '# Second soul\n');
+
+        const fakeHome = join(tmpDir, 'ac5-home');
+        const projectRoot = join(tmpDir, 'ac5-project');
+        mkdirSync(fakeHome, { recursive: true });
+        mkdirSync(projectRoot, { recursive: true });
+        const origHomeDir = getEnvVar('HOME_DIR');
+        setEnvVar('HOME_DIR', fakeHome);
+        try {
+            await executeInstall(
+                'demo',
+                ['claude'],
+                { marketplacePath, global: true, dryRun: false, verbose: false, magent: 'my-agent' },
+                { runRulesync: async () => mockEmptyRulesyncResult(), runClaudeInstall: async () => {} },
+            );
+            const globalEntry = join(fakeHome, '.claude', 'CLAUDE.md');
+            expect(existsSync(globalEntry)).toBe(true);
+            const globalBytes = readFileSync(globalEntry, 'utf-8');
+            expect(globalBytes).toContain('Claude-tuned');
+
+            await executeInstall(
+                'demo',
+                ['claude'],
+                {
+                    marketplacePath,
+                    global: false,
+                    dryRun: false,
+                    verbose: false,
+                    outputRoot: projectRoot,
+                    magent: 'second-agent',
+                },
+                { runRulesync: async () => mockEmptyRulesyncResult(), runClaudeInstall: async () => {} },
+            );
+        } finally {
+            if (origHomeDir === undefined) removeEnvVar('HOME_DIR');
+            else setEnvVar('HOME_DIR', origHomeDir);
+        }
+
+        // The project scope carries B; the global scope still carries A, byte for byte.
+        expect(readFileSync(join(projectRoot, 'CLAUDE.md'), 'utf-8')).toContain('@IDENTITY.md');
+        expect(readFileSync(join(fakeHome, '.claude', 'CLAUDE.md'), 'utf-8')).toContain('Claude-tuned');
+    });
+
+    it('0156 AC6: switching personas in one scope loads only the new persona', async () => {
+        const { marketplacePath, pluginDir } = setupPluginDir();
+        const second = join(pluginDir, 'magents', 'second-agent');
+        mkdirSync(second, { recursive: true });
+        writeFileSync(join(second, 'CLAUDE.md'), '@IDENTITY.md\n@SOUL.md\n');
+        writeFileSync(join(second, 'IDENTITY.md'), '# Second identity\n');
+        writeFileSync(join(second, 'SOUL.md'), '# Second soul\n');
+        const outRoot = join(tmpDir, 'ac6-out');
+        const deps = { runRulesync: async () => mockEmptyRulesyncResult(), runClaudeInstall: async () => {} };
+
+        await executeInstall(
+            'demo',
+            ['claude'],
+            { marketplacePath, global: false, dryRun: false, verbose: false, outputRoot: outRoot, magent: 'my-agent' },
+            deps,
+        );
+        expect(readFileSync(join(outRoot, 'CLAUDE.md'), 'utf-8')).toContain('Claude-tuned');
+
+        await executeInstall(
+            'demo',
+            ['claude'],
+            {
+                marketplacePath,
+                global: false,
+                dryRun: false,
+                verbose: false,
+                outputRoot: outRoot,
+                magent: 'second-agent',
+            },
+            deps,
+        );
+
+        // CLAUDE.md alone decides what loads: it is B's entry, and its @ imports are B's layers.
+        const entry = readFileSync(join(outRoot, 'CLAUDE.md'), 'utf-8');
+        const imports = [...entry.matchAll(/^@(\S+)$/gm)].map((m) => m[1] ?? '');
+        expect(imports).toEqual(['IDENTITY.md', 'SOUL.md']);
+        expect(entry).not.toContain('Claude-tuned');
+        expect(readFileSync(join(outRoot, 'IDENTITY.md'), 'utf-8')).toBe('# Second identity\n');
     });
 
     it('0081 AC2: common AGENTS.md is selected as fallback for pi', async () => {
@@ -915,7 +1088,7 @@ describe('executeInstall', () => {
         expect(existsSync(join(outRoot, 'AGENTS.md'))).toBe(false);
     });
 
-    it('0081 AC8: multiple magents without --magent selector skips with a verbose note (no silent install)', async () => {
+    it('0156 AC4/0081 AC8: multiple magents without --magent selector skips and names the choices (no silent install)', async () => {
         const { marketplacePath, pluginDir } = setupPluginDir();
         // Add two more magents so the plugin has foo, bar, and my-agent
         mkdirSync(join(pluginDir, 'magents', 'foo'), { recursive: true });
@@ -938,10 +1111,10 @@ describe('executeInstall', () => {
         });
         spy.mockRestore();
 
-        // Plugin ships 3 magents; with no --magent, emission is skipped (no auto-pick
-        // on ambiguity) and a verbose note explains how to select.
+        // Plugin ships 3 magents; with no --magent, emission is skipped (no auto-pick on
+        // ambiguity) and ONE non-verbose stdout line names the bare choices and the flag.
         const out = captured.join('');
-        expect(out).toMatch(/Magents: 3 staged \(3 plugin-owned\); pass --magent/);
+        expect(out).toContain('  Magents: bar, foo, my-agent available — pass --magent <name> to install one');
         expect(existsSync(join(outRoot, 'AGENTS.md'))).toBe(false);
     });
 

@@ -122,7 +122,7 @@ Is the claim externally verifiable?
 | **LOW** | Evidence is incomplete, stale, secondary, or only partly applicable | "A secondary report suggests X; the primary source was not available." |
 | **UNVERIFIED** | No adequate evidence was found | "I cannot verify this from the available sources." |
 
-Confidence is a communication aid, not a calibrated probability. Do not turn a source's citation count, a model's self-rating, or recency alone into a numeric confidence score. `UNVERIFIED` describes evidence status; the current guard recognizes only HIGH/MEDIUM/LOW confidence labels. With that guard, pair unverified status with LOW confidence and explain the missing evidence. Never fabricate a source or tool call to satisfy the guard.
+Confidence is a communication aid, not a calibrated probability. Do not turn a source's citation count, a model's self-rating, or recency alone into a numeric confidence score. `UNVERIFIED` describes evidence status. These labels are prose: the Stop guard enforces **sources only** — it blocks an external claim that neither the reply nor the current turn backs with evidence, and a missing or malformed label never blocks on its own. Pair unverified status with LOW confidence for the reader's benefit, not to satisfy the guard. Never fabricate a source or tool call to satisfy the guard.
 
 ## Red Flags (Stop & Verify)
 

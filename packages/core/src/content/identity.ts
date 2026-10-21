@@ -1,4 +1,4 @@
-import { existsSync, statSync } from 'node:fs';
+import { existsSync, readdirSync, statSync } from 'node:fs';
 import { basename, dirname, extname, join } from 'node:path';
 import { cwd } from 'node:process';
 import type { ContentType } from './types';
@@ -93,12 +93,23 @@ export function resolveContentPath(type: ContentType, name: string, opts?: Resol
         if (existsSync(skillSubdirDirForm)) return skillSubdirDirForm;
     }
 
-    // Magents are often multi-file packages under magents/<name>/{AGENTS,CLAUDE}.md
+    // Magents are often multi-file packages under magents/<name>/{AGENTS,CLAUDE}.md.
+    // ADR-041: a persona package is plugin-owned, so after the legacy `<base>/magents/<name>`
+    // form, scan `<base>/plugins/*/magents/<name>` (sorted; first hit wins).
     if (type === 'magent') {
         const pkgDir = join(base, 'magents', name);
         if (existsSync(pkgDir) && statSync(pkgDir).isDirectory()) {
             const entry = resolveMagentPackageEntry(pkgDir);
             if (entry) return entry;
+        }
+        const pluginsDir = join(base, 'plugins');
+        if (existsSync(pluginsDir) && statSync(pluginsDir).isDirectory()) {
+            for (const plugin of readdirSync(pluginsDir).sort()) {
+                const pkg = join(pluginsDir, plugin, 'magents', name);
+                if (!existsSync(pkg) || !statSync(pkg).isDirectory()) continue;
+                const entry = resolveMagentPackageEntry(pkg);
+                if (entry) return entry;
+            }
         }
     }
 

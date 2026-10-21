@@ -183,7 +183,6 @@ describe('resolvePlugin', () => {
         tmpDir = mkdtempSync('superskill-mp-');
         const pluginDir = join(tmpDir, 'plugins', 'demo');
         mkdirSync(join(pluginDir, 'skills'), { recursive: true });
-        mkdirSync(join(tmpDir, 'magents'), { recursive: true });
         // Manifest at <X>/marketplace.json — NO .claude-plugin dir.
         writeFileSync(
             join(tmpDir, 'marketplace.json'),
@@ -195,8 +194,6 @@ describe('resolvePlugin', () => {
         // The latent bug resolved to dirname(<X>); must be <X> itself.
         expect(result?.marketplaceRoot).toBe(resolve(tmpDir));
         expect(result?.pluginRoot).toBe(resolve(pluginDir));
-        // Companion: the magents/ sibling must resolve under <X>.
-        expect(resolve(result?.marketplaceRoot ?? '', 'magents')).toBe(resolve(join(tmpDir, 'magents')));
     });
 
     it('throws one error listing every probed path when all three probe branches are missing (R1)', () => {

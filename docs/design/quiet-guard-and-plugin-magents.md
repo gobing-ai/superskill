@@ -5,6 +5,13 @@ Status: proposed — no code has changed yet.
 
 ## Track A — Quiet anti-hallucination guard
 
+Status: **implemented** (tasks 0155 + 0157, 2026-10-21). Measured on the operator's
+`~/.claude/projects` corpus with `bun scripts/ah-replay.ts`: **231 files, 110 old-policy blocks →
+25 new-policy blocks = 77.3% fewer**. The 25 residuals all make an external claim with no citation
+form and no verification tool in the turn — 23 of them cite a bare repo path, which
+`hasSourceCitations` refuses by design (0079). The feature scenario's ≥80% bar is therefore missed
+by 2.7 points; the operator accepted the measurement as-is on 2026-10-21 (task 0155 `## Testing`).
+
 ### Problem, measured
 
 When the cc Stop guard (`superskill hook run cc anti-hallucination`, engine
@@ -93,6 +100,10 @@ the task verdict.
   when spur exposes a transcript-evidence primitive.
 
 ## Track B — Plugin-owned magents
+
+Status: **implemented** (task 0156, 2026-10-21). `git mv` landed, the marketplace-root scan and the
+`nameMode` option are gone, `--list-magents` ships, and `claude plugin validate plugins/cc` passes
+with the persona inside the plugin tree.
 
 ### B1 — Layout
 

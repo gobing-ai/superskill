@@ -62,9 +62,9 @@ plugins/cc/
 └── README.md                        # This file
 ```
 
-**Main agents (mutable authoring SSOT):** repo-root `magents/<name>/` — not under this
-plugin tree. Install: `superskill install cc --magent team-stark-children` (see
-`magents/team-stark-children/README.md`).
+**Main agents (mutable authoring SSOT):** `magents/<name>/` inside this plugin tree (ADR-041).
+Install: `superskill install cc --magent team-stark-children`; list what ships with
+`superskill install cc --list-magents` (see `magents/team-stark-children/README.md`).
 
 ## Entity Design Purposes
 

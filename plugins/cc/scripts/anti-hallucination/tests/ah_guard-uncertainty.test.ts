@@ -4,15 +4,13 @@ import { hasConfidenceLevel, hasRedFlags, verifyAntiHallucinationProtocol } from
 /**
  * WHY this file exists (falsification, not coverage theatre).
  *
- * `uncertainty phrases detected: …` is the one issue `verifyAntiHallucinationProtocol` reports
- * that no test asserted anywhere in this package, and inside the red-flag alternative
- * `/(?:It|This) (?:should|might|may|could)/gi` only `should`/`might` had any coverage — the `may`
- * and `This` branches were unguarded, so deleting them changed no test outcome. The confidence
- * half of the same report already has assertions in `ah_guard.test.ts`, so this file pins the
- * uncertainty half plus the declaration forms the report depends on.
+ * `hasRedFlags` and `hasConfidenceLevel` stay exported and unit-tested: the docs and skills
+ * recommend both as prose conventions. Since H21 they are **not** decision inputs, so this file
+ * also pins the negative — an uncertainty phrase or a missing/malformed confidence level must
+ * never block on its own, and must never rescue an unevidenced claim either. Before H21 those
+ * halves produced the issues this file asserted; the assertions are flipped, not deleted.
  *
- * Every test below fails if its branch is removed (mutate the pattern and it goes red); the two
- * gate tests fail if the `!hasTools` / `requiresExternalVerification` gates are dropped.
+ * Every helper test below fails if its branch is removed (mutate the pattern and it goes red).
  */
 
 /** A sentence that requires external verification (capability claim about an external API). */
@@ -55,45 +53,42 @@ describe('hasRedFlags — every subject×modal alternative is reachable', () => 
     });
 });
 
-describe('verifyAntiHallucinationProtocol — the uncertainty issue names the matched phrase', () => {
-    it('reports the uncertainty issue for an It-may hedge on an unverified external claim', () => {
+describe('verifyAntiHallucinationProtocol — uncertainty never decides', () => {
+    it('reports only the source issue for a hedged external claim with no evidence', () => {
         const result = verifyAntiHallucinationProtocol(claim('It may also emit a stream when tool calls are absent.'));
 
         expect(result.ok).toBe(false);
-        expect(
-            result.issues?.some(
-                (issue) => issue.startsWith('uncertainty phrases detected:') && issue.includes('It may'),
-            ),
-        ).toBe(true);
+        expect(result.issues).toEqual(['source citations for API/library claims']);
     });
 
-    it('reports This-may and It-could the same way', () => {
-        const thisMay = verifyAntiHallucinationProtocol(claim('This may indicate the response was truncated.'));
-        expect(thisMay.issues?.some((issue) => issue.includes('This may'))).toBe(true);
+    it('never reports an uncertainty issue, whatever the hedge', () => {
+        const text =
+            'I think the Gemini API Probably returns candidates. Likely true. Possibly so. It may allow streaming.';
+        const result = verifyAntiHallucinationProtocol(text);
 
-        const itCould = verifyAntiHallucinationProtocol(claim('It could be omitted entirely in some versions.'));
-        expect(itCould.issues?.some((issue) => issue.includes('It could'))).toBe(true);
-    });
-
-    it('caps the reported phrase list at three distinct matches', () => {
-        const result = verifyAntiHallucinationProtocol(
-            'I think the Gemini API Probably returns candidates. Likely true. Possibly so. It may allow streaming.',
-        );
-
-        const uncertainty = result.issues?.find((issue) => issue.startsWith('uncertainty phrases detected:'));
-        expect(uncertainty).toBeDefined();
-        expect(uncertainty?.split(': ')[1].split(', ').length).toBeLessThanOrEqual(3);
-    });
-
-    it('suppresses the uncertainty issue when tool evidence is present', () => {
-        const result = verifyAntiHallucinationProtocol(
-            claim('It may also emit a stream. I checked this with ref_search_documentation.'),
-        );
-
+        expect(result.ok).toBe(false);
         expect(result.issues?.some((issue) => issue.startsWith('uncertainty phrases detected:'))).toBe(false);
     });
 
-    it('never reaches the uncertainty check for internal discussion', () => {
+    it('allows a cited reply that hedges (residual-proof: hedge + citation)', () => {
+        // RESIDUAL-PROOF negative: carries the hedge half (`It may`, `probably`) AND the citation
+        // half, so it fails if either the old uncertainty branch or a re-added text-tool branch
+        // decides instead of the citation.
+        const result = verifyAntiHallucinationProtocol(
+            claim('It may also emit a stream. I think that is probably right — see packages/core/src/ai/client.ts:88.'),
+        );
+
+        expect(result.ok).toBe(true);
+        expect(result.issues).toBeUndefined();
+    });
+
+    it('allows a hedged claim when the current turn used a verification tool', () => {
+        const result = verifyAntiHallucinationProtocol(claim('It may also emit a stream.'), ['WebSearch']);
+
+        expect(result.ok).toBe(true);
+    });
+
+    it('never reaches the decision for internal discussion', () => {
         const result = verifyAntiHallucinationProtocol('Let me think about the architecture approach');
 
         expect(result.ok).toBe(true);
@@ -101,7 +96,7 @@ describe('verifyAntiHallucinationProtocol — the uncertainty issue names the ma
     });
 });
 
-describe('confidence level — declaration forms and the reported issue', () => {
+describe('confidence level — declaration forms, and no decision power', () => {
     it('accepts every documented declaration form', () => {
         expect(hasConfidenceLevel('Confidence: HIGH')).toBe(true);
         expect(hasConfidenceLevel('Confidence: **MEDIUM**')).toBe(true);
@@ -119,14 +114,17 @@ describe('confidence level — declaration forms and the reported issue', () => 
         expect(hasConfidenceLevel(`### Confidence\n${'x'.repeat(120)}\nHIGH`)).toBe(false);
     });
 
-    it('reports the confidence issue for an external claim that declares no level', () => {
-        const result = verifyAntiHallucinationProtocol(claim('It may also emit a stream.'));
+    it('blocks an unevidenced claim even when it declares a level', () => {
+        // RESIDUAL-PROOF: the label half is present (`Confidence: MEDIUM`) and the claim half is
+        // present. A re-added label branch would allow this; only evidence may.
+        const result = verifyAntiHallucinationProtocol(claim('It may also emit a stream. Confidence: MEDIUM'));
 
-        expect(result.issues).toContain('confidence level (HIGH/MEDIUM/LOW)');
+        expect(result.ok).toBe(false);
+        expect(result.issues).toEqual(['source citations for API/library claims']);
     });
 
-    it('drops the confidence issue once a level is declared', () => {
-        const result = verifyAntiHallucinationProtocol(claim('It may also emit a stream. Confidence: MEDIUM'));
+    it('never reports a confidence issue', () => {
+        const result = verifyAntiHallucinationProtocol(claim('It may also emit a stream.'));
 
         expect(result.issues).not.toContain('confidence level (HIGH/MEDIUM/LOW)');
     });

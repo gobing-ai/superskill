@@ -20,7 +20,8 @@ superskill install [options] <plugin>
 | `--marketplace <locator>` | Marketplace locator (ADR-034). A local path (probed as direct `marketplace.json` file → `<X>/marketplace.json` → `<X>/.claude-plugin/marketplace.json`), a GitHub URL (`https://github.com/owner/repo[/tree/<ref>[/subpath]]`), or `owner/repo` shorthand. **Local-first:** an existing path is local; only a non-existent `owner/repo` is GitHub shorthand; `https://`/`git@` are always remote. Remote content caches at `~/.cache/superskill/marketplaces/<owner>/<repo>/<ref>/` (warm cache resolves offline). | CWD's `.claude-plugin/`, then installed package root |
 | `--targets <list>` | Comma-separated target agents, or `all`. | all configured |
 | `--no-global` | Install to project-level instead of user-level global directories. | `false` (global) |
-| `--magent <name>` | Select which main-agent package under `magents/` to emit. Required when the plugin ships more than one; auto-selects when exactly one exists. | auto when unique |
+| `--magent <name>` | Select which main-agent package under `<pluginRoot>/magents/` to emit. Required when the plugin ships more than one; auto-selects when exactly one exists. | auto when unique |
+| `--list-magents` | List the main-agent packages the plugin ships, one `<name>\t<description>` line each (description = first non-heading line of the package `README.md`), and exit without staging or writing. | `false` |
 | `--marketplace-source <mode>` | **Deprecated** (ADR-034): warns to stderr, keeps behavior, removal planned. Prefer `--marketplace <locator>`. | `directory` |
 | `--dry-run` | Preview the install without writing files. | `false` |
 | `--verbose` | Print each pipeline step and file copy. | `false` |
@@ -162,19 +163,17 @@ Command and subagent bodies often link to companion skill files with repo-relati
 
 ### Magents (main-agent configs)
 
-**Two discovery roots** (staged into `.rulesync/magents/`):
-
-1. `plugins/<plugin>/magents/` — plugin-shipped packages (prefixed `<plugin>-<name>`).
-2. Marketplace-root `magents/` — **mutable authoring SSOT** (bare `<name>`), e.g. `magents/team-stark-children/`.
+**One discovery root** (ADR-041): `plugins/<plugin>/magents/` — plugin-shipped packages, staged
+into `.rulesync/magents/` as `<plugin>-<name>`. The prefix keeps two plugins' personas from
+colliding; `--magent <name>` still matches the bare name through the `endsWith('-<name>')` rule.
 
 **Selection (must stay correct for plugins with zero magents):**
 
 | Situation | Behavior |
 | --- | --- |
 | No magents staged | Silent no-op (skills/hooks/rules still install). Verbose: “none staged”. |
-| Exactly one **plugin-owned** package (`<plugin>-*`) | Auto-select. |
-| Marketplace bare package(s) only | Require `--magent <name>` (never auto-install on `install sp` just because the monorepo has a persona). |
-| Multiple packages, no `--magent` | Skip emission; verbose lists staged names. |
+| Exactly one package staged | Auto-select. |
+| Multiple packages, no `--magent` | Write nothing and print one stdout line naming the bare choices (`  Magents: <a>, <b> available — pass --magent <name> to install one`). |
 | `--magent <name>` | Require a match or fail loudly. |
 
 After selection, emission:

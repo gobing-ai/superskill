@@ -21,11 +21,11 @@ the npm tarball described below.
 | `README.md` | copy of repo root | Build artifact |
 | `plugins/` | copy of repo-root `plugins/` | **Published content** — `tests/` pruned during staging |
 | `.claude-plugin/` | copy of repo-root `.claude-plugin/` | Marketplace manifest; makes the package root a valid Claude Code marketplace |
-| `magents/` | copy of repo-root `magents/` | **Published content** |
 
-`plugins/`, `.claude-plugin/`, and `magents/` are **build-time copies** — they live at the monorepo
-root, but npm packs only paths under `apps/cli/`. All three destinations are gitignored
-(`.gitignore:159-161`); never hand-edit `apps/cli/{plugins,.claude-plugin,magents}`.
+`plugins/` and `.claude-plugin/` are **build-time copies** — they live at the monorepo root, but npm
+packs only paths under `apps/cli/`. Both destinations are gitignored (`.gitignore:158-159`); never
+hand-edit `apps/cli/{plugins,.claude-plugin}`. The persona package rides inside `plugins/cc/` as
+`plugins/cc/magents/team-stark-children/` (ADR-041), so it needs no separate copy step.
 
 ## Lifecycle scripts — which runs when
 
@@ -41,7 +41,7 @@ staging lived in `prepublishOnly`, `npm pack` packed whatever stale copies happe
 ## Checklist
 
 1. **Publish-surface content review — the one that needs human judgment.**
-   Read what `plugins/**` and `magents/**` actually contain. They ship verbatim to every user of
+   Read what `plugins/**` (including `plugins/cc/magents/**`) actually contains. It ships verbatim to every user of
    `bun add -g @gobing-ai/superskill`. Check for:
    - **Personal data** — real names, personal email, phone, home city, social profiles, employer
      history. Operator-profile files (`magents/*/USER.md`) are written as *private* config and are

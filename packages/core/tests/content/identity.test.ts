@@ -196,6 +196,38 @@ describe('resolveContentPath', () => {
         }
     });
 
+    it('0156 AC1: resolves a plugin-owned magent package under plugins/<plugin>/magents/<name>', () => {
+        setup();
+        try {
+            const pkg = join(tmpDir, 'plugins', 'cc', 'magents', 'team-stark-children');
+            mkdirSync(pkg, { recursive: true });
+            const agents = join(pkg, 'AGENTS.md');
+            writeFileSync(agents, '# ops\n');
+            writeFileSync(join(pkg, 'IDENTITY.md'), '# id\n');
+            expect(resolveContentPath('magent', 'team-stark-children', { baseDir: tmpDir })).toBe(agents);
+            expect(resolveContentName(agents)).toBe('team-stark-children');
+        } finally {
+            teardown();
+        }
+    });
+
+    it('0156 AC1: a legacy bare magents/<name> package still wins over the plugin tree', () => {
+        setup();
+        try {
+            const bare = join(tmpDir, 'magents', 'team-stark-children');
+            const owned = join(tmpDir, 'plugins', 'cc', 'magents', 'team-stark-children');
+            mkdirSync(bare, { recursive: true });
+            mkdirSync(owned, { recursive: true });
+            writeFileSync(join(bare, 'AGENTS.md'), '# bare\n');
+            writeFileSync(join(owned, 'AGENTS.md'), '# plugin-owned\n');
+            expect(resolveContentPath('magent', 'team-stark-children', { baseDir: tmpDir })).toBe(
+                join(bare, 'AGENTS.md'),
+            );
+        } finally {
+            teardown();
+        }
+    });
+
     it('resolves multi-file magent package directory path to AGENTS.md', () => {
         setup();
         try {

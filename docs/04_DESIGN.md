@@ -84,7 +84,7 @@ visibility and invocation are distinct evidence states.
 
 ```text
 superskill install <plugin> [--marketplace <locator>] [--targets <list>] [--no-global] [--materialize <mode>]
-    [--magent <name>] [--marketplace-source <directory|github>] [--dry-run] [--verbose]
+    [--magent <name>] [--list-magents] [--marketplace-source <directory|github>] [--dry-run] [--verbose]
 
 superskill update [name] [--check] [--json] [--targets <list>] [--marketplace <locator>] [--no-global]
 ```
@@ -335,7 +335,7 @@ Executable logic a skill invokes at the user's install site lives in `plugins/<p
 
 | Surface | Path | Purpose |
 | --------- | ------ | --------- |
-| Guard engine | `plugins/cc/scripts/anti-hallucination/ah_guard.ts` | Pure `verifyAntiHallucinationProtocol(text)` + direct-invocation `main()`; `resolveStopContext` prefers legacy `$ARGUMENTS`, then stdin: loop guard → nonblank Claude/Codex `last_assistant_message` → legacy `messages`/`last_message` → Claude `transcript_path`. `block` emits `{}` or top-level `decision:"block"` + `reason`; `deny` retains the `AfterAgent` envelope. |
+| Guard engine | `plugins/cc/scripts/anti-hallucination/ah_guard.ts` | Pure `verifyAntiHallucinationProtocol(text, turnTools?)` — blocks iff the text makes an external claim that neither a text citation nor a verification tool in the current turn backs — plus direct-invocation `main()`. `resolveStopContext` prefers legacy `$ARGUMENTS`, then stdin: loop guard → nonblank Claude/Codex `last_assistant_message` → legacy `messages`/`last_message` → Claude `transcript_path` (whose tail also yields `turnTools` via `extractTurnToolNames`). Blocks carry `BLOCK_REASON_V1`, opened by `HOOK_FEEDBACK_TAG` (`[anti-hallucination/v1]`); `block` emits `{}` or top-level `decision:"block"` + `reason`; `deny` retains the `AfterAgent` envelope. |
 | Validate adapter | `plugins/cc/scripts/anti-hallucination/validate_response.ts` | Thin wrapper: `RESPONSE_TEXT`/stdin → verify → exit 0/1 (CLI semantics, **not** the hook block signal) |
 | Shared logger | `plugins/cc/scripts/anti-hallucination/logger.ts` | Single shared copy (dedup'd from per-skill copies) |
 | Stop-hook config | `plugins/cc/hooks/hooks.json` | `Stop` command hook → `superskill hook run cc anti-hallucination` (portable PATH command; the dispatcher `apps/cli/src/commands/hook-run.ts` routes to the guard engine). Declares `minCliVersion` so an older CLI cannot install a contract it does not implement. |

@@ -265,12 +265,8 @@ export function mapPluginToRulesync(
         }
     }
 
-    // Magents from the plugin tree (optional). Project-root `magents/` (mutable
-    // authoring SSOT) is staged separately by install after mapping — see
-    // {@link stageMagentsFromDir}.
-    result.magents += stageMagentsFromDir(join(pluginPath, 'magents'), pluginName, outputDir, {
-        nameMode: 'plugin-prefixed',
-    });
+    // Magents from the plugin tree (optional) — the only discovery root (ADR-041).
+    result.magents += stageMagentsFromDir(join(pluginPath, 'magents'), pluginName, outputDir);
 
     // hooks.json — convert from Claude Code format to rulesync canonical format.
     const hooksRootPath = join(pluginPath, 'hooks.json');
@@ -427,20 +423,14 @@ function assertSafeOutputDir(outputDir: string): void {
 }
 
 /**
- * Stage `magents/<kebab-name>/` packages into `.rulesync/magents/`.
- *
- * - `nameMode: 'plugin-prefixed'` → stage as `<plugin>-<name>` (plugin-shipped packages).
- * - `nameMode: 'bare'` → stage as `<name>` (project-root authoring SSOT under repo `magents/`).
+ * Stage `<pluginRoot>/magents/<kebab-name>/` packages into `.rulesync/magents/` as
+ * `<plugin>-<name>` (ADR-041: the plugin tree is the only discovery root, and the prefix keeps
+ * two plugins' personas from colliding).
  *
  * Magents are NOT downgraded to skills. Trees are preserved (CLAUDE.md, layers,
  * overrides/, rules/). Returns the count of packages staged. Missing dir → 0.
  */
-export function stageMagentsFromDir(
-    magentsDir: string,
-    pluginName: string,
-    outputDir: string,
-    options: { nameMode: 'plugin-prefixed' | 'bare' },
-): number {
+export function stageMagentsFromDir(magentsDir: string, pluginName: string, outputDir: string): number {
     if (!existsSync(magentsDir)) return 0;
     const magentsOut = join(outputDir, 'magents');
     let count = 0;
@@ -451,7 +441,7 @@ export function stageMagentsFromDir(
         if (!/^[a-z][a-z0-9-]*$/.test(entry)) {
             throw new Error(`Invalid magent directory name '${entry}': must be kebab-case (lowercase, hyphens).`);
         }
-        const stagedName = options.nameMode === 'plugin-prefixed' ? `${pluginName}-${entry}` : entry;
+        const stagedName = `${pluginName}-${entry}`;
         copyAndRewriteDirectory(sourceDir, join(magentsOut, stagedName), pluginName);
         count++;
     }

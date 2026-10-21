@@ -2,9 +2,9 @@
 /**
  * Anti-Hallucination Guard - prevent-stop hook engine
  *
- * This script enforces the anti-hallucination protocol by verifying that
- * responses include proper source citations, confidence levels,
- * and evidence of verification tool usage.
+ * This script enforces the anti-hallucination protocol on the reply text: an external claim
+ * must be backed by a citation in the text or by a verification tool call in the current turn.
+ * Confidence labels and uncertainty phrases are recommended prose, never decision inputs.
  *
  * Input channels (first non-empty wins — see {@link resolveStopContext}):
  *     ARGUMENTS env - legacy/test channel: JSON with `messages` / `last_message`
@@ -85,6 +85,25 @@ const TOOL_PATTERNS = [
     /mcp__ref__ref_read_url/,
     /mcp__grep__searchCode/,
 ];
+
+/**
+ * Tool-name prefixes that count as turn evidence (H21 R4): a tool call under one of these
+ * namespaces actually read an external source during the current turn.
+ */
+export const VERIFICATION_TOOL_PREFIXES = ['mcp__ref__', 'mcp__grep__', 'mcp__brave-search__'] as const;
+
+/**
+ * Versioned machine tag that opens every block reason (H21 R7). Owned here so the rule module,
+ * the persona instructions and the docs quote one literal; `hook-feedback-protocol.test.ts`
+ * fails loud when only one side bumps the version.
+ */
+export const HOOK_FEEDBACK_TAG = '[anti-hallucination/v1]';
+
+/**
+ * The one block reason for the evidence policy (H21 R7): terse, versioned, and shaped so the
+ * model can answer it in at most three lines without an extra conversational turn.
+ */
+export const BLOCK_REASON_V1 = `${HOOK_FEEDBACK_TAG} Uncited external claim. Reply only with its source (URL or path:line) or "UNVERIFIED: <claim>" — max 3 lines, no acknowledgement.`;
 
 // Red flags - patterns that indicate claims without verification
 const RED_FLAG_PATTERNS = [
@@ -222,12 +241,101 @@ export function extractLastAssistantFromTranscript(jsonl: string): string | unde
     return undefined;
 }
 
+/** Structural subset of a Claude Code transcript entry the turn scan reads. */
+interface TranscriptEntry {
+    type?: string;
+    isMeta?: boolean;
+    isSidechain?: boolean;
+    message?: {
+        content?: string | null | Array<{ type?: string; name?: string; input?: { subagent_type?: string } }>;
+    };
+}
+
+/** Parse a JSONL transcript, skipping unparseable and non-object lines. */
+function parseTranscriptLines(jsonl: string): TranscriptEntry[] {
+    const entries: TranscriptEntry[] = [];
+    for (const line of jsonl.split('\n')) {
+        const trimmed = line.trim();
+        if (!trimmed) continue;
+        try {
+            const parsed: unknown = JSON.parse(trimmed);
+            if (typeof parsed === 'object' && parsed !== null) entries.push(parsed as TranscriptEntry);
+        } catch {
+            // Unparseable line — a truncated or foreign record never credits or resets a turn.
+        }
+    }
+    return entries;
+}
+
+/** True when the entry is a real user prompt: a turn boundary (H21 R3). */
+function isTurnBoundary(entry: TranscriptEntry): boolean {
+    if (entry.type !== 'user' || entry.isMeta === true || entry.isSidechain === true) return false;
+    const content = entry.message?.content;
+    if (typeof content === 'string') return content.trim().length > 0;
+    // A user entry carrying only tool_result parts is the host echoing a tool result back, not a
+    // new human turn — treating it as one would drop the tool calls that led to it.
+    if (Array.isArray(content)) return content.some((part) => part?.type !== 'tool_result');
+    return false;
+}
+
+/**
+ * Collect the `tool_use` names of the **current turn** from a Claude Code transcript (H21 R3).
+ *
+ * The turn starts at the last real user prompt (see {@link isTurnBoundary}) and runs to the end of
+ * the transcript; sidechain (subagent) entries are ignored. An `Agent`/`Task` call with
+ * `input.subagent_type: "web-fetch"` is reported as `WebFetch`, because that subagent is the
+ * evidence-producing call. Unparseable lines are skipped, and a transcript with no boundary
+ * yields `[]` — never the whole tail.
+ */
+export function extractTurnToolNames(jsonl: string): string[] {
+    const entries = parseTranscriptLines(jsonl);
+    let start = -1;
+    for (let i = entries.length - 1; i >= 0; i--) {
+        const entry = entries[i];
+        if (entry && isTurnBoundary(entry)) {
+            start = i;
+            break;
+        }
+    }
+    if (start === -1) return [];
+
+    const names: string[] = [];
+    for (let i = start + 1; i < entries.length; i++) {
+        const entry = entries[i];
+        if (entry?.type !== 'assistant' || entry.isSidechain === true) continue;
+        const content = entry.message?.content;
+        if (!Array.isArray(content)) continue;
+        for (const part of content) {
+            if (part?.type !== 'tool_use' || typeof part.name !== 'string') continue;
+            const isSubagent = part.name === 'Agent' || part.name === 'Task';
+            names.push(isSubagent && part.input?.subagent_type === 'web-fetch' ? 'WebFetch' : part.name);
+        }
+    }
+    return names;
+}
+
+/**
+ * True when the current turn actually read an external source (H21 R4): a fetch/search call or a
+ * tool under one of {@link VERIFICATION_TOOL_PREFIXES}. A tool name merely mentioned in the reply
+ * text is not evidence — that is a claim, not proof.
+ */
+export function hasTurnToolEvidence(names: readonly string[]): boolean {
+    return names.some(
+        (name) =>
+            name === 'WebFetch' ||
+            name === 'WebSearch' ||
+            VERIFICATION_TOOL_PREFIXES.some((prefix) => name.startsWith(prefix)),
+    );
+}
+
 /** Outcome of resolving a Stop payload: extracted content, or an immediate-allow reason. */
 export interface ResolvedStopContext {
     /** Last assistant message text, when the payload yielded one. */
     content?: string;
     /** Set when the payload dictates an immediate allow (loop guard, unreadable input). */
     allowReason?: string;
+    /** Tool names used in the current turn, when the payload carried a readable transcript. */
+    turnTools?: string[];
 }
 
 /** Byte cap for the Stop-hook transcript read (0147 R7). 1 MiB holds the last few turns. */
@@ -302,8 +410,22 @@ export function resolveStopContext(
         return { allowReason: 'Task is complete (stop already processed — loop guard)' };
     }
 
+    // H21 R5: read the transcript at most once, and only when the payload names one. A read or
+    // parse failure leaves `turnTools` empty without touching `content`/`allowReason` — the
+    // `transcript unavailable` allow still applies only when the transcript is the content source.
+    let transcript: string | undefined;
+    let turnTools: string[] = [];
+    if (typeof payload.transcript_path === 'string') {
+        try {
+            transcript = readTranscript(payload.transcript_path);
+            turnTools = extractTurnToolNames(transcript);
+        } catch {
+            transcript = undefined;
+        }
+    }
+
     if (typeof payload.last_assistant_message === 'string' && payload.last_assistant_message.trim().length > 0) {
-        return { content: payload.last_assistant_message };
+        return { content: payload.last_assistant_message, turnTools };
     }
 
     if (payload.messages || payload.last_message) {
@@ -311,13 +433,10 @@ export function resolveStopContext(
     }
 
     if (typeof payload.transcript_path === 'string') {
-        let transcript: string;
-        try {
-            transcript = readTranscript(payload.transcript_path);
-        } catch {
+        if (transcript === undefined) {
             return { allowReason: 'Task is complete (transcript unavailable)' };
         }
-        return { content: extractLastAssistantFromTranscript(transcript) };
+        return { content: extractLastAssistantFromTranscript(transcript), turnTools };
     }
 
     return {};
@@ -444,7 +563,17 @@ export function requiresExternalVerification(text: string): boolean {
     return hasWeakExternalClaim(text);
 }
 
-export function verifyAntiHallucinationProtocol(text: string): VerificationResult {
+/**
+ * Apply the evidence policy to a reply (H21 R1): block **iff** the text makes an external claim
+ * that neither the text itself nor the current turn backs with evidence.
+ *
+ * Evidence is a source citation in the text (`path:line`, URL, pasted command output) or a
+ * verification tool call in the current turn ({@link hasTurnToolEvidence}). Confidence labels,
+ * uncertainty phrases and tool-name mentions are no longer decision inputs — they block on their
+ * own for nothing and let an unevidenced claim through. The exports stay for the docs and skills
+ * that describe the recommended prose conventions.
+ */
+export function verifyAntiHallucinationProtocol(text: string, turnTools: readonly string[] = []): VerificationResult {
     if (!text || text.trim().length === 0) {
         return { ok: true, reason: 'Task is complete' };
     }
@@ -464,41 +593,11 @@ export function verifyAntiHallucinationProtocol(text: string): VerificationResul
         return { ok: true, reason: 'Task is complete (internal discussion)' };
     }
 
-    // Check for source citations
-    const hasSources = hasSourceCitations(text);
-
-    // Check for confidence levels
-    const hasConfidence = hasConfidenceLevel(text);
-
-    // Check for tool usage evidence
-    const hasTools = hasToolUsageEvidence(text);
-
-    // Check for red flags
-    const redFlags = hasRedFlags(text);
-
-    // Decision logic
-    const issues: string[] = [];
-
-    if (!hasSources) {
-        issues.push('source citations for API/library claims');
+    if (hasSourceCitations(text) || hasTurnToolEvidence(turnTools)) {
+        return { ok: true, reason: 'Task is complete (evidence present)' };
     }
 
-    if (!hasConfidence) {
-        issues.push('confidence level (HIGH/MEDIUM/LOW)');
-    }
-
-    if (redFlags.length > 0 && !hasTools) {
-        const uniqueFlags = Array.from(new Set(redFlags)).slice(0, 3);
-        issues.push(`uncertainty phrases detected: ${uniqueFlags.join(', ')}`);
-    }
-
-    if (issues.length > 0) {
-        const reason = `Add verification for: ${issues.join(', ')}`;
-        return { ok: false, reason, issues };
-    }
-
-    // If all checks pass
-    return { ok: true, reason: 'Task is complete' };
+    return { ok: false, reason: BLOCK_REASON_V1, issues: ['source citations for API/library claims'] };
 }
 
 // =============================================================================
@@ -537,7 +636,7 @@ export function runStopGuard(
     if (resolved.content === undefined) {
         return { output: buildStopOutput({ ok: true, reason: 'No content to verify' }, profile), exitCode: 0 };
     }
-    const result = verifyAntiHallucinationProtocol(resolved.content);
+    const result = verifyAntiHallucinationProtocol(resolved.content, resolved.turnTools ?? []);
     if (result.ok) {
         return { output: buildStopOutput(result, profile), exitCode: 0 };
     }

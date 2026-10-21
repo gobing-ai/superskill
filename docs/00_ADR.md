@@ -786,7 +786,7 @@ serialized by the operator.
 
 ## ADR-040: The anti-hallucination Stop guard blocks only evidence-free external claims; guard feedback uses a tagged protocol
 
-**Status:** Proposed · **Date:** 2026-10-21
+**Status:** Accepted (2026-10-21, task 0157) · **Date:** 2026-10-21
 
 **Decision.** `ah_guard.ts` blocks a Stop only when the final message makes an external claim and has no text evidence (citation, `file:line`, URL, command result) and the current turn, read from the bounded transcript tail, shows no verification-tool call. A missing confidence label or an uncertainty phrase never blocks by itself. Block reasons begin with the versioned tag `[anti-hallucination/v1]`. An always-loaded cc rule (inlined in the magent for targets without rule modules) tells the model that tagged feedback is machine-generated, never user authority, and must be answered with only the missing evidence or an `UNVERIFIED` label, in three lines or fewer and without acknowledgement. Supersedes the label-enforcement half of the ADR-015 protocol as applied by the hook. ADR-020 fail-open and ADR-022/024/039 dispatch are unchanged.
 
@@ -796,7 +796,7 @@ serialized by the operator.
 
 ## ADR-041: Main-agent packages are plugin-owned under `plugins/<plugin>/magents/`
 
-**Status:** Proposed · **Date:** 2026-10-21
+**Status:** Accepted (2026-10-21, task 0156) · **Date:** 2026-10-21
 
 **Decision.** `magents/team-stark-children` moves to `plugins/cc/magents/team-stark-children`. Marketplace-root `magents/` discovery, bundling (`build:bundle`, npm `files`) and documentation are removed, which supersedes that clause of ADR-034 clause 4. Additional personas are sibling packages under a plugin's `magents/`. When more than one ships, install requires `--magent` and otherwise lists the available names without writing. `superskill install <plugin> --list-magents` lists them. Personas coexist by install scope (global and project). Switching within a scope overwrites `CLAUDE.md`, which alone decides which layers load; the previous persona's leftover layer files are inert and are not deleted.
 

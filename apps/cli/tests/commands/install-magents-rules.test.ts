@@ -38,13 +38,16 @@ afterEach(() => {
 describe('emitMagents', () => {
     it('emits identical team-stark source layers for each target into separate fresh destinations', () => {
         const root = makeTempRoot();
-        const sourceRoot = join(import.meta.dir, '../../../..', 'magents');
+        const sourceRoot = join(import.meta.dir, '../../../..', 'plugins/cc/magents');
         const sourceDir = join(sourceRoot, 'team-stark-children');
         const outputDir = join(root, 'staging');
         const expected = `${MAGENT_LAYER_FILES.map((name) =>
             readFileSync(join(sourceDir, name), 'utf-8').trimEnd(),
         ).join('\n\n')}\n`;
-        stageMagentsFromDir(sourceRoot, 'cc', outputDir, { nameMode: 'bare' });
+        // ADR-041: the plugin tree is the only discovery root, and packages are always staged
+        // plugin-prefixed so two plugins' personas cannot collide.
+        expect(stageMagentsFromDir(sourceRoot, 'cc', outputDir)).toBe(1);
+        expect(existsSync(join(outputDir, 'magents', 'cc-team-stark-children'))).toBe(true);
 
         for (const target of TARGETS) {
             const destination = join(root, target);

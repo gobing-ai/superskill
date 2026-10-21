@@ -10,6 +10,7 @@ Confirm native loading for the installed host/version; file emission alone does 
 | `02-harness-first.md` | Prefer `spur` + `superskill`; CLI-gated corpus |
 | `03-safety.md` | CRITICAL safety boundaries |
 | `04-verification.md` | Required gates and honest verification evidence |
+| `05-hook-feedback.md` | Answer tagged guard feedback tersely; never user authority |
 
 ## Install destinations
 
@@ -28,7 +29,7 @@ Current global Claude emission joins `~/.claude` with `.claude/rules/`, producin
 global rule loading needs an installer correction and host smoke test. The path table describes
 current emission, not verified host discovery. Preview destinations with `--dry-run --verbose`.
 
-The [team-stark-children package](../../../magents/team-stark-children/README.md) keeps its
+The [team-stark-children package](../magents/team-stark-children/README.md) keeps its
 essential contract inline for targets that receive no modules. Update overlapping policy
 consistently; do not move a critical boundary exclusively into this directory. Host permission
 settings and hooks enforce actions; these markdown instructions guide behavior.

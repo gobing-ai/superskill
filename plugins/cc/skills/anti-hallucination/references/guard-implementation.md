@@ -6,13 +6,27 @@ Integration guide for the anti-hallucination guard script with Claude Code hooks
 
 ## Overview
 
-The `ah_guard.ts` script applies a heuristic check to responses before allowing a Stop event. It looks
-for:
+The `ah_guard.ts` script applies a heuristic check to responses before allowing a Stop event. It
+blocks exactly one shape:
 
-- **Source citations**: A recognizable citation or engineering-evidence marker; it does not verify the source
-- **Confidence levels**: An explicit HIGH/MEDIUM/LOW confidence label
-- **Tool usage evidence**: A configured evidence marker; it does not prove that a tool was used
-- **Red flags**: Uncertainty phrases that indicate unverified claims
+```
+block ⇔ externalClaim(text) ∧ ¬textEvidence(text) ∧ ¬turnToolEvidence(currentTurn)
+```
+
+- **External claim**: the `requiresExternalVerification` heuristic — a strong claim (URL, version
+  cue, "according to …") or an external-artifact word (`api`, `library`, `framework`, `sdk`,
+  `package`, `endpoint`, `documentation`) coupled in the same sentence to what that thing
+  does/has/requires.
+- **Text evidence**: a recognizable citation or engineering-evidence marker in the reply — it does
+  not verify the source.
+- **Turn tool evidence**: a `WebFetch`/`WebSearch` call, or a tool under `mcp__ref__`,
+  `mcp__grep__` or `mcp__brave-search__`, in the **current turn** of a Claude Code transcript. A
+  tool name merely mentioned in the text is a claim, not evidence.
+
+Confidence labels (`Confidence: HIGH|MEDIUM|LOW`) and uncertainty phrases are recommended prose, but
+they are **not** decision inputs: neither can block on its own, and neither rescues an unevidenced
+claim. `hasConfidenceLevel`, `hasRedFlags` and `hasToolUsageEvidence` stay exported for docs and
+skills that describe those conventions.
 
 A passing result means that response patterns matched. It does not prove that every claim is
 supported, that a citation is relevant or current, or that the answer is true. The host remains
@@ -32,9 +46,13 @@ discards canonical decision JSON at exit 2.
 The guard writes the canonical Claude Stop JSON to stdout:
 
 ```json
-{"hookSpecificOutput":{"hookEventName":"Stop"}}
-{"decision":"block","reason":"Add verification for: source citations for API/library claims, confidence level (HIGH/MEDIUM/LOW)","hookSpecificOutput":{"hookEventName":"Stop"}}
+{}
+{"decision":"block","reason":"[anti-hallucination/v1] Uncited external claim. Reply only with its source (URL or path:line) or \"UNVERIFIED: <claim>\" — max 3 lines, no acknowledgement."}
 ```
+
+`block` carries only `decision` + `reason` (Codex rejects `hookSpecificOutput` on Stop); `deny`
+retains the `AfterAgent` envelope. The reason is the exported `BLOCK_REASON_V1`, so a host can match
+`HOOK_FEEDBACK_TAG` (`[anti-hallucination/v1]`) instead of parsing prose.
 
 ## Hook Configuration
 
@@ -80,10 +98,13 @@ Resolved by `resolveStopContext` — first non-empty channel wins:
 | Channel | Payload | Sent by |
 |---------|---------|---------|
 | `ARGUMENTS` env var | JSON with `messages` array and optionally `last_message` | legacy/test harnesses |
-| stdin | Claude Code Stop payload: `{"transcript_path": "...", "stop_hook_active": false, ...}` — the last textual assistant message is read from the transcript JSONL; `stop_hook_active: true` allows immediately (block-loop guard) | Claude Code |
+| stdin | Claude Code Stop payload: `{"transcript_path": "...", "stop_hook_active": false, ...}` — the last textual assistant message **and** the current turn's tool calls are read from the transcript JSONL (one read, `TRANSCRIPT_TAIL_BYTES` cap); `stop_hook_active: true` allows immediately (block-loop guard) | Claude Code |
 | stdin | omp `agent_end` event: `{"type": "agent_end", "messages": [...]}` | omp generated hook modules |
 
-Unreadable input (invalid JSON, missing transcript) always resolves to **allow** — the guard fails open by design.
+Unreadable input (invalid JSON, missing transcript) always resolves to **allow** — the guard fails
+open by design. `ARGUMENTS`, `messages` and `last_message` payloads carry no transcript, so they
+yield `turnTools: []` and are judged on text evidence alone. Codex rollout transcripts, Pi
+`llmMessages`, omp `messages` and Gemini get `[]` for the same reason.
 
 ## Verification Rules
 
@@ -102,13 +123,20 @@ The current heuristic treats the following as signals that a message may require
 - Documentation links
 - Factual claims
 
-When a signal is present, the guard requires BOTH:
-1. A recognizable citation or engineering-evidence marker — `[Source: …]`, `Source: …`, a `Sources:` list, a URL, **and (0079) engineering evidence** such as `file:line` anchors (`ah_guard.ts:288`), exit-code lines (`exit 0`), or pasted test-result lines (`1626 pass / 0 fail`). A bare fenced code block alone is not credited. This presence check does not establish support for every claim.
-2. A confidence level (HIGH/MEDIUM/LOW)
+When a signal is present, the guard requires **either** evidence form:
 
-AND EITHER:
-- A recognizable tool-usage marker (a textual signal, not proof of execution)
-- No red flag phrases
+1. A recognizable citation or engineering-evidence marker — `[Source: …]`, `Source: …`, a `Sources:`
+   list, a URL, **and (0079) engineering evidence** such as `file:line` anchors (`ah_guard.ts:288`),
+   exit-code lines (`exit 0`), or pasted test-result lines (`1626 pass / 0 fail`). A bare fenced
+   code block alone is not credited, and neither is a bare filename without `:line` — that is the
+   0079 false-negative the anchor exists to close. This presence check does not establish support
+   for every claim.
+2. A verification tool call in the current turn — `WebFetch`, `WebSearch`, or a tool under
+   `VERIFICATION_TOOL_PREFIXES` (`mcp__ref__`, `mcp__grep__`, `mcp__brave-search__`). The turn is
+   bounded by the last real user prompt; tool calls from earlier turns do not count, and an
+   `Agent`/`Task` call is credited only when its `subagent_type` is `web-fetch`.
+
+A confidence label is no longer a requirement, and a missing label is no longer a reason to block.
 
 **Why metrics no longer trip the guard (0079):** a metrics-dense verification verdict (`Coverage: func 94.87%, line 100.00%`, `1626 pass / 0 fail`, `exit 0`) used to be blocked because the broad `/\bv?\d+\.\d+\b/` regex read every decimal as a version. The cue-gated regex now requires a version cue, so evidence-dense turns pass instead of being false-positively blocked.
 
@@ -126,7 +154,9 @@ bun test plugins/cc/scripts/anti-hallucination/tests/ah_guard.test.ts
 
 ### Adding Red Flag Patterns
 
-Edit `SOURCE_PATTERNS`, `CONFIDENCE_PATTERNS`, `TOOL_PATTERNS`, or `RED_FLAG_PATTERNS` in `ah_guard.ts`:
+`RED_FLAG_PATTERNS` is exported through `hasRedFlags` for documentation and skills that describe
+uncertainty phrasing, but nothing in the decision path reads it. Edit it in `ah_guard.ts` only to
+change what that helper reports:
 
 ```typescript
 const RED_FLAG_PATTERNS = [
@@ -142,13 +172,13 @@ const RED_FLAG_PATTERNS = [
 ### Adjusting Verification Threshold
 
 Very short *internal* notes (`"Done"`, `"LGTM"`) skip the protocol when
-`requiresExternalVerification` is false. Short **external** claims still require
-citations — the length floor is not a smuggle path. Adjust the floor in
-`verifyAntiHallucinationProtocol`:
+`requiresExternalVerification` is false. Short **external** claims still require evidence — the
+length floor is not a smuggle path. Adjust the floor in `verifyAntiHallucinationProtocol`:
 
 ```typescript
 // Empty → allow. Length < 50 *and* no external claim → allow.
 // Short external claims (e.g. "The API returns a list.") still verify.
 if (!text || text.trim().length === 0) { /* allow */ }
 if (text.trim().length < 50 && !needsVerification) {  // Change 50 to your threshold
+if (hasSourceCitations(text) || hasTurnToolEvidence(turnTools)) { /* allow */ }
 ```

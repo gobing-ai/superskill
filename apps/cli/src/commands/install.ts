@@ -57,7 +57,6 @@ import {
     runPostInstallActions,
     runRulesync,
     snapshotFiles,
-    stageMagentsFromDir,
     TARGET_GLOBAL_SKILLS_RELDIR,
     TARGET_SKILLS_RELDIR,
     TARGET_TO_RULESYNC_HOOKS,
@@ -105,6 +104,7 @@ export function registerInstall(program: Command): void {
             '--magent <name>',
             'Select a specific magent (main-agent config) to install; auto-selects when exactly one exists',
         )
+        .option('--list-magents', 'List the main-agent packages the plugin ships and exit', false)
         .option(
             '--marketplace-source <mode>',
             'DEPRECATED: Marketplace registration source (directory or github); removal planned. Prefer --marketplace with a GitHub URL or owner/repo.',
@@ -158,6 +158,7 @@ export function registerInstall(program: Command): void {
                     prune,
                     materialize: materializeRaw as 'bridge' | 'full' | undefined,
                     magent: options.magent as string | undefined,
+                    listMagents: options.listMagents === true,
                     marketplaceSource,
                 });
             } catch (err) {
@@ -180,6 +181,8 @@ export interface InstallOptions {
     outputRoot?: string;
     /** Select a specific magent by directory name; undefined auto-selects when exactly one magent exists. */
     magent?: string;
+    /** List the plugin's magent packages and exit without staging or writing anything. */
+    listMagents?: boolean;
     /** Marketplace registration source: directory (local path, default) or github (owner/repo slug). */
     marketplaceSource?: MarketplaceSource;
     /** Remove or replace only dest skill dirs matching `<plugin>-*` on flattened skills dests (R4/R5). */
@@ -691,6 +694,19 @@ export async function executeInstall(
         resolution.marketplaceLocator = originalMarketplaceLocator;
     }
     const pluginRoot = resolution.pluginRoot;
+    // `--list-magents` answers "what can --magent take for this plugin" and returns before any
+    // staging or write (precedent: `skill --list`).
+    if (options.listMagents === true) {
+        const magentsDir = join(pluginRoot, 'magents');
+        const names = existsSync(magentsDir)
+            ? readdirSync(magentsDir)
+                  .filter((e) => statSync(join(magentsDir, e)).isDirectory())
+                  .sort()
+            : [];
+        if (names.length === 0) echo(`No magents in plugin '${plugin}'`);
+        for (const name of names) echo(`${name}\t${readMagentDescription(join(magentsDir, name))}`);
+        return;
+    }
     const outputRoot = options.outputRoot ?? (options.global ? resolveHomeDir() : process.cwd());
     // One instant for the shared-root stamp and every target receipt (task 0149 R1): a consumer
     // comparing stamp metadata with a receipt must not see two clocks disagree.
@@ -1273,16 +1289,8 @@ export async function executeInstall(
         }
 
         // Step 5: Magents (main-agent configs).
-        // Mutable authoring SSOT: marketplace-root `magents/` (sibling to plugins/),
-        // not process.cwd() alone — cwd may be a test harness or unrelated project.
-        // Plugin-shipped magents were already staged by mapPluginToRulesync.
-        if (resolution.marketplaceRoot) {
-            const projectMagents = join(resolution.marketplaceRoot, 'magents');
-            const n = stageMagentsFromDir(projectMagents, plugin, outputDir, { nameMode: 'bare' });
-            if (n > 0 && options.verbose) {
-                echo(`  Project magents staged: ${n} from ${projectMagents}`);
-            }
-        }
+        // Plugin-shipped magents are staged by mapPluginToRulesync from `<pluginRoot>/magents`
+        // (ADR-041 — the plugin tree is the only discovery root).
         // Magents optional: plugins without magents/ (and no --magent) no-op cleanly.
         const magentFiles = emitMagents(plugin, execTargets, outputDir, outputRoot, options);
         for (const [target, files] of magentFiles) {
@@ -1856,6 +1864,22 @@ export function postInstallOmp(
 }
 
 /**
+ * One-line description of a magent package for `--list-magents`: the first non-blank,
+ * non-heading line of its `README.md`, trimmed and capped at 100 characters (empty when the
+ * package ships no README).
+ */
+function readMagentDescription(pkgDir: string): string {
+    const readme = join(pkgDir, 'README.md');
+    if (!existsSync(readme)) return '';
+    for (const line of readFileSync(readme, 'utf-8').split('\n')) {
+        const trimmed = line.trim();
+        if (!trimmed || trimmed.startsWith('#')) continue;
+        return trimmed.slice(0, 100);
+    }
+    return '';
+}
+
+/**
  * Per-target magent emission from staged `.rulesync/magents/`.
  *
  * - **Claude import-style** (`CLAUDE.md` with `@IDENTITY.md` etc.): copy package
@@ -1881,11 +1905,9 @@ export function emitMagents(
     if (staged.length === 0) return written;
 
     // Selection policy (plugins without magents must no-op cleanly):
-    // - --magent <name> → require a match (plugin-prefixed or bare marketplace name).
-    // - no --magent → auto-select only when exactly one *plugin-owned* package is staged
-    //   (`<plugin>-*`). Marketplace-root packages (bare names under monorepo `magents/`)
-    //   always require --magent so `install sp` never overwrites AGENTS.md just because
-    //   the marketplace happens to ship a persona package next to the plugins.
+    // - --magent <name> → require a match (plugin-prefixed or bare name).
+    // - no --magent → auto-select exactly one staged package; with several, print the choices
+    //   and write nothing (the user must learn why no main-agent file appeared).
     // - zero staged → silent no-op (verbose note).
     let selected: string[];
     if (options.magent) {
@@ -1905,18 +1927,14 @@ export function emitMagents(
             const [only] = pluginOwned;
             if (!only) return written;
             selected = [only];
-        } else if (pluginOwned.length === 0 && staged.length === 0) {
+        } else if (pluginOwned.length === 0) {
             if (options.verbose) {
                 echo(`  Magents: none staged for '${plugin}' — skipping main-agent emission`);
             }
             return written;
         } else {
-            if (options.verbose) {
-                echo(
-                    `  Magents: ${staged.length} staged (${pluginOwned.length} plugin-owned); ` +
-                        `pass --magent <name> to install. Staged: ${staged.join(', ')}`,
-                );
-            }
+            const names = pluginOwned.map((s) => (s === plugin ? s : s.slice(plugin.length + 1)));
+            echo(`  Magents: ${names.join(', ')} available — pass --magent <name> to install one`);
             return written;
         }
     }

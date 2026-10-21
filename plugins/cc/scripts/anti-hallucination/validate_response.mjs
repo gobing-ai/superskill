@@ -19,27 +19,12 @@ var SOURCE_PATTERNS = [
   /\bexit\s+\d+/i,
   /\b\d+\s+pass(?:ed)?\s+(?:\/|and)\s+\d+\s+fail(?:ed)?\b/i
 ];
-var CONFIDENCE_PATTERNS = [
-  /Confidence:\s*\**\b(?:HIGH|MEDIUM|LOW)(?![\w-])\**/i,
-  /\*\*Confidence\*\*:\s*\**\b(?:HIGH|MEDIUM|LOW)(?![\w-])\**/i,
-  /### Confidence\b[\s\S]{0,80}?\b(?:HIGH|MEDIUM|LOW)(?![\w-])/i
-];
-var TOOL_PATTERNS = [
-  /ref_search_documentation/,
-  /ref_read_url/,
-  /searchCode/,
-  /WebSearch/,
-  /WebFetch/,
-  /mcp__ref__ref_search_documentation/,
-  /mcp__ref__ref_read_url/,
-  /mcp__grep__searchCode/
-];
-var RED_FLAG_PATTERNS = [
-  /I (?:think|believe|recall) (?:that|the)?/gi,
-  /(?:It|This) (?:should|might|may|could)/gi,
-  /Probably|Likely|Possibly/gi,
-  /(?:As far as|If I) (?:know|recall)/gi
-];
+var VERIFICATION_TOOL_PREFIXES = ["mcp__ref__", "mcp__grep__", "mcp__brave-search__"];
+var HOOK_FEEDBACK_TAG = "[anti-hallucination/v1]";
+var BLOCK_REASON_V1 = `${HOOK_FEEDBACK_TAG} Uncited external claim. Reply only with its source (URL or path:line) or "UNVERIFIED: <claim>" — max 3 lines, no acknowledgement.`;
+function hasTurnToolEvidence(names) {
+  return names.some((name) => name === "WebFetch" || name === "WebSearch" || VERIFICATION_TOOL_PREFIXES.some((prefix) => name.startsWith(prefix)));
+}
 function hasSourceCitations(text) {
   if (!text)
     return false;
@@ -49,38 +34,6 @@ function hasSourceCitations(text) {
     }
   }
   return false;
-}
-function hasConfidenceLevel(text) {
-  if (!text)
-    return false;
-  for (const pattern of CONFIDENCE_PATTERNS) {
-    if (pattern.test(text)) {
-      return true;
-    }
-  }
-  return false;
-}
-function hasToolUsageEvidence(text) {
-  if (!text)
-    return false;
-  for (const pattern of TOOL_PATTERNS) {
-    if (pattern.test(text)) {
-      return true;
-    }
-  }
-  return false;
-}
-function hasRedFlags(text) {
-  if (!text)
-    return [];
-  const foundFlags = [];
-  for (const pattern of RED_FLAG_PATTERNS) {
-    const matches = text.match(pattern);
-    if (matches) {
-      foundFlags.push(...matches);
-    }
-  }
-  return foundFlags;
 }
 var STRONG_CLAIM_PATTERNS = [
   /\bv\d+(?:\.\d+)+\b/i,
@@ -108,7 +61,7 @@ function requiresExternalVerification(text) {
   }
   return hasWeakExternalClaim(text);
 }
-function verifyAntiHallucinationProtocol(text) {
+function verifyAntiHallucinationProtocol(text, turnTools = []) {
   if (!text || text.trim().length === 0) {
     return { ok: true, reason: "Task is complete" };
   }
@@ -119,26 +72,10 @@ function verifyAntiHallucinationProtocol(text) {
   if (!needsVerification) {
     return { ok: true, reason: "Task is complete (internal discussion)" };
   }
-  const hasSources = hasSourceCitations(text);
-  const hasConfidence = hasConfidenceLevel(text);
-  const hasTools = hasToolUsageEvidence(text);
-  const redFlags = hasRedFlags(text);
-  const issues = [];
-  if (!hasSources) {
-    issues.push("source citations for API/library claims");
+  if (hasSourceCitations(text) || hasTurnToolEvidence(turnTools)) {
+    return { ok: true, reason: "Task is complete (evidence present)" };
   }
-  if (!hasConfidence) {
-    issues.push("confidence level (HIGH/MEDIUM/LOW)");
-  }
-  if (redFlags.length > 0 && !hasTools) {
-    const uniqueFlags = Array.from(new Set(redFlags)).slice(0, 3);
-    issues.push(`uncertainty phrases detected: ${uniqueFlags.join(", ")}`);
-  }
-  if (issues.length > 0) {
-    const reason = `Add verification for: ${issues.join(", ")}`;
-    return { ok: false, reason, issues };
-  }
-  return { ok: true, reason: "Task is complete" };
+  return { ok: false, reason: BLOCK_REASON_V1, issues: ["source citations for API/library claims"] };
 }
 var DEFAULT_STDIN_TIMEOUT_MS = 250;
 function resolveStdinTimeoutMs(env = {

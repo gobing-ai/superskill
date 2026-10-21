@@ -50,7 +50,9 @@ it('continues Pi once for unsupported claims, preserves host boundaries, and res
             { type: 'custom_message', customType: 'cc-anti-hallucination', display: true },
         ],
     });
-    expect(JSON.stringify(feedback)).toContain('Add verification');
+    // H21 R7: the feedback carries the versioned tag and the terse reply instruction.
+    expect(JSON.stringify(feedback)).toContain('[anti-hallucination/v1]');
+    expect(JSON.stringify(feedback)).toContain('UNVERIFIED:');
     expect(emit('agent_before_settle', boundary(claim))).toBeUndefined();
     emit('input', { source: 'extension' });
     expect(emit('agent_before_settle', boundary(claim))).toBeUndefined();

@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, it, spyOn } from 'bun:test';
 import { mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -9,14 +9,18 @@ import {
     resolveStdinTimeoutMs as resolveStdinTimeoutMsFromCli,
 } from '../../../../../apps/cli/src/stdin.ts';
 import {
+    BLOCK_REASON_V1,
     buildStopOutput,
     DEFAULT_STDIN_TIMEOUT_MS,
     extractLastAssistantFromTranscript,
     extractLastAssistantMessage,
+    extractTurnToolNames,
+    HOOK_FEEDBACK_TAG,
     hasConfidenceLevel,
     hasRedFlags,
     hasSourceCitations,
     hasToolUsageEvidence,
+    hasTurnToolEvidence,
     main,
     readPipedStdin,
     readTranscriptForStop,
@@ -24,6 +28,7 @@ import {
     resolveStdinTimeoutMs,
     resolveStopContext,
     runStopGuard,
+    VERIFICATION_TOOL_PREFIXES,
     verifyAntiHallucinationProtocol,
 } from '../ah_guard';
 import { getEnvVar, setEnvVar } from '../lib/env';
@@ -315,10 +320,12 @@ describe('verifyAntiHallucinationProtocol', () => {
         expect(result.issues).toContain('source citations for API/library claims');
     });
 
-    it('flags missing confidence level', () => {
+    it('allows a cited reply that declares no confidence level', () => {
+        // WHY (H21 AC1): the label rule blocked on a missing `Confidence:` even when the reply
+        // already carried a URL. Evidence is the decision input; the label is prose.
         const result = verifyAntiHallucinationProtocol('According to the documentation at https://example.com');
-        expect(result.ok).toBe(false);
-        expect(result.issues).toContain('confidence level (HIGH/MEDIUM/LOW)');
+        expect(result.ok).toBe(true);
+        expect(result.issues).toBeUndefined();
     });
 
     it('flags uncertainty with red flags and no tool evidence', () => {
@@ -347,14 +354,16 @@ describe('verifyAntiHallucinationProtocol', () => {
         expect(result.ok).toBe(true);
     });
 
-    it('reports multiple issues together for weak externally sourced claims', () => {
+    it('reports the single source issue for weak externally sourced claims', () => {
+        // WHY (H21 AC4): confidence and uncertainty are no longer reportable issues, so the
+        // guard reports the one thing it can still ask for. The claim keeps both old trigger
+        // halves (weak keyword + coupler, plus a version reference) and still blocks.
         const result = verifyAntiHallucinationProtocol(
             'I believe the library has a method that might work for version 1.5',
         );
 
         expect(result.ok).toBe(false);
-        expect(result.issues).toContain('source citations for API/library claims');
-        expect(result.issues).toContain('confidence level (HIGH/MEDIUM/LOW)');
+        expect(result.issues).toEqual(['source citations for API/library claims']);
     });
 
     it('rejects capability claims about external libraries without citations', () => {
@@ -824,7 +833,7 @@ describe('R1: blank assistant turns are skipped on both channels', () => {
         const result = runStopGuard(undefined, JSON.stringify({ transcript_path: path, stop_hook_active: false }));
         const parsed = JSON.parse(result.output);
         expect(parsed.decision).toBe('block');
-        expect(parsed.reason).toContain('source citations');
+        expect(parsed.reason).toBe(BLOCK_REASON_V1);
     });
 
     it('null-content regression: `content: null` does not hide the claim', () => {
@@ -835,7 +844,7 @@ describe('R1: blank assistant turns are skipped on both channels', () => {
         const result = runStopGuard(undefined, JSON.stringify({ transcript_path: path, stop_hook_active: false }));
         const parsed = JSON.parse(result.output);
         expect(parsed.decision).toBe('block');
-        expect(parsed.reason).toContain('source citations');
+        expect(parsed.reason).toBe(BLOCK_REASON_V1);
     });
 
     it('messages channel: skips a trailing blank assistant and returns the prior claim', () => {
@@ -1044,12 +1053,13 @@ describe('R6: confidence words are whole words', () => {
         expect(hasConfidenceLevel('### Confidence\n\nI am unsure about the API.')).toBe(false);
     });
 
-    it('still blocks a bogus confidence word on a real claim', () => {
+    it('does not block a cited claim on a bogus confidence word', () => {
+        // WHY (H21 AC4): a malformed level is no longer a decision input at all, so the
+        // pre-0147 F6 `HIGHWAY` shape cannot block — the citation on the last line decides.
         const result = verifyAntiHallucinationProtocol(
             'Confidence: HIGHWAY\nThe API returns a paginated list.\nplugins/cc/plugin.json:1',
         );
-        expect(result.ok).toBe(false);
-        expect(result.issues).toContain('confidence level (HIGH/MEDIUM/LOW)');
+        expect(result.ok).toBe(true);
     });
 });
 
@@ -1105,5 +1115,192 @@ describe('R7: the transcript reader is bounded and refuses non-regular files', (
         const path = join(dir, 'noline.txt');
         writeFileSync(path, 'no-newline-at-all');
         expect(readTranscriptForStop(path, 16)).toBe('');
+    });
+});
+
+describe('H21 evidence policy — cite it or verify it', () => {
+    // WHY (H21): the Stop guard blocked mostly on a missing `Confidence:` label (79 of 117
+    // distinct reasons in a local corpus sample), and every block cost a visible extra model
+    // turn. The policy is now: block iff the reply asserts an external fact that neither the
+    // text nor the current turn backs with evidence. One `it` per acceptance criterion.
+    let dir: string;
+    beforeEach(() => {
+        dir = mkdtempSync(join(tmpdir(), 'ah-guard-h21-'));
+    });
+    afterEach(() => {
+        rmSync(dir, { recursive: true, force: true });
+    });
+
+    /** Write a JSONL transcript and return its path. */
+    const transcript = (name: string, entries: unknown[]): string => {
+        const path = join(dir, name);
+        writeFileSync(path, `${entries.map((e) => JSON.stringify(e)).join('\n')}\n`);
+        return path;
+    };
+
+    const userPrompt = (text: string) => ({ type: 'user', message: { role: 'user', content: text } });
+    const assistantText = (text: string) => ({ type: 'assistant', message: { role: 'assistant', content: text } });
+    const toolUse = (name: string, input: Record<string, unknown> = {}) => ({
+        type: 'assistant',
+        message: { role: 'assistant', content: [{ type: 'tool_use', name, input }] },
+    });
+    const toolResult = () => ({
+        type: 'user',
+        message: { role: 'user', content: [{ type: 'tool_result', content: 'ok' }] },
+    });
+
+    it('AC1: stays silent on a cited reply that lacks a confidence label', () => {
+        const result = runStopGuard(
+            undefined,
+            JSON.stringify({
+                last_assistant_message: 'The API returns a list of users, see src/client.ts:42 for the call site.',
+            }),
+        );
+        expect(result.output).toBe('{}');
+        expect(result.exitCode).toBe(0);
+    });
+
+    it('AC2: stays silent when the current turn used a verification tool', () => {
+        const tail = ['Version 2.3.0 deprecates the endpoint.'];
+        const cases: Array<{ name: string; entry: unknown }> = [
+            { name: 'WebFetch', entry: toolUse('WebFetch', { url: 'https://example.com/v2' }) },
+            { name: 'Agent/web-fetch', entry: toolUse('Agent', { subagent_type: 'web-fetch' }) },
+            { name: 'mcp__ref__ref_read_url', entry: toolUse('mcp__ref__ref_read_url', { url: 'https://x.dev' }) },
+        ];
+        for (const { name, entry } of cases) {
+            const path = transcript(`${name.replace(/\W+/g, '-')}.jsonl`, [
+                userPrompt('Which version deprecated it?'),
+                entry,
+                toolResult(),
+                assistantText(tail[0] as string),
+            ]);
+            const result = runStopGuard(
+                undefined,
+                JSON.stringify({ last_assistant_message: tail[0], transcript_path: path }),
+            );
+            expect(result.output).toBe('{}');
+        }
+    });
+
+    it('AC3: blocks an external claim with no evidence of any kind', () => {
+        const path = transcript('no-tools.jsonl', [
+            userPrompt('What does it need?'),
+            assistantText('The library requires Node 22 for this feature to work.'),
+        ]);
+        const parsed = JSON.parse(
+            runStopGuard(
+                undefined,
+                JSON.stringify({
+                    last_assistant_message: 'The library requires Node 22 for this feature to work.',
+                    transcript_path: path,
+                }),
+            ).output,
+        );
+        expect(parsed.decision).toBe('block');
+        expect(parsed.reason).toBe(BLOCK_REASON_V1);
+    });
+
+    it('AC4: confidence labels and uncertainty phrases never block on their own', () => {
+        // RESIDUAL-PROOF: both texts carry every old trigger half — an external claim, a hedged
+        // phrase, and (in the first) a declared level — and still pass on their citations.
+        expect(
+            verifyAntiHallucinationProtocol('The API returns a list — src/client.ts:42. I think it also paginates.').ok,
+        ).toBe(true);
+        expect(
+            verifyAntiHallucinationProtocol('The library probably supports OAuth, per https://example.com/docs.').ok,
+        ).toBe(true);
+    });
+
+    it('AC5: turn evidence ignores tool calls from earlier turns', () => {
+        const path = transcript('two-turns.jsonl', [
+            userPrompt('Turn A: what changed?'),
+            toolUse('WebSearch', { query: 'changelog' }),
+            toolResult(),
+            assistantText('Version 2.3.0 deprecates the endpoint.'),
+            userPrompt('Turn B: and the license?'),
+            assistantText('The library requires a commercial license for production use.'),
+        ]);
+        const jsonl = readTranscriptForStop(path);
+        expect(extractTurnToolNames(jsonl)).toEqual([]);
+        const parsed = JSON.parse(
+            runStopGuard(
+                undefined,
+                JSON.stringify({
+                    last_assistant_message: 'The library requires a commercial license for production use.',
+                    transcript_path: path,
+                }),
+            ).output,
+        );
+        expect(parsed.decision).toBe('block');
+    });
+
+    it('AC5: guard feedback does not reset the turn', () => {
+        const path = transcript('meta-feedback.jsonl', [
+            userPrompt('What changed?'),
+            toolUse('WebFetch', { url: 'https://example.com' }),
+            toolResult(),
+            { type: 'user', isMeta: true, message: { role: 'user', content: 'Stop hook feedback:\nold policy' } },
+            assistantText('Version 2.3.0 deprecates the endpoint.'),
+        ]);
+        expect(extractTurnToolNames(readTranscriptForStop(path))).toEqual(['WebFetch']);
+    });
+
+    it('AC6: falls back to text-only evidence when no transcript is available', () => {
+        const stderrSpy = spyOn(process.stderr, 'write');
+        expect(
+            runStopGuard(
+                undefined,
+                JSON.stringify({
+                    last_assistant_message: 'The API returns a list, see src/client.ts:42.',
+                    transcript_path: '/nonexistent.jsonl',
+                }),
+            ).output,
+        ).toBe('{}');
+        // A directory refuses the read; the content branch still resolves and `turnTools` stays [].
+        const resolvedDir = resolveStopContext(
+            undefined,
+            JSON.stringify({ last_assistant_message: 'cited src/a.ts:3', transcript_path: dir }),
+        );
+        expect(resolvedDir.turnTools).toEqual([]);
+        expect(resolvedDir.content).toBe('cited src/a.ts:3');
+        expect(stderrSpy).not.toHaveBeenCalled();
+        stderrSpy.mockRestore();
+    });
+
+    it('AC7: the block reason carries a versioned machine tag and a terse instruction', () => {
+        const result = verifyAntiHallucinationProtocol('The library requires Node 22 for this feature to work.');
+        expect(result.ok).toBe(false);
+        expect(result.reason).toBe(BLOCK_REASON_V1);
+        expect(result.reason.startsWith(HOOK_FEEDBACK_TAG)).toBe(true);
+        expect(result.reason.length).toBeLessThanOrEqual(240);
+        expect(result.reason).toContain('UNVERIFIED:');
+        expect(result.issues).toEqual(['source citations for API/library claims']);
+    });
+
+    it('AC10: loop guard and malformed payloads stay silent', () => {
+        const stderrSpy = spyOn(process.stderr, 'write');
+        expect(runStopGuard(undefined, JSON.stringify({ stop_hook_active: true })).output).toBe('{}');
+        expect(runStopGuard(undefined, 'not json').output).toBe('{}');
+        expect(runStopGuard(undefined, '').output).toBe('{}');
+        expect(stderrSpy).not.toHaveBeenCalled();
+        stderrSpy.mockRestore();
+    });
+
+    it('hasTurnToolEvidence credits only verification tools and prefixes', () => {
+        for (const prefix of VERIFICATION_TOOL_PREFIXES) {
+            expect(hasTurnToolEvidence([`${prefix}probe`])).toBe(true);
+        }
+        expect(hasTurnToolEvidence(['WebFetch', 'Read', 'Bash'])).toBe(true);
+        expect(hasTurnToolEvidence(['Read', 'Bash', 'Write'])).toBe(false);
+        expect(hasTurnToolEvidence([])).toBe(false);
+    });
+
+    it('extractTurnToolNames never credits the whole tail without a user-turn boundary', () => {
+        // RESIDUAL-PROOF: the WebFetch is present but there is no user boundary, so crediting the
+        // tail would allow an unevidenced reply from an unrelated earlier turn.
+        const jsonl = [toolUse('WebFetch'), toolResult(), assistantText('done')]
+            .map((e) => JSON.stringify(e))
+            .join('\n');
+        expect(extractTurnToolNames(jsonl)).toEqual([]);
     });
 });

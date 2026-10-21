@@ -20,7 +20,7 @@ The same package root is a valid Claude Code marketplace: `claude plugin marketp
 | **commands** | 17 | 4 operations × 4 types + `hook-evaluate` — thin slash-command wrappers that delegate to skills |
 | **agents** | 5 | `expert-agent`, `expert-command`, `expert-hook`, `expert-magent`, `expert-skill` — specialist subagents that route to skills |
 | **skills** | 6 | `anti-hallucination`, `cc-agents`, `cc-commands`, `cc-hooks`, `cc-magents`, `cc-skills` |
-| **magents** | (repo-root) | Authoring SSOT is `magents/team-stark-children/` (not under the plugin). Install with `superskill install cc --magent team-stark-children` |
+| **magents** | 1 | `plugins/cc/magents/team-stark-children/` — plugin-owned persona package (ADR-041). Install with `superskill install cc --magent team-stark-children`; list with `--list-magents` |
 | **rules** | 4 | `plugins/cc/rules/*.md` — harness-first / safety / verification modules → `.claude/rules` or `.agents/rules` |
 | **hooks** | 1 | `Stop` hook running the anti-hallucination guard |
 | **scripts** | 3 | `ah_guard.ts`, `validate_response.ts`, `logger.ts` — deterministic enforcement for the anti-hallucination protocol |

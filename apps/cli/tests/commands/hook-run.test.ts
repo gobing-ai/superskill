@@ -498,7 +498,7 @@ describe('hook run — cc/anti-hallucination (Stop, canonical output contract)',
         // emits its JSON there; exit 2 would discard that JSON and surface stderr as a "blocking
         // error" (the misrendering this test pins as fixed). stderr stays empty.
         expect(parsed.decision).toBe('block');
-        expect(parsed.reason).toContain('Add verification');
+        expect(parsed.reason).toContain('[anti-hallucination/v1]');
         expect(Object.keys(parsed).sort()).toEqual(['decision', 'reason']);
         expect(code).toBe(0);
         expect(err).toBe('');
@@ -519,7 +519,7 @@ describe('hook run — cc/anti-hallucination (Stop, canonical output contract)',
         // WHY: Gemini/Antigravity AfterAgent rejects via decision:"deny" (not "block"); reason feeds
         // back as a new prompt. Allow omits decision. Same engine, profile-selected output shape.
         expect(parsed.decision).toBe('deny');
-        expect(parsed.reason).toContain('Add verification');
+        expect(parsed.reason).toContain('[anti-hallucination/v1]');
         expect(parsed.hookSpecificOutput.hookEventName).toBe('AfterAgent');
         expect(code).toBe(0);
         expect(err).toBe('');
@@ -577,7 +577,7 @@ describe('hook run — cc/anti-hallucination (Stop, canonical output contract)',
         const { code, out, err } = await capture('cc', 'anti-hallucination', {}, event);
         const parsed = JSON.parse(out);
         expect(parsed.decision).toBe('block');
-        expect(parsed.reason).toContain('Add verification');
+        expect(parsed.reason).toContain('[anti-hallucination/v1]');
         expect(code).toBe(0);
         expect(err).toBe('');
     });
@@ -611,7 +611,7 @@ describe('hook run — cc/anti-hallucination (Stop, canonical output contract)',
         const { code, out, err } = await capture('cc', 'anti-hallucination', {}, payload);
         const parsed = JSON.parse(out);
         expect(parsed.decision).toBe('block');
-        expect(parsed.reason).toContain('Add verification');
+        expect(parsed.reason).toContain('[anti-hallucination/v1]');
         expect(code).toBe(0);
         expect(err).toBe('');
     });

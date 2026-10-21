@@ -148,5 +148,5 @@ the main workflow owns the review checklist and evidence report.
 - [`packages/core/src/pipeline/select-magent.ts`](../../../../../packages/core/src/pipeline/select-magent.ts) — candidate selection, layer assembly, imports, output names, and installer destinations.
 - [`apps/cli/src/commands/magent.ts`](../../../../../apps/cli/src/commands/magent.ts) — live magent command group and option wiring.
 - [`apps/cli/src/commands/install.ts`](../../../../../apps/cli/src/commands/install.ts) — target emission, native dispatch, receipts, and dry-run behavior.
-- [`magents/team-stark-children/README.md`](../../../../../magents/team-stark-children/README.md) — package-specific deployment findings and their verification limits.
+- [`plugins/cc/magents/team-stark-children/README.md`](../../../magents/team-stark-children/README.md) — package-specific deployment findings and their verification limits.
 - [`docs/about_main_agent.md`](../../../../../docs/about_main_agent.md) — repository design notes; treat vendor and rolling documentation as evidence to reverify, not as a universal host contract.
