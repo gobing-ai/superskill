@@ -6,6 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
+### Fixed
+
+- Probe host CLIs only for a launch this process owns (cbe4772) <!-- src: apps/cli/src/commands/install.ts:1387 -->
+- Resolve host CLIs outside PATH and skip missing ones (e914383) <!-- src: apps/cli/src/commands/install.ts:1396 -->
+
+### Other
+
+- Drop stale pre-absorption spur wiring (3074baf) <!-- src: docs/04_DESIGN.md:524 -->
+- Upgrade project dependencies (3de1ff5) <!-- src: package.json:12 -->
+
 ## [0.3.39] - 2026-10-15
 
 ### Fixed
