@@ -12,6 +12,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 - Evidence-gated anti-hallucination Stop guard: blocks an external claim only when neither the reply text nor the current turn carries evidence, and tags every block reason `[anti-hallucination/v1]`; ships the matching always-loaded feedback protocol rule, and moves the persona package to `plugins/cc/magents/` as the plugin tree's own discovery root (ADR-040, ADR-041) (5fee95d) <!-- src: docs/00_ADR.md:787 · confidence: HIGH -->
 
+### Fixed
+
+- Stop writing global plugin rules to a doubled path (`~/.claude/.claude/rules/`), retire a byte-identical copy left there, and give skipped native targets no magent, rule or shared-script writes; prune a superseded Pi package install (5d5ef40) <!-- src: packages/core/src/pipeline/select-magent.ts:280 · confidence: HIGH -->
+
 ### Other
 
 - Bump the `@gobing-ai/ts-*` catalog from ^0.5.32 to ^0.5.33 (5a9dc3b) <!-- src: package.json:12 · confidence: HIGH -->
