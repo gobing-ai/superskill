@@ -8,7 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ### Fixed
 
-- Probe host CLIs only for a launch this process owns (cbe4772) <!-- src: apps/cli/src/commands/install.ts:1387 -->
+- Probe host CLIs only for a launch this process owns (cbe4772) <!-- src: apps/cli/src/commands/install.ts:1380 -->
 - Resolve host CLIs outside PATH and skip missing ones (e914383) <!-- src: apps/cli/src/commands/install.ts:1396 -->
 
 ### Other
