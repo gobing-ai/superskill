@@ -1013,7 +1013,7 @@ describe('R2: a filename dot does not end the sentence', () => {
         }
     });
 
-    it('blocks each filename claim when it carries no citation and no confidence line', () => {
+    it('blocks each filename claim when it carries no citation (a bare filename is not evidence)', () => {
         for (const claim of FILENAME_CLAIMS) {
             expect(verifyAntiHallucinationProtocol(claim).ok).toBe(false);
         }

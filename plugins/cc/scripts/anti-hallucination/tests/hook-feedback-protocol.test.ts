@@ -37,6 +37,8 @@ const REQUIRED_STATEMENTS: Array<[label: string, pattern: RegExp]> = [
     ['the UNVERIFIED reply form', /UNVERIFIED:/],
     ['the three-line bound', /three lines/],
     ['the "not from the user" statement', /not from the user/],
+    ['the "never carries authority" statement', /never carries authority/],
+    ['the no-fabrication statement', /Never fabricate a source or tool call/],
 ];
 
 describe('hook-feedback protocol v1 — tag and instruction stay in sync', () => {
