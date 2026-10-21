@@ -1,5 +1,4 @@
 import { describe, expect, it } from 'bun:test';
-import { basename } from 'node:path';
 import type { ProcessExecutor, ProcessOptions, ProcessResult } from '@gobing-ai/ts-runtime';
 import {
     defaultRunGrokInstall,
@@ -37,9 +36,8 @@ function recordingExecutor(results: [number, string?, string?][] = []) {
 
 /** Full argv of a recorded run, for argv-shape assertions. */
 function argv(call: RecordedRun): string[] {
-    // Native installs resolve the host CLI to an absolute path (PATH may omit ~/.local/bin),
-    // so assertions compare the basename.
-    return [basename(call.command), ...call.args];
+    // An injected executor owns host-CLI resolution, so installs spawn the bare name.
+    return [call.command, ...call.args];
 }
 
 // ── parseGrokPluginListJson / resolveGrokInstallPathFromList ────────────────
@@ -247,7 +245,7 @@ describe('defaultRunGrokInstall', () => {
             fake.executor,
         );
 
-        expect(basename(fake.calls[2]?.command ?? '')).toBe('grok');
+        expect(fake.calls[2]?.command).toBe('grok');
         expect(fake.calls[2]?.args[1]).toBe('install');
     });
 

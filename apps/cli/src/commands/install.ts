@@ -616,10 +616,15 @@ export async function executeInstall(
     // `omp` and `grok` are all in the default expansion (`TARGETS`), so a fresh box without
     // omp would otherwise lose the whole install — including the rulesync targets that had
     // already been written but never got a manifest (`update` then reports them `legacy`).
+    // The probe reads *this* machine's FS, so it only applies to a launch we own and only
+    // when something is actually spawned: a dry-run writes no files, and an injected
+    // executor resolves host CLIs in its own environment.
     const unavailableNative = new Map<Target, string>();
-    for (const { target, cli, injected } of nativeHostClis(dependencies)) {
-        if (injected || !execTargets.includes(target)) continue;
-        if (resolveHostCli(cli) === undefined) unavailableNative.set(target, cli);
+    if (!options.dryRun && ownsHostLaunch(dependencies.processExecutor)) {
+        for (const { target, cli, injected } of nativeHostClis(dependencies)) {
+            if (injected || !execTargets.includes(target)) continue;
+            if (resolveHostCli(cli) === undefined) unavailableNative.set(target, cli);
+        }
     }
     const skippedTargets: ReadonlySet<string> = new Set(unavailableNative.keys());
     const installedTargets = execTargets.filter((target) => !skippedTargets.has(target));
@@ -1375,6 +1380,20 @@ function hostCliSearchDirs(): string[] {
  * and does not edit `PATH`, so a bare `claude` spawn fails with ENOENT on a correctly
  * installed host (and ts-runtime reports that as a signal-less null exit code, losing the cause).
  */
+/**
+ * True when this process owns the host CLI spawn. An injected executor (container, remote
+ * runner, test recorder) resolves the CLI in its own environment; probing this machine's FS
+ * for it would skip targets that exist where the launch really happens.
+ */
+function ownsHostLaunch(executor: ProcessExecutor | undefined): boolean {
+    return (executor ?? defaultProcessExecutor) === defaultProcessExecutor;
+}
+
+/** Host CLI to spawn: the resolved absolute path for a launch we own, else the caller's name. */
+function hostCliFor(executor: ProcessExecutor, target: 'claude' | 'omp' | 'grok'): string {
+    return ownsHostLaunch(executor) ? requireHostCli(target, target) : target;
+}
+
 export function resolveHostCli(name: string): string | undefined {
     const onPath = Bun.which(name, { PATH: getEnvVar('PATH') ?? '' });
     if (onPath !== null) return onPath;
@@ -1451,7 +1470,7 @@ async function defaultRunClaudeInstall(
     assertSafePathSegment(plugin, 'plugin name');
 
     // Absolute path: `PATH` may omit the native installer's `~/.local/bin`.
-    const claudeCli = requireHostCli('claude', 'claude');
+    const claudeCli = hostCliFor(executor, 'claude');
 
     // marketplace add is idempotent — if already registered, claude CLI exits 0
     // with a notice. source is either an absolute path (directory mode) or an
@@ -1553,10 +1572,10 @@ export async function resolveGrokInstallPath(
     executor: ProcessExecutor = defaultProcessExecutor,
 ): Promise<string | undefined> {
     try {
-        const resolved = resolveHostCli('grok');
-        if (resolved === undefined) return undefined;
+        const grokCli = ownsHostLaunch(executor) ? resolveHostCli('grok') : 'grok';
+        if (grokCli === undefined) return undefined;
         const result = await executor.run({
-            command: resolved,
+            command: grokCli,
             args: ['plugin', 'list', '--json'],
             forceBuffered: true,
         });
@@ -1589,7 +1608,7 @@ export async function defaultRunGrokInstall(
     assertSafePathSegment(marketplaceName, 'marketplace name');
     assertSafePathSegment(plugin, 'plugin name');
 
-    const grokCli = requireHostCli('grok', 'grok');
+    const grokCli = hostCliFor(executor, 'grok');
     const add = await executor.run({
         command: grokCli,
         args: ['plugin', 'marketplace', 'add', registration.source],
@@ -1636,7 +1655,7 @@ export async function defaultRunOmpInstall(
     assertSafePathSegment(marketplaceName, 'marketplace name');
     assertSafePathSegment(plugin, 'plugin name');
 
-    const ompCli = requireHostCli('omp', 'omp');
+    const ompCli = hostCliFor(executor, 'omp');
 
     // Idempotent re-registration: `omp plugin marketplace add` exits 1 when the marketplace
     // is already registered (omp 16.x; `--force` does not bypass the check), so remove it

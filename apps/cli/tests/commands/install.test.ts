@@ -743,8 +743,8 @@ describe('executeInstall', () => {
         const c0 = spawnCalls[0];
         const c1 = spawnCalls[1];
         if (!c0 || !c1) throw new Error('expected 2 spawn calls');
-        // Absolute path by design: PATH may omit the native installer's ~/.local/bin.
-        expect(c0.command.endsWith('/claude')).toBe(true);
+        // Injected executor: it owns host-CLI resolution, so the bare name is spawned.
+        expect(c0.command).toBe('claude');
         expect(c0.args[0]).toBe('plugin');
         expect(c0.args[1]).toBe('marketplace');
         expect(c0.args[2]).toBe('add');
@@ -2085,6 +2085,69 @@ describe('host CLI resolution', () => {
         expect(() => requireHostCli('claude', 'claude')).toThrow(/add its directory to PATH/);
         expect(() => requireHostCli('claude', 'claude')).toThrow(/--targets <list> \(drop 'claude'\)/);
         expect(() => requireHostCli('claude', 'claude')).toThrow(/\.local[/\\]bin/);
+    });
+
+    it('skips the probe on a dry-run, so a box without the CLI still prints the plan', async () => {
+        // Dry-run spawns nothing, so a missing host CLI cannot fail it; skipping here would
+        // silently drop targets from the plan the operator is approving.
+        const workspace = createTempWorkspace();
+        createPlugin(workspace);
+        setEnvVar('PATH', join(fileLevelHome as string, 'empty-path'));
+        const stdout = spyOn(process.stdout, 'write').mockImplementation(() => true);
+
+        await executeInstall('demo', ['claude', 'omp'], {
+            global: false,
+            dryRun: true,
+            verbose: true,
+        });
+        const output = stdout.mock.calls.map((call) => String(call[0])).join('');
+        stdout.mockRestore();
+
+        expect(output).toContain('Claude Code: registering marketplace and installing plugin');
+        expect(output).toContain('OMP: registering marketplace and installing plugin');
+    });
+
+    it('lets an injected executor own host-CLI resolution instead of probing this FS', async () => {
+        // An injected executor spawns somewhere this process cannot see (recorder, container,
+        // remote runner), so the preflight must not skip a target on a local FS miss.
+        const workspace = createTempWorkspace();
+        createPlugin(workspace, 'market');
+        mkdirSync(join(workspace, '.claude-plugin'), { recursive: true });
+        writeFileSync(
+            join(workspace, '.claude-plugin', 'marketplace.json'),
+            JSON.stringify({ name: 'test-mkp', plugins: [{ name: 'market', source: './plugins/market' }] }),
+        );
+        setEnvVar('PATH', join(fileLevelHome as string, 'empty-path'));
+        process.chdir(workspace);
+        seedFile(workspace, '.claude', 'plugins', 'cache', 'test-mkp', 'market', 'plugin.json');
+        const commands: string[] = [];
+        const processExecutor: ProcessExecutor = {
+            run: (options: ProcessOptions) => {
+                commands.push(options.command);
+                return Promise.resolve({
+                    command: options.command,
+                    args: options.args ?? [],
+                    exitCode: 0,
+                    stdout: '',
+                    stderr: '',
+                    durationMs: 0,
+                });
+            },
+            runStreaming: () => {
+                throw new Error('runStreaming is not used by install');
+            },
+        };
+        const stdout = spyOn(process.stdout, 'write').mockImplementation(() => true);
+
+        await executeInstall(
+            'market',
+            ['claude'],
+            { marketplacePath: join(workspace, '.claude-plugin'), global: false, dryRun: false, verbose: false },
+            { processExecutor },
+        );
+        stdout.mockRestore();
+
+        expect(commands).toEqual(['claude', 'claude']);
     });
 
     it('throws naming every missing CLI when no requested target is installable', async () => {
