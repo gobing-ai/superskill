@@ -1931,10 +1931,14 @@ export function emitMagents(
     const written = new Map<Target, string[]>();
     const stagedRoot = join(outputDir, 'magents');
     if (!existsSync(stagedRoot)) return written;
-    const staged = readdirSync(stagedRoot).filter((e) => {
-        const stat = lstatSync(join(stagedRoot, e));
-        return stat.isDirectory();
-    });
+    const staged = readdirSync(stagedRoot)
+        .filter((e) => {
+            const stat = lstatSync(join(stagedRoot, e));
+            return stat.isDirectory();
+        })
+        // Sorted, not readdir order: the selection message and the `--magent` match are user-facing
+        // output, and ext4 returns directory entries in a different order than APFS (caught by CI).
+        .sort();
     if (staged.length === 0) return written;
 
     // Selection policy (plugins without magents must no-op cleanly):
