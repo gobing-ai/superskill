@@ -248,7 +248,7 @@ describe('emitPluginRules', () => {
         expect(existsSync(join(outputRoot, '.claude', 'rules'))).toBe(false);
     });
 
-    it('writes to global rules dir when options.global is true (claude)', () => {
+    it('writes to the native global rules dir when options.global is true (claude)', () => {
         const root = makeTempRoot();
         const pluginRoot = join(root, 'plugins', 'demo');
         mkdirSync(join(pluginRoot, 'rules'), { recursive: true });
@@ -257,7 +257,86 @@ describe('emitPluginRules', () => {
         mkdirSync(fakeHome, { recursive: true });
         setEnvVar('HOME_DIR', fakeHome);
         emitPluginRules(pluginRoot, ['claude'], join(root, 'unused'), opts({ global: true }));
-        expect(existsSync(join(fakeHome, '.claude', '.claude', 'rules', 'safety.md'))).toBe(true);
+        expect(existsSync(join(fakeHome, '.claude', 'rules', 'safety.md'))).toBe(true);
+        expect(existsSync(join(fakeHome, '.claude', '.claude', 'rules', 'safety.md'))).toBe(false);
+        removeEnvVar('HOME_DIR');
+    });
+
+    it('writes antigravity rules under the project .agents/rules dir and the global gemini rules dirs', () => {
+        const root = makeTempRoot();
+        const pluginRoot = join(root, 'plugins', 'demo');
+        mkdirSync(join(pluginRoot, 'rules'), { recursive: true });
+        writeFileSync(join(pluginRoot, 'rules', 'safety.md'), '# safety\n');
+        const project = join(root, 'proj');
+        emitPluginRules(pluginRoot, ['antigravity-cli', 'antigravity-ide'], project, opts());
+        expect(existsSync(join(project, '.agents', 'rules', 'safety.md'))).toBe(true);
+        expect(existsSync(join(project, '.gemini'))).toBe(false);
+
+        const fakeHome = join(root, 'home');
+        mkdirSync(fakeHome, { recursive: true });
+        setEnvVar('HOME_DIR', fakeHome);
+        emitPluginRules(
+            pluginRoot,
+            ['antigravity-cli', 'antigravity-ide'],
+            join(root, 'unused'),
+            opts({ global: true }),
+        );
+        expect(existsSync(join(fakeHome, '.gemini', 'antigravity-cli', 'rules', 'safety.md'))).toBe(true);
+        expect(existsSync(join(fakeHome, '.gemini', 'config', 'rules', 'safety.md'))).toBe(true);
+        expect(existsSync(join(fakeHome, '.gemini', 'antigravity-cli', '.agents', 'rules'))).toBe(false);
+        expect(existsSync(join(fakeHome, '.gemini', 'config', '.agents', 'rules'))).toBe(false);
+        removeEnvVar('HOME_DIR');
+    });
+
+    it('removes a byte-identical doubled global copy and leaves a differing or foreign file', () => {
+        const root = makeTempRoot();
+        const pluginRoot = join(root, 'plugins', 'demo');
+        mkdirSync(join(pluginRoot, 'rules'), { recursive: true });
+        const source = '# global safety\n';
+        writeFileSync(join(pluginRoot, 'rules', 'safety.md'), source);
+        writeFileSync(join(pluginRoot, 'rules', 'style.md'), '# style\n');
+        writeFileSync(join(pluginRoot, 'rules', 'note.md'), '# note\n');
+        const fakeHome = join(root, 'home');
+        const legacy = join(fakeHome, '.claude', '.claude', 'rules');
+        mkdirSync(legacy, { recursive: true });
+        writeFileSync(join(legacy, 'safety.md'), source);
+        writeFileSync(join(legacy, 'style.md'), '# edited by hand\n');
+        writeFileSync(join(legacy, 'user.md'), '# not ours\n');
+        mkdirSync(join(legacy, 'note.md'), { recursive: true });
+        setEnvVar('HOME_DIR', fakeHome);
+        const chunks: string[] = [];
+        const spy = spyOn(process.stdout, 'write').mockImplementation((chunk) => {
+            chunks.push(String(chunk));
+            return true;
+        });
+        emitPluginRules(pluginRoot, ['claude'], join(root, 'unused'), opts({ global: true }));
+        spy.mockRestore();
+        const notes = chunks.join('');
+        expect(existsSync(join(fakeHome, '.claude', 'rules', 'safety.md'))).toBe(true);
+        expect(existsSync(join(legacy, 'safety.md'))).toBe(false);
+        expect(existsSync(join(legacy, 'style.md'))).toBe(true);
+        expect(existsSync(join(legacy, 'user.md'))).toBe(true);
+        expect(existsSync(join(legacy, 'note.md'))).toBe(true);
+        expect(notes).toContain('removed 1 superseded file(s)');
+        expect(notes).toContain('content differs');
+        expect(notes).toContain('not a superskill-owned rule file');
+        expect(notes).toContain(join(fakeHome, '.claude', 'rules'));
+    });
+
+    it('removes the doubled global rules directory when only superseded copies were in it', () => {
+        const root = makeTempRoot();
+        const pluginRoot = join(root, 'plugins', 'demo');
+        mkdirSync(join(pluginRoot, 'rules'), { recursive: true });
+        const source = '# global safety\n';
+        writeFileSync(join(pluginRoot, 'rules', 'safety.md'), source);
+        const fakeHome = join(root, 'home');
+        const legacy = join(fakeHome, '.gemini', 'antigravity-cli', '.agents', 'rules');
+        mkdirSync(legacy, { recursive: true });
+        writeFileSync(join(legacy, 'safety.md'), source);
+        setEnvVar('HOME_DIR', fakeHome);
+        emitPluginRules(pluginRoot, ['antigravity-cli'], join(root, 'unused'), opts({ global: true }));
+        expect(existsSync(join(fakeHome, '.gemini', 'antigravity-cli', 'rules', 'safety.md'))).toBe(true);
+        expect(existsSync(join(fakeHome, '.gemini', 'antigravity-cli', '.agents'))).toBe(false);
         removeEnvVar('HOME_DIR');
     });
 });

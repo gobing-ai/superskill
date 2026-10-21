@@ -88,6 +88,7 @@ describe('grok-bot install (task 0128)', () => {
         });
         expect(stdout).toContain('1 skills at');
         expect(stdout).toContain(join(sand, 'workflows'));
+        expect(stdout).toContain("Installed 'demo' to 1 target(s).");
 
         const pointer = readFileSync(join(sand, 'workflows', 'demo-a', 'SKILL.md'), 'utf-8');
         expect(pointer).toContain('name: demo-a');
@@ -186,7 +187,8 @@ describe('grok-bot install (task 0128)', () => {
             expect(handoff.skills[0]?.frontmatter.custom).toBe('keep');
             expect(handoff.skills[0]?.frontmatter['disable-model-invocation']).toBe(true);
             expect(readFileSync(handoff.skills[0]?.recipePath ?? '', 'utf-8')).toContain('Use $ARGUMENTS.');
-            expect(stdout).toContain('register each listed skill id at most once');
+            expect(stdout).toContain('update each existing skill id at most once');
+            expect(stdout).toContain('cannot create it');
             const workflow = join(sand, 'workflows/demo-a/SKILL.md');
             const original = readFileSync(workflow, 'utf-8');
             const changed = `${original}\nHost annotation.\n`;

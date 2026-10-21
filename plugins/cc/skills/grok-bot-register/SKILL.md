@@ -194,8 +194,9 @@ Partition records:
    handoff record only; synthesizing from another plugin's handoff must never widen a `--plugin` filter)  
 2. **Others** — everything else, stable sort by `id`
 
-Always process **self first** when self is selected, so later desktop sessions can use
-`/cc-grok-bot-register` once the first run succeeds.
+Always process **self first** when self is selected, so a later session can use
+`/cc-grok-bot-register` if the host accepts that registration. A new id stays pending
+when the host skill-save API cannot create it.
 
 If self is absent from valid selected handoffs, report it missing and instruct
 reinstalling cc for grok-bot. Do not synthesize a record or widen the plugin filter.
@@ -242,11 +243,17 @@ by that skill from the directory containing it.
 **Dry-run:** print id, plugin, mode, actual recipe path and validation disposition;
 no host, workflow or registry writes, including self registration.
 
-**Capability gate:** inspect the live tool schema and supported upsert/serialization
+**Capability gate:** inspect the live tool schema and supported update/serialization
 semantics first. Establish registry identity independently of folder existence;
-reject foreign registry collisions. Unknown identity or unverified upsert behavior
+reject foreign registry collisions. Unknown identity or unverified update behavior
 is pending, even with valid filesystem ownership. Unavailable tools mean zero
 attempts and pending/unattempted for eligible ids. No guessed calls.
+
+The host skill-save API may **only update ids that already exist** and refuse to
+create new ones. A workflow folder is not a registry id. When the verified schema
+cannot create an id, do not call it for that id, do not delete-and-recreate, and do
+not invent a create API. Mark the id **pending** with reason `host cannot create new
+skill ids`. Existing ids may still be updated.
 
 **Live:** only if this exact schema is verified, use the following supplied contract;
 otherwise use a documented preserving equivalent or report unsupported. Call once per id:
@@ -265,13 +272,15 @@ otherwise use a documented preserving equivalent or report unsupported. Call onc
 
 Rules:
 
-- **One attempt per id** per run.  
+- **One attempt per id** per run, and only for an id the host can update or create.  
 - On success → `ok` (an acknowledged registration write — not proof of picker visibility or execution).  
 - On failure → `failed` with short reason; **continue** with the rest; never retry indefinitely in this run.  
 - Never `action: delete`, never delete/recreate, never delete workflow folders.  
-- Never invent a new id without a workflow folder; an on-disk id absent from the host registry is eligible
-  only after the id, name and body identity checks above; if host upsert-on-existing-folder behavior is
-  unknown to this host, report **pending/unverified-registry-behavior** instead of guessing.
+- Never invent a new id without a workflow folder.
+- An on-disk id absent from the host registry is a **new id**. If the verified skill-save API only
+  updates existing ids and refuses to create new ones, leave it **pending** (`host cannot create new
+  skill ids`). If whether the host can create ids is unknown, report
+  **pending/unverified-registry-behavior** instead of guessing a create call.
 
 ### 6. Verify (lightweight)
 
@@ -321,7 +330,8 @@ grok-bot: Slash `/` is NOT filled by the CLI.
 grok-bot: Ask ANY Grok Bot on this Sand root to: read and follow
           <dataRoot>/workflows/cc-grok-bot-register/SKILL.md
           (or say: "run cc-grok-bot-register" / "consume superskill grok-bot handoff").
-grok-bot: Do not expect /cc-grok-bot-register in the picker until that first run succeeds.
+grok-bot: Do not expect /cc-grok-bot-register in the picker until the host accepts that id.
+          A new id may stay pending if the host skill-save API cannot create it.
 ```
 
 Only name the recovery file when installed; otherwise use the scoped handoff prompt
@@ -335,6 +345,7 @@ unknown; a missing root gets root-repair guidance. Preserve official per-Bot ena
 | Empty `register/` | Re-run `superskill install … --targets grok-bot` on the Bot host |
 | `skipped_missing_workflow` | Re-install that plugin; handoff without workflows cannot upsert |
 | All `update_state` fail with “name and body required” on writes **without** id | Bug: you omitted `id` — always pass `id` |
+| “no skill with id exists” (or the host refuses to create) while `workflows/<id>/` exists | The skill-save API only updates existing ids. Mark the id **pending**. Do not delete-and-recreate or invent a create call |
 | “no skill with id exists” and no workflow folder | Install did not publish that id — fix install, don’t create empty registry rows |
 | Read fails on `.superskill/...` | Use the authorized Shell tool to read that exact canonical path; if neither Read nor Shell can read it, mark the id unsupported and report — never rewrite bodies to `~/.agents/skills` |
 | User only uses mobile | Report only observed client behavior; desktop discovery and invocation remain unverified until tested |
@@ -342,7 +353,8 @@ unknown; a missing root gets root-repair guidance. Preserve official per-Bot ena
 ## Idempotency
 
 Re-running revalidates current handoffs, filesystem drift and registry identity,
-then refreshes the same ids only through verified preserving upserts. A prior success
+then refreshes existing ids only through verified preserving updates. New ids the host
+cannot create stay pending. A prior success
 does not waive checks. Host writes changing managed bytes remain drift for doctor,
 reinstall, update and prune; never rehash automatically. Filesystem prune grants no
 authority to delete host registry entries. Host side effects are never claimed rolled
@@ -362,8 +374,10 @@ back by a filesystem transaction.
 
 - [ ] First run works when invoked via “read and follow this SKILL.md” with an
       empty `/` picker.  
-- [ ] `cc-grok-bot-register` is registered before other ids when present.  
-- [ ] All handoff ids with existing `workflows/<id>/` are upserted (or listed
-      failed with reasons).  
+- [ ] When the host accepts `cc-grok-bot-register`, it is written before other ids.
+      If the host cannot create that new id, it stays pending and later ids are not
+      claimed as registered.  
+- [ ] Existing host ids with valid `workflows/<id>/` are updated through a verified
+      preserving write, or listed failed. New ids the host cannot create stay pending.  
 - [ ] User gets clear desktop vs mobile verification guidance.  
 - [ ] No workflow folders deleted.

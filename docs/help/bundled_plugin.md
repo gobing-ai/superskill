@@ -21,7 +21,7 @@ The same package root is a valid Claude Code marketplace: `claude plugin marketp
 | **agents** | 5 | `expert-agent`, `expert-command`, `expert-hook`, `expert-magent`, `expert-skill` — specialist subagents that route to skills |
 | **skills** | 6 | `anti-hallucination`, `cc-agents`, `cc-commands`, `cc-hooks`, `cc-magents`, `cc-skills` |
 | **magents** | 1 | `plugins/cc/magents/team-stark-children/` — plugin-owned persona package (ADR-041). Install with `superskill install cc --magent team-stark-children`; list with `--list-magents` |
-| **rules** | 4 | `plugins/cc/rules/*.md` — harness-first / safety / verification modules → `.claude/rules` or `.agents/rules` |
+| **rules** | 5 | `plugins/cc/rules/*.md` — harness-first / safety / verification / hook-feedback modules → project `.claude/rules` or `.agents/rules`; global `~/.claude/rules`, `~/.gemini/antigravity-cli/rules`, `~/.gemini/config/rules` |
 | **hooks** | 1 | `Stop` hook running the anti-hallucination guard |
 | **scripts** | 3 | `ah_guard.ts`, `validate_response.ts`, `logger.ts` — deterministic enforcement for the anti-hallucination protocol |
 

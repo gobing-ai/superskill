@@ -253,26 +253,34 @@ export function listRuleMarkdownFiles(rulesDir: string): string[] {
 
 /**
  * Destination directory for modular rules for `target`, relative to the magent
- * dest root (project root or global config dir). Returns null when the target
- * has no known auto-loading rules folder in superskill's target set.
+ * dest root. Returns null when the target has no known auto-loading rules folder
+ * in superskill's target set.
  *
- * | Target | Rules dir | Confidence |
+ * Project scope (`global` omitted/false) is relative to the project root.
+ * Global scope is relative to {@link magentGlobalDir} — that directory already
+ * *is* the tool config root, so the relative dir is `rules/` and must not repeat
+ * the project prefix (which used to emit `~/.claude/.claude/rules/`).
+ *
+ * | Target | Project | Global (under magentGlobalDir) |
  * | --- | --- | --- |
- * | claude | `.claude/rules/` | HIGH (Claude Code modular rules) |
- * | antigravity-cli | `.agents/rules/` | HIGH (rulesync / Gemini-family) |
- * | antigravity-ide | `.agents/rules/` | MEDIUM (IDE agent rules tree) |
- * | codex, pi, opencode, hermes, omp, grok | — | No modular rules folder in TARGETS |
+ * | claude | `.claude/rules/` | `rules/` → `~/.claude/rules/` |
+ * | antigravity-cli | `.agents/rules/` | `rules/` → `~/.gemini/antigravity-cli/rules/` |
+ * | antigravity-ide | `.agents/rules/` | `rules/` under the IDE config dir (`~/.gemini/config`) |
+ * | codex, pi, opencode, hermes, omp, grok | — | — |
  *
+ * Claude user rules: https://code.claude.com/docs/en/claude-md
+ * Antigravity global modular rules: https://antigravity.google/docs/rules/
  * Cursor (`.cursor/rules/*.mdc`) and Windsurf (`.windsurf/rules`) support
  * rules folders but are **not** superskill install targets today.
  */
-export function magentRulesRelDir(target: Target): string | null {
+export function magentRulesRelDir(target: Target, scope: { global?: boolean } = {}): string | null {
+    const global = scope.global === true;
     switch (target) {
         case 'claude':
-            return join('.claude', 'rules');
+            return global ? 'rules' : join('.claude', 'rules');
         case 'antigravity-cli':
         case 'antigravity-ide':
-            return join('.agents', 'rules');
+            return global ? 'rules' : join('.agents', 'rules');
         default:
             return null;
     }

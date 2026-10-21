@@ -2,10 +2,10 @@
 doc: 04_DESIGN
 owns: SURFACE — concrete shapes: every CLI command, flag, config key, env var, table, DTO
 authority: derived
-version: 2.24.0
+version: 2.25.0
 derived_from: [00_ADR, 01_PRD, 02_ROADMAP]
 owner: Robin Min
-updated_at: 2026-10-20
+updated_at: 2026-10-21
 read_before: changing a command, flag, env var, or schema
 edit_rules: 99 §6.5
 sync: [T3]
@@ -60,8 +60,10 @@ full: the real SKILL.md content — self-referential replacement bodies are reje
 schemaVersion-1 handoff is text-only, so binary support files are omitted — they are still
 materialized on disk under their hashed paths). Dry-run previews the
 handoff path and slash caveat without writing. Success messages report the handoff as
-**prepared**, never registered; `doctor` reports `slashRegistry.status: 'unknown'` with the handoff
-directory and next steps (verified host method, per-Bot enablement) without affecting exit semantics.
+**prepared**, never registered. A new skill id may stay pending when the host skill-save API only
+updates existing ids and refuses to create them; messages say that, and they do not claim the id
+was registered. `doctor` reports `slashRegistry.status: 'unknown'` with the handoff
+directory and next steps (verified host method, per-Bot enablement, new-id pending) without affecting exit semantics.
 
 The cc plugin ships the recovery skill `grok-bot-register` (installed id `cc-grok-bot-register`
 via the existing plugin-prefix mapper; task 0132 normalized the source directory so the installed
@@ -111,10 +113,12 @@ superskill update [name] [--check] [--json] [--targets <list>] [--marketplace <l
 | Resolution order | `Bun.which` on the ambient `PATH`, then `~/.local/bin`, `~/.claude/local`, `~/.bun/bin`, `/usr/local/bin` (`HOME_DIR` when set). A candidate must be executable (mode `& 0o111`), matching `Bun.which`. The resolved **absolute path** is spawned, never the bare name — but only for a launch this process owns: an injected `ProcessExecutor` (recorder, container, remote runner) resolves the CLI in its own environment, so it gets the bare name |
 | Why | Claude Code's native installer writes `~/.local/bin/claude` and does not edit `PATH`, so a bare `claude` spawn ENOENTs on a correctly installed host |
 | Preflight | Before step 1 resolves the plugin, every requested native target (`claude`/`omp`/`grok`) whose installer was **not** injected through `InstallDependencies` is resolved. Since all three are in the default `TARGETS` expansion, a missing CLI **skips that target** with a stderr `Warning: skipping target '<t>': '<cli>' CLI not found …` — never a fatal error, so a box without omp still installs the rulesync targets. Only when *nothing* is installable does the run throw (`No installable targets: …`). The per-target dispatch is step 4 — after the rulesync writes — so a fatal late ENOENT used to leave a manifest-less half-install that `update` then reported as `legacy`. Two gates bypass the probe: `--dry-run` (nothing is spawned, so the plan keeps every target) and an injected `ProcessExecutor` (the caller's launch decides, not this machine's FS) |
-| Skip accounting | Skipped targets get no receipt and no provenance entry (`writeInstallProvenance` receives the installable subset), and the closing line names them: `Installed '<plugin>' to <n> target(s) (skipped: omp, grok).` A skip is always announced, never silent (design §6 exit #2) |
+| Skip accounting | A skipped target gets no writes (no rulesync dispatch, no native installer, no magent, no plugin rules) and no receipt or provenance entry (`writeInstallProvenance` receives the installable subset). The closing line names them and does not count them: `Installed '<plugin>' to <n> target(s) (skipped: omp, grok).` `n` includes `grok-bot` when that install-only target was installed. The verbose grok/rulesync dual-path warning is printed only when grok and a rulesync target are both in the installable set. A skip is always announced, never silent (design §6 exit #2) |
 | Failure text | ``'<cli>' CLI not found: not on PATH and not in <dirs>. Install <cli>, add its directory to PATH, or install without it: --targets <list> (drop '<target>')`` |
 | Spawn-failure text | A signal-less null exit code means the process never started (`ts-runtime` drops the execa `ENOENT` cause), so `runCheckedCommand` says `command not found or not executable (spawn failed before start) — check PATH`; a signaled exit says `signal <name>`, a plain failure `exit code <n>` |
 | Coverage | `claude` and `omp` installers, `grok` install/list. `resolveGrokInstallPath` returns `undefined` (no spawn) when `grok` is absent — same owned-launch gate, so an injected executor still gets its `plugin list --json` call |
+
+**Plugin rules** (`plugins/<plugin>/rules/*.md`, independent of `--magent`). Project mode: claude → `<root>/.claude/rules/`; antigravity-cli and antigravity-ide → `<root>/.agents/rules/`. Global mode is relative to the target's magent config directory, not that project-relative path joined onto it: claude → `~/.claude/rules/`; antigravity-cli → `~/.gemini/antigravity-cli/rules/`; antigravity-ide → `~/.gemini/config/rules/`. Other targets have no modular rules directory and are skipped. A global reinstall removes a previous doubled copy (`~/.claude/.claude/rules/`, `~/.gemini/antigravity-cli/.agents/rules/`, `~/.gemini/config/.agents/rules/`) only when the file is a regular file whose basename is a rule this plugin is installing and whose bytes match the plugin source. A differing file, a non-file, or any other name is left in place with a one-line note. An emptied doubled directory is removed.
 
 ### Remote marketplace cache freshness (task 0145)
 
@@ -241,9 +245,13 @@ For the `grok-bot` target the mapped staging `skills/` catalog (flat, one direct
   prior Bot files and reports rollback errors.
 - **Receipt**: recorded at `<sandRoot>/.superskill/manifests/grok-bot/<plugin>/.superskill-manifest.json`;
   the schema gains optional `grokBot: { materialize: 'bridge' \| 'full' }`.
+- **Summary**: `Installed '<plugin>' to <n> target(s)` counts `grok-bot` when it was requested and the emit succeeded.
 - **Doctor**: `superskill doctor --targets grok-bot [--json]` is a read-only health check of the
   Sand root + catalog (per-workflow marker/canonical/drift issues). Exit 0 healthy/creatable, 1
-  broken, 2 usage. No Sand root resolving is `available` for first install.
+  broken, 2 usage. No Sand root resolving is `available` for first install. Other install targets
+  have no doctor (ADR-036). Omitting `--targets` or passing anything else prints
+  `Error: superskill doctor only inspects the grok-bot target. Pass --targets grok-bot. Other install targets have no doctor.`
+  and exits 2. `--help` states the same limit.
 
 `superskill update` scans the Bot manifest as an extra candidate root when a Sand root resolves;
 without one it warns on stderr and skips `grok-bot`. A stale Bot marketplace install is
@@ -263,7 +271,7 @@ Bot receipt without the field skips the Bot reinstall and prints explicit reinst
 
 | Additional signature | Flags |
 | ---------------------- | ------- |
-| `superskill doctor` | `--targets grok-bot` (only supported value; read-only), `--json` — exit 0 healthy/creatable, 1 broken/unavailable, 2 usage (ADR-036, task 0128) |
+| `superskill doctor` | `--targets grok-bot` (required; the only supported value; other install targets have no doctor), `--json` — exit 0 healthy/creatable, 1 broken/unavailable, 2 usage. Usage error: `Error: superskill doctor only inspects the grok-bot target. Pass --targets grok-bot. Other install targets have no doctor.` (ADR-036, task 0128) |
 | `skill package <name>` | `-o, --output <dir>`, `--include-companions` |
 | `skill migrate <sources...>` | `--refine`, `--ingest <file>`, `-t, --target <agent>`, `--margin <n>` |
 | `skill update [names...]` | `-g, --global`, `-y, --yes`, `--json`, `--check` (read-only; exit 0 current/unchecked, 1 stale, 2 unavailable) |
@@ -420,7 +428,7 @@ Other script outcomes:
 
 The script's own stderr is always forwarded after any adapter stderr.
 
-**Pi native adapter (`apps/cli/src/pi-hooks.ts`, template `templates/pi-hook-extension.txt`).** Pi has no declarative hooks, so `superskill install --targets pi` (and `hook emit --target pi`) turns each command hook of the plugin's `hooks.json` into one generated extension module, `superskill-<plugin>-<hook>.ts`, in Pi's auto-discovered extensions dir: `~/.pi/agent/extensions/` (global) or `<project>/.pi/extensions/` (project; Pi loads it only once the project is trusted). Repeated stems get `-2`, `-3`, … in canonical order. The `@vahor/pi-hooks` shim is no longer used or required. A plugin that declares its own Pi extensions (`plugin.json` `extensions.pi`) keeps them and gets no generated modules.
+**Pi native adapter (`apps/cli/src/pi-hooks.ts`, template `templates/pi-hook-extension.txt`).** Pi has no declarative hooks, so `superskill install --targets pi` (and `hook emit --target pi`) turns each command hook of the plugin's `hooks.json` into one generated extension module, `superskill-<plugin>-<hook>.ts`, in Pi's auto-discovered extensions dir: `~/.pi/agent/extensions/` (global) or `<project>/.pi/extensions/` (project; Pi loads it only once the project is trusted). Repeated stems get `-2`, `-3`, … in canonical order. The `@vahor/pi-hooks` shim is no longer used or required. A plugin that declares its own Pi extensions (`plugin.json` `extensions.pi`, source file present) installs those bundled files under `<root>/.pi/agent/plugins/<plugin>/`, registers `plugins/<plugin>` in `<root>/.pi/agent/settings.json` `packages`, and gets no generated modules. Reinstall reconciles that package: extension files listed in a package.json this installer wrote (`name` equals the plugin and `pi.extensions` is a string array) and no longer provided are removed; the `packages` directory entry is removed when the plugin provides none. Other `packages` entries and files not listed there are left alone. Declared extensions also prune this plugin's generated modules and legacy shim entries so a hook does not run twice. A declared path whose source file is missing is not provided.
 
 Each module subscribes `pi.on(<event>)`, runs the hook command through the shell (as every host does) with the Pi event as JSON on stdin (plus `sessionId` from `ctx.sessionManager.getSessionId()`), `cwd = ctx.cwd`, and `SUPERSKILL_HOOK_HOST=pi`, `SUPERSKILL_HOOK_EVENT=<canonical event>`. For `superskill hook run`, the host `pi` row above means the module receives the script's decision itself as JSON. It also understands a Claude-style PreToolUse `permissionDecision` and exit 2 + stderr, so non-superskill commands work too. The module's deadline is the hook's `timeout` (s), else 60 s; it kills the command's process group on expiry. A spawn failure, a timeout, any exit other than 0/2, or unparseable output allows (fail open).
 

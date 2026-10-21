@@ -31,13 +31,16 @@ function printHuman(report: GrokBotDoctorReport): void {
 /**
  * Register `superskill doctor` (task 0128 / ADR-036): read-only grok-bot target
  * inspection. Exit 0 = available (or creatable root), 1 = broken catalog/root,
- * 2 = usage error. Other targets have no doctor.
+ * 2 = usage error. Other install targets have no doctor; that limit is intentional.
  */
 export function registerDoctor(program: Command): void {
     program
         .command('doctor')
-        .description('Inspect the grok-bot Sand data root and workflow catalog (read-only)')
-        .option('--targets <list>', "Target to inspect — only 'grok-bot' is supported")
+        .description('Read-only health check for the grok-bot install target (other install targets have no doctor)')
+        .option(
+            '--targets <list>',
+            "Required. The only supported value is 'grok-bot' — other install targets have no doctor",
+        )
         .option('--json', 'Emit the doctor report as JSON', false)
         .action((options: { targets?: string; json?: boolean }) => {
             const requested = (options.targets ?? '')
@@ -45,7 +48,10 @@ export function registerDoctor(program: Command): void {
                 .map((t) => t.trim())
                 .filter((t) => t.length > 0);
             if (requested.length !== 1 || requested[0] !== 'grok-bot') {
-                echo('Error: superskill doctor supports only --targets grok-bot');
+                echo(
+                    'Error: superskill doctor only inspects the grok-bot target. ' +
+                        'Pass --targets grok-bot. Other install targets have no doctor.',
+                );
                 process.exit(2);
             }
             const report = inspectGrokBotTarget({

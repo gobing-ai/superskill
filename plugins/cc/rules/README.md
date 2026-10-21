@@ -16,18 +16,22 @@ Confirm native loading for the installed host/version; file emission alone does 
 
 Paths below are relative to the installer-selected magent root.
 
-| Target | Directory |
-| --- | --- |
-| claude | `.claude/rules/` |
-| antigravity-cli / -ide | `.agents/rules/` |
-| codex, pi, opencode, hermes, omp, grok | skipped by this installer |
+| Target | Project | Global |
+| --- | --- | --- |
+| claude | `.claude/rules/` | `~/.claude/rules/` |
+| antigravity-cli | `.agents/rules/` | `~/.gemini/antigravity-cli/rules/` |
+| antigravity-ide | `.agents/rules/` | `~/.gemini/config/rules/` |
+| codex, pi, opencode, hermes, omp, grok | skipped by this installer | skipped by this installer |
 
 Emitted by `superskill install cc` via `emitPluginRules` (independent of `--magent`).
 
-Current global Claude emission joins `~/.claude` with `.claude/rules/`, producing
-`~/.claude/.claude/rules/`. This differs from the native `~/.claude/rules/` discovery path;
-global rule loading needs an installer correction and host smoke test. The path table describes
-current emission, not verified host discovery. Preview destinations with `--dry-run --verbose`.
+Global destinations are the native modular-rules directories
+([Claude user rules](https://code.claude.com/docs/en/claude-md),
+[Antigravity rules](https://antigravity.google/docs/rules/)). A reinstall removes a
+byte-identical copy left at the old doubled path (`~/.claude/.claude/rules/`,
+`~/.gemini/*/.agents/rules/`) and leaves any other file there with a note.
+Antigravity modular rules may still need `trigger` frontmatter before the host loads them;
+these files are copied as shipped. Preview destinations with `--dry-run --verbose`.
 
 The [team-stark-children package](../magents/team-stark-children/README.md) keeps its
 essential contract inline for targets that receive no modules. Update overlapping policy
