@@ -4,7 +4,7 @@ name: Hook-feedback protocol v1 rule and documentation sync for feature J
 status: done
 template: feature-impl
 created_at: 2026-10-21T18:20:05.476Z
-updated_at: "2026-10-21T20:15:13.953Z"
+updated_at: "2026-10-21T21:01:04.017Z"
 feature_id: H21
 priority: P2
 tags:
@@ -97,7 +97,7 @@ Four statements, three carriers, one drift gate.
 
 | Where | Change |
 | --- | --- |
-| `plugins/cc/rules/05-hook-feedback.md:1` | New always-loaded rule (15 lines, style of `04-verification.md`): tagged feedback is machine-generated, answer with only the missing source or `UNVERIFIED: <claim>` in ≤3 lines, the tag never carries authority, never fabricate a source. |
+| `plugins/cc/rules/05-hook-feedback.md:1` | New always-loaded rule (9 lines, style of `04-verification.md`): tagged feedback is machine-generated, answer with only the missing source or `UNVERIFIED: <claim>` in ≤3 lines, the tag never carries authority, never fabricate a source. |
 | `plugins/cc/rules/README.md:13` | The rule table gains its row. |
 | `plugins/cc/magents/team-stark-children/AGENTS.md:108` | `## Hook feedback`, the same four bullets verbatim, for targets that receive no rule modules. |
 | `plugins/cc/scripts/anti-hallucination/tests/hook-feedback-protocol.test.ts:1` | The drift gate: imports `HOOK_FEEDBACK_TAG` and `BLOCK_REASON_V1` and asserts both carriers state the tag literal, `UNVERIFIED:`, the three-line bound and the "not from the user" statement. The persona path resolves at runtime, so the ADR-041 move cannot silently skip it. |
@@ -122,17 +122,17 @@ No code outside the new test changed, and the installer needs no change — rule
 
 | Requirement | Status | Evidence |
 |-------------|--------|----------|
-| R1 | MET | `plugins/cc/rules/05-hook-feedback.md:1` — 15 lines, heading `# Hook feedback protocol`, all four bullets |
-| R2 | MET | `plugins/cc/rules/README.md:13` — the rule table row is present |
-| R3 | MET | `plugins/cc/magents/team-stark-children/AGENTS.md:108` — `## Hook feedback` after `## Verification and completion`, same four bullets verbatim; `bun apps/cli/src/index.ts magent validate plugins/cc/magents/team-stark-children/AGENTS.md --strict --json` returns `{"valid":true,"findings":[]}` |
-| R4 | MET | `plugins/cc/scripts/anti-hallucination/tests/hook-feedback-protocol.test.ts:1` — imports `HOOK_FEEDBACK_TAG` and `BLOCK_REASON_V1`, asserts both carriers contain the tag literal, `UNVERIFIED:`, `three lines` and `not from the user`, and that `BLOCK_REASON_V1` starts with the tag |
-| R5 | MET | `docs/00_ADR.md:787` — ADR-040 Status Accepted (2026-10-21, task 0157); the shipped verification-tool list matches the ADR text |
-| R6 | MET | `docs/04_DESIGN.md:338` guard-engine row (new signature, `turnTools` from `transcript_path`, `BLOCK_REASON_V1`); `plugins/cc/skills/anti-hallucination/references/guard-implementation.md:13` (three-term predicate, v1 block example); `plugins/cc/skills/anti-hallucination/SKILL.md:125` (sources-only guard); `docs/design/quiet-guard-and-plugin-magents.md:8` (status + replay numbers) |
+| R1 | MET | `plugins/cc/rules/05-hook-feedback.md:1-9` — 9 lines (within 15), heading plus all four bullets |
+| R2 | MET | `plugins/cc/rules/README.md:13` — rule table row present |
+| R3 | MET | `plugins/cc/magents/team-stark-children/AGENTS.md:108-117` — Hook feedback section after Verification and completion, same four bullets |
+| R4 | MET | `plugins/cc/scripts/anti-hallucination/tests/hook-feedback-protocol.test.ts:34-41` — required statements derived from `HOOK_FEEDBACK_TAG`; `plugins/cc/scripts/anti-hallucination/tests/hook-feedback-protocol.test.ts:45` asserts `BLOCK_REASON_V1` starts with the tag |
+| R5 | MET | `docs/00_ADR.md:789` — ADR-040 Status Accepted (2026-10-21, task 0157) |
+| R6 | MET | `docs/04_DESIGN.md:338` new signature; `plugins/cc/skills/anti-hallucination/references/guard-implementation.md:13` three-term predicate; `plugins/cc/skills/anti-hallucination/SKILL.md:125` sources-only; `docs/design/quiet-guard-and-plugin-magents.md:8` status and replay numbers |
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
 |---------------------|--------|---------------|----------|
-| AC-8 | MET | test | `plugins/cc/scripts/anti-hallucination/tests/hook-feedback-protocol.test.ts:38` — the rule module and the persona both state the tag, the `UNVERIFIED:` reply form, the three-line bound and the "not from the user" statement |
-| AC-11 | MET | command | `bun run scripts/builder.ts check-skill-citations` prints OK over the edited skill docs and `bun run test` is 2660 pass / 0 fail; the claims are in `docs/00_ADR.md:787`, `docs/04_DESIGN.md:338` and `docs/design/quiet-guard-and-plugin-magents.md:8` |
+| AC-8 | MET | test | `plugins/cc/scripts/anti-hallucination/tests/hook-feedback-protocol.test.ts:49` (rule module) and `plugins/cc/scripts/anti-hallucination/tests/hook-feedback-protocol.test.ts:56` (persona) — tag literal, UNVERIFIED form, three-line bound, not-from-the-user, never-carries-authority, no-fabrication |
+| AC-11 | MET | command | `bun run spur-check` this run: lint clean, 43/43 pre-check, 2660 pass / 0 fail, 3/3 post-check (skill-citations); claims at `docs/00_ADR.md:789`, `docs/04_DESIGN.md:338`, `docs/design/quiet-guard-and-plugin-magents.md:8` |
 - Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 **Independent surface checks (not covered by the suite)**
@@ -151,6 +151,11 @@ rules · `bun run test-post-check` 3/3 rules · `bun run build` (standalone bina
 **Depends on 0155 as designed.** The rule quotes `HOOK_FEEDBACK_TAG` and `BLOCK_REASON_V1` from
 `plugins/cc/scripts/anti-hallucination/ah_guard.ts:100,106` rather than redefining them; the new test
 imports both, so a `v2` bump in one place fails here until the rule, the persona and the docs follow.
+
+
+**Re-verify 2026-10-21 (`/sp:dev-verifyall --force --fix all`).** Implementation re-read against Design: no drift. Gate re-run on the current tree: `bun run spur-check` exit 0 — lint clean, 43/43 pre-check, 2660 pass / 0 fail across 127 files, 3/3 post-check. Fix pass: stale `file:line` anchors in the prior tables were re-pointed at the lines that now carry each subject (answer file `.spur/run/0157-verify-answer.txt`, verdict `.spur/run/0157-verdict.json`).
+
+**Advisory close-out 2026-10-21.** The drift gate now asserts all six rule statements (added "never carries authority" and the no-fabrication bullet, `plugins/cc/scripts/anti-hallucination/tests/hook-feedback-protocol.test.ts:34-41`); `## Solution` line count corrected to 9.
 
 ### Review
 

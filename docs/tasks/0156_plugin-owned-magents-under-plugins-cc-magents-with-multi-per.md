@@ -4,7 +4,7 @@ name: Plugin-owned magents under plugins/cc/magents with multi-persona install
 status: done
 template: feature-impl
 created_at: 2026-10-21T18:20:05.475Z
-updated_at: "2026-10-21T20:11:43.066Z"
+updated_at: "2026-10-21T20:46:26.814Z"
 feature_id: F31
 priority: P2
 tags:
@@ -161,25 +161,25 @@ tests instead.
 
 | Requirement | Status | Evidence |
 |-------------|--------|----------|
-| R1 | MET | `plugins/cc/magents/team-stark-children/AGENTS.md:1` — the package lives under the plugin tree and the root `magents/` directory no longer exists (`git status` shows the rename; `claude plugin validate plugins/cc` passes) |
-| R2 | MET | `apps/cli/tests/commands/install.integration.test.ts:1088` — the primary persona still installs; `bun apps/cli/src/index.ts install cc --verbose --magent team-stark-children --marketplace apps/cli --dry-run` prints `claude: magent cc-team-stark-children → …/CLAUDE.md (Claude @import package)` |
-| R3 | MET | `apps/cli/src/commands/install.ts:1280` — the marketplace-root scan is gone; `packages/core/src/mapper.ts:433` has no `nameMode`; `apps/cli/tests/commands/install.integration.test.ts:747` pins that a root `magents/` directory is not staged |
-| R4 | MET | `apps/cli/src/commands/install.ts:1937` — one stdout line naming the bare choices; pinned by `apps/cli/tests/commands/install.integration.test.ts:720` |
-| R5 | MET | `apps/cli/tests/commands/install.integration.test.ts:786` — global install into a sandboxed `HOME_DIR` leaves the project scope carrying the other persona, and the global `CLAUDE.md` bytes are unchanged |
-| R6 | MET | `apps/cli/tests/commands/install.integration.test.ts:833` — installing A then B in one scope leaves B's `CLAUDE.md` with only B's `@` imports; no new code was needed (R7) |
-| R7 | MET | `apps/cli/src/commands/install.ts:699` — `--list-magents` prints one `<name>\t<description>` line per package and returns before staging; pinned by `apps/cli/tests/commands/install.integration.test.ts:682` |
-| R8 | MET | `docs/00_ADR.md:797` — ADR-041 is Accepted (2026-10-21); `docs/04_DESIGN.md:87` carries `[--list-magents]`; `docs/help/cmd_install.md:165` describes the single root |
+| R1 | MET | `plugins/cc/magents/team-stark-children/AGENTS.md:1` — package under the plugin tree; root `magents/` absent (ls this run: No such file or directory) |
+| R2 | MET | `packages/core/src/mapper.ts:433` — `stageMagentsFromDir` has no `nameMode`; `rg nameMode apps/cli/src packages/core/src` empty; root scan pinned absent by `apps/cli/tests/commands/install.integration.test.ts:758` |
+| R3 | MET | `apps/cli/package.json:23-37` — `magents/` dropped from files and build:bundle; `.gitignore` entry removed in commit 5fee95d |
+| R4 | MET | `packages/core/src/content/identity.ts:96-114` — plugin-tree fallback after legacy form; pinned by `packages/core/tests/content/identity.test.ts:199` |
+| R5 | MET | `apps/cli/src/commands/install.ts:1937` — one stdout line naming bare choices; pinned by `apps/cli/tests/commands/install.integration.test.ts:725` |
+| R6 | MET | `apps/cli/src/commands/install.ts:699-708` — `--list-magents` branch before staging; `apps/cli/src/commands/install.ts:1871-1880` `readMagentDescription`; pinned by `apps/cli/tests/commands/install.integration.test.ts:782` |
+| R7 | MET | `apps/cli/tests/commands/install.integration.test.ts:839` (scopes coexist) and `apps/cli/tests/commands/install.integration.test.ts:888` (switch loads only new persona); no new code |
+| R8 | MET | `docs/00_ADR.md:789` ADR-041 Accepted; `docs/04_DESIGN.md:87` carries `[--list-magents]`; `docs/help/bundled_plugin.md:23`; `plugins/cc/README.md:65` |
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
 |---------------------|--------|---------------|----------|
-| AC-1 | MET | command | `claude plugin validate plugins/cc` prints `Validation passed`; the package resolves at `plugins/cc/magents/team-stark-children/AGENTS.md` |
-| AC-2 | MET | command | `bun apps/cli/src/index.ts install cc --magent team-stark-children --marketplace apps/cli --dry-run` reports `Magents: 1` and the `cc-team-stark-children` destination |
-| AC-3 | MET | test | `apps/cli/tests/commands/install.integration.test.ts:747` (a root `magents/` package is not staged) and `packages/core/tests/content/identity.test.ts:184` (plugin-tree resolution) |
-| AC-4 | MET | test | `apps/cli/tests/commands/install.integration.test.ts:720` and `:1088` — one `Magents:` line naming both personas, no main-agent file written |
-| AC-5 | MET | test | `apps/cli/tests/commands/install.integration.test.ts:786` — both scopes coexist, the untouched scope is byte-identical |
-| AC-6 | MET | test | `apps/cli/tests/commands/install.integration.test.ts:833` — the same scope ends with only the new persona's entry and imports |
-| AC-7 | MET | test | `apps/cli/tests/commands/install.integration.test.ts:682` — `--list-magents` prints `name<TAB>description` and writes nothing; `:711` covers the empty case |
-| AC-8 | MET | command | `bun run scripts/builder.ts check-skill-citations` prints OK and `plugins/cc/tests/structure.test.ts:163` resolves every relative link the doc updates touch; the claims themselves are in `docs/00_ADR.md:797` (ADR-041 Accepted), `docs/help/cmd_install.md:165` (single discovery root), `docs/help/bundled_plugin.md:23`, `docs/help/release.md:24`, `plugins/cc/README.md:65` |
+| AC-1 | MET | test | `plugins/cc/tests/structure.test.ts:163` resolves every relative link in the moved package; prior `claude plugin validate plugins/cc` passed |
+| AC-2 | MET | test | `apps/cli/tests/commands/install.integration.test.ts:1022` — `--magent <name>` selects the named persona; bundle check recorded in prior Testing |
+| AC-3 | MET | test | `apps/cli/tests/commands/install.integration.test.ts:758` (root `magents/` not staged) and `packages/core/tests/content/identity.test.ts:199` |
+| AC-4 | MET | test | `apps/cli/tests/commands/install.integration.test.ts:725` and `apps/cli/tests/commands/install.integration.test.ts:1091` — one Magents line naming both personas, nothing written |
+| AC-5 | MET | test | `apps/cli/tests/commands/install.integration.test.ts:839` — both scopes coexist, untouched scope byte-identical |
+| AC-6 | MET | test | `apps/cli/tests/commands/install.integration.test.ts:888` — same scope ends with only the new persona imports |
+| AC-7 | MET | test | `apps/cli/tests/commands/install.integration.test.ts:782` (name TAB description, writes nothing) and `apps/cli/tests/commands/install.integration.test.ts:817` (empty case) |
+| AC-8 | MET | test | `plugins/cc/tests/structure.test.ts:163` link resolution plus claims at `docs/00_ADR.md:789` and `docs/help/cmd_install.md:165` |
 - Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 **Independent surface checks (not covered by the suite)**
@@ -201,8 +201,11 @@ rules · `bun run test-post-check` 3/3 rules · `bun run build` (standalone bina
 `plugins/cc/` put it under `plugins/cc/tests/structure.test.ts:163`, which requires every relative
 Markdown link inside the plugin tree to resolve. Its 13 repo-root links needed two more `../`
 segments, and its upstream-loader citations pointed into the gitignored `vendors/` tree — absent in
-CI and rejected by the publish boundary check in `scripts/builder.ts:198`. The citations are restated
-without a `vendors/…` path; `plugins/cc/rules/README.md:31` was repointed at the same time.
+CI and rejected by the publish boundary check in `scripts/builder.ts:201`. The citations are restated
+without a `vendors/…` path; `plugins/cc/rules/README.md:32` was repointed at the same time.
+
+
+**Re-verify 2026-10-21 (`/sp:dev-verifyall --force --fix all`).** Implementation re-read against Design: no drift. Gate re-run on the current tree: `bun run spur-check` exit 0 — lint clean, 43/43 pre-check, 2660 pass / 0 fail across 127 files, 3/3 post-check. Fix pass: stale `file:line` anchors in the prior tables were re-pointed at the lines that now carry each subject (answer file `.spur/run/0156-verify-answer.txt`, verdict `.spur/run/0156-verdict.json`).
 
 ### Review
 
