@@ -854,7 +854,14 @@ describe('runBuilderCommand — resolve-publish-deps', () => {
             await runBuilderCommand(['resolve-publish-deps', 'scripts/tests/.tmp-resolve-manifest.json']);
             const after = readFileSync(tmp, 'utf-8');
             expect(after).not.toBe(original);
-            expect(JSON.parse(after).dependencies['@gobing-ai/ts-utils']).toMatch(/^\^/);
+            // Resolution copies the root catalog entry verbatim (which may be exact-pinned), so
+            // assert against the catalog rather than assuming a caret range.
+            const catalog = (
+                JSON.parse(readFileSync(resolve(ROOT, 'package.json'), 'utf-8')) as {
+                    workspaces?: { catalog?: Record<string, string> };
+                }
+            ).workspaces?.catalog;
+            expect(JSON.parse(after).dependencies['@gobing-ai/ts-utils']).toBe(catalog?.['@gobing-ai/ts-utils']);
             expect(readFileSync(backup, 'utf-8')).toBe(original);
             expect(info.mock.calls.flat().join('\n')).toContain('resolved');
         } finally {
