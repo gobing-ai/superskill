@@ -6,6 +6,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
+## [0.3.42] - 2026-10-21
+
+### Added
+
+- Evidence-gated anti-hallucination Stop guard: blocks an external claim only when neither the reply text nor the current turn carries evidence, and tags every block reason `[anti-hallucination/v1]`; ships the matching always-loaded feedback protocol rule, and moves the persona package to `plugins/cc/magents/` as the plugin tree's own discovery root (ADR-040, ADR-041) (5fee95d) <!-- src: docs/00_ADR.md:787 · confidence: HIGH -->
+
+### Other
+
+- Bump the `@gobing-ai/ts-*` catalog from ^0.5.32 to ^0.5.33 (5a9dc3b) <!-- src: package.json:12 · confidence: HIGH -->
+- Extend the hook-feedback drift gate to all four protocol statements and rename the filename-claim test off the removed label rule (f0dee2f) <!-- src: plugins/cc/scripts/anti-hallucination/tests/hook-feedback-protocol.test.ts:40 · confidence: HIGH -->
+- Stop claiming the standalone validator requires confidence fields — it reads sources (ae3da59) <!-- src: plugins/cc/skills/anti-hallucination/references/non-hook-enforcement.md:122 · confidence: HIGH -->
+- Re-point the `file:line` evidence anchors in tasks 0155-0157 after the batch's own edits shifted them (6c5e24b)
+- Record the wrap metrics for the 0155-0157 batch (1e42163)
+- Plan the quiet-guard and plugin-owned-magents work (43ddc2d)
+- Fix the install command lines in the README (14afe1e)
+
 ## [0.3.41] - 2026-10-21
 
 ### Fixed
