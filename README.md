@@ -22,15 +22,19 @@ at runtime, so install works from any directory:
 
 ```bash
 # go with owner/repo shorthand → GitHub
-superskill install cc --magent team-stark-children --marketplace gobing-ai/spur
+superskill install cc --magent team-stark-children --marketplace gobing-ai/superskill
+
 # or, go with the full path of the github URL
-superskill install cc --magent team-stark-children --marketplace https://github.com/gobing-ai/spur
+superskill install cc --magent team-stark-children --marketplace https://github.com/gobing-ai/superskill
+
 # or, go with pre-installed via bun
-superskill install cc --magent team-stark-children --marketplace $(bun pm bin -g)/@gobing-ai/spur
+superskill install cc --magent team-stark-children --marketplace $(dirname $(bun pm bin -g))/install/global/node_modules/@gobing-ai/superskill
+
 # or, go with pre-installed via npm
-superskill install cc --magent team-stark-children --marketplace $(npm root -g)/@gobing-ai/spur
+superskill install cc --magent team-stark-children --marketplace $(dirname $(npm root -g))/node_modules/@gobing-ai/superskill
+
 # or, go with already downloaded source code
-superskill install cc --magent team-stark-children --marketplace /Users/robin/xprojects/spur-new
+superskill install cc --magent team-stark-children --marketplace /Users/robin/xprojects/superskill
 
 ```
 
