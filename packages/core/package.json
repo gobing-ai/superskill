@@ -1,6 +1,6 @@
 {
     "name": "@gobing-ai/superskill-core",
-    "version": "0.3.42",
+    "version": "0.3.43",
     "description": "Core domain logic for superskill: content, quality, pipeline, targets, marketplace, mapper, rulesync.",
     "keywords": [
         "superskill",
