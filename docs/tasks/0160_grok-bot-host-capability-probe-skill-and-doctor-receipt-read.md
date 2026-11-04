@@ -4,12 +4,12 @@ name: Grok Bot host capability probe skill and doctor receipt reader
 status: todo
 template: feature-impl
 created_at: 2026-11-04T22:58:00.110Z
-updated_at: "2026-11-04T23:04:21.663Z"
+updated_at: "2026-11-04T23:20:18.349Z"
 feature_id: D1
 
 ac_altitude: task-local
-priority: P2
-estimate_hours: 8
+priority: P1
+estimate_hours: 6
 ---
 
 ## 0160. Grok Bot host capability probe skill and doctor receipt reader
