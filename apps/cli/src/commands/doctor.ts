@@ -1,3 +1,4 @@
+import { resolve as resolvePath } from 'node:path';
 import { type GrokBotDoctorReport, getEnvVar, inspectGrokBotTarget } from '@gobing-ai/superskill-core';
 import { echo } from '@gobing-ai/ts-utils';
 import type { Command } from 'commander';
@@ -7,6 +8,31 @@ function printSlashRegistry(report: GrokBotDoctorReport): void {
     const where = report.slashRegistry.handoffDir ?? 'unresolved Sand root';
     echo(`grok-bot: slash registry: ${report.slashRegistry.status} (handoffs at ${where})`);
     for (const line of report.slashRegistry.guidance) echo(`  ${line}`);
+}
+
+function describeValue(value: string | string[] | null): string {
+    return value === null ? '' : Array.isArray(value) ? ` = ${value.join(', ')}` : ` = ${value}`;
+}
+
+/** Probe-receipt lines (task 0160 / R4): appended after the existing slash-registry lines. */
+function printCapabilities(report: GrokBotDoctorReport): void {
+    const capabilities = report.capabilities;
+    let header = `grok-bot: probe receipt: ${capabilities.state}`;
+    if (capabilities.path !== null) header += ` — ${capabilities.path}`;
+    if (capabilities.generatedAt !== null) {
+        header += ` (${capabilities.generatedAt}${capabilities.state === 'stale' ? ', stale' : ''})`;
+    }
+    if (capabilities.problem !== null) header += ` — ${capabilities.problem}`;
+    echo(header);
+    for (const entry of capabilities.entries)
+        echo(`grok-bot: probe ${entry.id}: ${entry.status}${describeValue(entry.value)}`);
+    if (capabilities.missingIds.length > 0) echo(`grok-bot: probe not reported: ${capabilities.missingIds.join(', ')}`);
+    if (report.dataRoot !== null) {
+        // Named so an operator can have a Bot produce a receipt at the default location.
+        echo(
+            'grok-bot: probe guidance: have the Bot read and follow <dataRoot>/workflows/cc-grok-bot-probe/SKILL.md to produce it',
+        );
+    }
 }
 
 function printHuman(report: GrokBotDoctorReport): void {
@@ -42,7 +68,11 @@ export function registerDoctor(program: Command): void {
             "Required. The only supported value is 'grok-bot' — other install targets have no doctor",
         )
         .option('--json', 'Emit the doctor report as JSON', false)
-        .action((options: { targets?: string; json?: boolean }) => {
+        .option(
+            '--receipt <path>',
+            'Path to a probe receipt produced by cc-grok-bot-probe (default: <dataRoot>/.superskill/grok-bot/probe/receipt.json)',
+        )
+        .action((options: { targets?: string; json?: boolean; receipt?: string }) => {
             const requested = (options.targets ?? '')
                 .split(',')
                 .map((t) => t.trim())
@@ -57,11 +87,13 @@ export function registerDoctor(program: Command): void {
             const report = inspectGrokBotTarget({
                 sandData: getEnvVar('SAND_DATA'),
                 homeDir: resolveHomeDir(),
+                receiptPath: options.receipt === undefined ? undefined : resolvePath(options.receipt),
             });
             if (options.json === true) {
                 echo(JSON.stringify(report, null, 2));
             } else {
                 printHuman(report);
+                printCapabilities(report);
             }
             process.exit(report.available ? 0 : 1);
         });

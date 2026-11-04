@@ -34,6 +34,7 @@ import {
     sha256File,
     sha256Text,
 } from './grok-bot-marker';
+import { type GrokBotProbeReport, grokBotProbeReceiptPath, readGrokBotProbeReceipt } from './grok-bot-probe';
 
 export type { GrokBotOriginMarker } from './grok-bot-marker';
 // Marker helpers moved to ./grok-bot-marker (task 0146 R13); re-exports keep the
@@ -919,8 +920,7 @@ export interface GrokBotDoctorIssue {
     message: string;
 }
 
-/** Read-only health report for the grok-bot install target (doctor command). */
-export interface GrokBotDoctorReport {
+/** Read-only health report for the grok-bot install target (doctor command). */ export interface GrokBotDoctorReport {
     target: 'grok-bot';
     available: boolean;
     dataRoot: string | null;
@@ -934,6 +934,12 @@ export interface GrokBotDoctorReport {
      * to query the host. Carries the handoff location and next steps.
      */
     slashRegistry: GrokBotDoctorSlashRegistry;
+    /**
+     * Probe receipt (task 0160): read-only view of the Bot-written receipt
+     * under `<dataRoot>/.superskill/grok-bot/probe/receipt.json`. Additive —
+     * never influences `available` or exit codes.
+     */
+    capabilities: GrokBotProbeReport;
 }
 
 /**
@@ -973,12 +979,31 @@ function botDoctorSlashRegistry(dataRoot: string | null): GrokBotDoctorSlashRegi
     };
 }
 
+/** Doctor receipt wiring (R4): --receipt overrides, otherwise the Sand-root default, null when no root resolves. */
+function botDoctorCapabilities(
+    dataRoot: string | null,
+    options: { receiptPath?: string; now?: Date },
+): GrokBotProbeReport {
+    const explicit = options.receiptPath?.trim() || null;
+    return readGrokBotProbeReceipt({
+        path: explicit ?? (dataRoot === null ? null : grokBotProbeReceiptPath(dataRoot)),
+        now: options.now,
+    });
+}
+
 /**
  * Read-only Bot readiness inspection (R6). Never mutates the Sand tree.
  * `available` is true when the root resolved and every workflow directory is
  * valid (frontmatter, marker, canonical resource, owned-file drift).
  */
-export function inspectGrokBotTarget(options: { sandData?: string; homeDir: string }): GrokBotDoctorReport {
+export function inspectGrokBotTarget(options: {
+    sandData?: string;
+    homeDir: string;
+    /** Operator-supplied receipt path; overrides the defaulted `<dataRoot>`/.../probe/receipt.json (R4). */
+    receiptPath?: string;
+    /** Injectable clock for staleness; real time when omitted. */
+    now?: Date;
+}): GrokBotDoctorReport {
     const issues: GrokBotDoctorIssue[] = [];
     let resolution: SandRootResolution | null = null;
     try {
@@ -998,6 +1023,7 @@ export function inspectGrokBotTarget(options: { sandData?: string; homeDir: stri
             creatable: false,
             issues,
             slashRegistry: botDoctorSlashRegistry(null),
+            capabilities: botDoctorCapabilities(null, options),
         };
     }
     let available = true;
@@ -1009,6 +1035,7 @@ export function inspectGrokBotTarget(options: { sandData?: string; homeDir: stri
             available,
             issues,
             slashRegistry: botDoctorSlashRegistry(resolution.dataRoot),
+            capabilities: botDoctorCapabilities(resolution.dataRoot, options),
         };
     }
     for (const dirent of readdirSync(resolution.workflowsDir, { withFileTypes: true })) {
@@ -1088,5 +1115,6 @@ export function inspectGrokBotTarget(options: { sandData?: string; homeDir: stri
         available,
         issues,
         slashRegistry: botDoctorSlashRegistry(resolution.dataRoot),
+        capabilities: botDoctorCapabilities(resolution.dataRoot, options),
     };
 }

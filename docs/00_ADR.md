@@ -748,6 +748,15 @@ filesystem destination). Failure modes preserve prior output via the existing
 filesystem transaction rollback; installs to the same Bot/plugin must be
 serialized by the operator.
 
+**Amendment 2026-11-04 (task 0160 / feature D1).** `superskill doctor
+--targets grok-bot` gains an optional `--receipt <path>` and a `capabilities`
+section that reads one Bot-written probe receipt
+(`<dataRoot>/.superskill/grok-bot/probe/receipt.json`, schema version 1,
+produced by the bundled `cc-grok-bot-probe` skill). The decision stands: the
+CLI still never probes a host — reading an operator-supplied file is neither a
+GUI discovery nor a connection test — and receipt state (missing/invalid/stale/valid)
+never changes `available` or the doctor exit codes.
+
 ## ADR-037: Target customizations share an internal post-install action mechanism
 
 **Status:** Accepted · **Date:** 2026-09-09 · **Task:** 0130

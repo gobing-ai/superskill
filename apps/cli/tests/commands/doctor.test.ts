@@ -141,4 +141,92 @@ describe('doctor command (task 0128 / R6)', () => {
             rmSync(home, { recursive: true, force: true });
         }
     });
+
+    it('reports probe receipts without changing exit semantics (task 0160 / AC3, AC4)', async () => {
+        const home = mkdtempSync(join(tmpdir(), 'superskill-doctor-home4-'));
+        const savedHome = getEnvVar('HOME_DIR');
+        const savedSand = getEnvVar('SAND_DATA');
+        setEnvVar('HOME_DIR', home);
+        removeEnvVar('SAND_DATA');
+        const sand = join(home, 'sand-data');
+        mkdirSync(sand, { recursive: true });
+        const receiptDir = join(realpathSync(sand), '.superskill', 'grok-bot', 'probe');
+        const validReceipt = (generatedAt: string): string =>
+            JSON.stringify({
+                schemaVersion: 1,
+                kind: 'superskill.grok-bot.probe',
+                generatedAt,
+                capabilities: [{ id: 'host-os-arch', status: 'observed', value: 'darwin-arm64', evidence: 'uname' }],
+            });
+        try {
+            // Default path under SAND_DATA when --receipt is omitted.
+            const defaults = await runDoctor(['--targets', 'grok-bot', '--json']);
+            expect(defaults.code).toBe(0);
+            const defaultReport = JSON.parse(defaults.output) as {
+                capabilities: { state: string; path: string; missingIds: string[] };
+            };
+            expect(defaultReport.capabilities.state).toBe('missing');
+            expect(defaultReport.capabilities.path).toBe(join(receiptDir, 'receipt.json'));
+            expect(defaultReport.capabilities.missingIds).toEqual([]);
+
+            const freshIso = new Date(Date.now()).toISOString(); // within the 30-day window regardless of the wall clock
+            const outside = join(home, 'copied-receipt.json');
+            writeFileSync(outside, validReceipt(freshIso));
+            const override = await runDoctor(['--targets', 'grok-bot', '--json', '--receipt', outside]);
+            expect(override.code).toBe(0);
+            const overrideReport = JSON.parse(override.output) as {
+                available: boolean;
+                capabilities: {
+                    state: string;
+                    generatedAt: string | null;
+                    entries: { id: string; status: string; value: string }[];
+                    missingIds: string[];
+                };
+            };
+            expect(overrideReport.available).toBe(true);
+            expect(overrideReport.capabilities.state).toBe('valid');
+            expect(overrideReport.capabilities.generatedAt).toBe(freshIso);
+            expect(overrideReport.capabilities.entries[0]).toMatchObject({
+                id: 'host-os-arch',
+                status: 'observed',
+                value: 'darwin-arm64',
+            });
+            expect(overrideReport.capabilities.missingIds).toContain('mcp-command');
+
+            const humanValid = await runDoctor(['--targets', 'grok-bot', '--receipt', outside]);
+            expect(humanValid.code).toBe(0);
+            expect(humanValid.output).toContain(`probe receipt: valid — ${outside}`);
+            expect(humanValid.output).toContain('probe host-os-arch: observed = darwin-arm64');
+            expect(humanValid.output).toContain('probe not reported: ');
+            expect(humanValid.output).toContain('probe guidance: have the Bot read and follow');
+
+            writeFileSync(outside, validReceipt('2020-06-01T00:00:00.000Z'));
+            const humanStale = await runDoctor(['--targets', 'grok-bot', '--receipt', outside]);
+            expect(humanStale.code).toBe(0);
+            expect(humanStale.output).toContain('(2020-06-01T00:00:00.000Z, stale)');
+
+            writeFileSync(outside, '{not json');
+            const humanInvalid = await runDoctor(['--targets', 'grok-bot', '--receipt', outside]);
+            expect(humanInvalid.code).toBe(0);
+            expect(humanInvalid.output).toContain('probe receipt: invalid');
+            expect(humanInvalid.output).toContain('— receipt is not valid JSON');
+
+            // Unresolvable root: exit 1 regardless of receipt state, no guidance line.
+            removeEnvVar('SAND_DATA');
+            setEnvVar('HOME_DIR', join(home, 'missing-home'));
+            const unresolved = await runDoctor(['--targets', 'grok-bot']);
+            expect(unresolved.code).toBe(1);
+            const unresolvedReport = JSON.parse((await runDoctor(['--targets', 'grok-bot', '--json'])).output) as {
+                capabilities: { state: string; path: string | null };
+            };
+            expect(unresolvedReport.capabilities.state).toBe('missing');
+            expect(unresolvedReport.capabilities.path).toBeNull();
+        } finally {
+            if (savedHome === undefined) removeEnvVar('HOME_DIR');
+            else setEnvVar('HOME_DIR', savedHome);
+            if (savedSand === undefined) removeEnvVar('SAND_DATA');
+            else setEnvVar('SAND_DATA', savedSand);
+            rmSync(home, { recursive: true, force: true });
+        }
+    });
 });

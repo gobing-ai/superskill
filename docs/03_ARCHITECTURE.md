@@ -166,6 +166,7 @@ packages/core/src/                # ── Reusable domain logic (@gobing-ai/sup
 ├── operations/                   # ── Reusable operation APIs with no app dependency ──
 │   ├── install-manifest.ts       # Install provenance DTO, path, snapshot, atomic write (ADR-035)
 │   ├── grok-bot.ts               # Grok Bot Sand root resolution + bridge/full emission (ADR-036)
+│   ├── grok-bot-probe.ts         # Bot-written probe receipt schema v1 + never-throwing reader (task 0160)
 │   ├── migrate.ts                # Deterministic skill merge/migration core
 │   ├── package.ts                # Package content for distribution
 │   ├── post-install.ts           # Shared target post-install action runner + registry (ADR-037)
@@ -467,6 +468,11 @@ receipt's recorded `grokBot.materialize` into Bot reinstalls and emits explicit 
 guidance when the field is absent. Receipt lives at
 `<sandRoot>/.superskill/manifests/grok-bot/<plugin>/` with optional `grokBot.materialize` in
 `InstallManifestV1`. `superskill doctor --targets grok-bot` is a read-only filesystem check.
+Task 0160: the bundled `cc-grok-bot-probe` skill has a Bot write one capability receipt at
+`<dataRoot>/.superskill/grok-bot/probe/receipt.json`; doctor reads it through the pure,
+never-throwing reader `operations/grok-bot-probe.ts` (schema version 1, untrusted-input posture:
+strip/cap/validate) and reports it additively — receipt state never influences `available` or
+exit codes.
 Post-0130/0132: the emission also writes the deterministic registration handoff
 (`<dataRoot>/.superskill/grok-bot/register/<plugin>.json`) inside the same transaction
 (`grok-bot/register-handoff` action, task 0130), and — task 0132 — the cc plugin's

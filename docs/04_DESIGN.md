@@ -251,7 +251,28 @@ For the `grok-bot` target the mapped staging `skills/` catalog (flat, one direct
   broken, 2 usage. No Sand root resolving is `available` for first install. Other install targets
   have no doctor (ADR-036). Omitting `--targets` or passing anything else prints
   `Error: superskill doctor only inspects the grok-bot target. Pass --targets grok-bot. Other install targets have no doctor.`
-  and exits 2. `--help` states the same limit.
+  and exits 2. `--help` states the same limit. Probe receipts (task 0160): the optional
+  `--receipt <path>` flag points at a Bot-written probe receipt (default
+  `<dataRoot>/.superskill/grok-bot/probe/receipt.json`, relative to the invocation dir); receipt
+  state never affects `available` or exit codes, it is reported additively (schema version 1 below).
+
+### Probe receipt (task 0160)
+
+A Grok Bot following `cc-grok-bot-probe` writes one read-only receipt of eight host capabilities.
+Doctor reads it, never probes a host itself (ADR-036 amendment 2026-11-04).
+
+- File: `<dataRoot>/.superskill/grok-bot/probe/receipt.json` (schema version 1):
+  `schemaVersion: 1`, `kind: superskill.grok-bot.probe`, `generatedAt` (ISO-8601 UTC),
+  `capabilities[]` of `{id, status: observed\|absent\|unverified, value, evidence}` over the eight
+  capability ids `host-os-arch, host-home, sand-env, sand-roots, skill-save, plugin-install,
+  runtime-persistence, mcp-command`.
+- Human lines (appended after the slash-registry section): `grok-bot: probe receipt: <state> — <path>`
+  (with `(<generatedAt>, stale)` on stale and `— <problem>` on invalid), one
+  `grok-bot: probe <id>: <status>` per reported entry, a `probe not reported` line when ids are
+  missing, and a guidance line naming `<dataRoot>/workflows/cc-grok-bot-probe/SKILL.md`.
+- States: `missing` (no path resolves / file absent), `invalid` (size > 64 KiB, non-JSON, schema
+  mismatch, duplicate id, >200-char value, non-regular path), `stale` (`generatedAt` older than
+  30 days), `valid`.
 
 `superskill update` scans the Bot manifest as an extra candidate root when a Sand root resolves;
 without one it warns on stderr and skips `grok-bot`. A stale Bot marketplace install is
@@ -271,7 +292,7 @@ Bot receipt without the field skips the Bot reinstall and prints explicit reinst
 
 | Additional signature | Flags |
 | ---------------------- | ------- |
-| `superskill doctor` | `--targets grok-bot` (required; the only supported value; other install targets have no doctor), `--json` — exit 0 healthy/creatable, 1 broken/unavailable, 2 usage. Usage error: `Error: superskill doctor only inspects the grok-bot target. Pass --targets grok-bot. Other install targets have no doctor.` (ADR-036, task 0128) |
+| `superskill doctor` | `--targets grok-bot` (required; the only supported value; other install targets have no doctor), `--json`, `--receipt <path>` (Bot-written probe receipt; default `<dataRoot>/.superskill/grok-bot/probe/receipt.json`) — exit 0 healthy/creatable, 1 broken/unavailable, 2 usage. Usage error: `Error: superskill doctor only inspects the grok-bot target. Pass --targets grok-bot. Other install targets have no doctor.` (ADR-036, task 0128; receipt, task 0160) |
 | `skill package <name>` | `-o, --output <dir>`, `--include-companions` |
 | `skill migrate <sources...>` | `--refine`, `--ingest <file>`, `-t, --target <agent>`, `--margin <n>` |
 | `skill update [names...]` | `-g, --global`, `-y, --yes`, `--json`, `--check` (read-only; exit 0 current/unchecked, 1 stale, 2 unavailable) |
