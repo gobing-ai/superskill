@@ -7,10 +7,10 @@ created_at: 2026-11-04T23:00:24.487Z
 updated_at: "2026-11-04T23:03:28.070Z"
 feature_id: D1
 
-dependencies: ["0155"]
+dependencies: ["0160"]
 ---
 
-## 0157. Runtime requires frontmatter contract and grok-bot catalog filtering
+## 0162. Runtime requires frontmatter contract and grok-bot catalog filtering
 
 ### Background
 

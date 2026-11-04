@@ -12,11 +12,11 @@ priority: P2
 estimate_hours: 8
 ---
 
-## 0155. Grok Bot host capability probe skill and doctor receipt reader
+## 0160. Grok Bot host capability probe skill and doctor receipt reader
 
 ### Background
 
-Task 0155 is the P0 leg of feature D1 (`docs/features/D1_grok-bot-plugin-native-distribution-and-host-probe.md:22`): a read-only probe skill a Grok Bot reads and follows, plus the doctor reader that reports the receipt's capabilities honestly. Every live-host capability behind ADR-036/037 is still an assumption — the Sand data root, the skill-save tool schema and the personal plugin-install route were never observed on a real Bot, and the authorized host smoke is `cancelled` (0129); 0128/0130/0132 are `done` with their live-host outcomes still `UNVERIFIED` (`docs/features/D1_grok-bot-plugin-native-distribution-and-host-probe.md:18`, verified against `spur task show` on 2026-11-04).
+Task 0160 is the P0 leg of feature D1 (`docs/features/D1_grok-bot-plugin-native-distribution-and-host-probe.md:22`): a read-only probe skill a Grok Bot reads and follows, plus the doctor reader that reports the receipt's capabilities honestly. Every live-host capability behind ADR-036/037 is still an assumption — the Sand data root, the skill-save tool schema and the personal plugin-install route were never observed on a real Bot, and the authorized host smoke is `cancelled` (0129); 0128/0130/0132 are `done` with their live-host outcomes still `UNVERIFIED` (`docs/features/D1_grok-bot-plugin-native-distribution-and-host-probe.md:18`, verified against `spur task show` on 2026-11-04).
 
 Current tree state (verified 2026-11-04):
 
@@ -25,15 +25,15 @@ Current tree state (verified 2026-11-04):
 - `grok-bot` is install-only (`packages/core/src/targets.ts:26`); materialization is `bridge|full` only (`apps/cli/src/commands/install.ts:121,139-144`). The cc plugin already ships one Bot-facing skill, `plugins/cc/skills/grok-bot-register/SKILL.md`, installed as `cc-grok-bot-register` through the plugin-prefix mapper (`packages/core/src/mapper.ts:115-125`); `plugins/cc/README.md:38,83` lists it as skill 7 of 8.
 - No receipt format, no producer and no consumer exists today, so feature P1's rule "mode becomes primary only when the P0 receipt confirms a personal install route" (`docs/features/D1_grok-bot-plugin-native-distribution-and-host-probe.md:23`) has nothing to test against.
 
-Scope boundary. This task owns feature R1 (probe captures live capability without mutation) and R2 (doctor reports probe evidence honestly). Feature P1 and P2 are filed separately: 0156 (`--materialize plugin` Cursor-plugin emission, feature R3/R4) and 0157 (the `requires:` runtime-requirements contract and catalogue filtering, R5) both list 0155 as their only prerequisite; 0158 (annotating cc entities with `requires:`) follows 0157, and the aggregate documentation sweep 0159 follows 0156 and 0157. R6 here therefore covers only the doc rows this task's own contract changes in the same commit (see R6).
+Scope boundary. This task owns feature R1 (probe captures live capability without mutation) and R2 (doctor reports probe evidence honestly). Feature P1 and P2 are filed separately: 0161 (`--materialize plugin` Cursor-plugin emission, feature R3/R4) and 0162 (the `requires:` runtime-requirements contract and catalogue filtering, R5) both list 0160 as their only prerequisite; 0163 (annotating cc entities with `requires:`) follows 0162, and the aggregate documentation sweep 0164 follows 0161 and 0162. R6 here therefore covers only the doc rows this task's own contract changes in the same commit (see R6).
 
 **Refine corrections (2026-11-04)**
 
 - Scaffold Background was a title echo with no premises → audited against the tree: the doctor has no receipt input, no probe skill exists in `plugins/cc/skills/`, and 0128/0130/0132/0129 statuses above are confirmed → the task is a genuine gap, not already-fixed work; scope is frozen to R1+R2.
 - Feature claim "`superskill doctor --targets grok-bot` reads a supplied receipt" (`docs/features/D1_grok-bot-plugin-native-distribution-and-host-probe.md:22`) → doctor has no receipt parameter at all (`apps/cli/src/commands/doctor.ts:36-66`) → Design adds an optional `--receipt <path>` plus a default receipt path; read-only, no CLI-side host probing.
 - ADR-036 "Doctor scope" says doctor "is explicitly not a GUI discovery or connection test" (`docs/00_ADR.md:743`) → reading an operator-supplied file is neither, so the decision stands → no supersede; ADR-036 gains a dated amendment that records the receipt reader and its unchanged exit semantics.
-- Concurrent decomposition appeared while this refine ran (0156-0159 created 15:00:42, after the audit pass) → `dependencies: ['0155']` on 0156/0157 means this task is their upstream, and 0159's title claims "amend ADR-036/037 and sync owning docs for probe, plugin mode and requires" → R6 is narrowed to the doc rows this task's own command/schema/ADR change requires in the same commit (`docs/04_DESIGN.md` doctor row and probe subsection, ADR-036 amendment, `docs/03_ARCHITECTURE.md` module row, `plugins/cc/README.md` skill inventory); the cross-feature sweep stays with 0159, which must also cover the probe half it now names.
-- Proposal, not applied: 0159 lists `dependencies: ['0156','0157']` but its stated scope includes the probe documentation that only 0155 produces → the edge `0159 → 0155` is missing. Adding it is an operator decision on another task's spec; recorded here so it is not lost.
+- Concurrent decomposition appeared while this refine ran (0161-0164 created 15:00:42, after the audit pass) → `dependencies: ['0160']` on 0161/0162 means this task is their upstream, and 0164's title claims "amend ADR-036/037 and sync owning docs for probe, plugin mode and requires" → R6 is narrowed to the doc rows this task's own command/schema/ADR change requires in the same commit (`docs/04_DESIGN.md` doctor row and probe subsection, ADR-036 amendment, `docs/03_ARCHITECTURE.md` module row, `plugins/cc/README.md` skill inventory); the cross-feature sweep stays with 0164, which must also cover the probe half it now names.
+- Proposal, not applied: 0164 lists `dependencies: ['0161','0162']` but its stated scope includes the probe documentation that only 0160 produces → the edge `0164 → 0160` is missing. Adding it is an operator decision on another task's spec; recorded here so it is not lost.
 
 ### Requirements
 
@@ -47,7 +47,7 @@ Scope boundary. This task owns feature R1 (probe captures live capability withou
 
 - [ ] R5. Every existing doctor field, human line, `available` value and exit code (0 healthy/creatable, 1 broken/unavailable, 2 usage) is unchanged, and receipt state never influences any of them — valid, stale, invalid and missing receipts all exit on filesystem health alone.
 
-- [ ] R6. Sync the owning docs this task's own contract changes, in the same implementation commit: `docs/04_DESIGN.md` (doctor signature row and a probe-receipt subsection), `docs/00_ADR.md` (dated ADR-036 amendment for the receipt reader), `docs/03_ARCHITECTURE.md` (the new `operations/` module row), `plugins/cc/README.md` (skill count and inventory row). Cross-feature doc aggregation belongs to 0159, not here. `bun run lint`, `bun run test`, `bun run build` and `bun run spur-check` stay green, including `skill-citations-resolve` over the new SKILL.md.
+- [ ] R6. Sync the owning docs this task's own contract changes, in the same implementation commit: `docs/04_DESIGN.md` (doctor signature row and a probe-receipt subsection), `docs/00_ADR.md` (dated ADR-036 amendment for the receipt reader), `docs/03_ARCHITECTURE.md` (the new `operations/` module row), `plugins/cc/README.md` (skill count and inventory row). Cross-feature doc aggregation belongs to 0164, not here. `bun run lint`, `bun run test`, `bun run build` and `bun run spur-check` stay green, including `skill-citations-resolve` over the new SKILL.md.
 
 Out of scope: `--materialize plugin` / Cursor-plugin bundle emission (feature R3/R4), the `requires:` runtime-requirements contract and grok-bot catalogue filtering (feature R5), marketplace/registration automation, a `superskill probe` command or any CLI-side host probing, and new dependencies.
 
@@ -111,7 +111,7 @@ Out of scope: `--materialize plugin` / Cursor-plugin bundle emission (feature R3
 
 **Anti-patterns (do not implement).** A `superskill probe` command, or the CLI trying to inspect a remote/SSH Bot; a strict-reject schema that fails the whole doctor run on a newer receipt (unknown keys/ids must degrade, not throw); synthesizing `unverified` entries for ids the receipt omits; putting the schema in `apps/cli`; letting a malformed receipt change the exit code "because the install looks wrong"; copying the register-handoff transaction machinery — the receipt is a 400-byte file, not a transactional emission.
 
-**Handoff to dependent work.** 0156 (Cursor-plugin emission) already declares `dependencies: ['0155']` and consumes `plugin-install` (`observed` + route string) and `skill-save` (`observed` + tool name/schema) as its switch condition; 0157 (`requires:` filtering, then 0158) consumes `runtime-persistence` and `mcp-command`; 0159 aggregates the doc sweep. None is a dependency of this task (`dependencies[]` stays empty), none may change this schema without a version bump, and this task must not pre-implement their halves.
+**Handoff to dependent work.** 0161 (Cursor-plugin emission) already declares `dependencies: ['0160']` and consumes `plugin-install` (`observed` + route string) and `skill-save` (`observed` + tool name/schema) as its switch condition; 0162 (`requires:` filtering, then 0163) consumes `runtime-persistence` and `mcp-command`; 0164 aggregates the doc sweep. None is a dependency of this task (`dependencies[]` stays empty), none may change this schema without a version bump, and this task must not pre-implement their halves.
 
 ### Plan
 

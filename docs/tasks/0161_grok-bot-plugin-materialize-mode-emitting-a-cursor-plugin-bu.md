@@ -1,20 +1,20 @@
 ---
 schema_version: 1
-name: Amend ADR-036/037 and sync owning docs for probe, plugin mode and requires
+name: Grok Bot plugin materialize mode emitting a Cursor-plugin bundle with skill budget and description lint
 status: backlog
 template: feature-impl
-created_at: 2026-11-04T23:00:25.259Z
+created_at: 2026-11-04T23:00:24.073Z
 updated_at: "2026-11-04T23:03:28.070Z"
 feature_id: D1
 
-dependencies: ["0156", "0157"]
+dependencies: ["0160"]
 ---
 
-## 0159. Amend ADR-036/037 and sync owning docs for probe, plugin mode and requires
+## 0161. Grok Bot plugin materialize mode emitting a Cursor-plugin bundle with skill budget and description lint
 
 ### Background
 
-Captured from the creation title: "Amend ADR-036/037 and sync owning docs for probe, plugin mode and requires".
+Captured from the creation title: "Grok Bot plugin materialize mode emitting a Cursor-plugin bundle with skill budget and description lint".
 
 ### Requirements
 

@@ -1,20 +1,20 @@
 ---
 schema_version: 1
-name: Grok Bot plugin materialize mode emitting a Cursor-plugin bundle with skill budget and description lint
-status: backlog
+name: Annotate cc plugin entities with runtime requires
+status: todo
 template: feature-impl
-created_at: 2026-11-04T23:00:24.073Z
-updated_at: "2026-11-04T23:03:28.070Z"
+created_at: 2026-11-04T23:00:24.876Z
+updated_at: "2026-11-04T23:09:56.887Z"
 feature_id: D1
 
-dependencies: ["0155"]
+dependencies: ["0162"]
 ---
 
-## 0156. Grok Bot plugin materialize mode emitting a Cursor-plugin bundle with skill budget and description lint
+## 0163. Annotate cc plugin entities with runtime requires
 
 ### Background
 
-Captured from the creation title: "Grok Bot plugin materialize mode emitting a Cursor-plugin bundle with skill budget and description lint".
+Captured from the creation title: "Annotate cc plugin entities with runtime requires".
 
 ### Requirements
 
@@ -57,4 +57,5 @@ Captured from the creation title: "Grok Bot plugin materialize mode emitting a C
 ### History
 
 - 2026-11-04T23:03:28.070Z feature_id J → D1 (system)
+- 2026-11-04T23:09:56.887Z backlog → todo (system)
 

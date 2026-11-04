@@ -1,20 +1,20 @@
 ---
 schema_version: 1
-name: Annotate cc plugin entities with runtime requires
-status: backlog
+name: Amend ADR-036/037 and sync owning docs for probe, plugin mode and requires
+status: todo
 template: feature-impl
-created_at: 2026-11-04T23:00:24.876Z
-updated_at: "2026-11-04T23:03:28.070Z"
+created_at: 2026-11-04T23:00:25.259Z
+updated_at: "2026-11-04T23:09:54.896Z"
 feature_id: D1
 
-dependencies: ["0157"]
+dependencies: ["0161", "0162"]
 ---
 
-## 0158. Annotate cc plugin entities with runtime requires
+## 0164. Amend ADR-036/037 and sync owning docs for probe, plugin mode and requires
 
 ### Background
 
-Captured from the creation title: "Annotate cc plugin entities with runtime requires".
+Captured from the creation title: "Amend ADR-036/037 and sync owning docs for probe, plugin mode and requires".
 
 ### Requirements
 
@@ -57,4 +57,5 @@ Captured from the creation title: "Annotate cc plugin entities with runtime requ
 ### History
 
 - 2026-11-04T23:03:28.070Z feature_id J → D1 (system)
+- 2026-11-04T23:09:54.896Z backlog → todo (system)
 
