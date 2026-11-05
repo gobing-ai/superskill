@@ -4,7 +4,7 @@ name: Runtime requires frontmatter contract and grok-bot catalog filtering
 status: todo
 template: feature-impl
 created_at: 2026-11-04T23:00:24.487Z
-updated_at: "2026-11-04T23:27:15.581Z"
+updated_at: "2026-11-05T00:56:41.526Z"
 feature_id: D1
 
 dependencies: ["0160"]
@@ -137,17 +137,63 @@ Scenario: AC6 — Other targets are unaffected and docs synced (req: R6)
 - [ ] 3. grok-bot core: `BotSkillEntry.requires`, parse in `parseBotSkillEntry` with a preflight error on invalid tokens, `filterGrokBotEntries`, `applyGrokBotDegradation` (R3, R4).
 - [ ] 4. Install: flags + exit-2 validation, filter call after `collectBotSkillEntries` with decision echo (dry-run included), zero-entry error, manifest fields (R4, R5).
 - [ ] 5. Manifest read/write validation and `update.ts` threading of `provides`/`unmet` (R5).
-- [ ] 6. Tests: parser/validator matrix (AC1); mapper survival + invalid-token preflight (AC2); exclude/degrade/dry-run in `apps/cli/tests/commands/install-grok-bot.test.ts` (AC3, AC4); manifest round-trip + update threading (AC5); rulesync/claude byte-parity for a `requires` fixture (AC6).
+- [ ] 6. Tests: parser/validator matrix (AC1); mapper survival + invalid-token preflight (AC2); exclude/degrade/dry-run in `apps/cli/tests/commands/install-grok-bot.test.ts` plus marker/manifest coverage in `packages/core/tests/operations/grok-bot.test.ts` and `packages/core/tests/operations/grok-bot-marker.test.ts`, and degradation post-action asserts in `apps/cli/tests/commands/install-post-actions.test.ts` (AC3, AC4); manifest round-trip + update threading (AC5); rulesync/claude byte-parity for a `requires` fixture (AC6).
 - [ ] 7. Docs: `docs/04_DESIGN.md` contract subsection + flag rows; `docs/03_ARCHITECTURE.md` filter step (R6).
 - [ ] 8. Run `bun run lint`, `bun run test`, `bun run build`, `bun run spur-check`; check `git status` (AC6).
 
 ### Solution
 
-<!-- Filled during implementation: file:line change map and concise rationale. -->
+**Change map.**
+
+| File | Change |
+| --- | --- |
+| `packages/core/src/operations/runtime-requires.ts` (new, 1-64) | `RuntimeRequirement`, `RUNTIME_REQUIREMENT_KEYWORDS`, `RUNTIME_REQUIREMENT_CLI_RE`, `isRuntimeRequirement`, `RUNTIME_REQUIREMENT_GRAMMAR`, `parseRuntimeRequires` — the one parser both callers use (R1). Re-exported from `packages/core/src/index.ts:28`. |
+| `packages/core/src/operations/validate.ts:92-96,361,390-405` | `requires` added to `KNOWN_OPTIONAL` for skill/command/agent; `checkRuntimeRequires` emits one `error` finding per invalid token or non-string/non-list value and nothing otherwise (R2). |
+| `packages/core/src/operations/grok-bot.ts:293,343-356,378-433` | `BotSkillEntry.requires`; `parseEntryRequires` fails `GrokBotPreflightError` naming id + token before any write; `filterGrokBotEntries` (pure, sorted decisions) and `applyGrokBotDegradation` with frontmatter-bounded `setEntryDescription` + first-body-line notice (R3, R4). |
+| `packages/core/src/operations/install-manifest.ts:68,271-275,305-320` | Optional `grokBot.provides` / `grokBot.unmet`, shape-validated on read; absent fields keep pre-0162 behaviour (R5). |
+| `apps/cli/src/commands/install.ts:148-159,196-216,268-271,872-903` | `--bot-provides` (repeatable) / `--bot-unmet`, exit 2 on an invalid value or a non-grok-bot target set; filter runs on the collected entry set before planning, plugin lint and any write, echoes decisions in dry-run too, and exits 1 when the filter empties the set; both manifest writes record the options (R4, R5). |
+| `apps/cli/src/commands/update.ts:304-310,386-387,392-394` | Threads the recorded `provides`/`unmet` into the Bot reinstall (R5). |
+| `apps/cli/tests/commands/install-grok-bot-requires.test.ts` (new) | AC2/AC3/AC4/AC5/AC6 at the CLI/install boundary. |
+| `packages/core/tests/operations/runtime-requires.test.ts` (new) | AC1 parser+validator matrix, AC2 mapper survival + preflight, AC3/AC4 filter+degrade units, R5 receipt validation. |
+| `docs/04_DESIGN.md`, `docs/03_ARCHITECTURE.md` | Frontmatter-contract subsection + install flag rows; filter step in the grok-bot mechanism (R6). |
+
+**Decisions worth recording.** `requires` is a pass-through key for non-Bot targets — no filter call, no
+rewrite (byte-parity against an unrelated control key proves it). Degradation rewrites only the
+frontmatter `description` line (block scalars included) and prepends one body line, so an entry's id and
+file set are unchanged and markers hash exactly the delivered bytes. The receipt fields are written only
+when non-default, so a pre-0162 receipt keeps today's exclude/nothing-provided reinstall. The probe
+receipt is never read on this path: `--bot-provides` is operator-declared, per the refine correction.
 
 ### Testing
 
-<!-- Filled during verification: commands run, outcomes, coverage claim or N/A. -->
+`--mode implement` scope (implementation-side evidence; the pipeline runs its own gates and emits the
+verdict).
+
+| Command | Result |
+| --- | --- |
+| `bun run lint` (biome + turbo typecheck) | clean, both workspaces exit 0 |
+| `bun test packages/core/tests/operations/runtime-requires.test.ts` | 15 pass / 0 fail |
+| `bun test apps/cli/tests/commands/install-grok-bot-requires.test.ts` | 8 pass / 0 fail |
+| `bun run test` | 2731 pass / 0 fail, 8269 expect() calls, 132 files |
+| `bun run build` | standalone binary + versioned Codex plugin ZIP emitted |
+| `bun run spur-check` | 43 pre-check rules, coverage gate, tsdoc-export, skill-citations all green |
+
+AC coverage: AC1 parser+validator matrix (core test, both directions incl. `42`→`number` and
+`[cli:Spur]`); AC2 mapper survival for skill/command/subagent + invalid-token preflight naming id and
+token with no write; AC3 exclude default with sorted decisions, byte-identical survivors and the
+zero-entry exit 1; AC4 degrade labelling (description suffix, first-body-line notice, non-requiring
+entity byte-identical to the unfiltered run) plus dry-run parity with nothing written, and the same
+filter in plugin mode before lint; AC5 receipt round-trip, update reinstall reapplying
+`provides: ['cli:spur']`/`unmet: 'degrade'`, a receipt without the fields reinstalling with exclude,
+manifest read rejection for a bad `provides`/`unmet`, and exit 2 for `--bot-unmet maybe` and misplacement;
+AC6 codex emission byte-identical to the same fixture carrying an unrelated pass-through key, with no
+grok-bot filtering output.
+
+Not covered by an automated case: the `claude` half of AC6. A non-dry-run claude install spawns the host
+CLI and registers a real marketplace in the operator's `~/.claude` — a live attempt during this run
+re-pointed the existing `superskill` marketplace entry at this checkout, so the suite deliberately does
+not do it. Claude consumes the same target-independent staged `skills/` tree the codex case asserts, and
+never calls the grok-bot filter.
 
 ### Review
 
