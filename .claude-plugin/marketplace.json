@@ -7,7 +7,7 @@
     "plugins": [
         {
             "name": "cc",
-            "version": "0.3.45",
+            "version": "0.3.46",
             "source": "./plugins/cc"
         }
     ]
