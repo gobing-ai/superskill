@@ -281,6 +281,34 @@ describe('grok-bot runtime-requires filtering (task 0162)', () => {
         expect(existsSync(installManifestPath(withRequires, 'codex', PLUGIN))).toBe(true);
     });
 
+    it('AC6: the claude target hands the plugin source to the host CLI with `requires` untouched', async () => {
+        const pluginRoot = createRequiresPlugin(tempDir);
+        const skillPath = join(pluginRoot, 'skills', 'b-hooks.md');
+        const before = readFileSync(skillPath, 'utf-8');
+        const outRoot = join(tempDir, 'out');
+        const registered: string[] = [];
+        await executeInstall(
+            PLUGIN,
+            ['claude'],
+            { pluginPath: pluginRoot, global: false, dryRun: false, verbose: false, outputRoot: outRoot },
+            {
+                // Simulate the host CLI materializing its plugin cache so install provenance resolves.
+                runClaudeInstall: async (_registration, _marketplace, plugin) => {
+                    registered.push(plugin);
+                    const cache = join(outRoot, '.claude', 'plugins', 'cache', 'superskill', plugin, 'skills');
+                    mkdirSync(cache, { recursive: true });
+                    writeFileSync(join(cache, 'b-hooks.md'), before);
+                },
+            },
+        );
+        // The native host installs the source as-is: no Bot filter decision, no degrade rewrite.
+        expect(registered).toEqual([PLUGIN]);
+        expect(readFileSync(skillPath, 'utf-8')).toBe(before);
+        expect(before).toContain('requires: [hooks]');
+        expect(stdout).not.toContain('grok-bot: excluded');
+        expect(stdout).not.toContain('degraded on Grok Bot');
+    });
+
     it('AC5: flag misuse and invalid values exit 2 before any staging', async () => {
         sandEnv('sand');
         const { Command } = await import('commander');
