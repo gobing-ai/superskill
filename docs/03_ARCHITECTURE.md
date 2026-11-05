@@ -466,8 +466,16 @@ are a preflight conflict, never silently overwritten. Emission (workflows, canon
 receipt, optional extra files) runs in one `FilesystemTransaction` with rollback on failure; `update` threads the
 receipt's recorded `grokBot.materialize` into Bot reinstalls and emits explicit reinstall
 guidance when the field is absent or records `plugin` (never a guessed bundle directory). Receipt lives at
-`<sandRoot>/.superskill/manifests/grok-bot/<plugin>/` with optional `grokBot.materialize` in
-`InstallManifestV1`.
+`<sandRoot>/.superskill/manifests/grok-bot/<plugin>/` with optional
+`grokBot.materialize` / `grokBot.provides` / `grokBot.unmet` in `InstallManifestV1`.
+
+Task 0162 filter step: `parseBotSkillEntry` carries each entry's `requires:` (closed token set from
+`operations/runtime-requires.ts`; an invalid token is a preflight failure naming id and token).
+`filterGrokBotEntries` then runs on the collected set — before planning, before the plugin lint,
+and identically for bridge, full and plugin modes — keeping or labelling entries whose declared
+requirements the operator did not declare with `--bot-provides`; `--bot-unmet degrade` labels
+instead of dropping, `exclude` is the default. Non-grok-bot targets never touch the filter, so
+`requires` reaches them as an ordinary pass-through key.
 
 Task 0161 third mode: `--materialize plugin --plugin-dir <dir>` reuses the full emitter with
 `workflowsDir = <dir>/skills` (`pluginBundleResolution`) and adds `.cursor-plugin/plugin.json`

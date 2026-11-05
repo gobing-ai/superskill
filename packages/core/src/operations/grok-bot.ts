@@ -24,7 +24,7 @@ import {
     writeFileSync,
 } from 'node:fs';
 import { basename, isAbsolute, join, relative, resolve } from 'node:path';
-import { FrontmatterError, parseFrontmatter } from '../content/frontmatter';
+import { FrontmatterError, findFrontmatterBounds, parseFrontmatter } from '../content/frontmatter';
 import {
     buildMarker,
     type GrokBotOriginMarker,
@@ -46,6 +46,12 @@ import { FilesystemTransaction } from '../skills-ecosystem/installer';
 import { type InstallSnapshot, snapshotFiles } from './install-manifest.js';
 import type { PostInstallAction, TransactionalWrite } from './post-install.js';
 import { runPostInstallActions } from './post-install.js';
+import {
+    parseRuntimeRequires,
+    RUNTIME_REQUIREMENT_GRAMMAR,
+    RUNTIME_REQUIRES_KEY,
+    type RuntimeRequirement,
+} from './runtime-requires';
 
 /**
  * Bot materialization mode: bridge (canonical + thin pointer), full (in place), or
@@ -283,6 +289,8 @@ export interface BotSkillEntry {
     /** Support files relative to the skill dir (SKILL.md excluded), kept as raw bytes so
      * binary assets (PNG icons, gz blobs) survive parse → write round-trips byte-identical (R2/S2). */
     files: Map<string, Buffer>;
+    /** Runtime requirements declared by `requires:` (task 0162); empty when undeclared. */
+    requires: RuntimeRequirement[];
 }
 
 /** Rewrite Bot-foreign invocation prefixes: `/skill:<id>` → `/<id>`. */
@@ -327,7 +335,20 @@ export function parseBotSkillEntry(skillDir: string): BotSkillEntry {
         // Raw bytes (no encoding): UTF-8 round-trips unchanged, binary files stay intact (R2).
         files.set(rel, readFileSync(join(skillDir, rel)));
     }
-    return { id, description, skillMd: applyGrokBotDialect(raw), files };
+    const requires = parseEntryRequires(id, data);
+    return { id, description, skillMd: applyGrokBotDialect(raw), files, requires };
+}
+
+/** Parse `requires:` for one entry, failing the install before any write on a bad token (R3). */
+function parseEntryRequires(id: string, data: Record<string, unknown>): RuntimeRequirement[] {
+    const { requires, invalid } = parseRuntimeRequires(data[RUNTIME_REQUIRES_KEY]);
+    if (invalid.length > 0) {
+        throw new GrokBotPreflightError(
+            `Skill '${id}' has invalid '${RUNTIME_REQUIRES_KEY}' entr${invalid.length === 1 ? 'y' : 'ies'} ` +
+                `${invalid.map((token) => `'${token}'`).join(', ')} — expected ${RUNTIME_REQUIREMENT_GRAMMAR}`,
+        );
+    }
+    return requires;
 }
 
 /** Collect + validate every staged skill before any write (fail before mutating). */
@@ -340,6 +361,93 @@ export function collectBotSkillEntries(stagingSkillsDir: string): BotSkillEntry[
     }
     entries.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
     return entries;
+}
+
+/** One entry's runtime-requirement decision during a grok-bot install (task 0162 R4). */
+export interface GrokBotRequiresDecision {
+    id: string;
+    action: 'excluded' | 'degraded';
+    unmet: RuntimeRequirement[];
+}
+
+/** Policy for an entry this Bot cannot fully serve; default `exclude` (task 0162 R4). */
+export type GrokBotUnmetPolicy = 'exclude' | 'degrade';
+
+/** Stable id order for decisions and echoes. */
+function byId(a: { id: string }, b: { id: string }): number {
+    return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
+}
+
+/**
+ * Keep, drop or degrade entries whose `requires:` this Bot does not provide (R4).
+ * Pure and order-stable: the caller runs it before planning, linting or writing.
+ */
+export function filterGrokBotEntries(
+    entries: readonly BotSkillEntry[],
+    options: { provides: readonly RuntimeRequirement[]; unmet: GrokBotUnmetPolicy },
+): { entries: BotSkillEntry[]; decisions: GrokBotRequiresDecision[] } {
+    const provided = new Set(options.provides);
+    const kept: BotSkillEntry[] = [];
+    const decisions: GrokBotRequiresDecision[] = [];
+    for (const entry of entries) {
+        const unmet = entry.requires.filter((requirement) => !provided.has(requirement));
+        if (unmet.length === 0) {
+            kept.push(entry);
+            continue;
+        }
+        decisions.push({ id: entry.id, action: options.unmet === 'degrade' ? 'degraded' : 'excluded', unmet });
+        if (options.unmet === 'degrade') kept.push(applyGrokBotDegradation(entry, unmet));
+    }
+    decisions.sort(byId);
+    return { entries: kept, decisions };
+}
+
+/**
+ * Label an entry the Bot cannot fully serve (R4): the description carries the
+ * unmet set, and the body opens with a one-line notice. Id and file set are
+ * unchanged, so markers hash the delivered bytes.
+ */
+export function applyGrokBotDegradation(entry: BotSkillEntry, unmet: readonly RuntimeRequirement[]): BotSkillEntry {
+    const needs = unmet.join(', ');
+    const description = `${entry.description} [degraded on Grok Bot: needs ${needs}]`;
+    const notice = `> **Grok Bot:** degraded — expects ${needs}, not declared as provided on this Bot.`;
+    return {
+        ...entry,
+        description,
+        skillMd: insertBotBodyNotice(setEntryDescription(entry.skillMd, description), notice),
+    };
+}
+
+/** Rewrite only the frontmatter `description` value, leaving every other line untouched. */
+function setEntryDescription(content: string, description: string): string {
+    const bounds = findFrontmatterBounds(content);
+    if (!bounds) return content;
+    const raw = content.slice(bounds.rawStart, bounds.rawEnd);
+    const eol = raw.includes('\r\n') ? '\r\n' : '\n';
+    const lines = raw.split(/\r?\n/);
+    const replacement = `description: ${JSON.stringify(description)}`;
+    const start = lines.findIndex((line) => /^description\s*:/.test(line));
+    if (start === -1) {
+        return `${content.slice(0, bounds.rawStart)}${replacement}${eol}${raw}${content.slice(bounds.rawEnd)}`;
+    }
+    // A block scalar or folded value keeps its continuation on indented lines.
+    let end = start + 1;
+    while (end < lines.length) {
+        const line = lines[end] ?? '';
+        if (!/^[ \t]/.test(line) && line.trim() !== '') break;
+        end += 1;
+    }
+    const rewritten = [...lines.slice(0, start), replacement, ...lines.slice(end)].join(eol);
+    return content.slice(0, bounds.rawStart) + rewritten + content.slice(bounds.rawEnd);
+}
+
+/** Prepend `notice` as the first body line. */
+function insertBotBodyNotice(content: string, notice: string): string {
+    const bounds = findFrontmatterBounds(content);
+    if (!bounds) return `${notice}\n\n${content}`;
+    const rest = content.slice(bounds.bodyStart);
+    const eol = rest.includes('\r\n') ? '\r\n' : '\n';
+    return `${content.slice(0, bounds.bodyStart)}${eol}${notice}${eol}${eol}${rest.replace(/^(?:\r?\n)+/, '')}`;
 }
 
 /** Stable canonical location for one workflow id (bridge mode). */

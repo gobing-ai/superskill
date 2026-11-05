@@ -23,6 +23,7 @@ function harness() {
             description: 'Demo skill',
             skillMd: '---\nname: demo\n---\nDemo body.',
             files: new Map<string, Buffer>(),
+            requires: [],
         },
     ];
     const writes: Array<{ path: string; content: string }> = [];
@@ -126,6 +127,7 @@ describe('createGrokBotRegisterAction (task 0130 handoff action)', () => {
                         description: 'Recovery skill',
                         skillMd: '---\nname: cc-grok-bot-register\n---\nBody.',
                         files: new Map<string, Buffer>(),
+                        requires: [],
                     },
                 ],
             };

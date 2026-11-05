@@ -8,6 +8,7 @@ import {
     compareBundledVersion,
     compareMarketplaceManifest,
     type GrokBotMaterialize,
+    type GrokBotUnmetPolicy,
     getEnvVar,
     getEnvVars,
     getGlobalLockPath,
@@ -18,6 +19,7 @@ import {
     listResolvablePlugins,
     mergePluginUpdateRows,
     type ResolvedPlugin,
+    type RuntimeRequirement,
     readGlobalLock,
     readInstallManifest,
     readLocalLock,
@@ -301,7 +303,13 @@ export async function executeUpdate(
                     // R7: thread the recorded materialization mode into the Bot
                     // reinstall; a receipt without it gets explicit reinstall
                     // guidance, never a guessed mode.
-                    if (manifest.grokBot) action.botMaterialize = manifest.grokBot.materialize;
+                    if (manifest.grokBot) {
+                        action.botMaterialize = manifest.grokBot.materialize;
+                        // R5 (task 0162): the recorded filter options must reproduce the
+                        // catalog, so a reinstall would otherwise silently re-admit entries.
+                        if (manifest.grokBot.provides) action.botProvides = manifest.grokBot.provides;
+                        if (manifest.grokBot.unmet) action.botUnmet = manifest.grokBot.unmet;
+                    }
                 }
                 marketplaceActions.set(actionKey, action);
             }
@@ -358,6 +366,8 @@ export async function executeUpdate(
             const pluginRootOnly = options.marketplacePath === undefined && isPluginRootOnlyLocator(locator);
             let targets: InstallTarget[] = [...action.targets];
             let materialize: GrokBotMaterialize | undefined;
+            let botProvides: string[] | undefined;
+            let botUnmet: GrokBotUnmetPolicy | undefined;
             if (targets.includes('grok-bot')) {
                 if (action.botMaterialize === undefined || action.botMaterialize === 'plugin') {
                     // R4/R7: never guess the mode or the bundle directory — a silent
@@ -373,6 +383,8 @@ export async function executeUpdate(
                     );
                 } else {
                     materialize = action.botMaterialize;
+                    botProvides = action.botProvides;
+                    botUnmet = action.botUnmet;
                 }
             }
             if (targets.length === 0) continue;
@@ -391,6 +403,8 @@ export async function executeUpdate(
                     verbose: false,
                     outputRoot: options.outputRoot,
                     materialize,
+                    botProvides: botProvides as RuntimeRequirement[] | undefined,
+                    botUnmet,
                 },
                 dependencies.fetchFn ? { fetchFn: dependencies.fetchFn } : {},
             );
@@ -529,6 +543,9 @@ interface MarketplaceInstallAction {
     targets: Set<InstallTarget>;
     /** Recorded grok-bot materialization mode from the Bot receipt (R7). */
     botMaterialize?: GrokBotMaterialize;
+    /** Recorded requirement-filter options from the Bot receipt (task 0162 R5). */
+    botProvides?: string[];
+    botUnmet?: GrokBotUnmetPolicy;
 }
 
 /** Resolve the Sand data root for Bot receipt scans; null when this host has none. */

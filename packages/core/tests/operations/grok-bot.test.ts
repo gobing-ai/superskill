@@ -66,7 +66,13 @@ function entry(
     description = 'does things',
     files: Map<string, Buffer> = new Map([['ref.md', Buffer.from('# ref\n', 'utf-8')]]),
 ): ReturnType<typeof collectBotSkillEntries>[number] {
-    return { id, description, skillMd: `---\nname: ${id}\ndescription: ${description}\n---\n\nBody.\n`, files };
+    return {
+        id,
+        description,
+        skillMd: `---\nname: ${id}\ndescription: ${description}\n---\n\nBody.\n`,
+        files,
+        requires: [],
+    };
 }
 
 describe('resolveSandRoot (R2)', () => {

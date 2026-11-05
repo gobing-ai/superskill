@@ -12,6 +12,7 @@ import {
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { assertSafePathSegment } from '../content/identity';
 import { computeContentHash, computeStructuredContentHash } from '../skills-ecosystem/locks';
+import { isRuntimeRequirement } from './runtime-requires';
 
 /** Directory names skipped when walking an upstream plugin source tree. */
 const DEFAULT_SKIP_DIR_NAMES = new Set(['.git', 'node_modules', '.rulesync', '.targets']);
@@ -25,6 +26,9 @@ export type InstallChannel = 'bundled' | 'marketplace';
  * runtime dependency on the emitter.
  */
 export type GrokBotMaterializeRecord = 'bridge' | 'full' | 'plugin';
+
+/** Recorded grok-bot unmet policy (task 0162). Declared here for the same reason as the mode. */
+export type GrokBotUnmetPolicyRecord = 'exclude' | 'degrade';
 
 /** Per-file SHA-256 map plus ADR-031 canonical hash over the same snapshot. */
 export interface InstallSnapshot {
@@ -58,7 +62,13 @@ export interface InstallManifestV1 {
     installed: InstallSnapshot;
     upstream: InstallSnapshot;
     /** grok-bot only (task 0128): how the Bot catalog was materialized. */
-    grokBot?: { materialize: GrokBotMaterializeRecord };
+    grokBot?: {
+        materialize: GrokBotMaterializeRecord;
+        /** Requirements the operator declared as provided (task 0162 R5); absent = none. */
+        provides?: string[];
+        /** Unmet-entry policy (task 0162 R5); absent = `exclude`. */
+        unmet?: GrokBotUnmetPolicyRecord;
+    };
     /**
      * `installed.files` keys are relative to the user home instead of the manifest
      * scope root (task 0140: native host trees at project scope).
@@ -258,6 +268,11 @@ function sortByUtf8Rel(root: string, files: string[]): string[] {
     );
 }
 
+/** True when a recorded `grokBot.provides` item is a valid requirement token. */
+function isRuntimeRequirementValue(value: unknown): boolean {
+    return typeof value === 'string' && isRuntimeRequirement(value);
+}
+
 function validateInstallManifest(value: unknown, label: string): InstallManifestV1 {
     if (!value || typeof value !== 'object') {
         throw new Error(`Install manifest is not an object: ${label}`);
@@ -291,6 +306,18 @@ function validateInstallManifest(value: unknown, label: string): InstallManifest
             throw new Error(`Install manifest grokBot.materialize must be bridge, full or plugin: ${label}`);
         }
         grokBot = { materialize: g.materialize };
+        if (g.provides !== undefined) {
+            if (!Array.isArray(g.provides) || g.provides.some((entry) => !isRuntimeRequirementValue(entry))) {
+                throw new Error(`Install manifest grokBot.provides must be a list of runtime requirements: ${label}`);
+            }
+            grokBot.provides = g.provides as string[];
+        }
+        if (g.unmet !== undefined) {
+            if (g.unmet !== 'exclude' && g.unmet !== 'degrade') {
+                throw new Error(`Install manifest grokBot.unmet must be exclude or degrade: ${label}`);
+            }
+            grokBot.unmet = g.unmet;
+        }
     }
     let installedRoot: InstallManifestV1['installedRoot'];
     if (rec.installedRoot !== undefined) {

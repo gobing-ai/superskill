@@ -7,6 +7,7 @@ import { descriptionTriggerRichness } from '../quality/heuristics';
 import { KNOWN_HOOK_EVENTS } from '../quality/hook';
 import { REQUIRED_FIELDS } from '../quality/types';
 import type { Target } from '../targets';
+import { parseRuntimeRequires, RUNTIME_REQUIREMENT_GRAMMAR, RUNTIME_REQUIRES_KEY } from './runtime-requires';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -88,9 +89,10 @@ const DEPRECATED_FIELDS: Record<string, string> = {
 /** Frontmatter keys that appear in shipped templates but are not in FIELD_TYPES.
  *  Known-optional fields never trigger unknown-key warnings under --strict. */
 const KNOWN_OPTIONAL: Record<ContentType, string[]> = {
-    skill: ['license', 'metadata'],
-    command: ['argument-hint', 'allowed-tools', 'target'],
-    agent: [],
+    // `requires` is shape-checked by checkRuntimeRequires (task 0162), not by FIELD_TYPES.
+    skill: ['license', 'metadata', 'requires'],
+    command: ['argument-hint', 'allowed-tools', 'target', 'requires'],
+    agent: ['requires'],
     hook: [],
     magent: [],
 };
@@ -354,6 +356,10 @@ export function _validateContent(type: ContentType, content: string, opts?: Vali
         if (typeFinding) findings.push(typeFinding);
     }
 
+    // 4b. `requires` shape (task 0162 R2): a closed token grammar, so every
+    // annotation in a consuming repo stays checkable.
+    findings.push(...checkRuntimeRequires(type, data));
+
     // 5. Format compliance (target-aware)
     if (opts?.target) {
         findings.push(...checkFormatCompliance(type, data, opts.target));
@@ -379,6 +385,20 @@ export function _validateContent(type: ContentType, content: string, opts?: Vali
 }
 
 // ── Field Type Validation ────────────────────────────────────────────────────
+
+/** Content types that may declare `requires:` (task 0162 R1). Hooks and magents do not. */
+const RUNTIME_REQUIRES_TYPES: readonly ContentType[] = ['skill', 'command', 'agent'];
+
+/** One error finding per invalid requirement token or non-string/non-list value. */
+function checkRuntimeRequires(type: ContentType, data: Record<string, unknown>): Finding[] {
+    if (!RUNTIME_REQUIRES_TYPES.includes(type) || !(RUNTIME_REQUIRES_KEY in data)) return [];
+    const { invalid } = parseRuntimeRequires(data[RUNTIME_REQUIRES_KEY]);
+    return invalid.map((token) => ({
+        severity: 'error' as const,
+        field: RUNTIME_REQUIRES_KEY,
+        message: `Invalid '${RUNTIME_REQUIRES_KEY}' entry '${token}' — expected a list of ${RUNTIME_REQUIREMENT_GRAMMAR}`,
+    }));
+}
 
 function validateFieldType(field: string, value: unknown, def: FieldTypeDef): Finding | null {
     if (value === null || value === undefined) return null; // handled by required-fields check

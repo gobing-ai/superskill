@@ -86,7 +86,8 @@ visibility and invocation are distinct evidence states.
 
 ```text
 superskill install <plugin> [--marketplace <locator>] [--targets <list>] [--no-global] [--materialize <mode>]
-    [--plugin-dir <path>] [--magent <name>] [--list-magents] [--marketplace-source <directory|github>] [--dry-run] [--verbose]
+    [--plugin-dir <path>] [--bot-provides <requirement>] [--bot-unmet <exclude|degrade>] [--magent <name>] [--list-magents]
+    [--marketplace-source <directory|github>] [--dry-run] [--verbose]
 
 superskill update [name] [--check] [--json] [--targets <list>] [--marketplace <locator>] [--no-global]
 ```
@@ -99,6 +100,8 @@ superskill update [name] [--check] [--json] [--targets <list>] [--marketplace <l
 | `--targets <list>` | Comma-separated target names or `all`; overrides configured targets. `all` excludes `grok-bot` (ADR-036): the Bot target is install-only and opt-in — passing it without `--targets grok-bot` errors with guidance |
 | `--materialize <mode>` | `bridge` (default) \| `full` \| `plugin` — grok-bot only (ADR-036). `bridge` writes the canonical copy under `<sandRoot>/.superskill/grok-bot/skills/<id>/` plus a thin `workflows/<id>/SKILL.md` pointer; `full` writes everything under `workflows/<id>/`; `plugin` writes a Cursor-plugin bundle under `--plugin-dir` (task 0161, layout below). Other targets reject the flag; `plugin` without `--plugin-dir` (or the reverse) exits 2 before staging |
 | `--plugin-dir <path>` | `--materialize plugin` only: the Cursor-plugin bundle root itself, resolved against the invocation directory (one plugin per directory). No Sand root is resolved or created and no registration handoff is written |
+| `--bot-provides <requirement>` | Repeatable, grok-bot only (task 0162): declares a runtime requirement this Bot provides — `hooks`, `subagents`, `local-fs` or `cli:<name>`. Default is nothing provided. An invalid token, or the flag on any other target set, exits 2 before staging |
+| `--bot-unmet <exclude\|degrade>` | grok-bot only (task 0162), default `exclude`: drop entries needing an unprovided runtime, or `degrade` — keep them with a description suffix and a body notice. Invalid value or a non-grok-bot target exits 2 |
 | `superskill.jsonc` | Project-local JSONC; supports line/block comments and trailing commas |
 | `version` | Literal `1` |
 | `plugins` | `{ name: string, path: string }[]`; matching path is used when `--marketplace` is absent |
@@ -244,8 +247,20 @@ For the `grok-bot` target the mapped staging `skills/` catalog (flat, one direct
 - **Emission**: all workflow/canonical writes and prunes run inside one `FilesystemTransaction`;
   the receipt write is part of the rollback scope, so an emission or receipt failure restores
   prior Bot files and reports rollback errors.
+- **Runtime requirements** (task 0162): `parseBotSkillEntry` carries `requires` on the entry and an
+  invalid token fails the install with `GrokBotPreflightError` naming the id and the token, before any
+  write. `filterGrokBotEntries` then runs on the collected entry set — before planning, before the
+  0161 plugin lint, and in every mode (bridge, full, plugin). An entry is unmet when any declared
+  requirement is absent from `--bot-provides`; `--bot-unmet exclude` (default) drops it and
+  `degrade` keeps it with ` [degraded on Grok Bot: needs <r1>, <r2>]` appended to the description and
+  `> **Grok Bot:** degraded — expects <r1>, <r2>, not declared as provided on this Bot.` as the first
+  body line. Every decision prints `grok-bot: excluded|degraded <id> (needs …)`, sorted by id, in
+  dry-run too. Filtering to zero entries exits 1 naming the filter. The probe receipt is never read
+  here: the operator declares what the Bot provides.
 - **Receipt**: recorded at `<sandRoot>/.superskill/manifests/grok-bot/<plugin>/.superskill-manifest.json`;
-  the schema gains optional `grokBot: { materialize: 'bridge' \| 'full' \| 'plugin' }`.
+  the schema gains optional `grokBot: { materialize: 'bridge' \| 'full' \| 'plugin', provides?: string[], unmet?: 'exclude' \| 'degrade' }`
+  (task 0162 fields are written only when non-default, so pre-0162 receipts stay valid). `superskill update`
+  reinstalls with the recorded `provides`/`unmet`.
 - **Summary**: `Installed '<plugin>' to <n> target(s)` counts `grok-bot` when it was requested and the emit succeeded.
 - **Doctor**: `superskill doctor --targets grok-bot [--json]` is a read-only health check of the
   Sand root + catalog (per-workflow marker/canonical/drift issues). Exit 0 healthy/creatable, 1
@@ -256,6 +271,26 @@ For the `grok-bot` target the mapped staging `skills/` catalog (flat, one direct
   `--receipt <path>` flag points at a Bot-written probe receipt (default
   `<dataRoot>/.superskill/grok-bot/probe/receipt.json`, relative to the invocation dir); receipt
   state never affects `available` or exit codes, it is reported additively (schema version 1 below).
+
+### Frontmatter contract: `requires:` (task 0162)
+
+A skill, command or subagent may declare the runtime its instructions need. Hooks and magents
+cannot. The token set is closed so annotations in consuming repos (cc 0163, spur 1291, kk 0342)
+stay checkable:
+
+| Aspect | Contract |
+| ------- | --------- |
+| Key | `requires`, optional |
+| Value | YAML list of strings; a single string is accepted as a one-item list |
+| Tokens | `hooks` (lifecycle hooks must fire), `subagents` (dispatches a subagent), `local-fs` (reads/writes the operator's project tree), `cli:<name>` (shells out to `<name>`, `^[a-z0-9][a-z0-9._-]*$`) |
+| Normalization | duplicates collapse, order is sorted — two spellings of one set produce identical output |
+| Validator | `superskill <skill\|command\|agent> validate` recognizes the key (no unknown-key warning) and raises one `error` finding per invalid token or non-string/non-list value |
+| Mapper | the key is carried through unchanged for all three entity kinds |
+| Non-Bot targets | no filtering, no rewriting: `requires` is handled exactly like any other pass-through frontmatter key |
+
+Shared implementation: `parseRuntimeRequires` (`packages/core/src/operations/runtime-requires.ts`),
+used by both the validator and the grok-bot path. The grok-bot target consumes it through
+`BotSkillEntry.requires` and the pre-plan filter described below.
 
 ### Probe receipt (task 0160)
 

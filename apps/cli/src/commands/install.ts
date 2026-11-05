@@ -30,9 +30,11 @@ import {
     emitGrokBotInstall,
     FilesystemTransaction,
     fetchRepoCommitSha,
+    filterGrokBotEntries,
     GROK_BOT_PLUGIN_SKILL_CAP,
     type GrokBotMaterialize,
     type GrokBotSource,
+    type GrokBotUnmetPolicy,
     getEnvVar,
     getGitHubToken,
     ghAuthTokenFromCli,
@@ -42,6 +44,7 @@ import {
     installManifestPath,
     isClaudeImportStyle,
     isInstallTarget,
+    isRuntimeRequirement,
     lintGrokBotPluginEntries,
     listRegularFilesUnder,
     listResolvablePlugins,
@@ -55,9 +58,12 @@ import {
     mapPluginToRulesync,
     materializeRepoSubdir,
     parseGitHubRepoUrl,
+    parseRuntimeRequires,
     planGrokBotInstall,
     pluginBundleResolution,
     type RepoTree,
+    RUNTIME_REQUIREMENT_GRAMMAR,
+    type RuntimeRequirement,
     renderCursorPluginManifest,
     resolveMarketplaceRegistration,
     resolvePlugin,
@@ -139,6 +145,16 @@ export function registerInstall(program: Command): void {
             '--plugin-dir <path>',
             'grok-bot only: Cursor-plugin bundle root for --materialize plugin (resolved against the invocation directory)',
         )
+        .option(
+            '--bot-provides <requirement>',
+            `grok-bot only: declare a runtime requirement this Bot provides (repeatable): ${RUNTIME_REQUIREMENT_GRAMMAR}`,
+            (value: string, previous: string[]) => [...previous, value],
+            [] as string[],
+        )
+        .option(
+            '--bot-unmet <mode>',
+            "grok-bot only: policy for entries needing an undeclared runtime — 'exclude' (default) or 'degrade'",
+        )
         .action(async (plugin, options) => {
             try {
                 const config = loadConfig();
@@ -176,6 +192,28 @@ export function registerInstall(program: Command): void {
                     echoError('--plugin-dir applies only with --materialize plugin');
                     process.exit(2);
                 }
+                const botProvidesRaw = options.botProvides as string[];
+                const botUnmetRaw = options.botUnmet as string | undefined;
+                if (botProvidesRaw.length > 0 && !targets.includes('grok-bot')) {
+                    echoError("--bot-provides applies only to target 'grok-bot'");
+                    process.exit(2);
+                }
+                for (const requirement of botProvidesRaw) {
+                    if (!isRuntimeRequirement(requirement)) {
+                        echoError(`Invalid --bot-provides '${requirement}' — expected ${RUNTIME_REQUIREMENT_GRAMMAR}`);
+                        process.exit(2);
+                    }
+                }
+                if (botUnmetRaw !== undefined) {
+                    if (botUnmetRaw !== 'exclude' && botUnmetRaw !== 'degrade') {
+                        echoError(`Invalid --bot-unmet '${botUnmetRaw}' — expected 'exclude' or 'degrade'`);
+                        process.exit(2);
+                    }
+                    if (!targets.includes('grok-bot')) {
+                        echoError("--bot-unmet applies only to target 'grok-bot'");
+                        process.exit(2);
+                    }
+                }
                 const marketplaceSource = options.marketplaceSource as MarketplaceSource | undefined;
                 const configuredPlugin = config.plugins.find((entry) => entry.name === plugin);
                 await executeInstall(plugin, targets, {
@@ -191,6 +229,8 @@ export function registerInstall(program: Command): void {
                     prune,
                     materialize: materializeRaw as GrokBotMaterialize | undefined,
                     pluginDir: pluginDirRaw === undefined ? undefined : resolve(pluginDirRaw),
+                    botProvides: botProvidesRaw as RuntimeRequirement[],
+                    botUnmet: botUnmetRaw as GrokBotUnmetPolicy | undefined,
                     magent: options.magent as string | undefined,
                     listMagents: options.listMagents === true,
                     marketplaceSource,
@@ -225,6 +265,10 @@ export interface InstallOptions {
     materialize?: GrokBotMaterialize;
     /** Cursor-plugin bundle root for `--materialize plugin` (already resolved against the invocation dir). */
     pluginDir?: string;
+    /** Runtime requirements this Bot provides (task 0162, `--bot-provides`); validated tokens. */
+    botProvides?: RuntimeRequirement[];
+    /** Unmet-entry policy (task 0162, `--bot-unmet`); undefined means `exclude`. */
+    botUnmet?: GrokBotUnmetPolicy;
 }
 
 interface InstallDependencies {
@@ -825,10 +869,36 @@ export async function executeInstall(
             if (skippedKinds.length > 0) {
                 echo(`grok-bot: skipping artifact classes unsupported by the Bot runtime: ${skippedKinds.join(', ')}`);
             }
-            const botEntries = collectBotSkillEntries(join(outputDir, 'skills'));
-            if (botEntries.length === 0) {
+            const collectedEntries = collectBotSkillEntries(join(outputDir, 'skills'));
+            if (collectedEntries.length === 0) {
                 throw new Error(
                     `Plugin '${plugin}' produced no skill-shaped artifacts (skills/commands/subagents) for target 'grok-bot'`,
+                );
+            }
+            // Task 0162 R4: the Bot provides nothing by default, so an entity whose
+            // instructions need an undeclared runtime is dropped (or labelled) before
+            // any plan, lint or write — 0161's cap must count what is really installed.
+            const parsedProvides = parseRuntimeRequires(options.botProvides);
+            if (parsedProvides.invalid.length > 0) {
+                throw new Error(
+                    `Invalid --bot-provides ${parsedProvides.invalid.map((token) => `'${token}'`).join(', ')} — expected ${RUNTIME_REQUIREMENT_GRAMMAR}`,
+                );
+            }
+            const botProvides = parsedProvides.requires;
+            const botUnmet = options.botUnmet ?? 'exclude';
+            const filteredBotEntries = filterGrokBotEntries(collectedEntries, {
+                provides: botProvides,
+                unmet: botUnmet,
+            });
+            const botEntries = filteredBotEntries.entries;
+            for (const decision of filteredBotEntries.decisions) {
+                echo(`grok-bot: ${decision.action} ${decision.id} (needs ${decision.unmet.join(', ')})`);
+            }
+            if (botEntries.length === 0) {
+                const needed = [...new Set(filteredBotEntries.decisions.flatMap((decision) => decision.unmet))].sort();
+                throw new Error(
+                    `grok-bot: the runtime-requires filter excluded every entry (needs ${needed.join(', ')}) — ` +
+                        'declare what this Bot provides with --bot-provides, or pass --bot-unmet degrade',
                 );
             }
             const botSource: GrokBotSource = {
@@ -846,6 +916,8 @@ export async function executeInstall(
                     stagingDir: outputDir,
                     stagedMcp: mapResult.mcp,
                     upstreamVersion: resolution.upstreamVersion,
+                    botProvides,
+                    botUnmet,
                     dryRun: options.dryRun,
                     prune: options.prune === true,
                     superskillVersion: cliVersion,
@@ -934,7 +1006,7 @@ export async function executeInstall(
                                 superskillVersion: cliVersion,
                                 installed,
                                 upstream: snapshotFiles(pluginRoot, listRegularFilesUnder(pluginRoot)),
-                                grokBot: { materialize: botMaterialize },
+                                grokBot: { materialize: botMaterialize, ...grokBotFilterRecord(botProvides, botUnmet) },
                             }),
                         // R9 (task 0130): registration handoff runs inside the emit
                         // transaction/rollback boundary, before the receipt and final echo.
@@ -1460,6 +1532,21 @@ export async function executeInstall(
 }
 
 /**
+ * Manifest slice recording the task 0162 filter options. Written additively: an
+ * install that supplies neither flag keeps the pre-0162 receipt shape, so existing
+ * receipts stay valid and reinstall exactly as before.
+ */
+function grokBotFilterRecord(
+    provides: readonly RuntimeRequirement[],
+    unmet: GrokBotUnmetPolicy,
+): { provides?: string[]; unmet?: GrokBotUnmetPolicy } {
+    return {
+        ...(provides.length > 0 ? { provides: [...provides] } : {}),
+        ...(unmet !== 'exclude' ? { unmet } : {}),
+    };
+}
+
+/**
  * Emit one Cursor-plugin bundle (task 0161 R1–R4): budget/lint, foreign-bundle
  * guard, then full-mode emission against `<pluginDir>/skills` plus the two owned
  * metadata files, all inside one rollback boundary. Never touches the Sand root
@@ -1475,6 +1562,10 @@ async function installCursorPluginBundle(args: {
     stagingDir: string;
     stagedMcp: boolean;
     upstreamVersion: string;
+    /** Requirements this Bot provides, recorded in the receipt (task 0162 R5). */
+    botProvides: RuntimeRequirement[];
+    /** Unmet-entry policy, recorded in the receipt (task 0162 R5). */
+    botUnmet: GrokBotUnmetPolicy;
     dryRun: boolean;
     prune: boolean;
     superskillVersion: string;
@@ -1563,7 +1654,7 @@ async function installCursorPluginBundle(args: {
                 superskillVersion: args.superskillVersion,
                 installed,
                 upstream: snapshotFiles(args.pluginRoot, listRegularFilesUnder(args.pluginRoot)),
-                grokBot: { materialize: 'plugin' },
+                grokBot: { materialize: 'plugin', ...grokBotFilterRecord(args.botProvides, args.botUnmet) },
             }),
     });
     if (emitted.pruned.length > 0) {

@@ -29,6 +29,7 @@ function entry(overrides?: Partial<BotSkillEntry>): BotSkillEntry {
         description: 'Demo skill',
         skillMd: '---\nname: demo\n---\nDemo body.',
         files: new Map([['logo.png', Buffer.from([0x89, 0x50, 0x4e, 0x47, 0xff, 0x00])]]),
+        requires: [],
         ...overrides,
     };
 }

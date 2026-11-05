@@ -1,10 +1,10 @@
 ---
 schema_version: 1
 name: Runtime requires frontmatter contract and grok-bot catalog filtering
-status: todo
+status: done
 template: feature-impl
 created_at: 2026-11-04T23:00:24.487Z
-updated_at: "2026-11-05T00:56:41.526Z"
+updated_at: "2026-11-05T07:46:22.475Z"
 feature_id: D1
 
 dependencies: ["0160"]
@@ -12,6 +12,8 @@ ac_altitude: task-local
 ac_numbering: task-local
 priority: P1
 estimate_hours: 8
+done_forced: "false"
+done_reason: unforced close; PASS artifact at .spur/memory/evidence/0162-verdict.json
 ---
 
 ## 0162. Runtime requires frontmatter contract and grok-bot catalog filtering
@@ -35,17 +37,17 @@ Current tree state (verified 2026-11-04):
 
 ### Requirements
 
-- [ ] R1. Freeze the `requires:` contract for skills, commands and subagents: an optional frontmatter key whose value is a YAML list of strings (a single string is accepted as a one-item list). Valid tokens are `hooks`, `subagents`, `local-fs` and `cli:<name>` with `<name>` matching `^[a-z0-9][a-z0-9._-]*$`. Duplicates collapse; order is normalized (sorted). Meaning: `hooks` — instructions rely on lifecycle hooks firing; `subagents` — relies on dispatching a subagent; `local-fs` — reads/writes the operator's own project working tree; `cli:<name>` — shells out to `<name>`.
+- [x] R1. Freeze the `requires:` contract for skills, commands and subagents: an optional frontmatter key whose value is a YAML list of strings (a single string is accepted as a one-item list). Valid tokens are `hooks`, `subagents`, `local-fs` and `cli:<name>` with `<name>` matching `^[a-z0-9][a-z0-9._-]*$`. Duplicates collapse; order is normalized (sorted). Meaning: `hooks` — instructions rely on lifecycle hooks firing; `subagents` — relies on dispatching a subagent; `local-fs` — reads/writes the operator's own project working tree; `cli:<name>` — shells out to `<name>`.
 
-- [ ] R2. One shared parser in core (`parseRuntimeRequires`) is used by both the validator and the grok-bot path. `validate` recognizes `requires` for skill/command/agent (no unknown-key warning) and reports an `error` finding per invalid token or non-string/list value.
+- [x] R2. One shared parser in core (`parseRuntimeRequires`) is used by both the validator and the grok-bot path. `validate` recognizes `requires` for skill/command/agent (no unknown-key warning) and reports an `error` finding per invalid token or non-string/list value.
 
-- [ ] R3. `parseBotSkillEntry` carries the parsed requirements on `BotSkillEntry.requires`; a staged entity with an invalid `requires` value fails grok-bot install before any write with a `GrokBotPreflightError` naming the id and the token. Requirements must survive the mapper for all three entity kinds.
+- [x] R3. `parseBotSkillEntry` carries the parsed requirements on `BotSkillEntry.requires`; a staged entity with an invalid `requires` value fails grok-bot install before any write with a `GrokBotPreflightError` naming the id and the token. Requirements must survive the mapper for all three entity kinds.
 
-- [ ] R4. grok-bot install (every mode: bridge, full and 0161's plugin) filters the entry set right after `collectBotSkillEntries` and before planning or plugin lint. The Bot provides nothing by default; `--bot-provides <requirement>` (repeatable, same token grammar, grok-bot only) declares provided requirements. An entry is unmet when any requirement is not provided. `--bot-unmet <exclude|degrade>` (default `exclude`, grok-bot only) chooses the policy: `exclude` drops the entry; `degrade` keeps it, appends ` [degraded on Grok Bot: needs <r1>, <r2>]` to its description and inserts a one-line blockquote notice as the first body line. Every decision prints `grok-bot: excluded <id> (needs …)` or `grok-bot: degraded <id> (needs …)`, sorted by id, in dry-run too. If filtering leaves zero entries, install exits 1 naming the filter.
+- [x] R4. grok-bot install (every mode: bridge, full and 0161's plugin) filters the entry set right after `collectBotSkillEntries` and before planning or plugin lint. The Bot provides nothing by default; `--bot-provides <requirement>` (repeatable, same token grammar, grok-bot only) declares provided requirements. An entry is unmet when any requirement is not provided. `--bot-unmet <exclude|degrade>` (default `exclude`, grok-bot only) chooses the policy: `exclude` drops the entry; `degrade` keeps it, appends ` [degraded on Grok Bot: needs <r1>, <r2>]` to its description and inserts a one-line blockquote notice as the first body line. Every decision prints `grok-bot: excluded <id> (needs …)` or `grok-bot: degraded <id> (needs …)`, sorted by id, in dry-run too. If filtering leaves zero entries, install exits 1 naming the filter.
 
-- [ ] R5. The manifest records the options additively as `grokBot: { materialize, provides?: string[], unmet?: 'exclude' | 'degrade' }`, validated on read; `superskill update` reinstalls grok-bot with the recorded `provides`/`unmet`. A manifest without them keeps today's behavior (default exclude, nothing provided). Invalid flag values exit 2.
+- [x] R5. The manifest records the options additively as `grokBot: { materialize, provides?: string[], unmet?: 'exclude' | 'degrade' }`, validated on read; `superskill update` reinstalls grok-bot with the recorded `provides`/`unmet`. A manifest without them keeps today's behavior (default exclude, nothing provided). Invalid flag values exit 2.
 
-- [ ] R6. Non-grok-bot targets are unaffected: their staged and emitted output for a fixture with `requires:` is byte-identical to the same fixture's output with the key copied through (no filtering, no rewriting). Sync `docs/04_DESIGN.md` (frontmatter contract subsection + install flag rows) and `docs/03_ARCHITECTURE.md` (filter step in the grok-bot flow) in the same commit; the ADR amendment belongs to 0164. `bun run lint`, `bun run test`, `bun run build`, `bun run spur-check` stay green.
+- [x] R6. Non-grok-bot targets are unaffected: their staged and emitted output for a fixture with `requires:` is byte-identical to the same fixture's output with the key copied through (no filtering, no rewriting). Sync `docs/04_DESIGN.md` (frontmatter contract subsection + install flag rows) and `docs/03_ARCHITECTURE.md` (filter step in the grok-bot flow) in the same commit; the ADR amendment belongs to 0164. `bun run lint`, `bun run test`, `bun run build`, `bun run spur-check` stay green.
 
 Out of scope: annotating any shipped plugin (0163/spur 1291/kk 0342), reading the 0160 receipt, applying `requires` on non-Bot targets, new requirement tokens beyond the four, doctor reporting of filtered entries, new dependencies.
 
@@ -132,14 +134,14 @@ Scenario: AC6 — Other targets are unaffected and docs synced (req: R6)
 
 ### Plan
 
-- [ ] 1. Add `packages/core/src/operations/runtime-requires.ts` (type, constants, `parseRuntimeRequires`) and export it (R1).
-- [ ] 2. Validator: add `requires` to `KNOWN_OPTIONAL` for skill/command/agent and emit an error per invalid token via the parser (R2).
-- [ ] 3. grok-bot core: `BotSkillEntry.requires`, parse in `parseBotSkillEntry` with a preflight error on invalid tokens, `filterGrokBotEntries`, `applyGrokBotDegradation` (R3, R4).
-- [ ] 4. Install: flags + exit-2 validation, filter call after `collectBotSkillEntries` with decision echo (dry-run included), zero-entry error, manifest fields (R4, R5).
-- [ ] 5. Manifest read/write validation and `update.ts` threading of `provides`/`unmet` (R5).
-- [ ] 6. Tests: parser/validator matrix (AC1); mapper survival + invalid-token preflight (AC2); exclude/degrade/dry-run in `apps/cli/tests/commands/install-grok-bot.test.ts` plus marker/manifest coverage in `packages/core/tests/operations/grok-bot.test.ts` and `packages/core/tests/operations/grok-bot-marker.test.ts`, and degradation post-action asserts in `apps/cli/tests/commands/install-post-actions.test.ts` (AC3, AC4); manifest round-trip + update threading (AC5); rulesync/claude byte-parity for a `requires` fixture (AC6).
-- [ ] 7. Docs: `docs/04_DESIGN.md` contract subsection + flag rows; `docs/03_ARCHITECTURE.md` filter step (R6).
-- [ ] 8. Run `bun run lint`, `bun run test`, `bun run build`, `bun run spur-check`; check `git status` (AC6).
+- [x] 1. Add `packages/core/src/operations/runtime-requires.ts` (type, constants, `parseRuntimeRequires`) and export it (R1).
+- [x] 2. Validator: add `requires` to `KNOWN_OPTIONAL` for skill/command/agent and emit an error per invalid token via the parser (R2).
+- [x] 3. grok-bot core: `BotSkillEntry.requires`, parse in `parseBotSkillEntry` with a preflight error on invalid tokens, `filterGrokBotEntries`, `applyGrokBotDegradation` (R3, R4).
+- [x] 4. Install: flags + exit-2 validation, filter call after `collectBotSkillEntries` with decision echo (dry-run included), zero-entry error, manifest fields (R4, R5).
+- [x] 5. Manifest read/write validation and `update.ts` threading of `provides`/`unmet` (R5).
+- [x] 6. Tests: parser/validator matrix (AC1); mapper survival + invalid-token preflight (AC2); exclude/degrade/dry-run in `apps/cli/tests/commands/install-grok-bot.test.ts` plus marker/manifest coverage in `packages/core/tests/operations/grok-bot.test.ts` and `packages/core/tests/operations/grok-bot-marker.test.ts`, and degradation post-action asserts in `apps/cli/tests/commands/install-post-actions.test.ts` (AC3, AC4); manifest round-trip + update threading (AC5); rulesync/claude byte-parity for a `requires` fixture (AC6).
+- [x] 7. Docs: `docs/04_DESIGN.md` contract subsection + flag rows; `docs/03_ARCHITECTURE.md` filter step (R6).
+- [x] 8. Run `bun run lint`, `bun run test`, `bun run build`, `bun run spur-check`; check `git status` (AC6).
 
 ### Solution
 
@@ -147,7 +149,7 @@ Scenario: AC6 — Other targets are unaffected and docs synced (req: R6)
 
 | File | Change |
 | --- | --- |
-| `packages/core/src/operations/runtime-requires.ts` (new, 1-64) | `RuntimeRequirement`, `RUNTIME_REQUIREMENT_KEYWORDS`, `RUNTIME_REQUIREMENT_CLI_RE`, `isRuntimeRequirement`, `RUNTIME_REQUIREMENT_GRAMMAR`, `parseRuntimeRequires` — the one parser both callers use (R1). Re-exported from `packages/core/src/index.ts:28`. |
+| `packages/core/src/operations/runtime-requires.ts` (new, 1-64) | `RuntimeRequirement`, `RUNTIME_REQUIREMENT_KEYWORDS`, `RUNTIME_REQUIREMENT_CLI_RE`, `isRuntimeRequirement`, `RUNTIME_REQUIREMENT_GRAMMAR`, `parseRuntimeRequires` — the one parser both callers use (R1) — `parseRuntimeRequires` at `packages/core/src/operations/runtime-requires.ts:40`, re-exported from `packages/core/src/index.ts`. |
 | `packages/core/src/operations/validate.ts:92-96,361,390-405` | `requires` added to `KNOWN_OPTIONAL` for skill/command/agent; `checkRuntimeRequires` emits one `error` finding per invalid token or non-string/non-list value and nothing otherwise (R2). |
 | `packages/core/src/operations/grok-bot.ts:293,343-356,378-433` | `BotSkillEntry.requires`; `parseEntryRequires` fails `GrokBotPreflightError` naming id + token before any write; `filterGrokBotEntries` (pure, sorted decisions) and `applyGrokBotDegradation` with frontmatter-bounded `setEntryDescription` + first-body-line notice (R3, R4). |
 | `packages/core/src/operations/install-manifest.ts:68,271-275,305-320` | Optional `grokBot.provides` / `grokBot.unmet`, shape-validated on read; absent fields keep pre-0162 behaviour (R5). |
@@ -166,38 +168,85 @@ receipt is never read on this path: `--bot-provides` is operator-declared, per t
 
 ### Testing
 
-`--mode implement` scope (implementation-side evidence; the pipeline runs its own gates and emits the
-verdict).
+**Pipeline verify results**
 
-| Command | Result |
-| --- | --- |
-| `bun run lint` (biome + turbo typecheck) | clean, both workspaces exit 0 |
-| `bun test packages/core/tests/operations/runtime-requires.test.ts` | 15 pass / 0 fail |
-| `bun test apps/cli/tests/commands/install-grok-bot-requires.test.ts` | 8 pass / 0 fail |
-| `bun run test` | 2731 pass / 0 fail, 8269 expect() calls, 132 files |
-| `bun run build` | standalone binary + versioned Codex plugin ZIP emitted |
-| `bun run spur-check` | 43 pre-check rules, coverage gate, tsdoc-export, skill-citations all green |
+- Verdict: PASS (from verdict artifact)
 
-AC coverage: AC1 parser+validator matrix (core test, both directions incl. `42`→`number` and
-`[cli:Spur]`); AC2 mapper survival for skill/command/subagent + invalid-token preflight naming id and
-token with no write; AC3 exclude default with sorted decisions, byte-identical survivors and the
-zero-entry exit 1; AC4 degrade labelling (description suffix, first-body-line notice, non-requiring
-entity byte-identical to the unfiltered run) plus dry-run parity with nothing written, and the same
-filter in plugin mode before lint; AC5 receipt round-trip, update reinstall reapplying
-`provides: ['cli:spur']`/`unmet: 'degrade'`, a receipt without the fields reinstalling with exclude,
-manifest read rejection for a bad `provides`/`unmet`, and exit 2 for `--bot-unmet maybe` and misplacement;
-AC6 codex emission byte-identical to the same fixture carrying an unrelated pass-through key, with no
-grok-bot filtering output.
+| Requirement | Status | Evidence |
+|-------------|--------|----------|
+| R1 | MET | packages/core/src/operations/runtime-requires.ts:11-58 (grammar and parser), tests packages/core/tests/operations/runtime-requires.test.ts:10-50 |
+| R2 | MET | packages/core/src/operations/validate.ts:92-96,356-360,390-401 (validate recognition), tests packages/core/tests/operations/runtime-requires.test.ts:52-118 |
+| R3 | MET | packages/core/src/operations/grok-bot.ts:289-293,338-356 (BotSkillEntry.requires and preflight), tests packages/core/tests/operations/runtime-requires.test.ts:120-184, apps/cli/tests/commands/install-grok-bot-requires.test.ts:86-107 |
+| R4 | MET | packages/core/src/operations/grok-bot.ts:366-444 (filterGrokBotEntries and degradation), apps/cli/src/commands/install.ts:148-216,840-880 (flags and filter call), tests apps/cli/tests/commands/install-grok-bot-requires.test.ts:10-84, packages/core/tests/operations/runtime-requires.test.ts:186-276 |
+| R5 | MET | packages/core/src/operations/install-manifest.ts:65-71,309-320 (manifest schema), apps/cli/src/commands/install.ts:192-216,1455-1463, apps/cli/src/commands/update.ts:303-311,386-395 (update threading), tests packages/core/tests/operations/runtime-requires.test.ts:278-316, apps/cli/tests/commands/install-grok-bot-requires.test.ts:124-182,213-239 |
+| R6 | MET | docs/04_DESIGN.md:89,103-104,250-294 (frontmatter contract and flags), docs/03_ARCHITECTURE.md:469-478 (architecture data-flow), tests apps/cli/tests/commands/install-grok-bot-requires.test.ts:184-211, checks bun run lint, bun run test, bun run build, bun run spur-check |
 
-Not covered by an automated case: the `claude` half of AC6. A non-dry-run claude install spawns the host
-CLI and registers a real marketplace in the operator's `~/.claude` — a live attempt during this run
-re-pointed the existing `superskill` marketplace entry at this checkout, so the suite deliberately does
-not do it. Claude consumes the same target-independent staged `skills/` tree the codex case asserts, and
-never calls the grok-bot filter.
+| Acceptance Criteria | Status | Evidence Type | Evidence |
+|---------------------|--------|---------------|----------|
+| AC1 — The requires grammar parses and validates (req: R1, R2) | MET | test | packages/core/tests/operations/runtime-requires.test.ts:10-118 |
+| AC2 — Requirements survive the mapper for every entity kind (req: R3) | MET | test | packages/core/tests/operations/runtime-requires.test.ts:120-184 |
+| AC3 — Unmet entities are excluded by default (req: R4) | MET | test | apps/cli/tests/commands/install-grok-bot-requires.test.ts:10-84 |
+| AC4 — Degrade policy labels instead of dropping (req: R4) | MET | test | apps/cli/tests/commands/install-grok-bot-requires.test.ts:39-84 |
+| AC5 — Options persist through update (req: R5) | MET | test | apps/cli/tests/commands/install-grok-bot-requires.test.ts:124-182 |
+| AC6 — Other targets are unaffected and docs synced (req: R6) | MET | test | apps/cli/tests/commands/install-grok-bot-requires.test.ts:184-211; checks bun run lint, bun run test, bun run build, bun run spur-check |
+- Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review
 
-<!-- Filled during review: P1-P4 findings, residual risk, and final disposition. -->
+#### Review Report — 0162
+
+Confidence: MEDIUM
+
+Verdict: PASS
+
+##### Findings (ranked)
+
+| # | Priority | Dimension | Finding | Location | Disposition |
+|---|----------|-----------|---------|----------|-------------|
+| 1 | P4 (advisory) | — | No P1–P3 findings: 15 changed/new files reviewed across all six dimensions; R1–R6 traceable to tests | packages/core/src/operations/runtime-requires.ts:1-58 | ACCEPTED |
+
+##### Functional traceability (sp-functional-review)
+
+| Req | Status | Evidence |
+| --- | --- | --- |
+| R1 | MET | packages/core/src/operations/runtime-requires.ts:11-58 (grammar and parser), tests packages/core/tests/operations/runtime-requires.test.ts:10-50 |
+| R2 | MET | packages/core/src/operations/validate.ts:92-96,356-360,390-401 (validate recognition), tests packages/core/tests/operations/runtime-requires.test.ts:52-118 |
+| R3 | MET | packages/core/src/operations/grok-bot.ts:289-293,338-356 (BotSkillEntry.requires and preflight), tests packages/core/tests/operations/runtime-requires.test.ts:120-184, apps/cli/tests/commands/install-grok-bot-requires.test.ts:86-107 |
+| R4 | MET | packages/core/src/operations/grok-bot.ts:366-444 (filterGrokBotEntries and degradation), apps/cli/src/commands/install.ts:148-216,840-880 (flags and filter call), tests apps/cli/tests/commands/install-grok-bot-requires.test.ts:10-84, packages/core/tests/operations/runtime-requires.test.ts:186-276 |
+| R5 | MET | packages/core/src/operations/install-manifest.ts:65-71,309-320 (manifest schema), apps/cli/src/commands/install.ts:192-216,1455-1463, apps/cli/src/commands/update.ts:303-311,386-395 (update threading), tests packages/core/tests/operations/runtime-requires.test.ts:278-316, apps/cli/tests/commands/install-grok-bot-requires.test.ts:124-182,213-239 |
+| R6 | MET | docs/04_DESIGN.md:89,103-104,250-294 (frontmatter contract and flags), docs/03_ARCHITECTURE.md:469-478 (architecture data-flow), tests apps/cli/tests/commands/install-grok-bot-requires.test.ts:184-211, checks bun run lint, bun run test, bun run build, bun run spur-check |
+
+| AC | Status | Evidence Type | Evidence |
+| --- | --- | --- | --- |
+| AC1 — The requires grammar parses and validates (req: R1, R2) | MET | test | packages/core/tests/operations/runtime-requires.test.ts:10-118 |
+| AC2 — Requirements survive the mapper for every entity kind (req: R3) | MET | test | packages/core/tests/operations/runtime-requires.test.ts:120-184 |
+| AC3 — Unmet entities are excluded by default (req: R4) | MET | test | apps/cli/tests/commands/install-grok-bot-requires.test.ts:10-84 |
+| AC4 — Degrade policy labels instead of dropping (req: R4) | MET | test | apps/cli/tests/commands/install-grok-bot-requires.test.ts:39-84 |
+| AC5 — Options persist through update (req: R5) | MET | test | apps/cli/tests/commands/install-grok-bot-requires.test.ts:124-182 |
+| AC6 — Other targets are unaffected and docs synced (req: R6) | MET | test+command | apps/cli/tests/commands/install-grok-bot-requires.test.ts:184-211; checks bun run lint, bun run test, bun run build, bun run spur-check |
+
+##### SECUA quality (sp-code-verification review)
+
+- **Security:** Strict regex validation (`^cli:[a-z0-9][a-z0-9._-]*$`) and closed keyword set prevent arbitrary command injection; operator-declared `--bot-provides` avoids reading untrusted host receipts during install; manifest parsing verifies token grammar and enum validity on disk read.
+- **Efficiency:** Pure in-memory filtering via `filterGrokBotEntries` runs before planning, plugin lint, and filesystem writes; set-based lookup for requirement matching.
+- **Correctness:** `setEntryDescription` accurately preserves YAML formatting and multi-line block scalars without altering other frontmatter fields or markdown body; byte-identical passthrough confirmed for non-Bot targets.
+- **Usability:** Informative error reporting with exit code 2 on flag misuse or invalid grammar; sorted decision logging in both dry-run and live installs (`grok-bot: excluded <id>` / `grok-bot: degraded <id>`).
+- **Accessibility:** Deterministic structured command feedback and clear error messages naming invalid tokens, IDs, and valid options.
+
+##### Architecture depth (sp-code-improvement)
+
+- **Domain Isolation:** Shared `parseRuntimeRequires` in `packages/core/src/operations/runtime-requires.ts` re-exported from `@gobing-ai/superskill-core` root, eliminating duplicated parsing logic across validator and grok-bot.
+- **Functional Purity:** `filterGrokBotEntries` and `applyGrokBotDegradation` are pure functions completely decoupled from file system side effects.
+- **Additive Schema Evolution:** Backward-compatible manifest extension with non-breaking optional fields (`grokBot.provides`, `grokBot.unmet`).
+
+##### Verification commands
+
+- `bun run lint` — clean (biome check and typecheck pass across all workspaces).
+- `bun run test` — 2732 pass / 0 fail across 132 files (98.88% line coverage, 99.61% function coverage).
+- `bun run build` — compiles standalone binary and package zip cleanly.
+- `bun run test-pre-check` — 42 rules pass.
+- `bun run test-post-check` — 3 rules pass.
+- `spur task check 0162` — PASS.
 
 ### References
 
@@ -209,4 +258,7 @@ never calls the grok-bot filter.
 
 - 2026-11-04T23:03:28.070Z feature_id J → D1 (system)
 - 2026-11-04T23:27:15.581Z backlog → todo (system)
+- 2026-11-05T01:03:30.903Z todo → wip (system)
+- 2026-11-05T07:38:35.736Z wip → testing (system)
+- 2026-11-05T07:46:22.466Z testing → done (system)
 
