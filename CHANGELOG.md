@@ -6,6 +6,47 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
+## [0.3.45] - 2026-11-05
+
+### Added
+
+- `superskill doctor --targets grok-bot` reads a Bot-written probe receipt (`--receipt <path>`) and reports it additively, never probing the host itself; ships the read-only `grok-bot-probe` skill that produces it (717eb5a)
+  <!-- src: apps/cli/src/commands/doctor.ts:72 · confidence: HIGH -->
+- `--materialize plugin --plugin-dir <path>` emits a Cursor-plugin bundle for grok-bot, with a skill budget and description lint before any write (f3db345)
+  <!-- src: apps/cli/src/commands/install.ts:145 · confidence: HIGH -->
+- `requires:` frontmatter contract with validator recognition, and grok-bot catalog filtering via `--bot-provides` / `--bot-unmet` (5cbc01b)
+  <!-- src: packages/core/src/operations/runtime-requires.ts:40 · confidence: HIGH -->
+- Annotate cc plugin entities with runtime `requires` frontmatter (db1caab)
+  <!-- src: plugins/cc/skills/cc-skills/SKILL.md:4 · confidence: HIGH -->
+
+### Fixed
+
+- Drop the dead `isSymbolicLink()` check in the probe receipt reader; `statSync` follows links, so a symlink to a directory is still rejected (8634a30)
+  <!-- src: packages/core/src/operations/grok-bot-probe.ts:132 · confidence: HIGH -->
+
+### Changed
+
+- Amend ADR-036/037 for the probe receipt, plugin materialize mode and the `requires` filter; sync owning docs (cc1a0d1)
+  <!-- src: docs/00_ADR.md:760 · confidence: HIGH -->
+- Mark the Bot plugin-route install and `${CURSOR_PLUGIN_ROOT}` expansion claims unverified until a probe receipt records them; re-verify tasks 0160-0164 (5190f65)
+  <!-- src: docs/04_DESIGN.md:326 · confidence: HIGH -->
+
+### Other
+
+- Declare the `typescript` devDependency so workspace typecheck resolves `tsc` (55090e0)
+  <!-- src: package.json:50 · confidence: HIGH -->
+- Cover the claude target's `requires` pass-through (fbb2fcb)
+  <!-- src: apps/cli/tests/commands/install-grok-bot-requires.test.ts:284 · confidence: HIGH -->
+- Prefer template literals in the probe receipt test (25548b1)
+- Record D1 DD-09 scenario coverage rows and feature closure (f6d9eb2)
+- Feature refreshes mark 0160-0164 done (a75ecf2, fc4515d, 0c78617, 3fb3c4f, 49838bf)
+- Record 0160 done in the feature corpus (90b2662)
+- Declare 0162 test-suite surfaces touched by implementation (e6a5280)
+- Refine D1 tasks 0160-0164 to implement-ready specs (a14be56)
+- Renumber D1 tasks 0155-0159 to 0160-0164 (a99ee44)
+- Record the 0155 refine run memory (94351a0)
+- Add the D1 grok-bot plugin distribution feature and tasks 0155-0159 (c54aa74)
+
 ## [0.3.42] - 2026-10-21
 
 ### Added
