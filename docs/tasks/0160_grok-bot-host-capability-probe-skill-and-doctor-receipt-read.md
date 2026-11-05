@@ -1,10 +1,10 @@
 ---
 schema_version: 1
 name: Grok Bot host capability probe skill and doctor receipt reader
-status: todo
+status: wip
 template: feature-impl
 created_at: 2026-11-04T22:58:00.110Z
-updated_at: "2026-11-04T23:20:18.349Z"
+updated_at: "2026-11-05T00:03:46.797Z"
 feature_id: D1
 
 ac_altitude: task-local
@@ -125,15 +125,155 @@ Out of scope: `--materialize plugin` / Cursor-plugin bundle emission (feature R3
 
 ### Solution
 
-<!-- Filled during implementation: file:line change map and concise rationale. -->
+# Task 0160 — Solution
+
+- **Reader (new, `packages/core/src/operations/grok-bot-probe.ts:125`, id table :37, view :70, path :80).** Zod
+  schema-version-1 reader `readGrokBotProbeReceipt(options)`: state
+  `missing` (path does not resolve / file absent), `invalid` (size > 64 KiB,
+  non-JSON, schema mismatch, duplicate id), `stale` (`generatedAt` older than
+  `GROK_BOT_PROBE_STALE_DAYS`), `valid`. Untrusted-input posture on the
+  Bot-written file: sanitized entries in canonical id order
+  (`GROK_BOT_PROBE_CAPABILITY_IDS`, SSOT list of the eight D1 P0 ids), unknown
+  ids dropped, unknown keys stripped, `value`/`evidence` strings truncated to
+  200 chars (`GROK_BOT_PROBE_MAX_VALUE_CHARS`), `missingIds` reported, never
+  throws, never echoes raw content. Staleness uses an injectable `now` clock
+  defaulting to real time.
+- **Wiring (additive, `packages/core/src/operations/grok-bot.ts:942` field, `:983` helper).** `GrokBotDoctorReport` gains one optional field
+  `capabilities: GrokBotProbeReport`; `inspectGrokBotTarget(dataRoot, options)`
+  populates it when a dataRoot resolves. It never affects `available`,
+  problems, or doctor exit codes. `--receipt <path>` overrides the Sand-root
+  default (`<dataRoot>/.superskill/grok-bot/probe/receipt.json`,
+  `grokBotProbeReceiptPath`); receipt read failures degrade to `problem`
+  strings, never thrown.
+- **CLI (`apps/cli/src/commands/doctor.ts:18` print, `:72` flag).** New `--receipt` option;
+  `printCapabilities` appends lines after the slash-registry section:
+  `probe receipt: <state> — <path>` (with `(<generatedAt>, stale)` when stale,
+  `— <problem>` when invalid), one `probe <id>: <status> = <value-or-v>` line
+  per reported entry, `probe not reported: <ids>` when any of the eight are
+  missing, and a `probe guidance:` line pointing the operator at
+  `<dataRoot>/workflows/cc-grok-bot-probe/SKILL.md`. Exit codes unchanged.
+- **Skill (new, `plugins/cc/skills/grok-bot-probe/SKILL.md`).** Bot-dialect
+  frontmatter (`name`/`description` with the trigger phrases); bootstrap prompt;
+  the eight-capability table with exact human command steps and status rules
+  (`observed`/`absent`/`unverified`); sanitization rules (no secret echo,
+  truncation); a write step (create parent dir, write one JSON file, atomic
+  ensemble: receipt + no other writes) with a single retry and explicit stop
+  guidelines; a compact valid-receipt example; closing report template; non-goals
+  (read-only, no install, no network). Each capability id appears exactly once
+  (verified by an id-parity test, below). Name: `grok-bot-probe` (mapped to
+  installed id `cc-grok-bot-probe` on grok-bot installs by the existing
+  machinery).
+- **Docs.** `04_DESIGN.md` doctor row gains `--receipt` + a §Probe-receipt
+  subsection (schema v1 + states + human lines); `03_ARCHITECTURE.md` module
+  row for `grok-bot-probe.ts`; `00_ADR.md` ADR-036 amendment (CLI reads a
+  receipt, never probes a host; receipt state never changes exit codes);
+  `plugins/cc/README.md` skills count 8→9 + layout/inventory rows.
 
 ### Testing
 
-<!-- Filled during verification: commands run, outcomes, coverage claim or N/A. -->
+# Task 0160 — Testing / Verify
+
+Test-first: the reader's tests were written to the AC1/AC2 matrix before the
+module (initial run red), then implemented to green.
+
+`packages/core/tests/operations/grok-bot-probe.test.ts` (16 tests, 100% line +
+branch coverage on the probe module per `NODE_ENV=test bun test --coverage`):
+
+- AC2 state matrix: missing path; missing file; directory-instead-of-file;
+  non-JSON; JSON with wrong `kind`; schema-version 0/2; duplicate id; size cap.
+- Shape variants: unknown capability id dropped; unknown key stripped;
+  over-length value/evidence truncated to 200; duplicate id → `invalid`;
+  `missingIds` lists the difference; entries reordered to
+  `GROK_BOT_PROBE_CAPABILITY_IDS` order; `path` null when no dataRoot.
+- Staleness: default real-clock path (fresh receipt → `valid`, >30-day
+  `generatedAt` → `stale`) and injected `now` (stale boundary exactly at
+  30 days, `valid` just inside).
+- `grokBotProbeReceiptPath` joins `<dataRoot>/.superskill/grok-bot/probe/receipt.json`.
+- AC5 id parity: every id in `GROK_BOT_PROBE_CAPABILITY_IDS` appears exactly
+  once in `plugins/cc/skills/grok-bot-probe/SKILL.md` (count assertion on the
+  literal id strings).
+
+`apps/cli/tests/commands/doctor.test.ts` (4th test, task 0160 / AC3+AC4):
+
+- With a valid receipt via `--receipt`, human output shows `probe receipt:
+  valid — <path>`, `probe <id>: <status>`, and the `probe not reported` line for
+  ids missing from the file; JSON mode carries the additive `capabilities`
+  block; exit code stays `0`.
+- With no `--receipt` (no dataRoot), the visible output has no `probe` lines
+  (baseline preserved) and exit code unchanged.
+- With `generatedAt` older than 30 days, the header prints the stale suffix
+  (fresh `new Date(Date.now()).toISOString()` at test time; a static 20xx
+  fixture would already be stale in real time).
+
+Pipeline gates (this task's branch):
+
+- `bun run test` — 2694 pass / 0 fail across 130 files.
+- `bun run build` (root bundle + standalone binary + plugin zip) — success.
+- `bunx tsc --noEmit` in `packages/core` and `apps/cli` — no output (exit 0). The
+  workspace's `bun run lint`/`spur-check` gate stops at `bench typecheck` step:
+  `tsc: command not found` — typescript is not a workspace dependency or on this
+  machine's PATH, and the host repo fails identically at `main`, so the
+  handwritten `bunx tsc` substitution above is the best available equivalent.
+- `bun run test-pre-check` — 42 rules, all passed.
+- `bun run test-post-check` — 3 rules (incl. tsdoc-export on the new public
+  exports), all passed after adding missing doc comments.
+- `bun run format` — no diffs apart from this change set.
+- `git status` (worktree) — only this task's 8 modified + 3 added paths.
 
 ### Review
 
-<!-- Filled during review: P1-P4 findings, residual risk, and final disposition. -->
+#### Functional traceability (sp-functional-review)
+
+| Req | Status | Evidence |
+| --- | --- | --- |
+| R1 | MET | plugins/cc/skills/grok-bot-probe/SKILL.md:2 (name), :33 (unverified-not-inferred rule), :103 (Non-goals: no install, registration, network actions); id-parity test packages/core/tests/operations/grok-bot-probe.test.ts:151 pins every id exactly once |
+| R2 | MET | packages/core/src/operations/grok-bot-probe.ts:15-49 (schema version/kind/frozen id list/status type); docs/04_DESIGN.md:258-268 (probe-receipt contract section) |
+| R3 | MET | packages/core/src/operations/grok-bot-probe.ts:80 (path helper), :125 (reader), tests packages/core/tests/operations/grok-bot-probe.test.ts:53-114 (AC2 matrix incl. 201-char value, 64KiB+1, symlink, duplicate id); barrel export packages/core/src/index.ts:26 |
+| R4 | MET | apps/cli/src/commands/doctor.ts:18 (printCapabilities), :72 (--receipt flag), :96 (report wiring), packages/core/src/operations/grok-bot.ts:1026-1118 (capabilities field wiring); doctor tests apps/cli/tests/commands/doctor.test.ts:145 |
+| R5 | MET | regressions in apps/cli/tests/commands/doctor.test.ts:39 (exit 0/1/2 matrix) run against the new build; exit logic untouched (commit 717eb5a diff: doctor.ts additive only) |
+| R6 | MET | docs/04_DESIGN.md:255 (doctor `--receipt`), :258 (probe-receipt section), docs/00_ADR.md:751 (ADR-036 amendment 2026-11-04), docs/03_ARCHITECTURE.md:169 (grok-bot-probe module row), plugins/cc/README.md:38 (9 skills); verification below |
+
+| AC | Status | Evidence Type | Evidence |
+| --- | --- | --- | --- |
+| AC1 | MET | test | packages/core/tests/operations/grok-bot-probe.test.ts:151 (id-parity: each id appears exactly once in SKILL.md); plugins/cc/skills/grok-bot-probe/SKILL.md:33,103 |
+| AC2 | MET | test | packages/core/tests/operations/grok-bot-probe.test.ts:28-142 — truncated JSON, wrong schemaVersion, wrong kind, non-ISO generatedAt, duplicate id, 201-char value, 64KiB+1, directory/symlink, absent path → missing with path set, omitted ids → missingIds; stale via injected clock |
+| AC3 | MET | test | apps/cli/tests/commands/doctor.test.ts:145 (JSON shape state/path/generatedAt/entries/missingIds/problem; human lines; guidance line naming <dataRoot>/workflows/cc-grok-bot-probe/SKILL.md) |
+| AC4 | MET | test | packages/core/src/operations/grok-bot.ts:1026-1118 — capabilities built additively and only when --targets grok-bot doctor runs; doctor exit 0/1/2 logic untouched (apps/cli/src/commands/doctor.ts:91-99, unchanged in commit 717eb5a) |
+| AC5 | MET | test | packages/core/tests/operations/grok-bot-probe.test.ts:96,140 (200-char cap, static problem strings echo no file content); reader strips unknown ids/keys before any output |
+
+#### SECUA quality (sp-code-verification review)
+
+- Security: reader bounds input (64 KiB, 200 chars, unknown-key strip) before any echo; no raw
+  content in problem strings; doctor never probes a host (ADR-036 amendment). MET.
+- Correctness: reader never throws (stat failures caught); stale decided on the injected clock.
+  MET.
+- Maintainability: types + zod schema colocated in one module, re-exported from the barrel; test
+  naming ties assertions to the AC matrix. MET.
+
+#### Architecture depth (sp-code-improvement)
+
+- The receipt reader is a self-contained core operation with no CLI-owned probing — the
+  Bot-produces/CLI-consumes boundary is explicit and matches ADR-036 without widening it.
+- No speculative abstraction: the capability field is additive-only on the doctor report,
+  future receipt versions bump one constant. No refactor needed.
+
+#### Verification commands
+
+- `bun run test` — 2694 pass / 0 fail across 130 files (task worktree, commit 717eb5a).
+- `bunx tsc --noEmit` in packages/core and apps/cli — both exit 0 (PATH-level tsc gap pre-exists
+  on this host at main; documented in .spur/run/0160-testing.md).
+- `bun run build` — succeeds; `bun run test-pre-check` 42 rules, `bun run test-post-check` 3
+  rules (incl. skill-citations) all pass.
+
+Confidence: HIGH
+
+| Priority | Finding | Location | Disposition |
+| --- | --- | --- | --- |
+| P4 | wrap residual — none | — | closed |
+
+Verdict: PASS
+
+Open P1-P3 findings: none. Wrap residual (P4, non-blocking): none.
 
 ### References
 
@@ -143,4 +283,5 @@ Out of scope: `--materialize plugin` / Cursor-plugin bundle emission (feature R3
 
 - 2026-11-04T23:01:08.029Z backlog → todo (system)
 - 2026-11-04T23:03:28.070Z feature_id J → D1 (system)
+- 2026-11-04T23:49:43.357Z todo → wip (system)
 

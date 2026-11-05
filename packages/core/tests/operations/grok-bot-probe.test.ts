@@ -100,8 +100,8 @@ describe('readGrokBotProbeReceipt (task 0160 / AC2)', () => {
     });
 
     it('classifies a >64KiB file as invalid', () => {
-        const filler = '"f":"' + 'x'.repeat(GROK_BOT_PROBE_MAX_BYTES) + '"';
-        writeFileSync(receiptPath, '{' + filler + '}');
+        const filler = `"f":"${'x'.repeat(GROK_BOT_PROBE_MAX_BYTES)}"`;
+        writeFileSync(receiptPath, `{${filler}}`);
         expect(readGrokBotProbeReceipt({ path: receiptPath }).state).toBe('invalid');
     });
 
