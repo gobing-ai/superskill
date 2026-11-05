@@ -128,8 +128,8 @@ export function readGrokBotProbeReceipt(input: { path: string | null; now?: Date
     let size: number;
     try {
         const stat = statSync(path);
-        // AC2: a directory or a symlinked-in path outside a regular file is invalid, not missing.
-        if (!stat.isFile() || stat.isSymbolicLink()) return invalid(path, 'receipt path is not a regular file');
+        // AC2: statSync follows links, so a directory — or a symlink resolving to one — is invalid, not missing.
+        if (!stat.isFile()) return invalid(path, 'receipt path is not a regular file');
         size = stat.size;
     } catch {
         return missing(path);
