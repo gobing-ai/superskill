@@ -2,11 +2,11 @@
 schema_version: 1
 id: "D1"
 name: "Grok Bot plugin-native distribution and host probe"
-status: active
+status: done
 priority: P2
 tags: []
 created_at: "2026-11-04T22:57:48.636Z"
-updated_at: "2026-11-05T00:19:43.441Z"
+updated_at: "2026-11-05T09:36:36.209Z"
 ---
 
 # D1: Grok Bot plugin-native distribution and host probe
@@ -82,4 +82,8 @@ Feature: Grok Bot plugin-native distribution and host probe
 
 - 2026-11-04T23:03:28.070Z moved J → D1 (system)
 - 2026-11-05T00:19:43.441Z backlog → active (system)
+- 2026-11-05T09:27:19.418Z active → verifying (system)
+- 2026-11-05T09:35:41.219Z verifying → active (system)
+- 2026-11-05T09:36:35.674Z active → verifying (system)
+- 2026-11-05T09:36:36.209Z verifying → done (system)
 

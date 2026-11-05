@@ -4,7 +4,7 @@ name: Amend ADR-036/037 and sync owning docs for probe, plugin mode and requires
 status: done
 template: feature-impl
 created_at: 2026-11-04T23:00:25.259Z
-updated_at: "2026-11-05T09:23:52.588Z"
+updated_at: "2026-11-05T09:36:04.388Z"
 feature_id: D1
 
 dependencies: ["0161", "0162"]
@@ -68,6 +68,11 @@ Current tree state:
 Out of scope: rewriting the 0160 doctor amendment or the sibling-owned `04`/`03`/README sections; changing the default mode; new ADR numbers; constitution edits.
 
 ### Acceptance Criteria
+
+Feature-scenario coverage (DD-09):
+
+- [x] R6 — Documentation and gates (R6)
+
 
 ```gherkin
 Scenario: AC1 — ADR-036 records plugin mode, requires and manifest growth (req: R1, R3)
@@ -195,20 +200,20 @@ Documentation-only pass: two dated ADR-036 amendments, one dated ADR-037 amendme
 
 | Requirement | Status | Evidence |
 |-------------|--------|----------|
-| R1 | MET | docs/00_ADR.md:760-788 |
-| R2 | MET | docs/00_ADR.md:806-813 |
-| R3 | MET | docs/00_ADR.md:790-794 |
-| R4 | MET | docs/01_PRD.md:58,112, docs/02_ROADMAP.md:119-122 |
-| R5 | MET | docs/tasks/0164_amend-adr-036-037-and-sync-owning-docs-for-probe-plugin-mode.md:166-181,194-209 |
-| R6 | MET | checks bun run lint, bun run test, bun run build, bun run spur-check, spur feature check D1 --json |
+| R1 | MET | [docs/00_ADR.md:760-788](file:///Users/robin/xprojects/superskill-runall-d1-8668/docs/00_ADR.md#L760-L788) |
+| R2 | MET | [docs/00_ADR.md:806-813](file:///Users/robin/xprojects/superskill-runall-d1-8668/docs/00_ADR.md#L806-L813) |
+| R3 | MET | [docs/00_ADR.md:790-794](file:///Users/robin/xprojects/superskill-runall-d1-8668/docs/00_ADR.md#L790-L794) |
+| R4 | MET | [docs/01_PRD.md:58,112](file:///Users/robin/xprojects/superskill-runall-d1-8668/docs/01_PRD.md#L58), [docs/02_ROADMAP.md:119-122](file:///Users/robin/xprojects/superskill-runall-d1-8668/docs/02_ROADMAP.md#L119-L122) |
+| R5 | MET | [docs/tasks/0164_amend-adr-036-037-and-sync-owning-docs-for-probe-plugin-mode.md:166-181,194-209](file:///Users/robin/xprojects/superskill-runall-d1-8668/docs/tasks/0164_amend-adr-036-037-and-sync-owning-docs-for-probe-plugin-mode.md#L166-L181) |
+| R6 | MET | checks `bun run lint`, `bun run test`, `bun run build`, `bun run spur-check`, `spur feature check D1 --json` |
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
 |---------------------|--------|---------------|----------|
-| AC1 — ADR-036 records plugin mode, requires and manifest growth (req: R1, R3) | MET | command | docs/00_ADR.md:760-794; check spur task check 0164 |
-| AC2 — ADR-037 records both exceptions (req: R2) | MET | command | docs/00_ADR.md:806-813; check spur task check 0164 |
-| AC3 — PRD and ROADMAP reflect the capability (req: R4) | MET | command | docs/01_PRD.md:58,112, docs/02_ROADMAP.md:119-122; check spur task check 0164 |
-| AC4 — Live-host claims are evidenced or marked unverified (req: R5) | MET | command | docs/tasks/0164_amend-adr-036-037-and-sync-owning-docs-for-probe-plugin-mode.md:166-181,194-209; check spur task check 0164 |
-| AC5 — Gates and feature check pass (req: R6) | MET | command | checks bun run lint, bun run test, bun run build, bun run spur-check, spur feature check D1 --json |
+| AC1 — ADR-036 records plugin mode, requires and manifest growth (req: R1, R3) | MET | command | [docs/00_ADR.md:760-794](file:///Users/robin/xprojects/superskill-runall-d1-8668/docs/00_ADR.md#L760-L794); check `spur task check 0164` |
+| AC2 — ADR-037 records both exceptions (req: R2) | MET | command | [docs/00_ADR.md:806-813](file:///Users/robin/xprojects/superskill-runall-d1-8668/docs/00_ADR.md#L806-L813); check `spur task check 0164` |
+| AC3 — PRD and ROADMAP reflect the capability (req: R4) | MET | command | [docs/01_PRD.md:58,112](file:///Users/robin/xprojects/superskill-runall-d1-8668/docs/01_PRD.md#L58), [docs/02_ROADMAP.md:119-122](file:///Users/robin/xprojects/superskill-runall-d1-8668/docs/02_ROADMAP.md#L119-L122); check `spur task check 0164` |
+| AC4 — Live-host claims are evidenced or marked unverified (req: R5) | MET | command | [docs/tasks/0164_amend-adr-036-037-and-sync-owning-docs-for-probe-plugin-mode.md:166-181,194-209](file:///Users/robin/xprojects/superskill-runall-d1-8668/docs/tasks/0164_amend-adr-036-037-and-sync-owning-docs-for-probe-plugin-mode.md#L166-L181); check `spur task check 0164` |
+| R6 — Documentation and gates (R6) | MET | command | checks `bun run lint`, `bun run test`, `bun run build`, `bun run spur-check`, `spur feature check D1 --json` |
 - Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review
@@ -283,4 +288,6 @@ Verdict: PASS
 - 2026-11-05T09:08:29.003Z todo → wip (system)
 - 2026-11-05T09:23:50.751Z wip → testing (system)
 - 2026-11-05T09:23:52.577Z testing → done (system)
+- 2026-11-05T09:35:38.739Z done → testing (system)
+- 2026-11-05T09:36:04.376Z testing → done (system)
 

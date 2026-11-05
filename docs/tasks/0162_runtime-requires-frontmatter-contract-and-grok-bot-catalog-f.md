@@ -4,7 +4,7 @@ name: Runtime requires frontmatter contract and grok-bot catalog filtering
 status: done
 template: feature-impl
 created_at: 2026-11-04T23:00:24.487Z
-updated_at: "2026-11-05T07:46:22.475Z"
+updated_at: "2026-11-05T09:36:03.718Z"
 feature_id: D1
 
 dependencies: ["0160"]
@@ -52,6 +52,11 @@ Current tree state (verified 2026-11-04):
 Out of scope: annotating any shipped plugin (0163/spur 1291/kk 0342), reading the 0160 receipt, applying `requires` on non-Bot targets, new requirement tokens beyond the four, doctor reporting of filtered entries, new dependencies.
 
 ### Acceptance Criteria
+
+Feature-scenario coverage (DD-09):
+
+- [x] R5 — Runtime requirements filter the Bot catalog (R5)
+
 
 ```gherkin
 Scenario: AC1 — The requires grammar parses and validates (req: R1, R2)
@@ -185,7 +190,7 @@ receipt is never read on this path: `--bot-provides` is operator-declared, per t
 |---------------------|--------|---------------|----------|
 | AC1 — The requires grammar parses and validates (req: R1, R2) | MET | test | packages/core/tests/operations/runtime-requires.test.ts:10-118 |
 | AC2 — Requirements survive the mapper for every entity kind (req: R3) | MET | test | packages/core/tests/operations/runtime-requires.test.ts:120-184 |
-| AC3 — Unmet entities are excluded by default (req: R4) | MET | test | apps/cli/tests/commands/install-grok-bot-requires.test.ts:10-84 |
+| R5 — Runtime requirements filter the Bot catalog (R5) | MET | test | apps/cli/tests/commands/install-grok-bot-requires.test.ts:10-84 |
 | AC4 — Degrade policy labels instead of dropping (req: R4) | MET | test | apps/cli/tests/commands/install-grok-bot-requires.test.ts:39-84 |
 | AC5 — Options persist through update (req: R5) | MET | test | apps/cli/tests/commands/install-grok-bot-requires.test.ts:124-182 |
 | AC6 — Other targets are unaffected and docs synced (req: R6) | MET | test | apps/cli/tests/commands/install-grok-bot-requires.test.ts:184-211; checks bun run lint, bun run test, bun run build, bun run spur-check |
@@ -261,4 +266,6 @@ Verdict: PASS
 - 2026-11-05T01:03:30.903Z todo → wip (system)
 - 2026-11-05T07:38:35.736Z wip → testing (system)
 - 2026-11-05T07:46:22.466Z testing → done (system)
+- 2026-11-05T09:35:38.332Z done → testing (system)
+- 2026-11-05T09:36:03.707Z testing → done (system)
 

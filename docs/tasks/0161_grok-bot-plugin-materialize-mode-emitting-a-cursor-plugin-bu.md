@@ -4,7 +4,7 @@ name: Grok Bot plugin materialize mode emitting a Cursor-plugin bundle with skil
 status: done
 template: feature-impl
 created_at: 2026-11-04T23:00:24.073Z
-updated_at: "2026-11-05T00:44:42.453Z"
+updated_at: "2026-11-05T09:36:03.052Z"
 feature_id: D1
 
 dependencies: ["0160"]
@@ -55,6 +55,12 @@ Current tree state (verified 2026-11-04):
 Out of scope: a general `cursor` install target, Team Marketplace or `.cursor-plugin/marketplace.json` emission, git commit/push of the bundle, reading the 0160 receipt during install, changing the default mode, host-wide (cross-bundle) skill budgeting, emitting hooks/scripts/rules/agents as Cursor components, doctor inspection of plugin bundles, new dependencies.
 
 ### Acceptance Criteria
+
+Feature-scenario coverage (DD-09):
+
+- [x] R3 — Plugin mode emits an installable Cursor-plugin bundle (R3)
+- [x] R4 — Skill budget and descriptions are enforced (R4)
+
 
 ```gherkin
 Scenario: AC1 — Plugin mode emits an installable Cursor-plugin bundle (req: R1, R2)
@@ -191,12 +197,12 @@ Scenario: AC8 — Docs and gates (req: R6)
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
 |---------------------|--------|---------------|----------|
-| AC1 — Plugin mode emits an installable Cursor-plugin bundle (req: R1, R2) | MET | test | apps/cli/tests/commands/install-grok-bot.test.ts:47 |
+| R3 — Plugin mode emits an installable Cursor-plugin bundle (R3) | MET | test | apps/cli/tests/commands/install-grok-bot.test.ts:47 |
 | AC2 — Plugin flags are validated before staging (req: R1) | MET | test | apps/cli/tests/commands/install-grok-bot.test.ts:98 |
 | AC3 — mcp.json is emitted with the Cursor root variable (req: R2) | MET | test | apps/cli/tests/commands/install-grok-bot.test.ts:117 |
 | AC4 — Reinstall, prune and foreign content are ownership-safe (req: R3) | MET | test | apps/cli/tests/commands/install-grok-bot.test.ts:140 |
 | AC5 — A failed write restores the prior bundle (req: R3) | MET | test | apps/cli/tests/commands/install-grok-bot.test.ts:175 |
-| AC6 — Budget and description lint run before writes (req: R4) | MET | test | apps/cli/tests/commands/install-grok-bot.test.ts:198 |
+| R4 — Skill budget and descriptions are enforced (R4) | MET | test | apps/cli/tests/commands/install-grok-bot.test.ts:198 |
 | AC7 — Existing modes and update are unchanged (req: R5) | MET | test | apps/cli/tests/commands/install-grok-bot.test.ts:252 |
 | AC8 — Docs and gates (req: R6) | MET | test | docs/04_DESIGN.md:281; checks bun run lint, bun run test, bun run build, bun run spur-check |
 - Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
@@ -274,4 +280,6 @@ Verdict: PASS
 - 2026-11-05T00:32:08.232Z todo → wip (system)
 - 2026-11-05T00:44:40.207Z wip → testing (system)
 - 2026-11-05T00:44:42.441Z testing → done (system)
+- 2026-11-05T09:35:37.925Z done → testing (system)
+- 2026-11-05T09:36:03.040Z testing → done (system)
 

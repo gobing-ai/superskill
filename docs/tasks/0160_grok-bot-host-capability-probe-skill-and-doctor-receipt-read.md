@@ -4,7 +4,7 @@ name: Grok Bot host capability probe skill and doctor receipt reader
 status: done
 template: feature-impl
 created_at: 2026-11-04T22:58:00.110Z
-updated_at: "2026-11-05T00:22:27.053Z"
+updated_at: "2026-11-05T09:36:02.383Z"
 feature_id: D1
 
 ac_altitude: task-local
@@ -54,6 +54,12 @@ Scope boundary. This task owns feature R1 (probe captures live capability withou
 Out of scope: `--materialize plugin` / Cursor-plugin bundle emission (feature R3/R4), the `requires:` runtime-requirements contract and grok-bot catalogue filtering (feature R5), marketplace/registration automation, a `superskill probe` command or any CLI-side host probing, and new dependencies.
 
 ### Acceptance Criteria
+
+Feature-scenario coverage (DD-09):
+
+- [x] R1 — Probe captures live host capability without mutation (R1)
+- [x] R2 — Doctor reports probe evidence honestly (R2)
+
 
 - [x] AC1 — A Bot following `plugins/cc/skills/grok-bot-probe/SKILL.md` on a host where it can reach Shell but not every documented tool writes one receipt at the default path containing all eight capability ids, each marked `observed`, `absent` or `unverified` with evidence, and containing no environment-variable values, tokens or credentials; the SKILL.md must state each id exactly once and its non-goals must forbid install, registration and network actions (req: R1, R2).
 
@@ -188,8 +194,8 @@ Out of scope: `--materialize plugin` / Cursor-plugin bundle emission (feature R3
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
 |---------------------|--------|---------------|----------|
-| AC1 | MET | test | packages/core/tests/operations/grok-bot-probe.test.ts:151 (id-parity: each id appears exactly once in SKILL.md); plugins/cc/skills/grok-bot-probe/SKILL.md:33,103 |
-| AC2 | MET | test | packages/core/tests/operations/grok-bot-probe.test.ts:28-142 — truncated JSON, wrong schemaVersion, wrong kind, non-ISO generatedAt, duplicate id, 201-char value, 64KiB+1, directory/symlink, absent path → missing with path set, omitted ids → missingIds; stale via injected clock |
+| R1 — Probe captures live host capability without mutation (R1) | MET | test | packages/core/tests/operations/grok-bot-probe.test.ts:151 (id-parity: each id appears exactly once in SKILL.md); plugins/cc/skills/grok-bot-probe/SKILL.md:33,103 |
+| R2 — Doctor reports probe evidence honestly (R2) | MET | test | packages/core/tests/operations/grok-bot-probe.test.ts:28-142 — truncated JSON, wrong schemaVersion, wrong kind, non-ISO generatedAt, duplicate id, 201-char value, 64KiB+1, directory/symlink, absent path → missing with path set, omitted ids → missingIds; stale via injected clock |
 | AC3 | MET | test | apps/cli/tests/commands/doctor.test.ts:145 (JSON shape state/path/generatedAt/entries/missingIds/problem; human lines; guidance line naming <dataRoot>/workflows/cc-grok-bot-probe/SKILL.md) |
 | AC4 | MET | test | packages/core/src/operations/grok-bot.ts:1026-1118 — capabilities built additively and only when --targets grok-bot doctor runs; doctor exit 0/1/2 logic untouched (apps/cli/src/commands/doctor.ts:91-99, unchanged in commit 717eb5a) |
 | AC5 | MET | test | packages/core/tests/operations/grok-bot-probe.test.ts:96,140 (200-char cap, static problem strings echo no file content); reader strips unknown ids/keys before any output |
@@ -263,4 +269,6 @@ Open P1-P3 findings: none. Wrap residual (P4, non-blocking): none.
 - 2026-11-04T23:49:43.357Z todo → wip (system)
 - 2026-11-05T00:19:42.355Z wip → testing (system)
 - 2026-11-05T00:22:27.039Z testing → done (system)
+- 2026-11-05T09:35:37.514Z done → testing (system)
+- 2026-11-05T09:36:02.371Z testing → done (system)
 
