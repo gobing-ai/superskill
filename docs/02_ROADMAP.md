@@ -116,6 +116,10 @@ sync: [T5]
 
 - [x] Remote marketplace locators (`--marketplace <github-url|owner/repo>`) — fetch + cache layer (task 0113, ADR-034). In-manifest object `source` (Layer B) remains deferred.
 - [ ] Grok Bot registration follow-up ([0132](tasks/0132_complete-grok-bot-post-install-skill-registration-with-safe-.md)), after completed 0130; planned for the next release work, with no version assigned. Scope: [feature D](features/D_grok-bot-opt-in-install-target-task-0128-adr-036.md).
+- [x] Grok Bot plugin-native distribution and host probe (feature D1): a read-only host probe whose receipt `doctor` reports additively, `--materialize plugin` emitting a Cursor-plugin bundle, and `requires:` catalog filtering/degradation. Scope: [feature D1](features/D1_grok-bot-plugin-native-distribution-and-host-probe.md).
+  - Remaining: one real-Bot probe receipt, so the live-host claims (plugin install route, skill-save
+    tool, CLI persistence, MCP support) move from unverified to observed. Default materialization
+    stays `bridge` until then (ADR-036).
 - [ ] Thin commands: `superskill list`, `doctor`, `init`.
   - `doctor` partially shipped (task 0128, ADR-036): `superskill doctor --targets grok-bot [--json]`
     is a read-only Sand-filesystem health check for the Grok Bot target; general multi-target

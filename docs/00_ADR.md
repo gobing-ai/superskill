@@ -757,6 +757,42 @@ CLI still never probes a host — reading an operator-supplied file is neither a
 GUI discovery nor a connection test — and receipt state (missing/invalid/stale/valid)
 never changes `available` or the doctor exit codes.
 
+**Amendment 2026-11-05 (tasks 0161/0162 / feature D1).** Materialization gains a third mode and the
+catalog gains a runtime-requirement filter. The original text above stays as written; these three
+points extend it.
+
+- **`plugin` mode (task 0161).** `--materialize plugin --plugin-dir <path>` writes a Cursor-plugin
+  bundle into the operator-chosen directory itself: `skills/<id>/` plus `.cursor-plugin/plugin.json`
+  and, when the mapper staged one, `mcp.json` with `${PLUGIN_ROOT}` rewritten to
+  `${CURSOR_PLUGIN_ROOT}`. It is full-mode emission with `workflowsDir = <pluginDir>/skills`, so no
+  Sand root is resolved or created and no `workflows/` tree is written. Its receipt lives under the
+  bundle root (`<pluginDir>/.superskill/manifests/grok-bot/<plugin>/.superskill-manifest.json`) and
+  `update` does not refresh it — a bundle directory is not derivable from the receipt, so `update`
+  prints explicit reinstall guidance instead.
+- **`requires:` contract and the pre-plan filter (task 0162).** A skill, command or subagent may
+  declare a closed runtime token set — `hooks`, `subagents`, `local-fs`, `cli:<name>`. For `grok-bot`
+  only, the operator declares what the host provides (`--bot-provides`, repeatable, default nothing)
+  and `--bot-unmet exclude|degrade` (default `exclude`) drops or labels every entry with an unmet
+  requirement. The filter runs on the collected entry set before planning, before the plugin lint and
+  identically in all three modes; other targets never filter, so `requires` is an ordinary
+  pass-through key there. The probe receipt is never read here: the operator declares capability, so
+  untrusted host evidence cannot change what superskill writes.
+- **Manifest growth.** `InstallManifestV1.grokBot` widens additively to
+  `{ materialize: 'bridge' | 'full' | 'plugin', provides?: string[], unmet?: 'exclude' | 'degrade' }`.
+  The 0162 fields are written only when non-default, so pre-0162 receipts stay valid.
+
+Flags, bundle layout, lint and budget limits, and the receipt contract are owned by `04_DESIGN.md`
+§Phase 1 install surface, §Frontmatter contract: `requires:` (task 0162), §Probe receipt (task 0160)
+and §Cursor plugin bundle (task 0161). Emitting a Cursor-plugin-shaped bundle is superskill behaviour
+verified by tests; that a Bot host *installs* it by its plugin route stays **unverified** until a
+real-Bot probe receipt records `plugin-install` as `observed`.
+
+**Default mode (2026-11-05, task 0164).** The default materialization stays `bridge`. `plugin` becomes
+primary only when both conditions hold: a real-Bot probe receipt (0160 schema version 1) records
+`plugin-install` as `observed`, and an explicit operator decision flipping the default is filed as its
+own task. Install never reads the receipt to choose a mode — `--materialize` is the operator's stated
+intent. No code change accompanies this entry.
+
 ## ADR-037: Target customizations share an internal post-install action mechanism
 
 **Status:** Accepted · **Date:** 2026-09-09 · **Task:** 0130
@@ -766,6 +802,15 @@ never changes `available` or the doctor exit codes.
 **Why.** Target-specific customization needs one consistent lifecycle and extension point rather than accumulating independent installer branches.
 
 **Detail:** `03_ARCHITECTURE.md` §Target post-install actions; `04_DESIGN.md` §Internal post-install action contract; task 0130.
+
+**Amendment 2026-11-05 (tasks 0161/0162 / feature D1).** Two deliberate exceptions to "post-install
+actions are the single customization seam"; the mechanism itself is unchanged. (1) `plugin`
+materialization runs no `grok-bot/register-handoff` action: the bundle reaches the host through its own
+plugin loader, which owns registration, so a Sand-shaped handoff written next to a bundle root would
+describe a tree the loader never wrote (task 0161). (2) The `requires:` filter is a pre-plan catalog
+transform, not an action: it runs before planning, lint or any write, in every mode (task 0162), while
+a post-install action runs after the catalog is already planned and written and therefore cannot drop
+an entry at all.
 
 ## ADR-038: Build a versioned Codex plugin ZIP with the CLI
 

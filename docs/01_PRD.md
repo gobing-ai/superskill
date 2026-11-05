@@ -55,7 +55,7 @@ The `cc-agents/scripts` toolchain synchronizes Claude Code plugin-format skills,
 | rulesync programmatic API | `rulesync.generate()` called from TypeScript | 005 |
 | Conversion pipeline | Slash dialect, colon→hyphen, @-file stripping, Pi subagent format | 006 |
 | Target agents | Claude Code, Codex, Pi, omp, OpenCode, antigravity-cli, antigravity-ide, Hermes, Grok | 005 |
-| Target post-install customization | Reusable customization actions within install/update, first applied to Grok Bot registration handoff preparation; future coding-agent customizations use the same mechanism. Grok Bot remains explicit opt-in; host registration and per-Bot enablement remain separate. Planned follow-up: supported automatic registration where verified, with a complete recovery-skill fallback for all mapped artifact kinds; no speculative host transport. Scope: [feature D](features/D_grok-bot-opt-in-install-target-task-0128-adr-036.md) | 036, 037 |
+| Target post-install customization | Reusable customization actions within install/update, first applied to Grok Bot registration handoff preparation; future coding-agent customizations use the same mechanism. Grok Bot remains explicit opt-in; host registration and per-Bot enablement remain separate. Planned follow-up: supported automatic registration where verified, with a complete recovery-skill fallback for all mapped artifact kinds; no speculative host transport. Grok Bot capabilities: a read-only host probe reports its findings as a receipt `doctor` reads (never a host probe by superskill), `--materialize plugin` emits a Cursor-plugin bundle for a host's own plugin route, and `requires:` frontmatter lets the Bot catalog exclude or degrade entities whose declared runtime the host declares it lacks. The Bot-side plugin install route, skill-save tool, CLI persistence and MCP support stay **unverified** until a real-Bot probe receipt records them. Scope: [feature D](features/D_grok-bot-opt-in-install-target-task-0128-adr-036.md), [feature D1](features/D1_grok-bot-plugin-native-distribution-and-host-probe.md) | 036, 037 |
 | Plugin resolution via marketplace | `--marketplace <locator>` resolves `<plugin>` from a local marketplace path, GitHub URL, or `owner/repo` shorthand; defaults to CWD's marketplace, falls back to `plugins/<name>/` scan | 011, 034 |
 | `--dry-run` / `--verbose` | Preview and diagnostics | — |
 
@@ -109,7 +109,7 @@ The `agent`, `command`, `magent`, and `skill` authoring lifecycles support five 
 | Import from non-Claude formats (Codex, Pi) | After Phase 1 install is stable; needs custom import mapper |
 | `rulesync` upstream contribution (Hermes, omp) | When Hermes/omp adoption warrants it; local targets sufficient initially |
 | Cross-platform adaptation (adapt command) | After Phase 2 authoring commands stabilize; generate Codex/Pi/etc. variants from a single abstract definition |
-| `superskill list`, `doctor`, `init` | After Phase 1 install is stable; thin commands that read config + check paths. `doctor` shipped grok-bot-scoped in task 0128 (ADR-036); general diagnostics deferred |
+| `superskill list`, `doctor`, `init` | After Phase 1 install is stable; thin commands that read config + check paths. `doctor` shipped grok-bot-scoped in task 0128 (ADR-036) and reports a Bot-written probe receipt additively ([feature D1](features/D1_grok-bot-plugin-native-distribution-and-host-probe.md)); general diagnostics deferred |
 | GUI / TUI | When target-user workflow demands it |
 
 ### Out of scope
