@@ -72,7 +72,7 @@ Feature: Grok Bot plugin-native distribution and host probe
 | 0160 | Grok Bot host capability probe skill and doctor receipt reader | done |
 | 0161 | Grok Bot plugin materialize mode emitting a Cursor-plugin bundle with skill budget and description lint | done |
 | 0162 | Runtime requires frontmatter contract and grok-bot catalog filtering | done |
-| 0163 | Annotate cc plugin entities with runtime requires | todo |
+| 0163 | Annotate cc plugin entities with runtime requires | done |
 | 0164 | Amend ADR-036/037 and sync owning docs for probe, plugin mode and requires | todo |
 <!-- END AUTO-GENERATED -->
 
