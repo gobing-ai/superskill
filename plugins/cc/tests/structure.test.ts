@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'bun:test';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
+// WHY relative (0163): `plugins/cc` is not a workspace, so it has no `@<scope>/*` alias
+// node_modules entry; these are the repo's real frontmatter parser and 0162 grammar.
+import { parseFrontmatter } from '../../../packages/core/src/content/frontmatter';
+import { parseRuntimeRequires, RUNTIME_REQUIRES_KEY } from '../../../packages/core/src/operations/runtime-requires';
 
 /**
  * Structural invariants for the cc plugin (task 0070 R10):
@@ -324,5 +328,77 @@ describe('cc plugin structure', () => {
         expect(readme).not.toContain('`tools: [Read, Glob]` — minimal, read-only tool access');
         expect(readme).toContain(CLI_TOOLS);
         expect(readme).toContain(FULL_TOOLS);
+    });
+});
+
+/**
+ * Frozen `requires:` map for the cc plugin (task 0163 R1/R3, feature D1 P2).
+ *
+ * Every skill, command and subagent declares the runtime its instructions depend on, so a grok-bot
+ * install can exclude what a Bot cannot serve. The value is compared through 0162's
+ * `parseRuntimeRequires`, so a token outside the closed grammar fails here too.
+ *
+ * `grok-bot-probe` is the 31st entity: task 0160 added it after 0163's table was frozen at 30.
+ * It classifies as unannotated by 0163's own rules — no CLI its instructions must run, no hook that
+ * must fire, no agent dispatch, and its single write is its own receipt under the host's data root,
+ * not the operator's tree.
+ */
+const CC_CLI: string[] = ['cli:superskill', 'local-fs'];
+const CC_RUNTIME_REQUIRES: Record<string, string[]> = {
+    'agents/expert-agent.md': CC_CLI,
+    'agents/expert-command.md': CC_CLI,
+    'agents/expert-hook.md': CC_CLI,
+    'agents/expert-magent.md': CC_CLI,
+    'agents/expert-skill.md': CC_CLI,
+    'commands/agent-add.md': CC_CLI,
+    'commands/agent-evaluate.md': CC_CLI,
+    'commands/agent-evolve.md': CC_CLI,
+    'commands/agent-refine.md': CC_CLI,
+    'commands/command-add.md': CC_CLI,
+    'commands/command-evaluate.md': CC_CLI,
+    'commands/command-evolve.md': CC_CLI,
+    'commands/command-refine.md': CC_CLI,
+    'commands/hook-evaluate.md': CC_CLI,
+    'commands/magent-add.md': CC_CLI,
+    'commands/magent-evaluate.md': CC_CLI,
+    'commands/magent-evolve.md': CC_CLI,
+    'commands/magent-refine.md': CC_CLI,
+    'commands/skill-add.md': CC_CLI,
+    'commands/skill-evaluate.md': CC_CLI,
+    'commands/skill-evolve.md': CC_CLI,
+    'commands/skill-refine.md': CC_CLI,
+    'skills/anti-hallucination/SKILL.md': [],
+    'skills/cc-agents/SKILL.md': CC_CLI,
+    'skills/cc-commands/SKILL.md': CC_CLI,
+    'skills/cc-hooks/SKILL.md': CC_CLI,
+    'skills/cc-magents/SKILL.md': CC_CLI,
+    'skills/cc-skills/SKILL.md': CC_CLI,
+    'skills/grok-bot-probe/SKILL.md': [],
+    'skills/grok-bot-register/SKILL.md': CC_CLI,
+    'skills/openai-publish-plugin/SKILL.md': ['local-fs'],
+};
+
+describe('cc runtime requires (0163)', () => {
+    it('declares exactly the frozen requires for every entity, including newly added ones', () => {
+        const entities = [
+            ...readdirSync(SKILLS_ROOT).map((id) => `skills/${id}/SKILL.md`),
+            ...readdirSync(join(PLUGIN_ROOT, 'commands'))
+                .filter((file) => file.endsWith('.md'))
+                .map((file) => `commands/${file}`),
+            ...readdirSync(join(PLUGIN_ROOT, 'agents'))
+                .filter((file) => file.endsWith('.md'))
+                .map((file) => `agents/${file}`),
+        ].sort();
+
+        // Set equality both ways: an unlisted new entity fails, and so does a stale table row.
+        expect(entities).toEqual(Object.keys(CC_RUNTIME_REQUIRES).sort());
+
+        for (const entity of entities) {
+            const { data } = parseFrontmatter(readFileSync(join(PLUGIN_ROOT, entity), 'utf-8'));
+            const parsed = parseRuntimeRequires(data[RUNTIME_REQUIRES_KEY]);
+            expect(`${entity}:${JSON.stringify(parsed)}`).toBe(
+                `${entity}:${JSON.stringify({ requires: CC_RUNTIME_REQUIRES[entity], invalid: [] })}`,
+            );
+        }
     });
 });

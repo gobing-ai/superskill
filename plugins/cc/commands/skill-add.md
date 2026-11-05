@@ -1,5 +1,6 @@
 ---
 description: Create a skill from verified requirements
+requires: [cli:superskill, local-fs]
 argument-hint: "<name> [options]"
 allowed-tools: ["Skill", "Bash(superskill:*)"]
 ---

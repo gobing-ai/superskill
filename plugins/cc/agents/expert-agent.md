@@ -16,6 +16,7 @@ description: |
   assistant: "Running superskill agent evaluate, then superskill agent refine..."
   <commentary>Runs the global superskill agent CLI for evaluate + refine operations</commentary>
   </example>
+requires: [cli:superskill, local-fs]
 tools: [Read, Glob, Bash, Skill]
 model: inherit
 color: azure

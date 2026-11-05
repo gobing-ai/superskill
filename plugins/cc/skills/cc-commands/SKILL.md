@@ -1,6 +1,7 @@
 ---
 name: cc-commands
 description: Create, validate, evaluate, refine, and evolve slash commands across platforms. Use for scaffolding new commands, validating structure, evaluating quality, refining based on feedback, planning longitudinal improvements, or generating cross-platform equivalents.
+requires: [cli:superskill, local-fs]
 license: Apache-2.0
 metadata:
   author: superskill

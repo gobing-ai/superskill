@@ -1,5 +1,6 @@
 ---
 description: Analyze command evolution signals, draft/apply proposals, and rollback versions
+requires: [cli:superskill, local-fs]
 argument-hint: "<name> [--analyze] [--from <date>] [--propose-only] [--accept <id>] [--reject <id>] [--history] [--rollback <id> --confirm] [--ingest <file>] [--json] [--margin <n>] [--eval-gate] [--target <platform>]"
 allowed-tools: ["Read", "Write", "Glob", "Bash", "Skill"]
 ---

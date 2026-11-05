@@ -1,5 +1,6 @@
 ---
 description: Score hook quality across 4 dimensions (safety, correctness, event-coverage, pattern-match)
+requires: [cli:superskill, local-fs]
 argument-hint: "<nameOrPath> [--json] [--target <platform>] [--save] [--rubric <file>] [--ingest <file>]"
 allowed-tools: ["Read", "Write", "Glob", "Bash", "Skill"]
 ---

@@ -1,5 +1,6 @@
 ---
 description: Review skill evolution evidence and manage proposals
+requires: [cli:superskill, local-fs]
 argument-hint: "<name> [options]"
 allowed-tools: ["Skill", "Bash(superskill:*)"]
 ---

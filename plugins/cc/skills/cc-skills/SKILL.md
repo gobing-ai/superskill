@@ -1,6 +1,7 @@
 ---
 name: cc-skills
 description: Create, validate, evaluate, refine, and evolve agent skills. Use when scaffolding a SKILL.md, reviewing a skill's triggering or task results, improving its instructions and supporting files, or managing evidence-backed evolution proposals.
+requires: [cli:superskill, local-fs]
 license: Apache-2.0
 metadata:
   author: superskill

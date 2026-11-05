@@ -1,5 +1,6 @@
 ---
 description: Evolve a main-agent config from evidence
+requires: [cli:superskill, local-fs]
 argument-hint: "<name> [options]"
 allowed-tools: ["Skill", "Bash(superskill:*)"]
 ---

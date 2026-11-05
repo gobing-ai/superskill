@@ -16,6 +16,7 @@ description: |
   assistant: "Delegating to cc:cc-commands for evaluate + refine..."
   <commentary>Delegates to cc-commands evaluate + refine operations</commentary>
   </example>
+requires: [cli:superskill, local-fs]
 tools: [Read, Glob, Bash, Skill]
 model: inherit
 color: gold

@@ -1,5 +1,6 @@
 ---
 description: Refine a skill and its supporting files
+requires: [cli:superskill, local-fs]
 argument-hint: "<nameOrPath> [options]"
 allowed-tools: ["Skill", "Bash(superskill:*)"]
 ---

@@ -1,5 +1,6 @@
 ---
 description: Check agent quality score and identify weaknesses
+requires: [cli:superskill, local-fs]
 argument-hint: "<nameOrPath> [--json] [--target <platform>] [--save] [--rubric <file>] [--ingest <file>]"
 allowed-tools: ["Read", "Write", "Glob", "Bash", "Skill"]
 ---

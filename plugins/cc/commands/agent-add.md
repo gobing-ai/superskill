@@ -1,5 +1,6 @@
 ---
 description: Create a new agent with scaffolding and templates
+requires: [cli:superskill, local-fs]
 argument-hint: "<name> [--description <text>] [--target <platform>] [--output <dir>] [--template <tier>] [--tools <list>] [--force]"
 allowed-tools: ["Read", "Write", "Glob", "Bash", "Skill"]
 ---

@@ -1,5 +1,6 @@
 ---
 description: Score command quality across 10 dimensions
+requires: [cli:superskill, local-fs]
 argument-hint: "<nameOrPath> [--json] [--target <platform>] [--save] [--rubric <file>] [--ingest <file>] [--base-path <dir>]"
 allowed-tools: ["Read", "Write", "Glob", "Bash", "Skill"]
 ---

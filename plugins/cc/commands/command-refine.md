@@ -1,5 +1,6 @@
 ---
 description: Evaluate and fix command issues in one step
+requires: [cli:superskill, local-fs]
 argument-hint: "<nameOrPath> [--auto] [--save] [--dry-run] [--target <platform>]"
 allowed-tools: ["Read", "Write", "Glob", "Bash", "Skill"]
 ---

@@ -10,6 +10,7 @@ description: |-
   <commentary>Routes main-agent authoring to the cc-magents skill; the skill owns the workflow and current CLI surface.</commentary>
   </example>
 
+requires: [cli:superskill, local-fs]
 tools: [Read, Write, Edit, Glob, Grep, Bash, WebFetch, WebSearch]
 model: inherit
 color: teal

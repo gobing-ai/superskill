@@ -1,5 +1,6 @@
 ---
 description: Evaluate a skill's instructions and evidence
+requires: [cli:superskill, local-fs]
 argument-hint: "<nameOrPath> [options]"
 allowed-tools: ["Skill", "Bash(superskill:*)"]
 ---

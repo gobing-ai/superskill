@@ -1,5 +1,6 @@
 ---
 description: Scaffold a main-agent config seed
+requires: [cli:superskill, local-fs]
 argument-hint: "<name> [options]"
 allowed-tools: ["Skill", "Bash(superskill:*)"]
 ---

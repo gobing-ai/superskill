@@ -1,6 +1,7 @@
 ---
 name: cc-agents
 description: "Use this skill when the user asks to 'create a new agent', 'scaffold an agent', 'evaluate agent quality', 'validate agent file', 'refine agent definition', or 'plan agent evolution'. Creates, validates, evaluates, refines, and supports longitudinal evolution workflows for subagent definitions across 6 platforms."
+requires: [cli:superskill, local-fs]
 license: Apache-2.0
 metadata:
   author: superskill

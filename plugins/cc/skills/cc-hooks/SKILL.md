@@ -1,6 +1,7 @@
 ---
 name: cc-hooks
 description: "Multi-agent hook system: author hooks once as rulesync-canonical hooks.json (HookDefinitionSchema), deploy via superskill install / superskill hook emit to Claude Code, Codex, OpenCode, Pi (pi-hooks), and Gemini CLI. Covers command, prompt, and http hooks, cross-platform event mapping, and safety invariants."
+requires: [cli:superskill, local-fs]
 license: Apache-2.0
 version: 3.0.0
 created_at: 2026-03-23

@@ -1,6 +1,7 @@
 ---
 name: cc-magents
 description: "Create, validate, evaluate, refine, and evolve main-agent instructions. Use for AGENTS.md, CLAUDE.md, GEMINI.md, scoped rules, and shared main-agent packages; verify each target's actual loading behavior."
+requires: [cli:superskill, local-fs]
 license: Apache-2.0
 metadata:
   author: superskill

@@ -124,6 +124,10 @@ describe('grok-bot install (task 0128)', () => {
                 verbose: false,
                 prune: false,
                 materialize,
+                // WHY (0163): the cc entities now declare `requires:`, so a Bot that provides nothing
+                // installs only the two unannotated skills. This test proves whole-catalog
+                // materialization, so it declares the runtime the operator's own CLI and tree give it.
+                botProvides: ['cli:superskill', 'local-fs'],
             });
             const handoff = JSON.parse(
                 readFileSync(join(sand, '.superskill/grok-bot/register/cc.json'), 'utf-8'),

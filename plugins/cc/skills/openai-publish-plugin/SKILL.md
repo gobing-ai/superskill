@@ -5,6 +5,7 @@ description: >-
   submission checks, guide personal legal attestations, and publish an approved
   release. Use for OpenAI marketplace publication, submission ZIPs, reviewer
   access issues, or release-status checks for skills-only or MCP plugins.
+requires: [local-fs]
 ---
 
 # Publish a plugin to OpenAI

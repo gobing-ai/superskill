@@ -1,5 +1,6 @@
 ---
 description: Evaluate a main-agent config
+requires: [cli:superskill, local-fs]
 argument-hint: "<nameOrPath> [options]"
 allowed-tools: ["Skill", "Bash(superskill:*)"]
 ---

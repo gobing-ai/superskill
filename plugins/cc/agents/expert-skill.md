@@ -10,6 +10,7 @@ description: |-
   <commentary>The skill owns discovery checks, semantic edits, and verification.</commentary>
   </example>
 
+requires: [cli:superskill, local-fs]
 tools: [Read, Write, Edit, Glob, Grep, Bash, WebFetch, WebSearch]
 model: inherit
 color: teal

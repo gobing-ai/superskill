@@ -6,6 +6,7 @@ description: >-
   Triggers: "register grok-bot skills", "consume superskill handoff",
   "slash picker empty after superskill install", "bulk register cc/sp/kk",
   "/cc-grok-bot-register". Separates registration, enablement and observed invocation.
+requires: [cli:superskill, local-fs]
 ---
 
 # Grok Bot slash registration (post–`superskill install`)
