@@ -4,7 +4,7 @@ name: Amend ADR-036/037 and sync owning docs for probe, plugin mode and requires
 status: done
 template: feature-impl
 created_at: 2026-11-04T23:00:25.259Z
-updated_at: "2026-11-05T09:36:04.388Z"
+updated_at: "2026-11-05T17:17:09.892Z"
 feature_id: D1
 
 dependencies: ["0161", "0162"]
@@ -200,27 +200,23 @@ Documentation-only pass: two dated ADR-036 amendments, one dated ADR-037 amendme
 
 | Requirement | Status | Evidence |
 |-------------|--------|----------|
-| R1 | MET | [docs/00_ADR.md:760-788](file:///Users/robin/xprojects/superskill-runall-d1-8668/docs/00_ADR.md#L760-L788) |
-| R2 | MET | [docs/00_ADR.md:806-813](file:///Users/robin/xprojects/superskill-runall-d1-8668/docs/00_ADR.md#L806-L813) |
-| R3 | MET | [docs/00_ADR.md:790-794](file:///Users/robin/xprojects/superskill-runall-d1-8668/docs/00_ADR.md#L790-L794) |
-| R4 | MET | [docs/01_PRD.md:58,112](file:///Users/robin/xprojects/superskill-runall-d1-8668/docs/01_PRD.md#L58), [docs/02_ROADMAP.md:119-122](file:///Users/robin/xprojects/superskill-runall-d1-8668/docs/02_ROADMAP.md#L119-L122) |
-| R5 | MET | [docs/tasks/0164_amend-adr-036-037-and-sync-owning-docs-for-probe-plugin-mode.md:166-181,194-209](file:///Users/robin/xprojects/superskill-runall-d1-8668/docs/tasks/0164_amend-adr-036-037-and-sync-owning-docs-for-probe-plugin-mode.md#L166-L181) |
-| R6 | MET | checks `bun run lint`, `bun run test`, `bun run build`, `bun run spur-check`, `spur feature check D1 --json` |
+| R1 | MET | ADR-036 amendment `docs/00_ADR.md:760` (plugin mode, requires, manifest growth, default stays bridge) |
+| R2 | MET | ADR-037 amendment `docs/00_ADR.md:806` (no register handoff; pre-plan transform) |
+| R3 | MET | `docs/00_ADR.md:760` default-mode decision; `docs/02_ROADMAP.md:121` flip precondition |
+| R4 | MET | `docs/01_PRD.md:58`, `docs/01_PRD.md:112`, `docs/02_ROADMAP.md:119` |
+| R5 | MET | `docs/01_PRD.md:58` (live-host claims marked unverified), `docs/00_ADR.md:787` (plugin install unverified); sibling-owned claims hedged this run (--fix all): `docs/04_DESIGN.md:324-326` (plugin route unverified), `docs/04_DESIGN.md:343` (MCP root-variable expansion unverified, cites https://cursor.com/docs/reference/plugins) |
+| R6 | MET | command: bun run test, build, spur-check exit 0; biome clean; tsc via bunx exit 0 |
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
 |---------------------|--------|---------------|----------|
-| AC1 — ADR-036 records plugin mode, requires and manifest growth (req: R1, R3) | MET | command | [docs/00_ADR.md:760-794](file:///Users/robin/xprojects/superskill-runall-d1-8668/docs/00_ADR.md#L760-L794); check `spur task check 0164` |
-| AC2 — ADR-037 records both exceptions (req: R2) | MET | command | [docs/00_ADR.md:806-813](file:///Users/robin/xprojects/superskill-runall-d1-8668/docs/00_ADR.md#L806-L813); check `spur task check 0164` |
-| AC3 — PRD and ROADMAP reflect the capability (req: R4) | MET | command | [docs/01_PRD.md:58,112](file:///Users/robin/xprojects/superskill-runall-d1-8668/docs/01_PRD.md#L58), [docs/02_ROADMAP.md:119-122](file:///Users/robin/xprojects/superskill-runall-d1-8668/docs/02_ROADMAP.md#L119-L122); check `spur task check 0164` |
-| AC4 — Live-host claims are evidenced or marked unverified (req: R5) | MET | command | [docs/tasks/0164_amend-adr-036-037-and-sync-owning-docs-for-probe-plugin-mode.md:166-181,194-209](file:///Users/robin/xprojects/superskill-runall-d1-8668/docs/tasks/0164_amend-adr-036-037-and-sync-owning-docs-for-probe-plugin-mode.md#L166-L181); check `spur task check 0164` |
-| R6 — Documentation and gates (R6) | MET | command | checks `bun run lint`, `bun run test`, `bun run build`, `bun run spur-check`, `spur feature check D1 --json` |
+| R6 — Documentation and gates (R6) | MET | command | bun run test / build / spur-check exit 0; docs `docs/00_ADR.md:760`, `docs/00_ADR.md:806`, `docs/01_PRD.md:58`, `docs/02_ROADMAP.md:119` |
 - Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review
 
 #### Review Report — 0164
 
-Confidence: MEDIUM
+Confidence: HIGH
 
 Verdict: PASS
 
@@ -229,7 +225,7 @@ Verdict: PASS
 | # | Priority | Dimension | Finding | Location | Disposition |
 |---|----------|-----------|---------|----------|-------------|
 | 1 | P4 (advisory) | — | No P1–P3 findings: 3 doc files reviewed across all six dimensions; R1–R6 traceable to docs and verified checks | docs/00_ADR.md:760-794 | ACCEPTED |
-| 2 | P4 (advisory) | usability | Sibling-owned unhedged live-host claims in docs/04_DESIGN.md:323-325 and :341 documented in R5 audit; deferred to future follow-up as out-of-scope for 0164 | docs/04_DESIGN.md:323-325 | ACCEPTED |
+| 2 | P4 (advisory) | usability | Sibling-owned live-host claims (Bot plugin-route install; Bot expansion of `${CURSOR_PLUGIN_ROOT}`) now marked **unverified**, the Cursor variable citing https://cursor.com/docs/reference/plugins — fixed during the D1 `dev-verifyall --fix all` re-audit (2026-11-05) | docs/04_DESIGN.md:324-326, docs/04_DESIGN.md:343 | RESOLVED |
 
 ##### Functional traceability (sp-functional-review)
 
@@ -239,7 +235,7 @@ Verdict: PASS
 | R2 | MET | docs/00_ADR.md:806-813 |
 | R3 | MET | docs/00_ADR.md:790-794 |
 | R4 | MET | docs/01_PRD.md:58,112, docs/02_ROADMAP.md:119-122 |
-| R5 | MET | docs/tasks/0164_amend-adr-036-037-and-sync-owning-docs-for-probe-plugin-mode.md:166-181,194-209 |
+| R5 | MET | docs/01_PRD.md:58, docs/00_ADR.md:787, docs/04_DESIGN.md:324-326, docs/04_DESIGN.md:343 |
 | R6 | MET | checks bun run lint, bun run test, bun run build, bun run spur-check, spur feature check D1 --json |
 
 | AC | Status | Evidence Type | Evidence |
@@ -247,7 +243,7 @@ Verdict: PASS
 | AC1 — ADR-036 records plugin mode, requires and manifest growth (req: R1, R3) | MET | command+static-ref | docs/00_ADR.md:760-794; check spur task check 0164 |
 | AC2 — ADR-037 records both exceptions (req: R2) | MET | command+static-ref | docs/00_ADR.md:806-813; check spur task check 0164 |
 | AC3 — PRD and ROADMAP reflect the capability (req: R4) | MET | command+static-ref | docs/01_PRD.md:58,112, docs/02_ROADMAP.md:119-122; check spur task check 0164 |
-| AC4 — Live-host claims are evidenced or marked unverified (req: R5) | MET | command+static-ref | docs/tasks/0164_amend-adr-036-037-and-sync-owning-docs-for-probe-plugin-mode.md:166-181,194-209; check spur task check 0164 |
+| AC4 — Live-host claims are evidenced or marked unverified (req: R5) | MET | command+static-ref | docs/01_PRD.md:58, docs/00_ADR.md:787, docs/04_DESIGN.md:324-326, docs/04_DESIGN.md:343; check spur task check 0164 |
 | AC5 — Gates and feature check pass (req: R6) | MET | command | checks bun run lint, bun run test, bun run build, bun run spur-check, spur feature check D1 --json |
 
 ##### SECUA quality (sp-code-verification review)
@@ -266,8 +262,11 @@ Verdict: PASS
 
 ##### Verification commands
 
+Re-run 2026-11-05 via `spur feature verify D1` (PASS); typecheck ran through a PATH `tsc` shim (`bunx -p typescript@5 tsc`) because typescript is not declared in the workspace.
+
+
 - `bun run lint` — clean (biome check and typecheck pass across all workspaces, 269 files checked).
-- `bun run test` — 2733 pass / 0 fail across 132 files (98.88% line coverage, 99.61% function coverage).
+- `bun run test` — 2734 pass / 0 fail across 132 files (98.88% line coverage, 99.61% function coverage).
 - `bun run build` — compiles standalone binary and package zip cleanly.
 - `bun run spur-check` — 42 pre-check rules, full test suite, and 3 post-check rules all pass.
 - `spur feature check D1 --json` — PASS (exit 0, pass: true).

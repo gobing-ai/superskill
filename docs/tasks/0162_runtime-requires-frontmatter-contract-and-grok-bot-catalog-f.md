@@ -4,7 +4,7 @@ name: Runtime requires frontmatter contract and grok-bot catalog filtering
 status: done
 template: feature-impl
 created_at: 2026-11-04T23:00:24.487Z
-updated_at: "2026-11-05T09:36:03.718Z"
+updated_at: "2026-11-05T16:44:02.337Z"
 feature_id: D1
 
 dependencies: ["0160"]
@@ -179,21 +179,16 @@ receipt is never read on this path: `--bot-provides` is operator-declared, per t
 
 | Requirement | Status | Evidence |
 |-------------|--------|----------|
-| R1 | MET | packages/core/src/operations/runtime-requires.ts:11-58 (grammar and parser), tests packages/core/tests/operations/runtime-requires.test.ts:10-50 |
-| R2 | MET | packages/core/src/operations/validate.ts:92-96,356-360,390-401 (validate recognition), tests packages/core/tests/operations/runtime-requires.test.ts:52-118 |
-| R3 | MET | packages/core/src/operations/grok-bot.ts:289-293,338-356 (BotSkillEntry.requires and preflight), tests packages/core/tests/operations/runtime-requires.test.ts:120-184, apps/cli/tests/commands/install-grok-bot-requires.test.ts:86-107 |
-| R4 | MET | packages/core/src/operations/grok-bot.ts:366-444 (filterGrokBotEntries and degradation), apps/cli/src/commands/install.ts:148-216,840-880 (flags and filter call), tests apps/cli/tests/commands/install-grok-bot-requires.test.ts:10-84, packages/core/tests/operations/runtime-requires.test.ts:186-276 |
-| R5 | MET | packages/core/src/operations/install-manifest.ts:65-71,309-320 (manifest schema), apps/cli/src/commands/install.ts:192-216,1455-1463, apps/cli/src/commands/update.ts:303-311,386-395 (update threading), tests packages/core/tests/operations/runtime-requires.test.ts:278-316, apps/cli/tests/commands/install-grok-bot-requires.test.ts:124-182,213-239 |
-| R6 | MET | docs/04_DESIGN.md:89,103-104,250-294 (frontmatter contract and flags), docs/03_ARCHITECTURE.md:469-478 (architecture data-flow), tests apps/cli/tests/commands/install-grok-bot-requires.test.ts:184-211, checks bun run lint, bun run test, bun run build, bun run spur-check |
+| R1 | MET | contract `docs/04_DESIGN.md:275`; parser tests `packages/core/tests/operations/runtime-requires.test.ts:29` |
+| R2 | MET | validator tests `packages/core/tests/operations/runtime-requires.test.ts:53`, `packages/core/tests/operations/runtime-requires.test.ts:84` |
+| R3 | MET | mapper/preflight `packages/core/tests/operations/runtime-requires.test.ts:102`, `packages/core/tests/operations/runtime-requires.test.ts:135`; invalid token `apps/cli/tests/commands/install-grok-bot-requires.test.ts:165` |
+| R4 | MET | exclude `apps/cli/tests/commands/install-grok-bot-requires.test.ts:92`, zero entries `apps/cli/tests/commands/install-grok-bot-requires.test.ts:151`, degrade `apps/cli/tests/commands/install-grok-bot-requires.test.ts:118`, plugin mode `apps/cli/tests/commands/install-grok-bot-requires.test.ts:178` |
+| R5 | MET | manifest + update `apps/cli/tests/commands/install-grok-bot-requires.test.ts:192`, flag misuse `apps/cli/tests/commands/install-grok-bot-requires.test.ts:312` |
+| R6 | MET | codex byte-identity `apps/cli/tests/commands/install-grok-bot-requires.test.ts:252`; claude target (added this run under --fix all) `apps/cli/tests/commands/install-grok-bot-requires.test.ts:284`; docs `docs/03_ARCHITECTURE.md:472-478` |
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
 |---------------------|--------|---------------|----------|
-| AC1 — The requires grammar parses and validates (req: R1, R2) | MET | test | packages/core/tests/operations/runtime-requires.test.ts:10-118 |
-| AC2 — Requirements survive the mapper for every entity kind (req: R3) | MET | test | packages/core/tests/operations/runtime-requires.test.ts:120-184 |
-| R5 — Runtime requirements filter the Bot catalog (R5) | MET | test | apps/cli/tests/commands/install-grok-bot-requires.test.ts:10-84 |
-| AC4 — Degrade policy labels instead of dropping (req: R4) | MET | test | apps/cli/tests/commands/install-grok-bot-requires.test.ts:39-84 |
-| AC5 — Options persist through update (req: R5) | MET | test | apps/cli/tests/commands/install-grok-bot-requires.test.ts:124-182 |
-| AC6 — Other targets are unaffected and docs synced (req: R6) | MET | test | apps/cli/tests/commands/install-grok-bot-requires.test.ts:184-211; checks bun run lint, bun run test, bun run build, bun run spur-check |
+| R5 — Runtime requirements filter the Bot catalog (R5) | MET | test | `apps/cli/tests/commands/install-grok-bot-requires.test.ts:92`, `apps/cli/tests/commands/install-grok-bot-requires.test.ts:118`, `apps/cli/tests/commands/install-grok-bot-requires.test.ts:192`, `apps/cli/tests/commands/install-grok-bot-requires.test.ts:284` |
 - Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review

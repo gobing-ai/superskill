@@ -322,7 +322,9 @@ a receipt recording `plugin` does the same with `--materialize plugin --plugin-d
 `--materialize plugin` is full-mode emission against the operator-chosen bundle root
 (`workflowsDir = <pluginDir>/skills`), plus two owned metadata files, so a Grok Bot (or any
 Cursor-compatible host) can install the catalog through its plugin route instead of the Sand
-`workflows/` tree. No new command, no new dependency.
+`workflows/` tree. No new command, no new dependency. That a Grok Bot host actually installs the
+bundle through a plugin route stays **unverified** until a real-Bot probe receipt records
+`plugin-install` as `observed` (ADR-036 amendment 2026-11-05); the bundle shape itself is test-verified.
 
 ```text
 <pluginDir>/
@@ -338,7 +340,7 @@ Cursor-compatible host) can install the catalog through its plugin route instead
 | --- | --- |
 | Entry set | The same `collectBotSkillEntries` output bridge/full publish (commands/subagents already folded into `skills/`), so the three catalogs cannot drift. hooks/magents/scripts stay unsupported and are reported; `mcp.json` *is* emitted |
 | `plugin.json` | `name` = plugin id, `description` = the plugin's `plugin.json` description else `superskill bundle of <plugin>`, `version` = upstream version only when semver. Stable key order, 2-space JSON, trailing newline |
-| `mcp.json` | Byte copy of the staged mapper output with `${PLUGIN_ROOT}` rewritten to `${CURSOR_PLUGIN_ROOT}` (Cursor expands the latter, not the standard variable) |
+| `mcp.json` | Byte copy of the staged mapper output with `${PLUGIN_ROOT}` rewritten to `${CURSOR_PLUGIN_ROOT}` (Cursor's documented root variable, https://cursor.com/docs/reference/plugins; whether a Grok Bot host expands it is **unverified** until a probe receipt records MCP support) |
 | Ownership | Full-mode rules with `workflowsDir = <pluginDir>/skills`: unmarked skill dirs are foreign (skipped by prune, never overwritten), drifted owned dirs and unowned extras fail before writes, `--prune` removes only owned undrifted dirs |
 | Foreign bundle | A pre-existing `.cursor-plugin/plugin.json` with no install manifest beneath the bundle root fails before any write |
 | Rollback | Skills, `plugin.json`, `mcp.json` and the manifest share one `FilesystemTransaction`; any failure restores the prior bundle bytes |

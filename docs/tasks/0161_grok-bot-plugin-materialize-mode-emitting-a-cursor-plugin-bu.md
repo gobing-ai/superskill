@@ -4,7 +4,7 @@ name: Grok Bot plugin materialize mode emitting a Cursor-plugin bundle with skil
 status: done
 template: feature-impl
 created_at: 2026-11-04T23:00:24.073Z
-updated_at: "2026-11-05T09:36:03.052Z"
+updated_at: "2026-11-05T16:44:01.424Z"
 feature_id: D1
 
 dependencies: ["0160"]
@@ -188,23 +188,17 @@ Scenario: AC8 — Docs and gates (req: R6)
 
 | Requirement | Status | Evidence |
 |-------------|--------|----------|
-| R1 | MET | apps/cli/src/commands/install.ts:136-179 (flag validation matrix), packages/core/src/operations/grok-bot.ts:54 (union widen), tests apps/cli/tests/commands/install-grok-bot.test.ts:98 |
-| R2 | MET | apps/cli/src/commands/install.ts:1468-1555 (Cursor bundle emission), packages/core/src/operations/grok-bot.ts:417 (renderCursorPluginManifest), tests apps/cli/tests/commands/install-grok-bot.test.ts:47 |
-| R3 | MET | packages/core/src/operations/grok-bot.ts:97,356,886-960 (BotCatalogRoots and rollback), apps/cli/src/commands/install.ts:1479 (foreign check), tests apps/cli/tests/commands/install-grok-bot.test.ts:140,175 |
-| R4 | MET | packages/core/src/operations/grok-bot.ts:66,374 (cap and lint), apps/cli/src/commands/install.ts:1469 (pre-write gating), tests apps/cli/tests/commands/install-grok-bot.test.ts:198, packages/core/tests/operations/grok-bot.test.ts:333 |
-| R5 | MET | apps/cli/src/commands/update.ts:360-372 (update guidance for plugin mode), tests apps/cli/tests/commands/install-grok-bot.test.ts:252 |
-| R6 | MET | docs/04_DESIGN.md:281-314 (Cursor bundle layout and flags), docs/03_ARCHITECTURE.md:472-478 (architecture data-flow), quality checks bun run lint, bun run test, bun run build, bun run spur-check |
+| R1 | MET | `docs/04_DESIGN.md:101` (materialize union incl. plugin); flag validation test `apps/cli/tests/commands/install-grok-bot.test.ts:564` |
+| R2 | MET | bundle layout `docs/04_DESIGN.md:329`; emission tests `apps/cli/tests/commands/install-grok-bot.test.ts:524`, `packages/core/tests/operations/grok-bot.test.ts:1288` |
+| R3 | MET | ownership/prune `apps/cli/tests/commands/install-grok-bot.test.ts:647`, rollback `apps/cli/tests/commands/install-grok-bot.test.ts:685`, `packages/core/tests/operations/grok-bot.test.ts:1331` |
+| R4 | MET | budget + lint before writes `apps/cli/tests/commands/install-grok-bot.test.ts:707`, warn-only `apps/cli/tests/commands/install-grok-bot.test.ts:769`, `packages/core/tests/operations/grok-bot.test.ts:1236` |
+| R5 | MET | update skip `apps/cli/tests/commands/install-grok-bot.test.ts:795`; bridge/full regressions green on fresh `bun run test` |
+| R6 | MET | `docs/04_DESIGN.md:101-102`, `docs/04_DESIGN.md:329`, `docs/03_ARCHITECTURE.md:481` |
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
 |---------------------|--------|---------------|----------|
-| R3 — Plugin mode emits an installable Cursor-plugin bundle (R3) | MET | test | apps/cli/tests/commands/install-grok-bot.test.ts:47 |
-| AC2 — Plugin flags are validated before staging (req: R1) | MET | test | apps/cli/tests/commands/install-grok-bot.test.ts:98 |
-| AC3 — mcp.json is emitted with the Cursor root variable (req: R2) | MET | test | apps/cli/tests/commands/install-grok-bot.test.ts:117 |
-| AC4 — Reinstall, prune and foreign content are ownership-safe (req: R3) | MET | test | apps/cli/tests/commands/install-grok-bot.test.ts:140 |
-| AC5 — A failed write restores the prior bundle (req: R3) | MET | test | apps/cli/tests/commands/install-grok-bot.test.ts:175 |
-| R4 — Skill budget and descriptions are enforced (R4) | MET | test | apps/cli/tests/commands/install-grok-bot.test.ts:198 |
-| AC7 — Existing modes and update are unchanged (req: R5) | MET | test | apps/cli/tests/commands/install-grok-bot.test.ts:252 |
-| AC8 — Docs and gates (req: R6) | MET | test | docs/04_DESIGN.md:281; checks bun run lint, bun run test, bun run build, bun run spur-check |
+| R3 — Plugin mode emits an installable Cursor-plugin bundle (R3) | MET | test | `apps/cli/tests/commands/install-grok-bot.test.ts:524`, `apps/cli/tests/commands/install-grok-bot.test.ts:618`, `apps/cli/tests/commands/install-grok-bot.test.ts:647`, `apps/cli/tests/commands/install-grok-bot.test.ts:685` |
+| R4 — Skill budget and descriptions are enforced (R4) | MET | test | `apps/cli/tests/commands/install-grok-bot.test.ts:707`, `apps/cli/tests/commands/install-grok-bot.test.ts:769` |
 - Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review

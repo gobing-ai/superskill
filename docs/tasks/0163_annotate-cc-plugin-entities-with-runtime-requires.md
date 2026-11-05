@@ -4,7 +4,7 @@ name: Annotate cc plugin entities with runtime requires
 status: done
 template: feature-impl
 created_at: 2026-11-04T23:00:24.876Z
-updated_at: "2026-11-05T08:36:27.803Z"
+updated_at: "2026-11-05T16:44:03.256Z"
 feature_id: D1
 
 dependencies: ["0162"]
@@ -179,18 +179,15 @@ Totals: 30 entities. 1 has no key, 1 is `[local-fs]` and 28 are `[cli:superskill
 
 | Requirement | Status | Evidence |
 |-------------|--------|----------|
-| R1 | MET | plugins/cc/skills/*/SKILL.md, plugins/cc/commands/*.md, plugins/cc/agents/*.md; tests plugins/cc/tests/structure.test.ts:380-402 |
-| R2 | MET | apps/cli/src/commands/skill.ts:182-205, apps/cli/src/commands/command.ts:153-176, apps/cli/src/commands/agent.ts:151-174; validate loop exits 0 with 0 findings |
-| R3 | MET | plugins/cc/tests/structure.test.ts:346-402 (frozen CC_RUNTIME_REQUIRES and guard test) |
-| R4 | MET | apps/cli/src/commands/install.ts:840-880; grok-bot dry-run with defaults excludes 29 and plans 2, with provides plans 31 |
-| R5 | MET | apps/cli/tests/commands/install-grok-bot.test.ts:125-130; checks bun run lint, bun run test, bun run build, bun run spur-check |
+| R1 | MET | `plugins/cc/skills/cc-skills/SKILL.md:4`, `plugins/cc/commands/skill-add.md:3`, `plugins/cc/agents/expert-agent.md:19`, `plugins/cc/skills/openai-publish-plugin/SKILL.md:8` |
+| R2 | MET | command: skill/command/agent validate --json over all plugins/cc entities, 0 findings mention requires |
+| R3 | MET | frozen table `plugins/cc/tests/structure.test.ts:347`, guard test `plugins/cc/tests/structure.test.ts:382` (18 pass) |
+| R4 | MET | command: grok-bot dry-run defaults plans cc-anti-hallucination and cc-grok-bot-probe, 29 excluded; with --bot-provides cli:superskill --bot-provides local-fs plans 31, 0 excluded. Probe is the documented 31st entity `plugins/cc/tests/structure.test.ts:341` |
+| R5 | MET | command: bun run test, build, spur-check exit 0; biome clean; typecheck via bunx tsc exit 0 |
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
 |---------------------|--------|---------------|----------|
-| AC1 — Every cc entity carries its frozen requires value (req: R1, R3) | MET | test | plugins/cc/tests/structure.test.ts:380-402 |
-| AC2 — Annotations validate cleanly (req: R2) | MET | command | apps/cli/src/index.ts:1-25; loop across plugins/cc/{skills,commands,agents}/*.md exits 0 with 0 findings |
-| AC3 — Bot catalog follows the annotations (req: R4) | MET | command | bun apps/cli/src/index.ts install cc --targets grok-bot --dry-run; apps/cli/src/commands/install.ts:840-880 |
-| AC4 — Other targets and gates unaffected (req: R5) | MET | test | apps/cli/tests/commands/install-grok-bot.test.ts:125-130; checks bun run lint, bun run test, bun run build, bun run spur-check |
+| R5 — Runtime requirements filter the Bot catalog (R5) | MET | command | grok-bot dry-run: 29 excluded by default, 0 with provides; structure test `plugins/cc/tests/structure.test.ts:382` |
 - Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review

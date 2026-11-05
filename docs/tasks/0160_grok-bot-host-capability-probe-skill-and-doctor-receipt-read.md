@@ -4,7 +4,7 @@ name: Grok Bot host capability probe skill and doctor receipt reader
 status: done
 template: feature-impl
 created_at: 2026-11-04T22:58:00.110Z
-updated_at: "2026-11-05T09:36:02.383Z"
+updated_at: "2026-11-05T16:44:00.478Z"
 feature_id: D1
 
 ac_altitude: task-local
@@ -185,20 +185,17 @@ Feature-scenario coverage (DD-09):
 
 | Requirement | Status | Evidence |
 |-------------|--------|----------|
-| R1 | MET | plugins/cc/skills/grok-bot-probe/SKILL.md:2 (name), :33 (unverified-not-inferred rule), :103 (Non-goals: no install, registration, network actions); id-parity test packages/core/tests/operations/grok-bot-probe.test.ts:151 pins every id exactly once |
-| R2 | MET | packages/core/src/operations/grok-bot-probe.ts:15-49 (schema version/kind/frozen id list/status type); docs/04_DESIGN.md:258-268 (probe-receipt contract section) |
-| R3 | MET | packages/core/src/operations/grok-bot-probe.ts:80 (path helper), :125 (reader), tests packages/core/tests/operations/grok-bot-probe.test.ts:53-114 (AC2 matrix incl. 201-char value, 64KiB+1, symlink, duplicate id); barrel export packages/core/src/index.ts:26 |
-| R4 | MET | apps/cli/src/commands/doctor.ts:18 (printCapabilities), :72 (--receipt flag), :96 (report wiring), packages/core/src/operations/grok-bot.ts:1026-1118 (capabilities field wiring); doctor tests apps/cli/tests/commands/doctor.test.ts:145 |
-| R5 | MET | regressions in apps/cli/tests/commands/doctor.test.ts:39 (exit 0/1/2 matrix) run against the new build; exit logic untouched (commit 717eb5a diff: doctor.ts additive only) |
-| R6 | MET | docs/04_DESIGN.md:255 (doctor `--receipt`), :258 (probe-receipt section), docs/00_ADR.md:751 (ADR-036 amendment 2026-11-04), docs/03_ARCHITECTURE.md:169 (grok-bot-probe module row), plugins/cc/README.md:38 (9 skills); verification below |
+| R1 | MET | `plugins/cc/skills/grok-bot-probe/SKILL.md:2` (name), `plugins/cc/skills/grok-bot-probe/SKILL.md:33` (unverified-not-inferred rule), `plugins/cc/skills/grok-bot-probe/SKILL.md:103` (Non-goals: no install/registration/network); id parity test `packages/core/tests/operations/grok-bot-probe.test.ts:151` |
+| R2 | MET | `packages/core/src/operations/grok-bot-probe.ts:15-46` (schema version, kind, frozen ids); `docs/04_DESIGN.md:295` (probe receipt contract) |
+| R3 | MET | `packages/core/src/operations/grok-bot-probe.ts:80` (path helper), `packages/core/src/operations/grok-bot-probe.ts:125` (reader); AC2 matrix `packages/core/tests/operations/grok-bot-probe.test.ts:28-151` |
+| R4 | MET | `apps/cli/src/commands/doctor.ts:18` (printCapabilities), `apps/cli/src/commands/doctor.ts:72` (--receipt), `apps/cli/src/commands/doctor.ts:96` (report); test `apps/cli/tests/commands/doctor.test.ts:145` |
+| R5 | MET | exit 0/1/2 matrix `apps/cli/tests/commands/doctor.test.ts:39` green on fresh `bun run test` |
+| R6 | MET | `docs/04_DESIGN.md:270-272` (doctor --receipt), `docs/04_DESIGN.md:363` (doctor row), `docs/00_ADR.md:751` (ADR-036 amendment), `docs/03_ARCHITECTURE.md:169`, `plugins/cc/README.md:84` |
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
 |---------------------|--------|---------------|----------|
-| R1 — Probe captures live host capability without mutation (R1) | MET | test | packages/core/tests/operations/grok-bot-probe.test.ts:151 (id-parity: each id appears exactly once in SKILL.md); plugins/cc/skills/grok-bot-probe/SKILL.md:33,103 |
-| R2 — Doctor reports probe evidence honestly (R2) | MET | test | packages/core/tests/operations/grok-bot-probe.test.ts:28-142 — truncated JSON, wrong schemaVersion, wrong kind, non-ISO generatedAt, duplicate id, 201-char value, 64KiB+1, directory/symlink, absent path → missing with path set, omitted ids → missingIds; stale via injected clock |
-| AC3 | MET | test | apps/cli/tests/commands/doctor.test.ts:145 (JSON shape state/path/generatedAt/entries/missingIds/problem; human lines; guidance line naming <dataRoot>/workflows/cc-grok-bot-probe/SKILL.md) |
-| AC4 | MET | test | packages/core/src/operations/grok-bot.ts:1026-1118 — capabilities built additively and only when --targets grok-bot doctor runs; doctor exit 0/1/2 logic untouched (apps/cli/src/commands/doctor.ts:91-99, unchanged in commit 717eb5a) |
-| AC5 | MET | test | packages/core/tests/operations/grok-bot-probe.test.ts:96,140 (200-char cap, static problem strings echo no file content); reader strips unknown ids/keys before any output |
+| R1 — Probe captures live host capability without mutation (R1) | MET | test | `packages/core/tests/operations/grok-bot-probe.test.ts:151` (each id exactly once in SKILL.md); `plugins/cc/skills/grok-bot-probe/SKILL.md:103` |
+| R2 — Doctor reports probe evidence honestly (R2) | MET | test | `packages/core/tests/operations/grok-bot-probe.test.ts:28-151` (invalid/stale/missing matrix); `apps/cli/tests/commands/doctor.test.ts:145` (valid/stale/invalid/missing exit 0, unresolved root exit 1) |
 - Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review
