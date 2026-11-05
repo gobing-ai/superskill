@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, spyOn } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, it, mock, spyOn } from 'bun:test';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -91,6 +91,7 @@ describe('migrateSkills — deterministic merge core', () => {
     });
 
     afterEach(() => {
+        mock.restore();
         chdir(prevCwd);
         rmSync(dir, { recursive: true, force: true });
     });
@@ -249,6 +250,7 @@ describe('migrateSkills — refine path (F023 generation seam)', () => {
     });
 
     afterEach(() => {
+        mock.restore();
         chdir(prevCwd);
         rmSync(dir, { recursive: true, force: true });
     });

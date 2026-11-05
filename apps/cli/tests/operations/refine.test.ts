@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, spyOn } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, it, mock, spyOn } from 'bun:test';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -273,6 +273,7 @@ describe('runInteractive', () => {
     });
 
     afterEach(() => {
+        mock.restore();
         if (tmpDir) rmSync(tmpDir, { recursive: true, force: true });
     });
 
@@ -432,6 +433,7 @@ describe('refine — auto mode', () => {
     });
 
     afterEach(() => {
+        mock.restore();
         if (tmpDir) rmSync(tmpDir, { recursive: true, force: true });
     });
 
@@ -612,6 +614,7 @@ describe('refine — dry-run', () => {
     });
 
     afterEach(() => {
+        mock.restore();
         if (tmpDir) rmSync(tmpDir, { recursive: true, force: true });
     });
 
@@ -655,6 +658,7 @@ describe('refine — directory-based skill', () => {
     });
 
     afterEach(() => {
+        mock.restore();
         if (tmpDir) rmSync(tmpDir, { recursive: true, force: true });
     });
 
@@ -714,6 +718,7 @@ describe('refine — command type', () => {
     });
 
     afterEach(() => {
+        mock.restore();
         if (tmpDir) rmSync(tmpDir, { recursive: true, force: true });
     });
 
@@ -768,6 +773,7 @@ describe('refine — magent type, frontmatter-less (0059)', () => {
     });
 
     afterEach(() => {
+        mock.restore();
         if (tmpDir) rmSync(tmpDir, { recursive: true, force: true });
     });
 

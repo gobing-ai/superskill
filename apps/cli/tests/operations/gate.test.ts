@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, spyOn } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, it, mock, spyOn } from 'bun:test';
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -87,6 +87,7 @@ describe('double-loop gate (F024)', () => {
     });
 
     afterEach(() => {
+        mock.restore();
         chdir(prevCwd);
         rmSync(dir, { recursive: true, force: true });
     });
