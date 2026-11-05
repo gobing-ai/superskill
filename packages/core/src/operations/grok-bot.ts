@@ -47,11 +47,29 @@ import { type InstallSnapshot, snapshotFiles } from './install-manifest.js';
 import type { PostInstallAction, TransactionalWrite } from './post-install.js';
 import { runPostInstallActions } from './post-install.js';
 
-/** Bot materialization mode: bridge (canonical + thin pointer) or full (in place). */
-export type GrokBotMaterialize = 'bridge' | 'full';
+/**
+ * Bot materialization mode: bridge (canonical + thin pointer), full (in place), or
+ * plugin (a Cursor-plugin bundle under an operator-chosen root — task 0161).
+ */
+export type GrokBotMaterialize = 'bridge' | 'full' | 'plugin';
 
 /** Target id constant — kept in sync with `INSTALL_TARGETS` in targets.ts. */
 export const GROK_BOT_TARGET = 'grok-bot';
+
+/** Cursor plugin manifest, relative to the bundle root (task 0161 R2). */
+export const CURSOR_PLUGIN_MANIFEST = '.cursor-plugin/plugin.json';
+
+/** Cursor plugin/skill name rule: lowercase kebab-case, alphanumeric at both ends. */
+export const CURSOR_PLUGIN_NAME_RE = /^[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?$/;
+
+/** Skill entries one Cursor-plugin bundle may carry (task 0161 R4). */
+export const GROK_BOT_PLUGIN_SKILL_CAP = 200;
+
+/** Description length under which a bundle entry earns a lint warning (never fatal). */
+export const GROK_BOT_DESCRIPTION_MIN_CHARS = 40;
+
+/** Description length ceiling (the Agent Skills limit) above which a bundle entry fails. */
+export const GROK_BOT_DESCRIPTION_MAX_CHARS = 1024;
 
 /** Marker file written into every superskill-owned workflow directory. */
 export const BOT_ORIGIN_MARKER = '.superskill-origin.json';
@@ -71,10 +89,18 @@ export interface GrokBotSource {
     locator: string;
 }
 
-/** Result of resolving the Sand data root for this host. */
-export interface SandRootResolution {
+/**
+ * Catalog root pair the planner/emitter write into: a data root and the flat
+ * skill-catalog directory under it. Plugin mode supplies its own pair (task 0161)
+ * so emission needs no Sand-root resolution.
+ */
+export interface BotCatalogRoots {
     dataRoot: string;
     workflowsDir: string;
+}
+
+/** Result of resolving the Sand data root for this host. */
+export interface SandRootResolution extends BotCatalogRoots {
     source: 'env' | 'sand-data' | 'agent-data';
     /** True when `dataRoot` is missing but its nearest existing ancestor is writable. */
     creatable: boolean;
@@ -319,6 +345,82 @@ export function collectBotSkillEntries(stagingSkillsDir: string): BotSkillEntry[
 /** Stable canonical location for one workflow id (bridge mode). */
 export function botCanonicalSkillDir(dataRoot: string, id: string): string {
     return join(resolve(dataRoot), '.superskill', GROK_BOT_TARGET, 'skills', id);
+}
+
+/**
+ * Bundle root for `--materialize plugin` (task 0161): the operator-chosen
+ * `--plugin-dir` is the bundle root itself, and its `skills/` tree plays the
+ * role `workflowsDir` plays for a Sand root — so full-mode emission (markers,
+ * drift gate, prune, rollback) applies unchanged.
+ */
+export function pluginBundleResolution(pluginDir: string): BotCatalogRoots {
+    const dataRoot = resolve(pluginDir);
+    return { dataRoot, workflowsDir: join(dataRoot, 'skills') };
+}
+
+/** One pre-write Cursor-plugin budget/description finding (task 0161 R4). */
+export interface GrokBotLintFinding {
+    id: string;
+    severity: 'error' | 'warning';
+    reason: string;
+}
+
+/**
+ * Pre-write budget + description lint over the bundle's entry set (task 0161 R4).
+ * Pure: no I/O, no clock. `overCap` is reported separately from `findings` so the
+ * caller can name the count and the cap. Findings are sorted by id; a plugin-name
+ * violation is reported with `id: <plugin>`.
+ */
+export function lintGrokBotPluginEntries(
+    entries: readonly BotSkillEntry[],
+    plugin: string,
+): { findings: GrokBotLintFinding[]; overCap: boolean } {
+    const findings: GrokBotLintFinding[] = [];
+    if (!CURSOR_PLUGIN_NAME_RE.test(plugin)) {
+        findings.push({
+            id: plugin,
+            severity: 'error',
+            reason: 'plugin name must be lowercase kebab-case per the Cursor plugin name rule',
+        });
+    }
+    for (const entry of entries) {
+        if (!CURSOR_PLUGIN_NAME_RE.test(entry.id)) {
+            findings.push({
+                id: entry.id,
+                severity: 'error',
+                reason: 'skill id must be lowercase kebab-case per the Cursor plugin name rule',
+            });
+        }
+        if (entry.description.length > GROK_BOT_DESCRIPTION_MAX_CHARS) {
+            findings.push({
+                id: entry.id,
+                severity: 'error',
+                reason: `description is ${entry.description.length} chars, over the ${GROK_BOT_DESCRIPTION_MAX_CHARS}-char ceiling`,
+            });
+        } else if (entry.description.length < GROK_BOT_DESCRIPTION_MIN_CHARS) {
+            findings.push({
+                id: entry.id,
+                severity: 'warning',
+                reason: `description is ${entry.description.length} chars, under the ${GROK_BOT_DESCRIPTION_MIN_CHARS}-char floor`,
+            });
+        }
+    }
+    findings.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+    return { findings, overCap: entries.length > GROK_BOT_PLUGIN_SKILL_CAP };
+}
+
+/**
+ * Render `.cursor-plugin/plugin.json` (task 0161 R2): stable key order
+ * (name, description, version), 2-space JSON, trailing newline, and no other keys.
+ * `version` is omitted when the upstream version is unknown/non-semver.
+ */
+export function renderCursorPluginManifest(input: { plugin: string; description?: string; version?: string }): string {
+    const manifest: Record<string, string> = {
+        name: input.plugin,
+        description: input.description?.trim() || `superskill bundle of ${input.plugin}`,
+    };
+    if (input.version !== undefined) manifest.version = input.version;
+    return `${JSON.stringify(manifest, null, 2)}\n`;
 }
 
 /**
@@ -582,7 +684,7 @@ function assertOwnedUndrifted(marker: GrokBotOriginMarker, workflowDir: string):
  */
 export function planGrokBotInstall(args: {
     entries: readonly BotSkillEntry[];
-    resolution: SandRootResolution;
+    resolution: BotCatalogRoots;
     plugin: string;
     source: GrokBotSource;
     prune: boolean;
@@ -776,7 +878,7 @@ export interface EmitGrokBotResult {
  */
 export async function emitGrokBotInstall(args: {
     entries: readonly BotSkillEntry[];
-    resolution: SandRootResolution;
+    resolution: BotCatalogRoots;
     plugin: string;
     source: GrokBotSource;
     materialize: GrokBotMaterialize;
@@ -784,6 +886,11 @@ export async function emitGrokBotInstall(args: {
     nowIso: string;
     prune: boolean;
     pruneCandidates: readonly { id: string; kind: 'canonical' | 'workflow' }[];
+    /**
+     * Extra owned files written inside the same rollback boundary (task 0161):
+     * data-root-relative path → bytes (the Cursor plugin manifest, `mcp.json`).
+     */
+    extraFiles?: ReadonlyMap<string, Buffer>;
     /** Optional receipt writer — runs inside the rollback scope (R6). */
     finalize?: (installed: InstallSnapshot) => void;
     /**
@@ -824,7 +931,7 @@ export async function emitGrokBotInstall(args: {
                 const marker = buildMarker({
                     plugin: args.plugin,
                     source: args.source,
-                    mode: 'full',
+                    mode: args.materialize,
                     canonicalPath: null,
                     superskillVersion: args.superskillVersion,
                     nowIso: args.nowIso,
@@ -835,6 +942,14 @@ export async function emitGrokBotInstall(args: {
                 });
             }
             published.push(entry.id);
+        }
+        // Plugin-mode metadata files (task 0161): same transaction, same rollback group.
+        for (const [rel, bytes] of args.extraFiles ?? []) {
+            const destination = join(resolution.dataRoot, rel);
+            await transaction.replace(destination, async (path) => {
+                mkdirSync(resolve(path, '..'), { recursive: true });
+                writeFileSync(path, bytes);
+            });
         }
         if (args.prune) {
             for (const candidate of args.pruneCandidates) {
@@ -885,6 +1000,7 @@ export async function emitGrokBotInstall(args: {
                 for (const rel of entry.files.keys()) ownedFiles.push(join(canonicalDir, rel));
             }
         }
+        for (const rel of args.extraFiles?.keys() ?? []) ownedFiles.push(join(resolution.dataRoot, rel));
         // snapshotFiles wants a common root: use the data root and absolute paths.
         const installed = snapshotFiles(
             resolution.dataRoot,

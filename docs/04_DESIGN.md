@@ -86,7 +86,7 @@ visibility and invocation are distinct evidence states.
 
 ```text
 superskill install <plugin> [--marketplace <locator>] [--targets <list>] [--no-global] [--materialize <mode>]
-    [--magent <name>] [--list-magents] [--marketplace-source <directory|github>] [--dry-run] [--verbose]
+    [--plugin-dir <path>] [--magent <name>] [--list-magents] [--marketplace-source <directory|github>] [--dry-run] [--verbose]
 
 superskill update [name] [--check] [--json] [--targets <list>] [--marketplace <locator>] [--no-global]
 ```
@@ -97,7 +97,8 @@ superskill update [name] [--check] [--json] [--targets <list>] [--marketplace <l
 | `--marketplace <locator>` | Marketplace locator (ADR-034). **Local-first disambiguation:** an existing local path is local; only a non-existent `^[\w.-]+/[\w.-]+$` is GitHub shorthand; `https://`/`git@` are always remote. Local probe: direct file (`.../marketplace.json`) → `<X>/marketplace.json` → `<X>/.claude-plugin/marketplace.json`. **Local-npm rung (ADR-034 amendment 2026-09-24):** a plain `owner/repo` shorthand first resolves from a globally installed bun/npm package (`@owner/repo`, then bare `<repo>` under `$BUN_INSTALL/install/global/node_modules`) that ships a marketplace manifest — served directly, no cache, no marker, no network; explicit GitHub URLs and ref/subdir forms always go remote. Remote content caches at `~/.cache/superskill/marketplaces/<owner>/<repo>/<ref>/`. Overrides configured plugin path and ambient discovery |
 | `--marketplace-source <mode>` | **Deprecated** (ADR-034): warns to stderr, keeps behavior, removal planned. Prefer `--marketplace <locator>` |
 | `--targets <list>` | Comma-separated target names or `all`; overrides configured targets. `all` excludes `grok-bot` (ADR-036): the Bot target is install-only and opt-in — passing it without `--targets grok-bot` errors with guidance |
-| `--materialize <mode>` | `bridge` (default) \| `full` — grok-bot only (ADR-036). `bridge` writes the canonical copy under `<sandRoot>/.superskill/grok-bot/skills/<id>/` plus a thin `workflows/<id>/SKILL.md` pointer; `full` writes everything under `workflows/<id>/`. Other targets reject the flag |
+| `--materialize <mode>` | `bridge` (default) \| `full` \| `plugin` — grok-bot only (ADR-036). `bridge` writes the canonical copy under `<sandRoot>/.superskill/grok-bot/skills/<id>/` plus a thin `workflows/<id>/SKILL.md` pointer; `full` writes everything under `workflows/<id>/`; `plugin` writes a Cursor-plugin bundle under `--plugin-dir` (task 0161, layout below). Other targets reject the flag; `plugin` without `--plugin-dir` (or the reverse) exits 2 before staging |
+| `--plugin-dir <path>` | `--materialize plugin` only: the Cursor-plugin bundle root itself, resolved against the invocation directory (one plugin per directory). No Sand root is resolved or created and no registration handoff is written |
 | `superskill.jsonc` | Project-local JSONC; supports line/block comments and trailing commas |
 | `version` | Literal `1` |
 | `plugins` | `{ name: string, path: string }[]`; matching path is used when `--marketplace` is absent |
@@ -244,7 +245,7 @@ For the `grok-bot` target the mapped staging `skills/` catalog (flat, one direct
   the receipt write is part of the rollback scope, so an emission or receipt failure restores
   prior Bot files and reports rollback errors.
 - **Receipt**: recorded at `<sandRoot>/.superskill/manifests/grok-bot/<plugin>/.superskill-manifest.json`;
-  the schema gains optional `grokBot: { materialize: 'bridge' \| 'full' }`.
+  the schema gains optional `grokBot: { materialize: 'bridge' \| 'full' \| 'plugin' }`.
 - **Summary**: `Installed '<plugin>' to <n> target(s)` counts `grok-bot` when it was requested and the emit succeeded.
 - **Doctor**: `superskill doctor --targets grok-bot [--json]` is a read-only health check of the
   Sand root + catalog (per-workflow marker/canonical/drift issues). Exit 0 healthy/creatable, 1
@@ -277,7 +278,39 @@ Doctor reads it, never probes a host itself (ADR-036 amendment 2026-11-04).
 `superskill update` scans the Bot manifest as an extra candidate root when a Sand root resolves;
 without one it warns on stderr and skips `grok-bot`. A stale Bot marketplace install is
 reinstalled with the receipt's recorded `grokBot.materialize` mode (never silently switched); a
-Bot receipt without the field skips the Bot reinstall and prints explicit reinstall guidance.
+Bot receipt without the field skips the Bot reinstall and prints explicit reinstall guidance, and
+a receipt recording `plugin` does the same with `--materialize plugin --plugin-dir <dir>` guidance
+(`update` never guesses a bundle directory).
+
+### Cursor plugin bundle (task 0161)
+
+`--materialize plugin` is full-mode emission against the operator-chosen bundle root
+(`workflowsDir = <pluginDir>/skills`), plus two owned metadata files, so a Grok Bot (or any
+Cursor-compatible host) can install the catalog through its plugin route instead of the Sand
+`workflows/` tree. No new command, no new dependency.
+
+```text
+<pluginDir>/
+  .cursor-plugin/plugin.json                       # name, description, version? — no other keys
+  skills/<id>/SKILL.md                             # Bot dialect rewrite, for every staged entry
+  skills/<id>/.superskill-origin.json              # marker: mode "plugin", canonicalPath null
+  skills/<id>/<support files>
+  mcp.json                                         # only when the mapper staged one
+  .superskill/manifests/grok-bot/<plugin>/.superskill-manifest.json
+```
+
+| Aspect | Behavior |
+| --- | --- |
+| Entry set | The same `collectBotSkillEntries` output bridge/full publish (commands/subagents already folded into `skills/`), so the three catalogs cannot drift. hooks/magents/scripts stay unsupported and are reported; `mcp.json` *is* emitted |
+| `plugin.json` | `name` = plugin id, `description` = the plugin's `plugin.json` description else `superskill bundle of <plugin>`, `version` = upstream version only when semver. Stable key order, 2-space JSON, trailing newline |
+| `mcp.json` | Byte copy of the staged mapper output with `${PLUGIN_ROOT}` rewritten to `${CURSOR_PLUGIN_ROOT}` (Cursor expands the latter, not the standard variable) |
+| Ownership | Full-mode rules with `workflowsDir = <pluginDir>/skills`: unmarked skill dirs are foreign (skipped by prune, never overwritten), drifted owned dirs and unowned extras fail before writes, `--prune` removes only owned undrifted dirs |
+| Foreign bundle | A pre-existing `.cursor-plugin/plugin.json` with no install manifest beneath the bundle root fails before any write |
+| Rollback | Skills, `plugin.json`, `mcp.json` and the manifest share one `FilesystemTransaction`; any failure restores the prior bundle bytes |
+| Budget | More than `GROK_BOT_PLUGIN_SKILL_CAP` (200) entries fails the install (exit 1) naming the count and the cap — a guard, not a current blocker (≈136 entities today) |
+| Lint | Printed before any write (and in `--dry-run`) as `grok-bot: lint <error\|warning> <id>: <reason>`, sorted by id. Error: description over `GROK_BOT_DESCRIPTION_MAX_CHARS` (1024) or an id/plugin name violating `CURSOR_PLUGIN_NAME_RE` (exit 1, nothing written). Warning: description under `GROK_BOT_DESCRIPTION_MIN_CHARS` (40) — install proceeds |
+| Flags | `--materialize plugin` requires `--plugin-dir <path>`; `--plugin-dir` requires `--materialize plugin`; either mistake exits 2 before staging |
+| Echo | `grok-bot (dry-run): skill skills/<id> (plugin)` + one line per manifest file; real run ends with `grok-bot: <n> skills in Cursor plugin bundle at <pluginDir>` |
 
 ## Command surface
 

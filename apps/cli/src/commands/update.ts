@@ -7,6 +7,7 @@ import {
     checkSkills,
     compareBundledVersion,
     compareMarketplaceManifest,
+    type GrokBotMaterialize,
     getEnvVar,
     getEnvVars,
     getGlobalLockPath,
@@ -356,15 +357,19 @@ export async function executeUpdate(
             const locator = options.marketplacePath ?? action.locator;
             const pluginRootOnly = options.marketplacePath === undefined && isPluginRootOnlyLocator(locator);
             let targets: InstallTarget[] = [...action.targets];
-            let materialize: 'bridge' | 'full' | undefined;
+            let materialize: GrokBotMaterialize | undefined;
             if (targets.includes('grok-bot')) {
-                if (action.botMaterialize === undefined) {
-                    // R4/R7: never guess the mode — a silent bridge reinstall would
-                    // switch a full-mode catalog. Guide an explicit reinstall instead.
+                if (action.botMaterialize === undefined || action.botMaterialize === 'plugin') {
+                    // R4/R7: never guess the mode or the bundle directory — a silent
+                    // bridge reinstall would switch a full-mode catalog, and a plugin
+                    // bundle lives outside the roots `update` scans (task 0161 R5).
                     targets = targets.filter((target) => target !== 'grok-bot');
                     echoError(
-                        `grok-bot: receipt for '${action.plugin}' has no recorded materialization mode — ` +
-                            `reinstall explicitly: superskill install ${action.plugin} --targets grok-bot --materialize <bridge|full>`,
+                        action.botMaterialize === 'plugin'
+                            ? `grok-bot: receipt for '${action.plugin}' records the Cursor plugin bundle mode — ` +
+                                  `reinstall explicitly: superskill install ${action.plugin} --targets grok-bot --materialize plugin --plugin-dir <dir>`
+                            : `grok-bot: receipt for '${action.plugin}' has no recorded materialization mode — ` +
+                                  `reinstall explicitly: superskill install ${action.plugin} --targets grok-bot --materialize <bridge|full>`,
                     );
                 } else {
                     materialize = action.botMaterialize;
@@ -523,7 +528,7 @@ interface MarketplaceInstallAction {
     locator: string;
     targets: Set<InstallTarget>;
     /** Recorded grok-bot materialization mode from the Bot receipt (R7). */
-    botMaterialize?: 'bridge' | 'full';
+    botMaterialize?: GrokBotMaterialize;
 }
 
 /** Resolve the Sand data root for Bot receipt scans; null when this host has none. */

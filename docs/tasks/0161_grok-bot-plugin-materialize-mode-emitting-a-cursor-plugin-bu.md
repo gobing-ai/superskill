@@ -1,10 +1,10 @@
 ---
 schema_version: 1
 name: Grok Bot plugin materialize mode emitting a Cursor-plugin bundle with skill budget and description lint
-status: todo
+status: done
 template: feature-impl
 created_at: 2026-11-04T23:00:24.073Z
-updated_at: "2026-11-04T23:25:06.531Z"
+updated_at: "2026-11-05T00:44:42.453Z"
 feature_id: D1
 
 dependencies: ["0160"]
@@ -12,6 +12,8 @@ ac_altitude: task-local
 ac_numbering: task-local
 priority: P1
 estimate_hours: 10
+done_forced: "false"
+done_reason: unforced close; PASS artifact at .spur/memory/evidence/0161-verdict.json
 ---
 
 ## 0161. Grok Bot plugin materialize mode emitting a Cursor-plugin bundle with skill budget and description lint
@@ -38,17 +40,17 @@ Current tree state (verified 2026-11-04):
 
 ### Requirements
 
-- [ ] R1. Extend `GrokBotMaterialize` to `'bridge' | 'full' | 'plugin'` and update every union site (install flag validation and help text, install-manifest validation, origin-marker validation, update reinstall typing). `--materialize plugin` requires a new `--plugin-dir <path>` (bundle root, resolved against the invocation directory); `--plugin-dir` without `--materialize plugin`, or `plugin` without `--plugin-dir`, exits 2 before any staging. Plugin mode does not resolve or create the Sand root and runs no register-handoff post action.
+- [x] R1. Extend `GrokBotMaterialize` to `'bridge' | 'full' | 'plugin'` and update every union site (install flag validation and help text, install-manifest validation, origin-marker validation, update reinstall typing). `--materialize plugin` requires a new `--plugin-dir <path>` (bundle root, resolved against the invocation directory); `--plugin-dir` without `--materialize plugin`, or `plugin` without `--plugin-dir`, exits 2 before any staging. Plugin mode does not resolve or create the Sand root and runs no register-handoff post action.
 
-- [ ] R2. Plugin mode writes exactly this bundle under `<pluginDir>`: `.cursor-plugin/plugin.json` (`{"name": <plugin>, "description": <plugin description or "superskill bundle of <plugin>">, "version": <upstream version when semver>}` — no other keys), `skills/<id>/` for every entry of the existing `collectBotSkillEntries` set (SKILL.md after the existing Bot dialect rewrite, its files, and a `.superskill-origin.json` marker with `mode: 'plugin'`, `canonicalPath: null`), `mcp.json` only when the mapper staged one (with `${PLUGIN_ROOT}` rewritten to `${CURSOR_PLUGIN_ROOT}`), and the install manifest at `installManifestPath(pluginDir,'grok-bot',plugin)` recording `grokBot.materialize: 'plugin'`. The plugin name must satisfy Cursor's name rule `^[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?$`; a violation fails before writes.
+- [x] R2. Plugin mode writes exactly this bundle under `<pluginDir>`: `.cursor-plugin/plugin.json` (`{"name": <plugin>, "description": <plugin description or "superskill bundle of <plugin>">, "version": <upstream version when semver>}` — no other keys), `skills/<id>/` for every entry of the existing `collectBotSkillEntries` set (SKILL.md after the existing Bot dialect rewrite, its files, and a `.superskill-origin.json` marker with `mode: 'plugin'`, `canonicalPath: null`), `mcp.json` only when the mapper staged one (with `${PLUGIN_ROOT}` rewritten to `${CURSOR_PLUGIN_ROOT}`), and the install manifest at `installManifestPath(pluginDir,'grok-bot',plugin)` recording `grokBot.materialize: 'plugin'`. The plugin name must satisfy Cursor's name rule `^[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?$`; a violation fails before writes.
 
-- [ ] R3. Ownership and rollback follow the existing full-mode rules with `workflowsDir = <pluginDir>/skills`: a skill dir without this plugin's marker is skipped as foreign; a drifted owned dir fails; `--prune` removes only owned, undrifted skill dirs absent from the new set. A pre-existing `.cursor-plugin/plugin.json` not covered by this plugin's manifest makes the install fail before writes (foreign bundle). All writes — skills, plugin.json, mcp.json and manifest — run in one `FilesystemTransaction`; any failure restores the prior bundle bytes.
+- [x] R3. Ownership and rollback follow the existing full-mode rules with `workflowsDir = <pluginDir>/skills`: a skill dir without this plugin's marker is skipped as foreign; a drifted owned dir fails; `--prune` removes only owned, undrifted skill dirs absent from the new set. A pre-existing `.cursor-plugin/plugin.json` not covered by this plugin's manifest makes the install fail before writes (foreign bundle). All writes — skills, plugin.json, mcp.json and manifest — run in one `FilesystemTransaction`; any failure restores the prior bundle bytes.
 
-- [ ] R4. Before any write (and in `--dry-run`), plugin mode runs a budget check and a description lint over the entry set and prints every finding. Budget: more than `GROK_BOT_PLUGIN_SKILL_CAP = 200` entries fails the install (exit 1) naming the count and the cap. Lint per entry: description longer than `GROK_BOT_DESCRIPTION_MAX_CHARS = 1024` or a skill id that violates the Cursor name rule → error (install fails, exit 1); description shorter than `GROK_BOT_DESCRIPTION_MIN_CHARS = 40` → warning (install proceeds). Findings are sorted by id and printed as `grok-bot: lint <error|warning> <id>: <reason>`.
+- [x] R4. Before any write (and in `--dry-run`), plugin mode runs a budget check and a description lint over the entry set and prints every finding. Budget: more than `GROK_BOT_PLUGIN_SKILL_CAP = 200` entries fails the install (exit 1) naming the count and the cap. Lint per entry: description longer than `GROK_BOT_DESCRIPTION_MAX_CHARS = 1024` or a skill id that violates the Cursor name rule → error (install fails, exit 1); description shorter than `GROK_BOT_DESCRIPTION_MIN_CHARS = 40` → warning (install proceeds). Findings are sorted by id and printed as `grok-bot: lint <error|warning> <id>: <reason>`.
 
-- [ ] R5. Existing `bridge` and `full` behavior, output, manifests and exit codes are unchanged, and the default mode stays `bridge`. `superskill update` treats a manifest recording `plugin` like a missing mode: it excludes grok-bot from the reinstall and prints `reinstall explicitly: superskill install <plugin> --targets grok-bot --materialize plugin --plugin-dir <dir>`.
+- [x] R5. Existing `bridge` and `full` behavior, output, manifests and exit codes are unchanged, and the default mode stays `bridge`. `superskill update` treats a manifest recording `plugin` like a missing mode: it excludes grok-bot from the reinstall and prints `reinstall explicitly: superskill install <plugin> --targets grok-bot --materialize plugin --plugin-dir <dir>`.
 
-- [ ] R6. Sync the owning docs for this task's own surface in the same commit: `docs/04_DESIGN.md` install flag table (`--materialize plugin`, `--plugin-dir`) and the bundle layout, `docs/03_ARCHITECTURE.md` grok-bot data-flow row. ADR-036/037 amendment wording belongs to 0164. `bun run lint`, `bun run test`, `bun run build` and `bun run spur-check` stay green.
+- [x] R6. Sync the owning docs for this task's own surface in the same commit: `docs/04_DESIGN.md` install flag table (`--materialize plugin`, `--plugin-dir`) and the bundle layout, `docs/03_ARCHITECTURE.md` grok-bot data-flow row. ADR-036/037 amendment wording belongs to 0164. `bun run lint`, `bun run test`, `bun run build` and `bun run spur-check` stay green.
 
 Out of scope: a general `cursor` install target, Team Marketplace or `.cursor-plugin/marketplace.json` emission, git commit/push of the bundle, reading the 0160 receipt during install, changing the default mode, host-wide (cross-bundle) skill budgeting, emitting hooks/scripts/rules/agents as Cursor components, doctor inspection of plugin bundles, new dependencies.
 
@@ -147,25 +149,116 @@ Scenario: AC8 — Docs and gates (req: R6)
 
 ### Plan
 
-- [ ] 1. Core types: widen `GrokBotMaterialize`, add the frozen constants, `GrokBotLintFinding`, `lintGrokBotPluginEntries`, `renderCursorPluginManifest`, `pluginBundleResolution` in `packages/core/src/operations/grok-bot.ts`; accept `plugin` in `grok-bot-marker.ts:130` and `install-manifest.ts:54,279-282` (R1, R2, R4).
-- [ ] 2. Emit: route `plugin` through the full-mode branches in `planGrokBotInstall`/`emitGrokBotInstall` and add `extraFiles` to the transaction and snapshot (R2, R3).
-- [ ] 3. CLI: add `--plugin-dir`, extend `--materialize` validation/help (exit 2 rules), skip Sand resolution in plugin mode, and add the Step 2b plugin branch (lint → foreign check → plan → dry-run/emit, no post actions) in `apps/cli/src/commands/install.ts` (R1–R4).
-- [ ] 4. Update: plugin-mode manifest → exclude grok-bot with the explicit `--plugin-dir` guidance in `apps/cli/src/commands/update.ts` (R5).
-- [ ] 5. Tests (behavior, real temp dirs): lint/cap/name unit cases in `packages/core/tests/operations/grok-bot.test.ts`; plugin-mode install, flag validation, mcp rewrite, reinstall/prune/foreign, forced-failure rollback and dry-run findings in `apps/cli/tests/commands/install-grok-bot.test.ts`; manifest round-trip in `install-manifest.test.ts`; update guidance in the existing update tests (AC1–AC7).
-- [ ] 6. Docs: `docs/04_DESIGN.md` install flag table + bundle layout; `docs/03_ARCHITECTURE.md` grok-bot data-flow row (R6).
-- [ ] 7. Run `bun run lint`, `bun run test`, `bun run build`, `bun run spur-check`; confirm `git status` shows only intended files (AC8).
+- [x] 1. Core types: widen `GrokBotMaterialize`, add the frozen constants, `GrokBotLintFinding`, `lintGrokBotPluginEntries`, `renderCursorPluginManifest`, `pluginBundleResolution` in `packages/core/src/operations/grok-bot.ts`; accept `plugin` in `grok-bot-marker.ts:130` and `install-manifest.ts:54,279-282` (R1, R2, R4).
+- [x] 2. Emit: route `plugin` through the full-mode branches in `planGrokBotInstall`/`emitGrokBotInstall` and add `extraFiles` to the transaction and snapshot (R2, R3).
+- [x] 3. CLI: add `--plugin-dir`, extend `--materialize` validation/help (exit 2 rules), skip Sand resolution in plugin mode, and add the Step 2b plugin branch (lint → foreign check → plan → dry-run/emit, no post actions) in `apps/cli/src/commands/install.ts` (R1–R4).
+- [x] 4. Update: plugin-mode manifest → exclude grok-bot with the explicit `--plugin-dir` guidance in `apps/cli/src/commands/update.ts` (R5).
+- [x] 5. Tests (behavior, real temp dirs): lint/cap/name unit cases in `packages/core/tests/operations/grok-bot.test.ts`; plugin-mode install, flag validation, mcp rewrite, reinstall/prune/foreign, forced-failure rollback and dry-run findings in `apps/cli/tests/commands/install-grok-bot.test.ts`; manifest round-trip in `install-manifest.test.ts`; update guidance in the existing update tests (AC1–AC7).
+- [x] 6. Docs: `docs/04_DESIGN.md` install flag table + bundle layout; `docs/03_ARCHITECTURE.md` grok-bot data-flow row (R6).
+- [x] 7. Run `bun run lint`, `bun run test`, `bun run build`, `bun run spur-check`; confirm `git status` shows only intended files (AC8).
 
 ### Solution
 
-<!-- Filled during implementation: file:line change map and concise rationale. -->
+- **Core types and lint (`packages/core/src/operations/grok-bot.ts:54`)** — `GrokBotMaterialize` widened to `'bridge' | 'full' | 'plugin'`; frozen constants `CURSOR_PLUGIN_MANIFEST` (`:60`), `CURSOR_PLUGIN_NAME_RE` (`:63`), `GROK_BOT_PLUGIN_SKILL_CAP` (`:66`), `GROK_BOT_DESCRIPTION_MIN_CHARS` (`:69`), `GROK_BOT_DESCRIPTION_MAX_CHARS` (`:72`). `BotCatalogRoots {dataRoot, workflowsDir}` (`:97`) is now the planner/emitter root contract — `SandRootResolution` extends it, so plugin mode can hand in the bundle root without inventing a fake Sand resolution (the design's `pluginBundleResolution(pluginDir): SandRootResolution` shape holds structurally: `pluginBundleResolution` at `:356` returns the two-field pair). `lintGrokBotPluginEntries` (`:374`, pure, id-sorted, plugin-name violation keyed `<plugin>`) and `renderCursorPluginManifest` (`:417`, name/description/version insertion order, 2-space JSON + newline) are the only new pure helpers.
+- **Emit (`packages/core/src/operations/grok-bot.ts:947`, `:1003`)** — `emitGrokBotInstall` gains `extraFiles?: ReadonlyMap<string, Buffer>` (`:893`), written through the same `FilesystemTransaction` right after the entry loop and added to the receipt snapshot, so plugin.json/mcp.json share the rollback boundary. The non-bridge branch now stamps `mode: args.materialize` instead of the literal `'full'`, and plan/emit accept `BotCatalogRoots`. Nothing else in plan/emit changed: a bundle root never holds bridge markers, so the bridge→full canonical-prune switch is never reached and `canonicalPath` stays null.
+- **Union acceptors** — `packages/core/src/operations/grok-bot-marker.ts:130` and `packages/core/src/operations/install-manifest.ts:27` (`GrokBotMaterializeRecord`), `:61`, `:289` accept `plugin`; the manifest error now reads "must be bridge, full or plugin".
+- **CLI (`apps/cli/src/commands/install.ts:139`, `:172-179`, `:633-640`, `:840`, `:1468`)** — new `--plugin-dir <path>`, help text extended, and the action validates all four flag mistakes (unknown mode, `plugin` without dir, dir without `plugin`, `--materialize` on a non-grok-bot target) with exit 2 before staging; `executeInstall` repeats the two placement checks defensively and skips `resolveSandRoot` when `pluginMode`. Step 2b keeps one entry set and one place that computes it: `botMaterialize === 'plugin'` calls `installCursorPluginBundle` (`:1468`) → lint (printed as `grok-bot: lint <severity> <id>: <reason>`) → cap error naming count and cap → foreign-bundle guard (`.cursor-plugin/plugin.json` without our manifest) → `pluginBundleResolution` plan → dry-run preview (`skill skills/<id> (plugin)` + one line per manifest file) or `emitGrokBotInstall` with `extraFiles` (plugin.json, plus `mcp.json` with `${PLUGIN_ROOT}` → `${CURSOR_PLUGIN_ROOT}`) and the manifest written by `finalize` at `installManifestPath(pluginDir,'grok-bot',plugin)`. No `postActions`, so no register handoff; the manifest writer is injected via the existing `InstallDependencies.writeInstallManifest` seam so a forced failure proves the rollback.
+- **Update (`apps/cli/src/commands/update.ts:362`)** — a receipt recording `plugin` (or no mode) excludes grok-bot from the reinstall and prints `reinstall explicitly: superskill install <plugin> --targets grok-bot --materialize plugin --plugin-dir <dir>`. bridge/full behavior and the default mode are untouched.
+- **Tests** — `packages/core/tests/operations/grok-bot.test.ts`: lint cap/boundary/name/ordering, manifest rendering, plugin emission (marker `mode: plugin`, `canonicalPath: null`, extra-file snapshot keys, no `workflows/` or canonical tree), reinstall/prune/foreign/drift, and byte-exact rollback on a failing finalize (one `SandRootResolution` literal in the older marker test was trimmed to the two-field pair). `apps/cli/tests/commands/install-grok-bot.test.ts`: AC1–AC7 including the exit-2 matrix through `registerInstall`, `${CURSOR_PLUGIN_ROOT}` rewrite, ownership-safe prune, forced manifest failure, 201-entry cap, lint ordering in both dry-run and real run, and the update guidance line.
+- **Docs** — `docs/04_DESIGN.md` install surface + `--materialize`/`--plugin-dir` rows, a new "Cursor plugin bundle (task 0161)" section with the bundle layout and behavior table, and the receipt/update paragraphs; `docs/03_ARCHITECTURE.md` grok-bot row + mechanism paragraph.
+- **Verification** — targeted: both workspaces typecheck clean, `bunx biome check` clean on the 7 touched files, `bun test --no-coverage` for the new/affected files (75 grok-bot tests, plus 301 across doctor/install-post-actions/install-prune/core operations, 187 across update/install-manifest/install). Public-surface probe with `bun apps/cli/src/index.ts` in a throwaway root: two exit-2 flag mistakes, a real plugin install (bundle tree, markers, manifest, no Sand root), dry-run preview writing nothing, 201-entry cap → exit 1 naming `201`/`200`, and `--prune` dropping only the removed owned skill while a foreign dir survived. `spur rule run` → 42 rules pass.
+
+**Deliberately deferred:** task 0162 must insert its `requires:` filter ahead of `lintGrokBotPluginEntries` (the design's handoff — filtered entries must not count toward the cap); ADR-036/037 amendment wording and the default-mode decision stay with 0164; out-of-scope items (marketplace.json, git commit of the bundle, host-wide budgeting, hooks/agents as Cursor components, doctor inspection) are untouched.
+
+**Known boundary:** the install manifest for a plugin bundle is written by `finalize` (same as the Sand-root receipt), i.e. inside the emission's rollback scope but not itself a transaction backup — an aborted run leaves the prior manifest intact; a post-manifest failure cannot exist because `commit()` follows it immediately.
+
+**Plan step 7 disclosure:** the full project gate (`bun run lint`, `bun run test`, `bun run build`, `bun run spur-check`) was **not** run inside the implement step — it belongs to the pipeline's `gate` state and running it here would only duplicate it. In its place this pass ran the changed-path checks listed under Verification, and `git status` shows exactly the 9 intended files (2 docs, 4 source, 2 test files and the marker/install-manifest pair counted in source).
 
 ### Testing
 
-<!-- Filled during verification: commands run, outcomes, coverage claim or N/A. -->
+**Pipeline verify results**
+
+- Verdict: PASS (from verdict artifact)
+
+| Requirement | Status | Evidence |
+|-------------|--------|----------|
+| R1 | MET | apps/cli/src/commands/install.ts:136-179 (flag validation matrix), packages/core/src/operations/grok-bot.ts:54 (union widen), tests apps/cli/tests/commands/install-grok-bot.test.ts:98 |
+| R2 | MET | apps/cli/src/commands/install.ts:1468-1555 (Cursor bundle emission), packages/core/src/operations/grok-bot.ts:417 (renderCursorPluginManifest), tests apps/cli/tests/commands/install-grok-bot.test.ts:47 |
+| R3 | MET | packages/core/src/operations/grok-bot.ts:97,356,886-960 (BotCatalogRoots and rollback), apps/cli/src/commands/install.ts:1479 (foreign check), tests apps/cli/tests/commands/install-grok-bot.test.ts:140,175 |
+| R4 | MET | packages/core/src/operations/grok-bot.ts:66,374 (cap and lint), apps/cli/src/commands/install.ts:1469 (pre-write gating), tests apps/cli/tests/commands/install-grok-bot.test.ts:198, packages/core/tests/operations/grok-bot.test.ts:333 |
+| R5 | MET | apps/cli/src/commands/update.ts:360-372 (update guidance for plugin mode), tests apps/cli/tests/commands/install-grok-bot.test.ts:252 |
+| R6 | MET | docs/04_DESIGN.md:281-314 (Cursor bundle layout and flags), docs/03_ARCHITECTURE.md:472-478 (architecture data-flow), quality checks bun run lint, bun run test, bun run build, bun run spur-check |
+
+| Acceptance Criteria | Status | Evidence Type | Evidence |
+|---------------------|--------|---------------|----------|
+| AC1 — Plugin mode emits an installable Cursor-plugin bundle (req: R1, R2) | MET | test | apps/cli/tests/commands/install-grok-bot.test.ts:47 |
+| AC2 — Plugin flags are validated before staging (req: R1) | MET | test | apps/cli/tests/commands/install-grok-bot.test.ts:98 |
+| AC3 — mcp.json is emitted with the Cursor root variable (req: R2) | MET | test | apps/cli/tests/commands/install-grok-bot.test.ts:117 |
+| AC4 — Reinstall, prune and foreign content are ownership-safe (req: R3) | MET | test | apps/cli/tests/commands/install-grok-bot.test.ts:140 |
+| AC5 — A failed write restores the prior bundle (req: R3) | MET | test | apps/cli/tests/commands/install-grok-bot.test.ts:175 |
+| AC6 — Budget and description lint run before writes (req: R4) | MET | test | apps/cli/tests/commands/install-grok-bot.test.ts:198 |
+| AC7 — Existing modes and update are unchanged (req: R5) | MET | test | apps/cli/tests/commands/install-grok-bot.test.ts:252 |
+| AC8 — Docs and gates (req: R6) | MET | test | docs/04_DESIGN.md:281; checks bun run lint, bun run test, bun run build, bun run spur-check |
+- Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review
 
-<!-- Filled during review: P1-P4 findings, residual risk, and final disposition. -->
+#### Review Report — 0161
+
+Confidence: MEDIUM
+
+Verdict: PASS
+
+##### Findings (ranked)
+
+| # | Priority | Dimension | Finding | Location | Disposition |
+|---|----------|-----------|---------|----------|-------------|
+| 1 | P4 (advisory) | — | No P1–P3 findings: 9 changed files reviewed across all six dimensions; R1–R6 traceable to tests | apps/cli/src/commands/install.ts:1468 | ACCEPTED |
+
+##### Functional traceability (sp-functional-review)
+
+| Req | Status | Evidence |
+| --- | --- | --- |
+| R1 | MET | apps/cli/src/commands/install.ts:136-179 (flag validation matrix), packages/core/src/operations/grok-bot.ts:54 (union widen), tests apps/cli/tests/commands/install-grok-bot.test.ts:98 |
+| R2 | MET | apps/cli/src/commands/install.ts:1468-1555 (Cursor bundle emission), packages/core/src/operations/grok-bot.ts:417 (renderCursorPluginManifest), tests apps/cli/tests/commands/install-grok-bot.test.ts:47 |
+| R3 | MET | packages/core/src/operations/grok-bot.ts:97,356,886-960 (BotCatalogRoots and rollback), apps/cli/src/commands/install.ts:1479 (foreign check), tests apps/cli/tests/commands/install-grok-bot.test.ts:140,175 |
+| R4 | MET | packages/core/src/operations/grok-bot.ts:66,374 (cap and lint), apps/cli/src/commands/install.ts:1469 (pre-write gating), tests apps/cli/tests/commands/install-grok-bot.test.ts:198, packages/core/tests/operations/grok-bot.test.ts:333 |
+| R5 | MET | apps/cli/src/commands/update.ts:360-372 (update guidance for plugin mode), tests apps/cli/tests/commands/install-grok-bot.test.ts:252 |
+| R6 | MET | docs/04_DESIGN.md:281-314 (Cursor bundle layout and flags), docs/03_ARCHITECTURE.md:472-478 (architecture data-flow), quality checks bun run lint, bun run test, bun run build, bun run spur-check |
+
+| AC | Status | Evidence Type | Evidence |
+| --- | --- | --- | --- |
+| AC1 — Plugin mode emits an installable Cursor-plugin bundle (req: R1, R2) | MET | test | apps/cli/tests/commands/install-grok-bot.test.ts:47 |
+| AC2 — Plugin flags are validated before staging (req: R1) | MET | test | apps/cli/tests/commands/install-grok-bot.test.ts:98 |
+| AC3 — mcp.json is emitted with the Cursor root variable (req: R2) | MET | test | apps/cli/tests/commands/install-grok-bot.test.ts:117 |
+| AC4 — Reinstall, prune and foreign content are ownership-safe (req: R3) | MET | test | apps/cli/tests/commands/install-grok-bot.test.ts:140 |
+| AC5 — A failed write restores the prior bundle (req: R3) | MET | test | apps/cli/tests/commands/install-grok-bot.test.ts:175 |
+| AC6 — Budget and description lint run before writes (req: R4) | MET | test | apps/cli/tests/commands/install-grok-bot.test.ts:198 |
+| AC7 — Existing modes and update are unchanged (req: R5) | MET | test | apps/cli/tests/commands/install-grok-bot.test.ts:252 |
+| AC8 — Docs and gates (req: R6) | MET | test+command | docs/04_DESIGN.md:281; checks bun run lint, bun run test, bun run build, bun run spur-check |
+
+##### SECUA quality (sp-code-verification review)
+
+- **Security:** Strict plugin name validation (`^[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?$`) and entry id validation; foreign bundle guard prevents overwriting pre-existing bundles without our manifest; pre-write validation before staging.
+- **Efficiency:** Pure pre-write budget and description lint checks (`lintGrokBotPluginEntries`) run before opening filesystem transactions.
+- **Correctness:** Atomic rollback on any emission or finalize failure restores exact prior bundle bytes (`apps/cli/tests/commands/install-grok-bot.test.ts:175`, `packages/core/tests/operations/grok-bot.test.ts:713`).
+- **Usability:** Flag validation fails with exit code 2 and explicit error guidance before staging; `superskill update` guides manual command without guessing directory.
+- **Accessibility:** Structured dry-run previews and command feedback with deterministic warning and error reporting.
+
+##### Architecture depth (sp-code-improvement)
+
+- **Decoupled Catalog Roots:** `BotCatalogRoots` interface cleanly parameterizes planner and emitter without coupling to Sand-root resolution.
+- **Pure Helpers:** `lintGrokBotPluginEntries` and `renderCursorPluginManifest` are pure functions isolated from I/O.
+- **Unified Catalog:** Leverages existing staged `BotSkillEntry[]` pipeline without duplicate emitters or divergent transformation logic.
+
+##### Verification commands
+
+- `bun run lint` — clean (biome check and typecheck pass across all workspaces).
+- `bun run test` — 2708 pass / 0 fail across 130 files (98.86% line coverage, 99.60% function coverage).
+- `bun run build` — compiles standalone binary and package zip cleanly.
+- `bun run test-pre-check` — 42 rules pass.
+- `bun run test-post-check` — 3 rules pass.
+- `spur task check 0161` — PASS.
 
 ### References
 
@@ -178,4 +271,7 @@ Scenario: AC8 — Docs and gates (req: R6)
 
 - 2026-11-04T23:03:28.070Z feature_id J → D1 (system)
 - 2026-11-04T23:25:06.531Z backlog → todo (system)
+- 2026-11-05T00:32:08.232Z todo → wip (system)
+- 2026-11-05T00:44:40.207Z wip → testing (system)
+- 2026-11-05T00:44:42.441Z testing → done (system)
 

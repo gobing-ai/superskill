@@ -127,7 +127,7 @@ export function readOriginMarker(
         typeof rec.source !== 'object' ||
         (rec.source.channel !== 'bundled' && rec.source.channel !== 'marketplace') ||
         typeof rec.source.locator !== 'string' ||
-        (rec.mode !== 'bridge' && rec.mode !== 'full') ||
+        (rec.mode !== 'bridge' && rec.mode !== 'full' && rec.mode !== 'plugin') ||
         typeof rec.installedAt !== 'string' ||
         typeof rec.hashes !== 'object' ||
         rec.hashes === null

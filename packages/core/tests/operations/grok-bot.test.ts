@@ -25,18 +25,26 @@ import {
     botRegisterHandoffPath,
     bridgeWorkflowTreeAcceptable,
     buildBotRegisterHandoff,
+    CURSOR_PLUGIN_MANIFEST,
     collectBotSkillEntries,
     emitGrokBotInstall,
+    GROK_BOT_DESCRIPTION_MAX_CHARS,
+    GROK_BOT_DESCRIPTION_MIN_CHARS,
+    GROK_BOT_PLUGIN_SKILL_CAP,
     GROK_BOT_TARGET,
     inspectGrokBotTarget,
+    lintGrokBotPluginEntries,
     markerHashesCurrent,
     parseBotSkillEntry,
     planGrokBotInstall,
+    pluginBundleResolution,
     readOriginMarker,
     renderBridgePointer,
+    renderCursorPluginManifest,
     resolveSandRoot,
     sha256File,
 } from '../../src/operations/grok-bot';
+import { listRegularFilesRel } from '../../src/operations/grok-bot-marker';
 import { installManifestPath, readInstallManifest, writeInstallManifest } from '../../src/operations/install-manifest';
 
 let tmp: string;
@@ -233,7 +241,7 @@ describe('ownership markers (R4)', () => {
         expect(() =>
             planGrokBotInstall({
                 entries: [entry('w1')],
-                resolution: { dataRoot: tmp, workflowsDir: join(tmp, 'workflows'), source: 'env', creatable: false },
+                resolution: { dataRoot: tmp, workflowsDir: join(tmp, 'workflows') },
                 plugin: 'sp',
                 source: SOURCE,
                 prune: false,
@@ -793,6 +801,24 @@ describe('grok-bot receipt (R7)', () => {
         expect(path).toContain(join('.superskill', 'manifests', GROK_BOT_TARGET, 'sp'));
         const manifest = readInstallManifest(installManifestPath(res.dataRoot, GROK_BOT_TARGET, 'sp'));
         expect(manifest?.grokBot).toEqual({ materialize: 'bridge' });
+        // Task 0161 R2/AC1: a plugin-mode manifest round-trips too.
+        expect(
+            writeInstallManifest(res.dataRoot, GROK_BOT_TARGET, 'sp', {
+                schemaVersion: 1,
+                plugin: 'sp',
+                target: GROK_BOT_TARGET,
+                channel: 'bundled',
+                upstreamVersion: '1.0.0',
+                installedAt: '2026-01-01T00:00:00Z',
+                superskillVersion: '0.0.0-test',
+                installed: { files: {}, canonicalHash: 'a'.repeat(64) },
+                upstream: { files: {}, canonicalHash: 'b'.repeat(64) },
+                grokBot: { materialize: 'plugin' },
+            }),
+        ).toContain(join('.superskill', 'manifests', GROK_BOT_TARGET, 'sp'));
+        expect(readInstallManifest(installManifestPath(res.dataRoot, GROK_BOT_TARGET, 'sp'))?.grokBot).toEqual({
+            materialize: 'plugin',
+        });
     });
 
     it('rejects invalid grokBot materialize values', () => {
@@ -809,7 +835,7 @@ describe('grok-bot receipt (R7)', () => {
                 upstream: { files: {}, canonicalHash: 'b'.repeat(64) },
                 grokBot: { materialize: 'surprise' as 'bridge' },
             }),
-        ).toThrow(/materialize must be bridge or full/);
+        ).toThrow(/materialize must be bridge, full or plugin/);
     });
 });
 
@@ -1187,5 +1213,194 @@ describe('binary fidelity + marker anchoring + text-only handoff (R15, AC4/AC5/A
         expect(Object.keys(resources).sort()).toEqual(['notes.txt', 'ref.md']);
         expect(resources['notes.txt']).toBe('café résumé'); // é survives as text, not base64
         expect('logo.png' in resources).toBe(false);
+    });
+});
+
+describe('Cursor plugin bundle (task 0161)', () => {
+    function pluginEntries(...entries: ReturnType<typeof entry>[]): ReturnType<typeof entry>[] {
+        return entries;
+    }
+
+    it('pluginBundleResolution makes the bundle root its own data root with skills/ as the catalog dir', () => {
+        const roots = pluginBundleResolution(join(tmp, 'bundle'));
+        expect(roots.dataRoot).toBe(join(tmp, 'bundle'));
+        expect(roots.workflowsDir).toBe(join(tmp, 'bundle', 'skills'));
+    });
+
+    it('lint reports the cap, description bounds and Cursor name violations sorted by id (R4)', () => {
+        const longDescription = 'x'.repeat(GROK_BOT_DESCRIPTION_MAX_CHARS + 1);
+        const shortDescription = 'y'.repeat(GROK_BOT_DESCRIPTION_MIN_CHARS - 1);
+        const okDescription = 'z'.repeat(GROK_BOT_DESCRIPTION_MIN_CHARS);
+        const findings = lintGrokBotPluginEntries(
+            pluginEntries(
+                entry('zeta', longDescription),
+                entry('Bad_Id', okDescription),
+                entry('alpha', shortDescription),
+                entry('beta', okDescription),
+            ),
+            'Demo_Plugin',
+        );
+        expect(findings.overCap).toBe(false);
+        expect(findings.findings.map((finding) => [finding.id, finding.severity])).toEqual([
+            ['Bad_Id', 'error'],
+            ['Demo_Plugin', 'error'],
+            ['alpha', 'warning'],
+            ['zeta', 'error'],
+        ]);
+        expect(findings.findings.find((f) => f.id === 'alpha')?.reason).toContain(
+            `${GROK_BOT_DESCRIPTION_MIN_CHARS}-char floor`,
+        );
+        expect(findings.findings.find((f) => f.id === 'zeta')?.reason).toContain(
+            `${GROK_BOT_DESCRIPTION_MAX_CHARS}-char ceiling`,
+        );
+        // Boundary: exactly the cap passes, one over fails.
+        const atCap = Array.from({ length: GROK_BOT_PLUGIN_SKILL_CAP }, (_, i) =>
+            entry(`s${String(i).padStart(3, '0')}`, 'z'.repeat(GROK_BOT_DESCRIPTION_MIN_CHARS)),
+        );
+        expect(lintGrokBotPluginEntries(atCap, 'demo').overCap).toBe(false);
+        expect(lintGrokBotPluginEntries(atCap, 'demo').findings).toEqual([]);
+        const overCap = [...atCap, entry('s999', 'z'.repeat(GROK_BOT_DESCRIPTION_MIN_CHARS))];
+        expect(lintGrokBotPluginEntries(overCap, 'demo').overCap).toBe(true);
+    });
+
+    it('renderCursorPluginManifest emits only name/description/version in stable order (R2)', () => {
+        const withVersion = renderCursorPluginManifest({
+            plugin: 'demo',
+            description: 'A demo bundle',
+            version: '1.2.3',
+        });
+        expect(withVersion).toBe('{\n  "name": "demo",\n  "description": "A demo bundle",\n  "version": "1.2.3"\n}\n');
+        expect(Object.keys(JSON.parse(withVersion) as Record<string, unknown>)).toEqual([
+            'name',
+            'description',
+            'version',
+        ]);
+        const fallback = renderCursorPluginManifest({ plugin: 'demo', description: '   ' });
+        expect(JSON.parse(fallback)).toEqual({ name: 'demo', description: 'superskill bundle of demo' });
+    });
+
+    it('plugin emission writes bundle skills with plugin markers plus extra files in one transaction (R2/R3)', async () => {
+        const pluginDir = join(tmp, 'bundle');
+        const roots = pluginBundleResolution(pluginDir);
+        const entries = [parseBotSkillEntry(writeSkill(join(tmp, 'skills'), 'demo-a', { description: 'd' }))];
+        const extraFiles = new Map([[CURSOR_PLUGIN_MANIFEST, Buffer.from('{"name":"demo"}\n', 'utf-8')]]);
+        planGrokBotInstall({
+            entries,
+            resolution: roots,
+            plugin: 'demo',
+            source: SOURCE,
+            prune: false,
+            materialize: 'plugin',
+        });
+        const emitted = await emitGrokBotInstall({
+            entries,
+            resolution: roots,
+            plugin: 'demo',
+            source: SOURCE,
+            materialize: 'plugin',
+            superskillVersion: '0.0.0-test',
+            nowIso: '2026-01-01T00:00:00Z',
+            prune: false,
+            pruneCandidates: [],
+            extraFiles,
+        });
+        const skillDir = join(pluginDir, 'skills', 'demo-a');
+        expect(readFileSync(join(skillDir, 'SKILL.md'), 'utf-8')).toContain('/demo-a now');
+        const marker = readOriginMarker(skillDir, 'demo');
+        expect(marker?.mode).toBe('plugin');
+        expect(marker?.canonicalPath).toBeNull();
+        expect(readFileSync(join(pluginDir, CURSOR_PLUGIN_MANIFEST), 'utf-8')).toBe('{"name":"demo"}\n');
+        // Both owned files are in the receipt snapshot, keyed relative to the bundle root.
+        expect(Object.keys(emitted.installedSnapshot.files)).toEqual([
+            '.cursor-plugin/plugin.json',
+            'skills/demo-a/.superskill-origin.json',
+            'skills/demo-a/SKILL.md',
+            'skills/demo-a/ref.md',
+        ]);
+        // No canonical tree, no workflows/ layer — the bundle root holds skills/ directly.
+        expect(existsSync(join(pluginDir, 'workflows'))).toBe(false);
+        expect(existsSync(join(pluginDir, '.superskill', 'grok-bot', 'skills'))).toBe(false);
+    });
+
+    it('plugin reinstall prunes owned undrifted dirs, keeps foreign dirs, and blocks drift (R3)', async () => {
+        const roots = pluginBundleResolution(join(tmp, 'bundle'));
+        const write = async (ids: string[]): Promise<void> => {
+            const entries = ids.map((id) =>
+                parseBotSkillEntry(writeSkill(join(tmp, `staged-${id}`), id, { description: 'd' })),
+            );
+            const plan = planGrokBotInstall({
+                entries,
+                resolution: roots,
+                plugin: 'demo',
+                source: SOURCE,
+                prune: true,
+                materialize: 'plugin',
+            });
+            await emitGrokBotInstall({
+                entries,
+                resolution: roots,
+                plugin: 'demo',
+                source: SOURCE,
+                materialize: 'plugin',
+                superskillVersion: '0.0.0-test',
+                nowIso: '2026-01-01T00:00:00Z',
+                prune: true,
+                pruneCandidates: plan.pruneCandidates,
+            });
+        };
+        await write(['demo-a', 'demo-b']);
+        mkdirSync(join(roots.workflowsDir, 'foreign-x'), { recursive: true });
+        writeFileSync(join(roots.workflowsDir, 'foreign-x', 'SKILL.md'), '---\nname: foreign-x\ndescription: d\n---\n');
+        await write(['demo-a']);
+        expect(existsSync(join(roots.workflowsDir, 'demo-b'))).toBe(false);
+        expect(readFileSync(join(roots.workflowsDir, 'foreign-x', 'SKILL.md'), 'utf-8')).toContain('name: foreign-x');
+        // Drift on an owned skill dir blocks the reinstall (same full-mode rule).
+        writeFileSync(join(roots.workflowsDir, 'demo-a', 'SKILL.md'), '---\nname: demo-a\ndescription: hand\n---\n');
+        await expect(write(['demo-a'])).rejects.toThrow(/locally modified/);
+    });
+
+    it('a failing finalize restores every prior bundle byte including the extra files (R3/AC5)', async () => {
+        const pluginDir = join(tmp, 'bundle');
+        const roots = pluginBundleResolution(pluginDir);
+        const install = async (body: string, finalizeFails: boolean): Promise<void> => {
+            const staged = join(tmp, `staged-${body}`);
+            const entries = [parseBotSkillEntry(writeSkill(staged, 'demo-a', { description: 'd', body }))];
+            const plan = planGrokBotInstall({
+                entries,
+                resolution: roots,
+                plugin: 'demo',
+                source: SOURCE,
+                prune: false,
+                materialize: 'plugin',
+            });
+            await emitGrokBotInstall({
+                entries,
+                resolution: roots,
+                plugin: 'demo',
+                source: SOURCE,
+                materialize: 'plugin',
+                superskillVersion: '0.0.0-test',
+                nowIso: '2026-01-01T00:00:00Z',
+                prune: false,
+                pruneCandidates: plan.pruneCandidates,
+                extraFiles: new Map([[CURSOR_PLUGIN_MANIFEST, Buffer.from(`{"name":"${body}"}\n`, 'utf-8')]]),
+                ...(finalizeFails
+                    ? {
+                          finalize: () => {
+                              throw new Error('manifest write failed');
+                          },
+                      }
+                    : {}),
+            });
+        };
+        await install('first', false);
+        const before = Object.fromEntries(
+            listRegularFilesRel(pluginDir).map((rel) => [rel, readFileSync(join(pluginDir, rel)).toString('base64')]),
+        );
+        await expect(install('second', true)).rejects.toThrow(/manifest write failed/);
+        const after = Object.fromEntries(
+            listRegularFilesRel(pluginDir).map((rel) => [rel, readFileSync(join(pluginDir, rel)).toString('base64')]),
+        );
+        expect(after).toEqual(before);
     });
 });

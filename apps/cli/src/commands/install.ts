@@ -22,12 +22,16 @@ import {
     assembleMagentContent,
     assertBotHostGlobal,
     assertSafePathSegment,
+    type BotSkillEntry,
     CLAUDE_PACKAGE_FILES,
+    CURSOR_PLUGIN_MANIFEST,
     collectBotSkillEntries,
     createPostInstallRegistry,
     emitGrokBotInstall,
     FilesystemTransaction,
     fetchRepoCommitSha,
+    GROK_BOT_PLUGIN_SKILL_CAP,
+    type GrokBotMaterialize,
     type GrokBotSource,
     getEnvVar,
     getGitHubToken,
@@ -35,8 +39,10 @@ import {
     INSTALL_TARGETS,
     type InstallManifestV1,
     type InstallTarget,
+    installManifestPath,
     isClaudeImportStyle,
     isInstallTarget,
+    lintGrokBotPluginEntries,
     listRegularFilesUnder,
     listResolvablePlugins,
     listRuleMarkdownFiles,
@@ -50,7 +56,9 @@ import {
     materializeRepoSubdir,
     parseGitHubRepoUrl,
     planGrokBotInstall,
+    pluginBundleResolution,
     type RepoTree,
+    renderCursorPluginManifest,
     resolveMarketplaceRegistration,
     resolvePlugin,
     resolveSandRoot,
@@ -125,7 +133,11 @@ export function registerInstall(program: Command): void {
         )
         .option(
             '--materialize <mode>',
-            "grok-bot only: catalog materialization mode — 'bridge' (default; canonical copy + thin pointer) or 'full' (everything under workflows/)",
+            "grok-bot only: catalog materialization mode — 'bridge' (default; canonical copy + thin pointer), 'full' (everything under workflows/), or 'plugin' (Cursor-plugin bundle, requires --plugin-dir)",
+        )
+        .option(
+            '--plugin-dir <path>',
+            'grok-bot only: Cursor-plugin bundle root for --materialize plugin (resolved against the invocation directory)',
         )
         .action(async (plugin, options) => {
             try {
@@ -142,12 +154,26 @@ export function registerInstall(program: Command): void {
                 const verbose = options.verbose === true;
                 const prune = options.prune === true;
                 const materializeRaw = options.materialize as string | undefined;
-                if (materializeRaw !== undefined && materializeRaw !== 'bridge' && materializeRaw !== 'full') {
-                    echoError(`Invalid --materialize '${materializeRaw}' — expected 'bridge' or 'full'`);
+                if (
+                    materializeRaw !== undefined &&
+                    materializeRaw !== 'bridge' &&
+                    materializeRaw !== 'full' &&
+                    materializeRaw !== 'plugin'
+                ) {
+                    echoError(`Invalid --materialize '${materializeRaw}' — expected 'bridge', 'full' or 'plugin'`);
                     process.exit(2);
                 }
                 if (materializeRaw !== undefined && !targets.includes('grok-bot')) {
                     echoError("--materialize applies only to target 'grok-bot'");
+                    process.exit(2);
+                }
+                const pluginDirRaw = options.pluginDir as string | undefined;
+                if (materializeRaw === 'plugin' && pluginDirRaw === undefined) {
+                    echoError('--materialize plugin requires --plugin-dir <path> (the Cursor plugin bundle root)');
+                    process.exit(2);
+                }
+                if (pluginDirRaw !== undefined && materializeRaw !== 'plugin') {
+                    echoError('--plugin-dir applies only with --materialize plugin');
                     process.exit(2);
                 }
                 const marketplaceSource = options.marketplaceSource as MarketplaceSource | undefined;
@@ -163,7 +189,8 @@ export function registerInstall(program: Command): void {
                     dryRun,
                     verbose,
                     prune,
-                    materialize: materializeRaw as 'bridge' | 'full' | undefined,
+                    materialize: materializeRaw as GrokBotMaterialize | undefined,
+                    pluginDir: pluginDirRaw === undefined ? undefined : resolve(pluginDirRaw),
                     magent: options.magent as string | undefined,
                     listMagents: options.listMagents === true,
                     marketplaceSource,
@@ -194,8 +221,10 @@ export interface InstallOptions {
     marketplaceSource?: MarketplaceSource;
     /** Remove or replace only dest skill dirs matching `<plugin>-*` on flattened skills dests (R4/R5). */
     prune?: boolean;
-    /** grok-bot materialization mode (task 0128): bridge (default) or full. */
-    materialize?: 'bridge' | 'full';
+    /** grok-bot materialization mode (task 0128): bridge (default), full, or plugin (task 0161). */
+    materialize?: GrokBotMaterialize;
+    /** Cursor-plugin bundle root for `--materialize plugin` (already resolved against the invocation dir). */
+    pluginDir?: string;
 }
 
 interface InstallDependencies {
@@ -601,14 +630,25 @@ export async function executeInstall(
     // per-target rulesync/native logic and fail fast on its preflight contract.
     const botRequested = targets.includes('grok-bot');
     const execTargets = targets.filter((t): t is Target => t !== 'grok-bot');
+    const pluginMode = options.materialize === 'plugin';
+    if (pluginMode && options.pluginDir === undefined) {
+        throw new Error('--materialize plugin requires --plugin-dir <path> (the Cursor plugin bundle root)');
+    }
+    if (!pluginMode && options.pluginDir !== undefined) {
+        throw new Error('--plugin-dir applies only with --materialize plugin');
+    }
     let sandRoot = null;
     if (botRequested) {
         assertBotHostGlobal(options.global);
-        sandRoot = resolveSandRoot({
-            sandData: getEnvVar('SAND_DATA'),
-            homeDir: resolveHomeDir(),
-            createMissing: true,
-        });
+        // A Cursor-plugin bundle lives at an operator-chosen root: no Sand root is
+        // resolved or created, so plugin mode writes nothing on the Bot host (R1).
+        if (!pluginMode) {
+            sandRoot = resolveSandRoot({
+                sandData: getEnvVar('SAND_DATA'),
+                homeDir: resolveHomeDir(),
+                createMissing: true,
+            });
+        }
     }
 
     const incompatibleNativeTargets = execTargets.filter(
@@ -772,10 +812,13 @@ export async function executeInstall(
         // Sand data root. Bot consumes only the mapper's skill-shaped output
         // (skills/commands/subagents all fold into skills/); hooks/mcp/magents are
         // unsupported by the Bot runtime and are reported, not silently dropped.
-        if (botRequested && sandRoot) {
+        // Task 0161: `--materialize plugin` reuses the same entry set against a
+        // Cursor-plugin bundle root instead of the Sand root.
+        if (botRequested && (sandRoot || pluginMode)) {
             const skippedKinds = [
                 mapResult.hooks ? 'hooks' : null,
-                mapResult.mcp ? 'mcp' : null,
+                // A Cursor plugin bundle carries mcp.json (R2); the Bot runtime does not.
+                mapResult.mcp && !pluginMode ? 'mcp' : null,
                 mapResult.magents > 0 ? 'magents' : null,
                 mapResult.scripts > 0 ? 'scripts' : null,
             ].filter((kind): kind is string => kind !== null);
@@ -793,103 +836,124 @@ export async function executeInstall(
                 locator: resolution.marketplaceLocator ?? '@gobing-ai/superskill',
             };
             const botMaterialize = options.materialize ?? 'bridge';
-            const botPlan = planGrokBotInstall({
-                entries: botEntries,
-                resolution: sandRoot,
-                plugin,
-                source: botSource,
-                prune: options.prune === true,
-                materialize: botMaterialize,
-            });
-            // One construction site for handoff-action args (task 0130): dry-run and apply
-            // differ only in the writer (guard vs transactional), so they cannot drift.
-            const botRegisterArgs = (
-                writeTransactional: GrokBotRegisterActionArgs['writeTransactional'],
-            ): GrokBotRegisterActionArgs => ({
-                plugin,
-                entries: botEntries,
-                source: botSource,
-                materialize: botMaterialize,
-                dataRoot: sandRoot.dataRoot,
-                writeTransactional,
-            });
-            if (options.dryRun) {
-                for (const item of botPlan.owned) {
-                    echo(`grok-bot (dry-run): ${item.kind} workflows/${item.id} (${botMaterialize})`);
-                }
-                for (const id of botPlan.skippedForeign) echo(`grok-bot (dry-run): skip foreign workflow ${id}`);
-                // R2 (task 0130): preview the registration handoff + slash caveat; the
-                // guard writer fails loudly if a preview ever attempts a write.
-                const previewRegistry = createPostInstallRegistry();
-                previewRegistry.register(
-                    'grok-bot',
-                    createGrokBotRegisterAction(
-                        botRegisterArgs(async () => {
-                            throw new Error('preview attempted a write');
-                        }),
-                    ),
-                );
-                const previews = await runPostInstallActions(
-                    {
-                        target: 'grok-bot',
-                        plugin,
-                        installRoot: sandRoot.dataRoot,
-                        stagingRoot: outputDir,
-                        dryRun: true,
-                    },
-                    previewRegistry.resolve('grok-bot'),
-                );
-                for (const message of previews.flatMap((result) => result.messages)) {
-                    echo(`grok-bot (dry-run): ${message}`);
-                }
-            } else {
-                const nowIso = new Date().toISOString();
-                const emitted = await emitGrokBotInstall({
+            if (botMaterialize === 'plugin') {
+                await installCursorPluginBundle({
+                    plugin,
+                    pluginRoot,
+                    pluginDir: options.pluginDir as string, // validated above
                     entries: botEntries,
-                    resolution: sandRoot,
+                    source: botSource,
+                    stagingDir: outputDir,
+                    stagedMcp: mapResult.mcp,
+                    upstreamVersion: resolution.upstreamVersion,
+                    dryRun: options.dryRun,
+                    prune: options.prune === true,
+                    superskillVersion: cliVersion,
+                    writeManifest: dependencies.writeInstallManifest ?? writeInstallManifest,
+                });
+            } else {
+                if (!sandRoot) {
+                    throw new Error('grok-bot bridge/full materialization requires a resolved Sand data root');
+                }
+                const botSandRoot = sandRoot;
+                const botPlan = planGrokBotInstall({
+                    entries: botEntries,
+                    resolution: botSandRoot,
                     plugin,
                     source: botSource,
-                    materialize: botMaterialize,
-                    superskillVersion: cliVersion,
-                    nowIso,
                     prune: options.prune === true,
-                    pruneCandidates: botPlan.pruneCandidates,
-                    // Receipt write lives inside the emit rollback scope (R6): a
-                    // manifest failure restores prior Bot workflows/canonicals.
-                    finalize: (installed) =>
-                        writeInstallManifest(sandRoot.dataRoot, 'grok-bot', plugin, {
-                            schemaVersion: 1,
-                            plugin,
-                            target: 'grok-bot',
-                            channel: resolution.channel,
-                            upstreamVersion: resolution.upstreamVersion,
-                            ...(resolution.marketplaceLocator !== undefined
-                                ? { marketplaceLocator: resolution.marketplaceLocator }
-                                : {}),
-                            ...(resolvedRef !== undefined ? { resolvedRef } : {}),
-                            installedAt: nowIso,
-                            superskillVersion: cliVersion,
-                            installed,
-                            upstream: snapshotFiles(pluginRoot, listRegularFilesUnder(pluginRoot)),
-                            grokBot: { materialize: botMaterialize },
-                        }),
-                    // R9 (task 0130): registration handoff runs inside the emit
-                    // transaction/rollback boundary, before the receipt and final echo.
-                    postActions: (write) => {
-                        const registry = createPostInstallRegistry();
-                        registry.register('grok-bot', createGrokBotRegisterAction(botRegisterArgs(write)));
-                        return { actions: registry.resolve('grok-bot'), stagingRoot: outputDir };
-                    },
+                    materialize: botMaterialize,
                 });
-                if (emitted.pruned.length > 0) {
-                    echo(
-                        `grok-bot: pruned ${emitted.pruned.length} obsolete workflow(s): ${emitted.pruned.join(', ')}`,
+                // One construction site for handoff-action args (task 0130): dry-run and apply
+                // differ only in the writer (guard vs transactional), so they cannot drift.
+                const botRegisterArgs = (
+                    writeTransactional: GrokBotRegisterActionArgs['writeTransactional'],
+                ): GrokBotRegisterActionArgs => ({
+                    plugin,
+                    entries: botEntries,
+                    source: botSource,
+                    materialize: botMaterialize,
+                    dataRoot: botSandRoot.dataRoot,
+                    writeTransactional,
+                });
+                if (options.dryRun) {
+                    for (const item of botPlan.owned) {
+                        echo(`grok-bot (dry-run): ${item.kind} workflows/${item.id} (${botMaterialize})`);
+                    }
+                    for (const id of botPlan.skippedForeign) echo(`grok-bot (dry-run): skip foreign workflow ${id}`);
+                    // R2 (task 0130): preview the registration handoff + slash caveat; the
+                    // guard writer fails loudly if a preview ever attempts a write.
+                    const previewRegistry = createPostInstallRegistry();
+                    previewRegistry.register(
+                        'grok-bot',
+                        createGrokBotRegisterAction(
+                            botRegisterArgs(async () => {
+                                throw new Error('preview attempted a write');
+                            }),
+                        ),
                     );
+                    const previews = await runPostInstallActions(
+                        {
+                            target: 'grok-bot',
+                            plugin,
+                            installRoot: botSandRoot.dataRoot,
+                            stagingRoot: outputDir,
+                            dryRun: true,
+                        },
+                        previewRegistry.resolve('grok-bot'),
+                    );
+                    for (const message of previews.flatMap((result) => result.messages)) {
+                        echo(`grok-bot (dry-run): ${message}`);
+                    }
+                } else {
+                    const nowIso = new Date().toISOString();
+                    const emitted = await emitGrokBotInstall({
+                        entries: botEntries,
+                        resolution: botSandRoot,
+                        plugin,
+                        source: botSource,
+                        materialize: botMaterialize,
+                        superskillVersion: cliVersion,
+                        nowIso,
+                        prune: options.prune === true,
+                        pruneCandidates: botPlan.pruneCandidates,
+                        // Receipt write lives inside the emit rollback scope (R6): a
+                        // manifest failure restores prior Bot workflows/canonicals.
+                        finalize: (installed) =>
+                            writeInstallManifest(botSandRoot.dataRoot, 'grok-bot', plugin, {
+                                schemaVersion: 1,
+                                plugin,
+                                target: 'grok-bot',
+                                channel: resolution.channel,
+                                upstreamVersion: resolution.upstreamVersion,
+                                ...(resolution.marketplaceLocator !== undefined
+                                    ? { marketplaceLocator: resolution.marketplaceLocator }
+                                    : {}),
+                                ...(resolvedRef !== undefined ? { resolvedRef } : {}),
+                                installedAt: nowIso,
+                                superskillVersion: cliVersion,
+                                installed,
+                                upstream: snapshotFiles(pluginRoot, listRegularFilesUnder(pluginRoot)),
+                                grokBot: { materialize: botMaterialize },
+                            }),
+                        // R9 (task 0130): registration handoff runs inside the emit
+                        // transaction/rollback boundary, before the receipt and final echo.
+                        postActions: (write) => {
+                            const registry = createPostInstallRegistry();
+                            registry.register('grok-bot', createGrokBotRegisterAction(botRegisterArgs(write)));
+                            return { actions: registry.resolve('grok-bot'), stagingRoot: outputDir };
+                        },
+                    });
+                    if (emitted.pruned.length > 0) {
+                        echo(
+                            `grok-bot: pruned ${emitted.pruned.length} obsolete workflow(s): ${emitted.pruned.join(', ')}`,
+                        );
+                    }
+                    echo(`grok-bot: ${botEntries.length} skills at ${botSandRoot.workflowsDir}`);
+                    // R1 (task 0130): prepared-handoff messages only — echoed after commit,
+                    // never claiming registration success (R6).
+                    for (const message of emitted.postInstall.messages) echo(`grok-bot: ${message}`);
                 }
-                echo(`grok-bot: ${botEntries.length} skills at ${sandRoot.workflowsDir}`);
-                // R1 (task 0130): prepared-handoff messages only — echoed after commit,
-                // never claiming registration success (R6).
-                for (const message of emitted.postInstall.messages) echo(`grok-bot: ${message}`);
             }
         }
 
@@ -1393,6 +1457,119 @@ export async function executeInstall(
     } finally {
         rmSync(stageParent, { recursive: true, force: true });
     }
+}
+
+/**
+ * Emit one Cursor-plugin bundle (task 0161 R1–R4): budget/lint, foreign-bundle
+ * guard, then full-mode emission against `<pluginDir>/skills` plus the two owned
+ * metadata files, all inside one rollback boundary. Never touches the Sand root
+ * and writes no registration handoff.
+ */
+async function installCursorPluginBundle(args: {
+    plugin: string;
+    pluginRoot: string;
+    pluginDir: string;
+    entries: readonly BotSkillEntry[];
+    source: GrokBotSource;
+    /** Staging root whose `mcp.json` the mapper produced, when `stagedMcp`. */
+    stagingDir: string;
+    stagedMcp: boolean;
+    upstreamVersion: string;
+    dryRun: boolean;
+    prune: boolean;
+    superskillVersion: string;
+    /** Manifest writer (injectable so a forced failure can prove the rollback). */
+    writeManifest: typeof writeInstallManifest;
+}): Promise<void> {
+    // R4: the budget and description lint run before any write, and in --dry-run.
+    const lint = lintGrokBotPluginEntries(args.entries, args.plugin);
+    for (const finding of lint.findings) {
+        echo(`grok-bot: lint ${finding.severity} ${finding.id}: ${finding.reason}`);
+    }
+    if (lint.overCap) {
+        throw new Error(
+            `grok-bot: bundle has ${args.entries.length} skill entries, over the ${GROK_BOT_PLUGIN_SKILL_CAP}-entry Cursor plugin cap`,
+        );
+    }
+    if (lint.findings.some((finding) => finding.severity === 'error')) {
+        throw new Error('grok-bot: lint errors in the Cursor plugin bundle — nothing was written');
+    }
+    // R3: a manifest we did not write is someone else's bundle — never overwrite it.
+    if (
+        existsSync(join(args.pluginDir, CURSOR_PLUGIN_MANIFEST)) &&
+        !existsSync(installManifestPath(args.pluginDir, 'grok-bot', args.plugin))
+    ) {
+        throw new Error(
+            `grok-bot: '${args.pluginDir}' already holds a ${CURSOR_PLUGIN_MANIFEST} bundle superskill did not install — ` +
+                'remove it or choose another --plugin-dir',
+        );
+    }
+    const roots = pluginBundleResolution(args.pluginDir);
+    const plan = planGrokBotInstall({
+        entries: args.entries,
+        resolution: roots,
+        plugin: args.plugin,
+        source: args.source,
+        prune: args.prune,
+        materialize: 'plugin',
+    });
+    const extraFiles = new Map<string, Buffer>();
+    extraFiles.set(
+        CURSOR_PLUGIN_MANIFEST,
+        Buffer.from(
+            renderCursorPluginManifest({
+                plugin: args.plugin,
+                description: readPluginJsonDescription(args.pluginRoot),
+                version: SEMVER_RE.test(args.upstreamVersion) ? args.upstreamVersion : undefined,
+            }),
+        ),
+    );
+    if (args.stagedMcp) {
+        // Cursor expands ${CURSOR_PLUGIN_ROOT}; the standard ${PLUGIN_ROOT} stays literal there.
+        const mcp = readFileSync(join(args.stagingDir, 'mcp.json'), 'utf-8').replaceAll(
+            `\${PLUGIN_ROOT}`,
+            `\${CURSOR_PLUGIN_ROOT}`,
+        );
+        extraFiles.set('mcp.json', Buffer.from(mcp));
+    }
+    if (args.dryRun) {
+        for (const item of plan.owned) echo(`grok-bot (dry-run): skill skills/${item.id} (plugin)`);
+        for (const id of plan.skippedForeign) echo(`grok-bot (dry-run): skip foreign skill ${id}`);
+        for (const rel of extraFiles.keys()) echo(`grok-bot (dry-run): write ${rel}`);
+        return;
+    }
+    const nowIso = new Date().toISOString();
+    const emitted = await emitGrokBotInstall({
+        entries: args.entries,
+        resolution: roots,
+        plugin: args.plugin,
+        source: args.source,
+        materialize: 'plugin',
+        superskillVersion: args.superskillVersion,
+        nowIso,
+        prune: args.prune,
+        pruneCandidates: plan.pruneCandidates,
+        extraFiles,
+        // The bundle manifest lives under the bundle root and is written inside the
+        // emission's rollback scope, exactly like the Sand-root receipt.
+        finalize: (installed) =>
+            args.writeManifest(args.pluginDir, 'grok-bot', args.plugin, {
+                schemaVersion: 1,
+                plugin: args.plugin,
+                target: 'grok-bot',
+                channel: args.source.channel,
+                upstreamVersion: args.upstreamVersion,
+                installedAt: nowIso,
+                superskillVersion: args.superskillVersion,
+                installed,
+                upstream: snapshotFiles(args.pluginRoot, listRegularFilesUnder(args.pluginRoot)),
+                grokBot: { materialize: 'plugin' },
+            }),
+    });
+    if (emitted.pruned.length > 0) {
+        echo(`grok-bot: pruned ${emitted.pruned.length} obsolete skill(s): ${emitted.pruned.join(', ')}`);
+    }
+    echo(`grok-bot: ${args.entries.length} skills in Cursor plugin bundle at ${args.pluginDir}`);
 }
 
 /**
@@ -2803,6 +2980,9 @@ export function readMarketplacePluginVersion(marketplaceRoot: string | undefined
     return undefined;
 }
 
+/** Upstream version is only declared in a Cursor plugin manifest when it is a plain semver. */
+const SEMVER_RE = /^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/;
+
 /** Read the optional version from a plugin root's `plugin.json`. */
 export function readPluginJsonVersion(pluginRoot: string): string | undefined {
     const manifestPath = join(pluginRoot, 'plugin.json');
@@ -2810,6 +2990,19 @@ export function readPluginJsonVersion(pluginRoot: string): string | undefined {
     try {
         const parsed = JSON.parse(readFileSync(manifestPath, 'utf-8')) as { version?: string };
         if (typeof parsed.version === 'string' && parsed.version.length > 0) return parsed.version;
+    } catch {
+        return undefined;
+    }
+    return undefined;
+}
+
+/** Read the optional description from a plugin root's `plugin.json` (Cursor plugin manifest). */
+export function readPluginJsonDescription(pluginRoot: string): string | undefined {
+    const manifestPath = join(pluginRoot, 'plugin.json');
+    if (!existsSync(manifestPath)) return undefined;
+    try {
+        const parsed = JSON.parse(readFileSync(manifestPath, 'utf-8')) as { description?: string };
+        if (typeof parsed.description === 'string' && parsed.description.length > 0) return parsed.description;
     } catch {
         return undefined;
     }

@@ -19,6 +19,13 @@ const DEFAULT_SKIP_DIR_NAMES = new Set(['.git', 'node_modules', '.rulesync', '.t
 /** Install channel recorded in a provenance manifest. */
 export type InstallChannel = 'bundled' | 'marketplace';
 
+/**
+ * Recorded grok-bot materialization mode (task 0161 adds `plugin`). Declared here
+ * rather than imported from `operations/grok-bot` so the manifest module keeps no
+ * runtime dependency on the emitter.
+ */
+export type GrokBotMaterializeRecord = 'bridge' | 'full' | 'plugin';
+
 /** Per-file SHA-256 map plus ADR-031 canonical hash over the same snapshot. */
 export interface InstallSnapshot {
     /** Slash-normalized relative path → SHA-256 hex of the file bytes. */
@@ -51,7 +58,7 @@ export interface InstallManifestV1 {
     installed: InstallSnapshot;
     upstream: InstallSnapshot;
     /** grok-bot only (task 0128): how the Bot catalog was materialized. */
-    grokBot?: { materialize: 'bridge' | 'full' };
+    grokBot?: { materialize: GrokBotMaterializeRecord };
     /**
      * `installed.files` keys are relative to the user home instead of the manifest
      * scope root (task 0140: native host trees at project scope).
@@ -276,8 +283,12 @@ function validateInstallManifest(value: unknown, label: string): InstallManifest
     let grokBot: InstallManifestV1['grokBot'];
     if (rec.grokBot !== undefined) {
         const g = rec.grokBot as Record<string, unknown> | null;
-        if (!g || typeof g !== 'object' || (g.materialize !== 'bridge' && g.materialize !== 'full')) {
-            throw new Error(`Install manifest grokBot.materialize must be bridge or full: ${label}`);
+        if (
+            !g ||
+            typeof g !== 'object' ||
+            (g.materialize !== 'bridge' && g.materialize !== 'full' && g.materialize !== 'plugin')
+        ) {
+            throw new Error(`Install manifest grokBot.materialize must be bridge, full or plugin: ${label}`);
         }
         grokBot = { materialize: g.materialize };
     }

@@ -10,12 +10,13 @@ import {
     writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, relative } from 'node:path';
 import {
     type BotRegisterHandoff,
     collectBotSkillEntries,
     getEnvVar,
     installManifestPath,
+    listRegularFilesUnder,
     mapPluginToRulesync,
     readInstallManifest,
     removeEnvVar,
@@ -464,5 +465,374 @@ describe('grok-bot registration handoff (task 0130)', () => {
         });
         expect(existsSync(sand)).toBe(false);
         expect(stdout).not.toContain('handoff prepared');
+    });
+});
+
+describe('grok-bot plugin materialization (task 0161)', () => {
+    let stdout: string;
+
+    const LONG_DESC = 'A bundle skill with a description long enough to stay above the lint floor.';
+
+    function createBundlePlugin(root: string, ids: string[] = ['a'], opts: { name?: string } = {}): string {
+        const pluginName = opts.name ?? 'bundler';
+        const pluginRoot = join(root, 'plugins', pluginName);
+        mkdirSync(join(pluginRoot, 'skills'), { recursive: true });
+        writeFileSync(
+            join(pluginRoot, 'plugin.json'),
+            JSON.stringify({ name: pluginName, description: 'A demo bundle for Cursor plugin mode', version: '1.4.0' }),
+        );
+        for (const id of ids) {
+            writeFileSync(
+                join(pluginRoot, 'skills', `${id}.md`),
+                `---\nname: ${id}\ndescription: ${LONG_DESC}\n---\nUse /skill:${pluginName}-${id}.\n`,
+            );
+        }
+        return pluginRoot;
+    }
+
+    function bundleOpts(pluginDir: string, pluginRoot: string): Parameters<typeof executeInstall>[2] {
+        return {
+            pluginPath: pluginRoot,
+            global: true,
+            dryRun: false,
+            verbose: false,
+            prune: false,
+            materialize: 'plugin',
+            pluginDir,
+        };
+    }
+
+    function readTree(root: string): Record<string, string> {
+        const out: Record<string, string> = {};
+        for (const rel of listRegularFilesUnder(root)) out[relative(root, rel)] = readFileSync(rel).toString('base64');
+        return out;
+    }
+
+    beforeEach(() => {
+        tempDir = mkdtempSync(join(tmpdir(), 'superskill-grok-bot-plugin-'));
+        stdout = '';
+        stdoutSpy = spyOn(process.stdout, 'write').mockImplementation((chunk) => {
+            stdout += String(chunk);
+            return true;
+        });
+    });
+
+    it('AC1: emits an installable Cursor-plugin bundle without touching the Sand root', async () => {
+        const { sand } = botEnv(); // SAND_DATA is set but must never be created or read
+        const pluginRoot = createBundlePlugin(tempDir, ['a', 'b']);
+        const pluginDir = join(tempDir, 'bundle');
+        await executeInstall('bundler', ['grok-bot'], bundleOpts(pluginDir, pluginRoot));
+
+        const cursorPlugin = JSON.parse(
+            readFileSync(join(pluginDir, '.cursor-plugin', 'plugin.json'), 'utf-8'),
+        ) as Record<string, string>;
+        expect(cursorPlugin).toEqual({
+            name: 'bundler',
+            description: 'A demo bundle for Cursor plugin mode',
+            version: '1.4.0',
+        });
+
+        // Exactly the ids the Bot mapper stages for the same plugin.
+        const mappedRoot = join(tempDir, 'mapped');
+        mapPluginToRulesync(pluginRoot, 'bundler', mappedRoot, { features: ['skills', 'commands', 'subagents'] });
+        const expectedIds = collectBotSkillEntries(join(mappedRoot, 'skills')).map((entry) => entry.id);
+        expect(expectedIds.length).toBe(2);
+        expect(readdirSync(join(pluginDir, 'skills')).sort()).toEqual(expectedIds);
+        for (const id of expectedIds) {
+            const marker = JSON.parse(
+                readFileSync(join(pluginDir, 'skills', id, '.superskill-origin.json'), 'utf-8'),
+            ) as { mode: string; canonicalPath: string | null };
+            expect(marker.mode).toBe('plugin');
+            expect(marker.canonicalPath).toBeNull();
+            expect(readFileSync(join(pluginDir, 'skills', id, 'SKILL.md'), 'utf-8')).toContain(`/bundler-`);
+        }
+
+        const manifest = readInstallManifest(installManifestPath(pluginDir, 'grok-bot', 'bundler'));
+        expect(manifest.grokBot).toEqual({ materialize: 'plugin' });
+        expect(manifest.target).toBe('grok-bot');
+        // No Sand root, no register handoff anywhere.
+        expect(existsSync(sand)).toBe(false);
+        expect(existsSync(join(sand, '.superskill'))).toBe(false);
+        expect(existsSync(join(pluginDir, '.superskill', 'grok-bot', 'register'))).toBe(false);
+        expect(stdout).toContain(`2 skills in Cursor plugin bundle at ${pluginDir}`);
+    });
+
+    it('AC2: flag misplacement exits 2 before any staging', async () => {
+        const { Command } = await import('commander');
+        const { registerInstall } = await import('../../src/commands/install');
+        const cases: Array<{ argv: string[]; message: RegExp }> = [
+            {
+                argv: ['install', 'bundler', '--targets', 'grok-bot', '--materialize', 'plugin'],
+                message: /requires --plugin-dir/,
+            },
+            {
+                argv: ['install', 'bundler', '--targets', 'grok-bot', '--plugin-dir', join(tempDir, 'b')],
+                message: /--plugin-dir applies only with --materialize plugin/,
+            },
+            {
+                argv: ['install', 'bundler', '--targets', 'codex', '--materialize', 'plugin', '--plugin-dir', 'x'],
+                message: /applies only to target 'grok-bot'/,
+            },
+            {
+                argv: ['install', 'bundler', '--targets', 'grok-bot', '--materialize', 'sideways'],
+                message: /expected 'bridge', 'full' or 'plugin'/,
+            },
+        ];
+        const err = spyOn(process.stderr, 'write').mockImplementation(() => true);
+        const exit = spyOn(process, 'exit').mockImplementation(() => undefined as never);
+        try {
+            for (const testCase of cases) {
+                err.mockClear();
+                const program = new Command();
+                registerInstall(program);
+                await program.parseAsync(testCase.argv, { from: 'user' });
+                expect(exit).toHaveBeenCalledWith(2);
+                expect(err.mock.calls.map((call) => String(call[0])).join('')).toMatch(testCase.message);
+                exit.mockClear();
+            }
+        } finally {
+            exit.mockRestore();
+            err.mockRestore();
+            process.exitCode = 0;
+        }
+        // Defensive guards on the library entry point, too.
+        const pluginRoot = createBundlePlugin(tempDir);
+        await expect(
+            executeInstall('bundler', ['grok-bot'], {
+                ...bundleOpts(join(tempDir, 'b'), pluginRoot),
+                pluginDir: undefined,
+            }),
+        ).rejects.toThrow(/requires --plugin-dir/);
+        await expect(
+            executeInstall('bundler', ['grok-bot'], {
+                ...bundleOpts(join(tempDir, 'b'), pluginRoot),
+                materialize: 'bridge',
+            }),
+        ).rejects.toThrow(/--plugin-dir applies only with --materialize plugin/);
+    });
+
+    it('AC3: mcp.json is emitted with the Cursor root variable, absent when the plugin ships none', async () => {
+        const { sand } = botEnv();
+        const pluginRoot = createBundlePlugin(tempDir);
+        writeFileSync(
+            join(pluginRoot, 'mcp.json'),
+            JSON.stringify({ mcpServers: { demo: { command: `\${PLUGIN_ROOT}/bin/run` } } }, null, 2),
+        );
+        const withMcp = join(tempDir, 'bundle-mcp');
+        await executeInstall('bundler', ['grok-bot'], bundleOpts(withMcp, pluginRoot));
+        const emittedMcp = readFileSync(join(withMcp, 'mcp.json'), 'utf-8');
+        expect(emittedMcp).toContain(`\${CURSOR_PLUGIN_ROOT}/bin/run`);
+        expect(emittedMcp).not.toContain(`\${PLUGIN_ROOT}`);
+        expect(stdout).not.toContain('unsupported by the Bot runtime: mcp');
+
+        const plainRoot = createBundlePlugin(join(tempDir, 'plain'), ['a'], { name: 'plainbundle' });
+        const withoutMcp = join(tempDir, 'bundle-plain');
+        await executeInstall('plainbundle', ['grok-bot'], {
+            pluginPath: plainRoot,
+            global: true,
+            dryRun: false,
+            verbose: false,
+            prune: false,
+            materialize: 'plugin',
+            pluginDir: withoutMcp,
+        });
+        expect(existsSync(join(withoutMcp, 'mcp.json'))).toBe(false);
+        expect(existsSync(sand)).toBe(false);
+    });
+
+    it('AC4: reinstall + --prune delete owned dirs only, and foreign/drifted content is protected', async () => {
+        const { sand } = botEnv();
+        const pluginRoot = createBundlePlugin(tempDir, ['a', 'b']);
+        const pluginDir = join(tempDir, 'bundle');
+        await executeInstall('bundler', ['grok-bot'], bundleOpts(pluginDir, pluginRoot));
+        mkdirSync(join(pluginDir, 'skills', 'foreign-x'), { recursive: true });
+        writeFileSync(
+            join(pluginDir, 'skills', 'foreign-x', 'SKILL.md'),
+            '---\nname: foreign-x\ndescription: someone else\n---\n',
+        );
+        const foreignBefore = readFileSync(join(pluginDir, 'skills', 'foreign-x', 'SKILL.md'), 'utf-8');
+
+        rmSync(join(pluginRoot, 'skills', 'b.md'));
+        await executeInstall('bundler', ['grok-bot'], { ...bundleOpts(pluginDir, pluginRoot), prune: true });
+        expect(existsSync(join(pluginDir, 'skills', 'bundler-b'))).toBe(false);
+        expect(readFileSync(join(pluginDir, 'skills', 'foreign-x', 'SKILL.md'), 'utf-8')).toBe(foreignBefore);
+
+        // Owned drift blocks the reinstall without writing anything.
+        const owned = join(pluginDir, 'skills', 'bundler-a', 'SKILL.md');
+        writeFileSync(owned, `${readFileSync(owned, 'utf-8')}\noperator edit\n`);
+        const drifted = readFileSync(owned, 'utf-8');
+        await expect(
+            executeInstall('bundler', ['grok-bot'], { ...bundleOpts(pluginDir, pluginRoot), prune: true }),
+        ).rejects.toThrow(/locally modified/);
+        expect(readFileSync(owned, 'utf-8')).toBe(drifted);
+
+        // A bundle root carrying plugin.json but no superskill manifest is foreign.
+        const foreignDir = join(tempDir, 'foreign-bundle');
+        mkdirSync(join(foreignDir, '.cursor-plugin'), { recursive: true });
+        writeFileSync(join(foreignDir, '.cursor-plugin', 'plugin.json'), '{"name":"other"}\n');
+        await expect(executeInstall('bundler', ['grok-bot'], bundleOpts(foreignDir, pluginRoot))).rejects.toThrow(
+            /superskill did not install/,
+        );
+        expect(readFileSync(join(foreignDir, '.cursor-plugin', 'plugin.json'), 'utf-8')).toBe('{"name":"other"}\n');
+        expect(existsSync(join(foreignDir, 'skills'))).toBe(false);
+        expect(existsSync(sand)).toBe(false);
+    });
+
+    it('AC5: a failing manifest write restores every prior bundle byte', async () => {
+        botEnv();
+        const pluginRoot = createBundlePlugin(tempDir, ['a']);
+        const pluginDir = join(tempDir, 'bundle');
+        await executeInstall('bundler', ['grok-bot'], bundleOpts(pluginDir, pluginRoot));
+        const before = readTree(pluginDir);
+
+        writeFileSync(
+            join(pluginRoot, 'skills', 'a.md'),
+            `---\nname: a\ndescription: ${LONG_DESC}\n---\nChanged body for the reinstall.\n`,
+        );
+        writeFileSync(join(pluginRoot, 'skills', 'c.md'), `---\nname: c\ndescription: ${LONG_DESC}\n---\nNew skill.\n`);
+        await expect(
+            executeInstall('bundler', ['grok-bot'], bundleOpts(pluginDir, pluginRoot), {
+                writeInstallManifest: () => {
+                    throw new Error('manifest write forced to fail');
+                },
+            }),
+        ).rejects.toThrow(/manifest write forced to fail/);
+        expect(readTree(pluginDir)).toEqual(before);
+    });
+
+    it('AC6: budget and lint run before writes and fail the install', async () => {
+        botEnv();
+        const bulkRoot = createBundlePlugin(tempDir, [], { name: 'bulk' });
+        for (let i = 0; i < 201; i += 1) {
+            const id = `s${String(i).padStart(3, '0')}`;
+            writeFileSync(
+                join(bulkRoot, 'skills', `${id}.md`),
+                `---\nname: ${id}\ndescription: ${LONG_DESC}\n---\nBody ${id}.\n`,
+            );
+        }
+        const bulkDir = join(tempDir, 'bulk-bundle');
+        await expect(
+            executeInstall('bulk', ['grok-bot'], {
+                pluginPath: bulkRoot,
+                global: true,
+                dryRun: true,
+                verbose: false,
+                prune: false,
+                materialize: 'plugin',
+                pluginDir: bulkDir,
+            }),
+        ).rejects.toThrow(/201 skill entries.*200/);
+        expect(existsSync(bulkDir)).toBe(false);
+
+        const lintRoot = join(tempDir, 'plugins', 'linty');
+        mkdirSync(join(lintRoot, 'skills'), { recursive: true });
+        writeFileSync(join(lintRoot, 'plugin.json'), JSON.stringify({ name: 'linty' }));
+        writeFileSync(
+            join(lintRoot, 'skills', 'short.md'),
+            `---\nname: short\ndescription: ${'s'.repeat(20)}\n---\nBody.\n`,
+        );
+        writeFileSync(
+            join(lintRoot, 'skills', 'long.md'),
+            `---\nname: long\ndescription: ${'l'.repeat(1025)}\n---\nBody.\n`,
+        );
+        const lintDir = join(tempDir, 'lint-bundle');
+        for (const dryRun of [true, false]) {
+            stdout = '';
+            await expect(
+                executeInstall('linty', ['grok-bot'], {
+                    pluginPath: lintRoot,
+                    global: true,
+                    dryRun,
+                    verbose: false,
+                    prune: false,
+                    materialize: 'plugin',
+                    pluginDir: lintDir,
+                }),
+            ).rejects.toThrow(/lint errors/);
+            const lintLines = stdout.split('\n').filter((line) => line.includes('lint '));
+            expect(lintLines).toEqual([
+                expect.stringMatching(
+                    /grok-bot: lint error linty-long: description is 1025 chars, over the 1024-char ceiling/,
+                ),
+                expect.stringMatching(
+                    /grok-bot: lint warning linty-short: description is 20 chars, under the 40-char floor/,
+                ),
+            ]);
+            expect(existsSync(lintDir)).toBe(false);
+        }
+    });
+
+    it('AC6: a short description alone is only a warning and still installs', async () => {
+        botEnv();
+        const pluginRoot = join(tempDir, 'plugins', 'quiet');
+        mkdirSync(join(pluginRoot, 'skills'), { recursive: true });
+        // A non-semver upstream version is not a Cursor manifest version → the key is omitted.
+        writeFileSync(join(pluginRoot, 'plugin.json'), JSON.stringify({ name: 'quiet', version: 'local-build' }));
+        writeFileSync(join(pluginRoot, 'skills', 'a.md'), `---\nname: a\ndescription: ${'s'.repeat(20)}\n---\nBody.\n`);
+        const pluginDir = join(tempDir, 'quiet-bundle');
+        await executeInstall('quiet', ['grok-bot'], {
+            pluginPath: pluginRoot,
+            global: true,
+            dryRun: false,
+            verbose: false,
+            prune: false,
+            materialize: 'plugin',
+            pluginDir,
+        });
+        expect(stdout).toContain('grok-bot: lint warning quiet-a');
+        expect(existsSync(join(pluginDir, 'skills', 'quiet-a', 'SKILL.md'))).toBe(true);
+        // No semver in plugin.json → no version key at all.
+        expect(JSON.parse(readFileSync(join(pluginDir, '.cursor-plugin', 'plugin.json'), 'utf-8'))).toEqual({
+            name: 'quiet',
+            description: 'superskill bundle of quiet',
+        });
+    });
+
+    it('AC7: update skips a plugin-mode receipt with explicit --plugin-dir guidance', async () => {
+        botEnv();
+        const pluginRoot = createBundlePlugin(tempDir, ['a']);
+        const market = join(tempDir, 'marketplace.json');
+        writeFileSync(
+            market,
+            JSON.stringify({ name: 'local', plugins: [{ name: 'bundler', source: './plugins/bundler' }] }),
+        );
+        const pluginDir = join(tempDir, 'bundle');
+        await executeInstall('bundler', ['grok-bot'], {
+            marketplacePath: market,
+            global: true,
+            dryRun: false,
+            verbose: false,
+            prune: false,
+            materialize: 'plugin',
+            pluginDir,
+        });
+        expect(readInstallManifest(installManifestPath(pluginDir, 'grok-bot', 'bundler')).grokBot).toEqual({
+            materialize: 'plugin',
+        });
+        // Upstream drifts so the row is stale; the plugin-mode receipt must still be skipped.
+        writeFileSync(
+            join(pluginRoot, 'skills', 'b.md'),
+            `---\nname: b\ndescription: ${LONG_DESC}\n---\nNew skill upstream.\n`,
+        );
+        setEnvVar('SAND_DATA', pluginDir);
+        const err = spyOn(process.stderr, 'write').mockImplementation(() => true);
+        try {
+            const code = await executeUpdate(
+                undefined,
+                ['grok-bot'],
+                { check: false, global: true, marketplacePath: market },
+                { listBundledPlugins: () => [] },
+            );
+            expect(code).toBe(0);
+            const errOut = err.mock.calls.map((call) => String(call[0])).join('');
+            expect(errOut).toContain(
+                'superskill install bundler --targets grok-bot --materialize plugin --plugin-dir <dir>',
+            );
+            expect(stdout).not.toContain('Updating bundler…');
+        } finally {
+            err.mockRestore();
+        }
+        // Nothing was rewritten by the skipped reinstall.
+        expect(readdirSync(join(pluginDir, 'skills'))).toEqual(['bundler-a']);
     });
 });

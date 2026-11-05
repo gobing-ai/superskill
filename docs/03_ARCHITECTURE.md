@@ -165,7 +165,7 @@ packages/core/src/                # ── Reusable domain logic (@gobing-ai/sup
 │
 ├── operations/                   # ── Reusable operation APIs with no app dependency ──
 │   ├── install-manifest.ts       # Install provenance DTO, path, snapshot, atomic write (ADR-035)
-│   ├── grok-bot.ts               # Grok Bot Sand root resolution + bridge/full emission (ADR-036)
+│   ├── grok-bot.ts               # Grok Bot Sand root resolution + bridge/full/plugin emission (ADR-036)
 │   ├── grok-bot-probe.ts         # Bot-written probe receipt schema v1 + never-throwing reader (task 0160)
 │   ├── migrate.ts                # Deterministic skill merge/migration core
 │   ├── package.ts                # Package content for distribution
@@ -451,7 +451,7 @@ superskill maps each `Target` to a rulesync `ToolTarget` (`TARGET_TO_RULESYNC`) 
 | `antigravity-ide` | `antigravity-ide` | `opencode` | `~/.gemini/config/skills/` | Native — IDE reads this dir |
 | `hermes` | — | `hermes` | `~/.hermes/skills/` | Copied by superskill |
 | `grok` | — | `grok` | native plugin cache | Native host-plugin install; slash conversion bypassed |
-| `grok-bot` | — | — | Sand `workflows/` (see below) | Install-only opt-in (ADR-036); never in `TARGETS` defaults |
+| `grok-bot` | — | — | Sand `workflows/` or a Cursor bundle root (see below) | Install-only opt-in (ADR-036); never in `TARGETS` defaults |
 
 **Grok Bot mechanism (ADR-036).** `grok-bot` is an `InstallTarget`, not a `Target`: it never joins
 `TARGETS` default expansion, `TARGET_TO_RULESYNC`, or `TARGET_TO_AGENT_NAME` — no rulesync dispatch,
@@ -463,11 +463,20 @@ get Bot dialect (`/skill:<id>` → `/<id>`); bridge mode (default) writes the ca
 `--materialize full` writes everything under `workflows/`. Per-workflow `.superskill-origin.json`
 markers (schema v1) gate reinstall/prune ownership; locally edited owned files or unowned extras
 are a preflight conflict, never silently overwritten. Emission (workflows, canonicals, prune,
-receipt) runs in one `FilesystemTransaction` with rollback on failure; `update` threads the
+receipt, optional extra files) runs in one `FilesystemTransaction` with rollback on failure; `update` threads the
 receipt's recorded `grokBot.materialize` into Bot reinstalls and emits explicit reinstall
-guidance when the field is absent. Receipt lives at
+guidance when the field is absent or records `plugin` (never a guessed bundle directory). Receipt lives at
 `<sandRoot>/.superskill/manifests/grok-bot/<plugin>/` with optional `grokBot.materialize` in
-`InstallManifestV1`. `superskill doctor --targets grok-bot` is a read-only filesystem check.
+`InstallManifestV1`.
+
+Task 0161 third mode: `--materialize plugin --plugin-dir <dir>` reuses the full emitter with
+`workflowsDir = <dir>/skills` (`pluginBundleResolution`) and adds `.cursor-plugin/plugin.json`
+(+ `mcp.json` with `${PLUGIN_ROOT}` → `${CURSOR_PLUGIN_ROOT}`) through `emitGrokBotInstall`'s
+`extraFiles`, so the bundle root needs no Sand resolution and gets no register handoff. A pre-write
+budget (200 entries) and description/name lint gate the same `BotSkillEntry[]` the bridge/full
+catalogs publish (task 0162 filters that set before lint).
+
+`superskill doctor --targets grok-bot` is a read-only filesystem check.
 Task 0160: the bundled `cc-grok-bot-probe` skill has a Bot write one capability receipt at
 `<dataRoot>/.superskill/grok-bot/probe/receipt.json`; doctor reads it through the pure,
 never-throwing reader `operations/grok-bot-probe.ts` (schema version 1, untrusted-input posture:
