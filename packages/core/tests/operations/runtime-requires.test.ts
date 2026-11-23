@@ -144,6 +144,40 @@ describe('requires survives the mapper for every entity kind (task 0162 R3/AC2)'
         expect((thrown as Error).message).toContain('demo-a');
         expect((thrown as Error).message).toContain('bogus');
     });
+
+    // CI regression (docs(CHANGELOG) run 183, superskill#183): parsing followed raw readdir order, so
+    // Linux reported demo-g while macOS reported demo-a. readdir is mocked to list the entries
+    // backwards, which reproduces that order on every platform — the offender is the lowest id.
+    it('names the lowest offending id when the filesystem lists entries in reverse', () => {
+        const skillsDir = join(tempDir, 'reverse', 'skills');
+        for (const id of ['demo-a', 'demo-c', 'demo-g']) {
+            mkdirSync(join(skillsDir, id), { recursive: true });
+            writeFileSync(
+                join(skillsDir, id, 'SKILL.md'),
+                `---\nname: ${id}\ndescription: Skill ${id}\nrequires: [bogus]\n---\n\nBody of ${id}.\n`,
+            );
+        }
+        const srcEntry = JSON.stringify(join(import.meta.dir, '..', '..', 'src', 'index.ts'));
+        const script = [
+            "import { mock } from 'bun:test';",
+            "const realFs = await import('node:fs');",
+            'const realReaddirSync = realFs.readdirSync;',
+            "mock.module('node:fs', () => ({",
+            '  ...realFs,',
+            '  readdirSync: (...args) => [...realReaddirSync(...args)].reverse(),',
+            '}));',
+            `const { collectBotSkillEntries } = await import(${srcEntry});`,
+            'try {',
+            `  collectBotSkillEntries(${JSON.stringify(skillsDir)});`,
+            "  console.log('no error');",
+            '} catch (error) {',
+            '  console.log(error.message);',
+            '}',
+        ].join('\n');
+        const proc = Bun.spawnSync([process.execPath, '-e', script]);
+        expect(proc.stderr.toString()).toBe('');
+        expect(proc.stdout.toString()).toContain("Skill 'demo-a'");
+    });
 });
 
 describe('grok-bot runtime-requirement filtering (task 0162 R4/AC3-AC4)', () => {

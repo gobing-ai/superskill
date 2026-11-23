@@ -354,13 +354,13 @@ function parseEntryRequires(id: string, data: Record<string, unknown>): RuntimeR
 /** Collect + validate every staged skill before any write (fail before mutating). */
 export function collectBotSkillEntries(stagingSkillsDir: string): BotSkillEntry[] {
     if (!existsSync(stagingSkillsDir)) return [];
-    const entries: BotSkillEntry[] = [];
-    for (const name of readdirSync(stagingSkillsDir, { withFileTypes: true })) {
-        if (!name.isDirectory() || name.isSymbolicLink()) continue;
-        entries.push(parseBotSkillEntry(join(stagingSkillsDir, name.name)));
-    }
-    entries.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
-    return entries;
+    // Parse in id order: a preflight failure names the lowest offending id, not whichever entry
+    // the filesystem lists first (CI/Linux readdir order differs from macOS creation order).
+    const ids = readdirSync(stagingSkillsDir, { withFileTypes: true })
+        .filter((dirent) => dirent.isDirectory() && !dirent.isSymbolicLink())
+        .map((dirent) => dirent.name)
+        .sort();
+    return ids.map((id) => parseBotSkillEntry(join(stagingSkillsDir, id)));
 }
 
 /** One entry's runtime-requirement decision during a grok-bot install (task 0162 R4). */
