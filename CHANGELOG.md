@@ -6,6 +6,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
+## [0.3.47] - 2026-11-23
+
+### Fixed
+
+- Seed a blank Antigravity `mcp_config.json` with `{}` before rulesync reads it, so a plugin that ships MCP servers no longer aborts mid-install with `JSON Parse error: Unexpected EOF` after the codex/pi/opencode targets (dd7324e)
+  <!-- src: packages/core/src/rulesync.ts:28 · confidence: HIGH -->
+
+### Changed
+
+- Raise the workspace `@gobing-ai/ts-*` catalog from 0.5.33 to 0.8.4 (3a228f8)
+  <!-- src: package.json:12 · confidence: HIGH -->
+
 ## [0.3.45] - 2026-11-05
 
 ### Added
