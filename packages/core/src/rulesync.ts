@@ -1,8 +1,40 @@
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
+import { join } from 'node:path';
 import type { Feature, GenerateResult, ToolTarget } from 'rulesync';
 import { generate as rulesyncGenerate } from 'rulesync';
 import type { Target } from './targets';
 import { TARGET_TO_RULESYNC } from './targets';
+
+/**
+ * Global `mcp_config.json` paths Antigravity rulesync targets read —
+ * `<root>/.gemini/<subdir>/mcp_config.json`. Both shipped shapes are seeded:
+ * rulesync 8.29.0 puts the CLI and the IDE in `config`, 8.32.0 moved the IDE to
+ * `antigravity`. A blank file is only repaired, never created. Project mode uses
+ * one shared `<root>/.agents/mcp_config.json` for either target.
+ */
+const ANTIGRAVITY_TARGETS: readonly Target[] = ['antigravity-cli', 'antigravity-ide'];
+
+/**
+ * Seed a blank Antigravity `mcp_config.json` with `{}` before rulesync reads it.
+ *
+ * rulesync's Antigravity MCP adapter merges the existing file through
+ * `readFileContentOrNull() ?? '{"mcpServers":{}}'`, and `??` keeps the empty string a
+ * zero-byte file yields, so `JSON.parse('')` aborts the whole install with
+ * `JSON Parse error: Unexpected EOF`. Antigravity itself creates that file empty on a
+ * fresh profile, so an MCP-bearing plugin (sp) installs skills for codex/pi/opencode and
+ * then dies before the remaining targets. Nothing is written under `--dry-run`.
+ */
+function seedBlankAntigravityMcpConfigs(targets: Target[], root: string, global: boolean): void {
+    if (!targets.some((target) => ANTIGRAVITY_TARGETS.includes(target))) return;
+    const files = global
+        ? [join(root, '.gemini', 'config', 'mcp_config.json'), join(root, '.gemini', 'antigravity', 'mcp_config.json')]
+        : [join(root, '.agents', 'mcp_config.json')];
+    for (const file of files) {
+        if (!existsSync(file) || readFileSync(file, 'utf8').trim() !== '') continue;
+        writeFileSync(file, '{}\n');
+    }
+}
 
 /** Options for the rulesync generate call. */
 export interface RulesyncOptions {
@@ -79,6 +111,9 @@ export async function runRulesync(
     // outputRoots (its global:true ignores them and writes to $HOME). The
     // project-mode relative layout under the override root is what callers want.
     const rulesyncGlobal = options.outputRoot ? false : options.global;
+    if (!options.dryRun && features.includes('mcp')) {
+        seedBlankAntigravityMcpConfigs(targets, root, rulesyncGlobal);
+    }
     return rulesyncGenerate({
         targets: mappedTargets,
         features,

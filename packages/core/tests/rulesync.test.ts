@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, spyOn } from 'bun:test';
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import * as rulesyncModule from 'rulesync';
 import { runRulesync } from '../src/rulesync';
@@ -142,6 +142,66 @@ describe('runRulesync', () => {
         const found = walkForSkillFiles(outRoot);
         expect(found.length).toBeGreaterThan(0);
         expect(found.some((p) => p.includes('demo-foo'))).toBe(true);
+    });
+
+    // Regression: a zero-byte Antigravity mcp_config.json aborts the whole install —
+    // rulesync's adapter JSON.parses the empty string. Project layout is the path the
+    // outputRoot override exercises; without the seed it throws before writing.
+    it('seeds a blank Antigravity project mcp_config.json instead of failing on an empty file', async () => {
+        tmpDir = mkdtempSync('superskill-rulesync-mcp-');
+        const inputRoot = join(tmpDir, 'in');
+        const outRoot = join(tmpDir, 'out');
+        mkdirSync(join(inputRoot, '.rulesync'), { recursive: true });
+        writeFileSync(
+            join(inputRoot, '.rulesync', 'mcp.json'),
+            JSON.stringify({ mcpServers: { demo: { command: 'demo' } } }),
+        );
+        mkdirSync(join(outRoot, '.agents'), { recursive: true });
+        writeFileSync(join(outRoot, '.agents', 'mcp_config.json'), '');
+
+        await runRulesync(['antigravity-cli'], ['mcp'], inputRoot, {
+            global: false,
+            dryRun: false,
+            verbose: false,
+            outputRoot: outRoot,
+        });
+
+        const written = JSON.parse(readFileSync(join(outRoot, '.agents', 'mcp_config.json'), 'utf8')) as {
+            mcpServers: Record<string, unknown>;
+        };
+        expect(Object.keys(written.mcpServers)).toEqual(['demo']);
+    });
+
+    // Same regression on the global layout that broke `superskill install sp`:
+    // ~/.gemini/config/mcp_config.json (antigravity-cli). Runs in a child process because
+    // Bun caches os.homedir() at load — HOME must be set before the process starts.
+    it('seeds a blank Antigravity global mcp_config.json instead of failing on an empty file', async () => {
+        tmpDir = mkdtempSync('superskill-rulesync-mcp-global-');
+        const inputRoot = join(tmpDir, 'in');
+        const fakeHome = join(tmpDir, 'home');
+        mkdirSync(join(inputRoot, '.rulesync'), { recursive: true });
+        writeFileSync(
+            join(inputRoot, '.rulesync', 'mcp.json'),
+            JSON.stringify({ mcpServers: { demo: { command: 'demo' } } }),
+        );
+        mkdirSync(join(fakeHome, '.gemini', 'config'), { recursive: true });
+        writeFileSync(join(fakeHome, '.gemini', 'config', 'mcp_config.json'), '');
+
+        const script = [
+            `import { runRulesync } from ${JSON.stringify(join(import.meta.dir, '..', 'src', 'rulesync.ts'))};`,
+            `await runRulesync(['antigravity-cli'], ['mcp'], ${JSON.stringify(inputRoot)}, { global: true, dryRun: false, verbose: false });`,
+        ].join('\n');
+        const proc = Bun.spawnSync([process.execPath, '-e', script], {
+            // Minimal env on purpose: HOME must be set before Bun loads (it caches os.homedir()).
+            env: { HOME: fakeHome, HOME_DIR: fakeHome, PATH: '/usr/bin:/bin' },
+        });
+        expect(proc.stderr.toString()).toBe('');
+        expect(proc.exitCode).toBe(0);
+
+        const written = JSON.parse(readFileSync(join(fakeHome, '.gemini', 'config', 'mcp_config.json'), 'utf8')) as {
+            mcpServers: Record<string, unknown>;
+        };
+        expect(Object.keys(written.mcpServers)).toEqual(['demo']);
     });
 });
 
