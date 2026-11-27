@@ -22,6 +22,7 @@ export * from './env';
 export * from './mapper';
 export * from './marketplace';
 // ── Operations ───────────────────────────────────────────────────────────────
+export * from './operations/dsh-mcp-patch';
 export * from './operations/grok-bot';
 export * from './operations/grok-bot-probe';
 export * from './operations/install-manifest';

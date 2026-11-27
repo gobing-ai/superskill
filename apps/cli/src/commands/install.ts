@@ -26,7 +26,9 @@ import {
     CLAUDE_PACKAGE_FILES,
     CURSOR_PLUGIN_MANIFEST,
     collectBotSkillEntries,
+    createDshMcpPatchAction,
     createPostInstallRegistry,
+    dshServersFromMcpJson,
     emitGrokBotInstall,
     FilesystemTransaction,
     fetchRepoCommitSha,
@@ -673,7 +675,10 @@ export async function executeInstall(
     // grok-bot is install-only (task 0128 / ADR-036): partition it out before any
     // per-target rulesync/native logic and fail fast on its preflight contract.
     const botRequested = targets.includes('grok-bot');
-    const execTargets = targets.filter((t): t is Target => t !== 'grok-bot');
+    // dsh is install-only too (task 1470 / B811): it publishes one MCP loader entry into dsh's
+    // headless profile patch and joins no rulesync/native path, so it is partitioned out here.
+    const dshRequested = targets.includes('dsh');
+    const execTargets = targets.filter((t): t is Target => t !== 'grok-bot' && t !== 'dsh');
     const pluginMode = options.materialize === 'plugin';
     if (pluginMode && options.pluginDir === undefined) {
         throw new Error('--materialize plugin requires --plugin-dir <path> (the Cursor plugin bundle root)');
@@ -1027,6 +1032,42 @@ export async function executeInstall(
                     for (const message of emitted.postInstall.messages) echo(`grok-bot: ${message}`);
                 }
             }
+        }
+
+        // Step 2c: dsh MCP loader patch (task 1470 / B811). dsh reads MCP from its profile patch,
+        // not from a project file, so the plugin's staged `mcp.json` is translated into loader
+        // entries and merged into `~/.dsh/profiles/headless/cordis.patch.yml`. Install-only: no
+        // rulesync, no other dsh file is touched, and a dry-run only previews.
+        if (dshRequested) {
+            const stagedMcp = join(outputDir, 'mcp.json');
+            if (!mapResult.mcp || !existsSync(stagedMcp)) {
+                throw new Error(
+                    `Plugin '${plugin}' produces no mcp.json — target 'dsh' publishes only the MCP loader entry`,
+                );
+            }
+            const dshServers = dshServersFromMcpJson(JSON.parse(readFileSync(stagedMcp, 'utf8')) as unknown);
+            if (dshServers.length === 0) {
+                throw new Error(`Plugin '${plugin}' mcp.json declares no server — nothing to publish to dsh`);
+            }
+            const dshAction = createDshMcpPatchAction({
+                home: resolveHomeDir(),
+                servers: dshServers,
+                // temp+rename inside the target directory: the patch is never observed half-written.
+                writeTransactional: async (absPath, content) => {
+                    const temporary = `${absPath}.${basename(String(process.pid))}.tmp`;
+                    writeFileSync(temporary, content);
+                    renameSync(temporary, absPath);
+                },
+            });
+            const dshContext = {
+                target: 'dsh' as const,
+                plugin,
+                installRoot: resolveHomeDir(),
+                stagingRoot: outputDir,
+                dryRun: options.dryRun === true,
+            };
+            const dshResult = options.dryRun ? await dshAction.preview(dshContext) : await dshAction.apply(dshContext);
+            for (const message of dshResult.messages) echo(message);
         }
 
         // Step 3: Build target-specific rulesync inputs through the conversion pipeline.
@@ -1523,7 +1564,7 @@ export async function executeInstall(
             const suffix = skippedTargets.size > 0 ? ` (skipped: ${[...skippedTargets].join(', ')})` : '';
             // grok-bot is partitioned out of installedTargets, but a throw above means
             // reaching this line installed it. Count it in the summary.
-            const summarized = installedTargets.length + (botRequested ? 1 : 0);
+            const summarized = installedTargets.length + (botRequested ? 1 : 0) + (dshRequested ? 1 : 0);
             echo(`Installed '${plugin}' to ${summarized} target(s)${suffix}.`);
         }
     } finally {

@@ -26,6 +26,13 @@ exclude:
     # vendored copy of the gateway (ADR-024 self-containment, spur task 0669);
     # keep in sync with packages/core/src/env.ts.
     - "plugins/cc/scripts/anti-hallucination/lib/env.ts"
+    # task 1470 (B811): the dsh loader patch WRITES the text `!!js process.env.<NAME>` into dsh's
+    # profile patch — that expression is the artifact, never an env read of this process. The rule
+    # targets direct access; this file emits the reference as loader config data.
+    - "packages/core/src/operations/dsh-mcp-patch.ts"
+    # Its test asserts the very text that file emits (`!!js process.env.<NAME>`), so it holds the
+    # same literal for the same reason: an artifact under assertion, not an env read.
+    - "packages/core/tests/operations/dsh-mcp-patch.test.ts"
 rules:
     - id: env-var-hygiene
       description: >

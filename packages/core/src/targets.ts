@@ -22,13 +22,15 @@ export type Target = (typeof TARGETS)[number];
  * and diagnostics, but excluded from the execution dialect map, rulesync
  * transforms, and the default/`all` target expansion. `grok-bot` publishes a
  * flat skill catalog into Grok Bot's Sand data root and joins no other path.
+ * `dsh` publishes one MCP loader entry into dsh's headless profile patch (task 1470, B811) and
+ * likewise joins nothing else: no skills, commands, subagents or hooks.
  */
-export const INSTALL_TARGETS = [...TARGETS, 'grok-bot'] as const;
+export const INSTALL_TARGETS = [...TARGETS, 'grok-bot', 'dsh'] as const;
 
 /** Union of install targets: every execution target plus install-only ids. */
 export type InstallTarget = (typeof INSTALL_TARGETS)[number];
 
-/** True when `value` names any install target, including the install-only grok-bot (ADR-036). */
+/** True when `value` names any install target, including the install-only grok-bot and dsh (ADR-036). */
 export function isInstallTarget(value: string): value is InstallTarget {
     return (INSTALL_TARGETS as readonly string[]).includes(value);
 }
