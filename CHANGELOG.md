@@ -6,6 +6,25 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
+## [0.3.48] - 2026-11-27
+
+### Added
+
+- `--targets dsh` is a new install-only target that publishes the plugin's MCP servers into dsh's headless profile patch `~/.dsh/profiles/headless/cordis.patch.yml`, and refuses a plugin whose staged `mcp.json` declares no server (39c2bc3)
+  <!-- src: apps/cli/src/commands/install.ts:1050 · confidence: HIGH -->
+
+### Fixed
+
+- Rework the dsh patch write: native `insert` entries keyed by (loader name, `config.serverName`), an owned entry replaced in place with an older flat declaration migrated under an `insert` and a byte-identical reinstall skipped, every env name emitted as a `!!js process.env.<NAME>` reference with an invalid name refused before writing, the `--dry-run` diff printed while nothing is written, and the YAML error code and line named when the existing patch cannot be parsed (807fa3d)
+  <!-- src: packages/core/src/operations/dsh-mcp-patch.ts:179 · confidence: HIGH -->
+
+### Changed
+
+- Give spawn-heavy CLI suites a workable 30 s per-test budget and split the six-spawn Pi fail-open case by failure mode, so a slow child reports its exit code and signal instead of empty stderr (30054d7)
+  <!-- src: apps/cli/tests/pi-hooks.test.ts:414 · confidence: HIGH -->
+- Raise the workspace `@gobing-ai/ts-*` catalog from 0.8.4 to 0.8.7 (0ba5172)
+  <!-- src: package.json:12 · confidence: HIGH -->
+
 ## [0.3.47] - 2026-11-23
 
 ### Fixed
