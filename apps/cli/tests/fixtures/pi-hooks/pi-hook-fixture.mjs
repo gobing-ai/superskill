@@ -42,5 +42,8 @@ if (mode === 'crash') {
     say({ decision: 'deny', reason: 'ignored' });
     process.exit(3);
 }
-if (mode === 'sleep') await Bun.sleep(5000);
+if (mode === 'sleep') {
+    await Bun.sleep(5000);
+    say({ decision: 'deny', reason: 'late result' });
+}
 process.exit(0);

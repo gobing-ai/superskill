@@ -257,6 +257,7 @@ interface HarnessStep {
 
 interface HarnessRun {
     outcomes: unknown[];
+    handlerTimes: number[];
     sent: Array<{ message: Record<string, unknown>; options: Record<string, unknown> }>;
     confirms: Array<{ title: string; message: string }>;
     notes: Array<{ message: string; type: string }>;
@@ -280,6 +281,7 @@ mod.default({
     sendMessage: (message, options) => sent.push({ message, options }),
 });
 const outcomes = [];
+const handlerTimes = [];
 for (const step of ${JSON.stringify(steps)}) {
     const ctx = {
         hasUI: step.hasUI ?? false,
@@ -293,9 +295,11 @@ for (const step of ${JSON.stringify(steps)}) {
     const event = step.event;
     if (step.circular) event.self = event;
     const handler = handlers.get(event.type);
+    const started = performance.now();
     outcomes.push(handler ? ((await handler(event, ctx)) ?? null) : 'no-handler');
+    handlerTimes.push(performance.now() - started);
 }
-console.log(JSON.stringify({ outcomes, sent, confirms, notes, events: [...handlers.keys()] }));
+console.log(JSON.stringify({ outcomes, handlerTimes, sent, confirms, notes, events: [...handlers.keys()] }));
 `;
     const proc = Bun.spawnSync([process.execPath, '-e', driver], {
         stdout: 'pipe',
@@ -367,16 +371,25 @@ describe('generated Pi extension — PreToolUse (tool_call)', () => {
         ]);
     });
 
-    it('reads a legacy Claude-native ask and a bare ask/deny, ignoring an updatedInput rewrite', () => {
+    it('reads a legacy Claude-native ask', () => {
         expect(drive(generate('PreToolUse', 'claude-ask'), [{ event: bash, hasUI: true }]).confirms[0]?.message).toBe(
             'legacy ask',
         );
+    });
+
+    it('reads a bare ask', () => {
         expect(drive(generate('PreToolUse', 'ask-bare'), [{ event: bash, hasUI: true }]).confirms[0]?.message).toBe(
             'Confirmation requested by acme/ask-bare',
         );
+    });
+
+    it('reads a bare deny', () => {
         expect(drive(generate('PreToolUse', 'deny-bare'), [{ event: bash }]).outcomes).toEqual([
             { block: true, reason: 'Blocked by acme/deny-bare' },
         ]);
+    });
+
+    it('ignores a legacy updatedInput rewrite', () => {
         expect(drive(generate('PreToolUse', 'claude-rewrite'), [{ event: bash }]).outcomes).toEqual([null]);
     });
 
@@ -399,10 +412,9 @@ describe('generated Pi extension — PreToolUse (tool_call)', () => {
     }, 60_000);
 
     it('fails open on a hook that outlives its own declared timeout', () => {
-        const started = Date.now();
-        expect(drive(generate('PreToolUse', 'sleep', { timeout: 1 }), [{ event: bash }]).outcomes).toEqual([null]);
-        // The behavioural bound: a 1 s hook timeout must return well inside it, never block the turn.
-        expect(Date.now() - started).toBeLessThan(4500);
+        const run = drive(generate('PreToolUse', 'sleep', { timeout: 1 }), [{ event: bash }]);
+        expect(run.outcomes).toEqual([null]);
+        expect(run.handlerTimes[0]).toBeLessThan(4500);
     }, 30_000);
 
     it('fails open on a missing command and an unserializable event', () => {
