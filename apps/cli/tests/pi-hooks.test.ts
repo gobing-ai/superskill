@@ -302,7 +302,11 @@ console.log(JSON.stringify({ outcomes, sent, confirms, notes, events: [...handle
         stderr: 'pipe',
         env: { PATH: getEnvVar('PATH') ?? '', FIXTURE_DIR: dir },
     });
-    if (proc.exitCode !== 0) throw new Error(`driver failed: ${proc.stderr.toString()}`);
+    if (proc.exitCode !== 0) {
+        throw new Error(
+            `driver failed: exit ${proc.exitCode} signal ${proc.signalCode ?? 'none'} stderr ${proc.stderr.toString().trim() || '(empty)'}`,
+        );
+    }
     return JSON.parse(proc.stdout.toString().trim().split('\n').pop() ?? '{}') as HarnessRun;
 }
 
@@ -385,13 +389,23 @@ describe('generated Pi extension — PreToolUse (tool_call)', () => {
         ]);
     });
 
-    it('fails open on allow, plain text, a crash, a timeout, a missing command and an unserializable event', () => {
+    // Split by failure mode rather than one six-spawn case: each `drive()` spawns a real `bun -e`
+    // child (~2-4 s, longer under a parallel coverage run), so a combined case could only ever report
+    // "some spawn was slow" — and starve the remaining assertions of their budget.
+    it('fails open on allow, plain text and a crash', () => {
         for (const mode of ['allow', 'silent', 'text', 'null', 'crash']) {
             expect(drive(generate('PreToolUse', mode), [{ event: bash }]).outcomes).toEqual([null]);
         }
+    }, 60_000);
+
+    it('fails open on a hook that outlives its own declared timeout', () => {
         const started = Date.now();
         expect(drive(generate('PreToolUse', 'sleep', { timeout: 1 }), [{ event: bash }]).outcomes).toEqual([null]);
+        // The behavioural bound: a 1 s hook timeout must return well inside it, never block the turn.
         expect(Date.now() - started).toBeLessThan(4500);
+    }, 30_000);
+
+    it('fails open on a missing command and an unserializable event', () => {
         expect(
             drive(generate('PreToolUse', 'deny', { command: 'superskill-no-such-binary hook run acme x' }), [
                 { event: bash },
@@ -400,7 +414,7 @@ describe('generated Pi extension — PreToolUse (tool_call)', () => {
         expect(drive(generate('PreToolUse', 'deny'), [{ event: { ...bash }, circular: true }]).outcomes).toEqual([
             null,
         ]);
-    }, 20_000);
+    }, 45_000);
 
     it('matches the canonical matcher against the Pi tool name and its canonical name, skipping others', () => {
         const module = generate('PreToolUse', 'deny', { matcher: 'Glob|Write' });

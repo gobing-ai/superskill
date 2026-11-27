@@ -25,7 +25,7 @@
         "build:plugin-zip": "bun run scripts/build-plugin-zip.ts",
         "build": "bun run clean && bun run build:scripts && bun run --filter '@gobing-ai/superskill' build && bun run build:plugin-zip",
         "dev": "bun run --filter './apps/*' --filter './packages/*' dev",
-        "test": "NODE_ENV=test bun test --coverage --coverage-dir=.coverage --reporter=dots",
+        "test": "NODE_ENV=test bun test --timeout=30000 --coverage --coverage-dir=.coverage --reporter=dots",
         "test:full": "bun test --coverage --coverage-reporter=lcov --coverage-dir=.coverage --update-snapshots",
         "test-pre-check": "spur rule run --preset recommended-pre-check --fail-on warning --no-logo",
         "test-post-check": "spur rule run --preset recommended-post-check --fail-on warning --no-logo",
