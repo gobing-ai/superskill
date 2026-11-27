@@ -6,7 +6,7 @@ status: backlog
 priority: P2
 tags: []
 created_at: "2026-11-24T05:37:31.760Z"
-updated_at: "2026-11-24T05:49:44.994Z"
+updated_at: "2026-11-27T23:39:47.614Z"
 ---
 
 # H22: MCP tool registration (plugins/cc/mcp-tools.yaml)
@@ -17,8 +17,20 @@ Expose the bundled cc plugin's CLI capabilities to MCP hosts as `cc_*` tools thr
 
 ## Scope
 
-- **In:** `plugins/cc/mcp-tools.yaml` (the 12-tool manifest: `skill_list`, `<noun>_validate`/`<noun>_evaluate` for skill/agent/command/hook/magent, `install_preview`); its safety annotations and non-mutating verb allowlist; `plugins/cc/tests/mcp-tools.test.ts` (static contract assertions + argv execution against the source CLI); the `docs/04_DESIGN.md` surface subsection; the post-loader live E2E once upstream manifest support is installed.
-- **Out:** exposing `doctor`; any CLI behavior change (exit codes, `--json` on `install`); mutating verbs (`update`, `add`, `remove`, `scaffold`, `refine`, `evolve`, `package`, `migrate`, `hook run`, `hook emit`); workflow-backed tools; the upstream loader/schema work in `spur-new` Task 1447; a local JSON Schema copy of the manifest contract; packaging/ZIP changes (the manifest stays repo-local).
+- **In:**
+  - `plugins/cc/mcp-tools.yaml`: the 12-tool manifest (`skill_list`, `<noun>_validate`/`<noun>_evaluate` for skill/agent/command/hook/magent, and `install_preview`), with its safety annotations and non-mutating verb allowlist.
+  - The narrow `<noun> validate` stream fix: a valid result goes to stdout, an invalid one to stderr. Without it every passing validate tool fails under 1447's `JSON.parse(stdout)`.
+  - `plugins/cc/tests/mcp-tools.test.ts`: static contract assertions plus argv execution against the source CLI.
+  - The `docs/04_DESIGN.md` surface subsection.
+  - The live E2E against `spur` ≥ 0.4.49 (1447 landed).
+- **Out:**
+  - Exposing `doctor`.
+  - Any other CLI behavior change (exit codes, `--json` on `install`).
+  - Mutating verbs (`update`, `add`, `remove`, `scaffold`, `refine`, `evolve`, `package`, `migrate`, `hook run`, `hook emit`).
+  - Workflow-backed tools.
+  - Upstream loader/schema work (`spur-new` Task 1447, done).
+  - A local JSON Schema copy of the manifest contract.
+  - Packaging/ZIP changes (the manifest stays repo-local).
 
 ## Acceptance Criteria
 
@@ -46,11 +58,11 @@ Feature: MCP tool registration (plugins/cc/mcp-tools.yaml)
   Scenario: AC3 — every tool's argv runs against the source CLI with the declared output
     Given each tool's argv built from `command` plus its arg fragments with the fixtures frozen in the task Design
     When the test spawns it without a shell from the repo root
-    Then every `output: json` tool exits 0 with stdout that parses as JSON, and `install_preview` exits 0 with `[DRY-RUN]` in stdout
-    And a `skill_validate` fixture missing `description` exits 1 with `"valid":false` JSON on stderr
+    Then every `output: json` tool, including each passing `<noun>_validate`, exits 0 with stdout that parses as JSON, and `install_preview` exits 0 with `[DRY-RUN]` in stdout
+    And a `skill_validate` fixture missing `description` exits 1 with empty stdout and `"valid":false` JSON on stderr
 
   Scenario: AC4 — Spur serves the cc tools with no exposure issues
-    Given upstream manifest support (spur-new Task 1447) is installed and `spur serve` runs for this repo
+    Given `spur` ≥ 0.4.49 (spur-new Task 1447) and `spur self serve` running for this repo with MCP enabled, plus the gateway (`spur self serve --gateway`)
     When `tools/list` and `tools/call cc_skill_validate` run on the project `/mcp` and the gateway root `/mcp`
     Then all 12 `cc_*` names are listed with typed input schemas, the catalog exposure issues are empty
     And the call returns the validate JSON on success and a tool error carrying the findings JSON on failure
@@ -65,6 +77,8 @@ Feature: MCP tool registration (plugins/cc/mcp-tools.yaml)
 <!-- END AUTO-GENERATED -->
 
 ## Notes
+
+- 2026-11-27 refine: upstream 1447 is `done` and installed `spur` 0.4.49 ships the loader, so implementation is unblocked. A probe found that a passing `validate --json` writes its JSON to stderr with empty stdout (task 0165 correction 11). The narrow stream fix is now in scope, because without it the five validate tools cannot work. The serve command is `spur self serve`, and MCP is disabled by default.
 
 ## History
 
