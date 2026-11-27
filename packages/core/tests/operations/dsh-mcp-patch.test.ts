@@ -118,16 +118,25 @@ describe('1470 R4/AC1 — dry-run writes nothing, unparseable input is refused',
         expect(preview.writtenFiles).toEqual([]);
         expect(preview.messages.join('\n')).toContain('dsh (dry-run): write');
         expect(preview.messages.join('\n')).toContain('serverName spur');
+        expect(preview.messages.join('\n')).toContain('+     command: "spur"');
         // The directory was never created either.
+        expect(() => written()).toThrow();
+    });
+
+    test('rejects invalid environment names before writing a patch', async () => {
+        await expect(install([{ ...SERVER, envVars: ['INVALID-NAME'] }])).rejects.toThrow(
+            'invalid environment variable name',
+        );
         expect(() => written()).toThrow();
     });
 
     test('an unparseable patch is an actionable error and the file is left untouched', async () => {
         const path = dshPatchPath(home);
         mkdirSync(join(home, '.dsh', 'profiles', 'headless'), { recursive: true });
-        const broken = '- name: [unclosed\n';
+        const broken = '- name: [unclosed-sensitive-fixture\n';
         writeFileSync(path, broken);
         await expect(install()).rejects.toThrow(/is not readable YAML/);
+        await expect(install()).rejects.not.toThrow(/unclosed-sensitive-fixture/);
         expect(readFileSync(path, 'utf8')).toBe(broken);
     });
 

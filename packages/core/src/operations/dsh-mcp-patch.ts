@@ -21,7 +21,7 @@
  */
 import { existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
-import { isMap, isSeq, parseDocument, Scalar, type YAMLMap, type YAMLSeq } from 'yaml';
+import { Document, isMap, isSeq, parseDocument, Scalar, type YAMLMap, type YAMLSeq } from 'yaml';
 import type { PostInstallAction, PostInstallResult, TransactionalWrite } from './post-install';
 
 /** The dsh loader package name (dsh-mcp-client README, minimal configuration). */
@@ -81,6 +81,7 @@ export function dshPatchPath(home: string): string {
 export interface DshMcpPatchPlan {
     content: string;
     servers: string[];
+    diff: string[];
     /** False when an identical reinstall produced byte-identical content (nothing to write). */
     changed: boolean;
 }
@@ -109,12 +110,7 @@ function loaderEntry(server: DshMcpServer): YAMLMap {
               ]
             : [`    url: ${JSON.stringify(server.url)}`]),
     ];
-    if (envVars.length > 0) {
-        lines.push('    env:');
-        // A placeholder value first: the real node is installed below as an `!!js` scalar, because
-        // `!!js process.env.X` is an expression to the loader, never the string "process.env.X".
-        for (const name of envVars) lines.push(`      ${name}: placeholder`);
-    }
+    if (envVars.length > 0) lines.push('    env: {}');
     const parsed = parseDocument(`${lines.join('\n')}\n`);
     if (parsed.errors.length > 0) {
         throw new Error(`dsh loader entry for '${server.name}' could not be built: ${parsed.errors[0]?.message ?? ''}`);
@@ -123,11 +119,15 @@ function loaderEntry(server: DshMcpServer): YAMLMap {
     const config = entry.get('config', true);
     if (envVars.length > 0 && isMap(config)) {
         const env = config.get('env', true);
-        if (env !== null && typeof env === 'object' && 'items' in env) {
+        if (isMap(env)) {
+            env.flow = false;
             for (const name of envVars) {
+                if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(name)) {
+                    throw new Error(`dsh loader entry for '${server.name}' has an invalid environment variable name`);
+                }
                 const reference = new Scalar(`process.env.${name}`);
                 reference.tag = '!!js';
-                (env as unknown as YAMLMap).set(name, reference);
+                env.set(name, reference);
             }
         }
     }
@@ -153,9 +153,12 @@ export function planDshMcpPatch(input: {
 }): DshMcpPatchPlan {
     const where = input.path ?? 'cordis.patch.yml';
     const doc = parseDocument(input.existing ?? '');
-    if (doc.errors.length > 0) {
+    const error = doc.errors[0];
+    if (error !== undefined) {
+        const line = error.linePos?.[0]?.line;
+        const location = line === undefined ? '' : ` at line ${line}`;
         throw new Error(
-            `${where} is not readable YAML (${doc.errors[0]?.message ?? 'parse error'}) — fix it or delete it, then reinstall`,
+            `${where} is not readable YAML (${error.code}${location}) — fix it or delete it, then reinstall`,
         );
     }
     let entries: YAMLSeq;
@@ -169,22 +172,29 @@ export function planDshMcpPatch(input: {
     }
 
     const servers: string[] = [];
+    const diff: string[] = [];
     for (const server of input.servers) {
         servers.push(server.name);
         const desired = loaderEntry(server);
         const index = entries.items.findIndex((entry) => isOwnedLoader(entry, server.name));
-        if (index === -1) {
-            entries.items.push(desired);
-            continue;
+        if (index !== -1 && sameEntry(entries.items[index], desired)) continue;
+        if (index === -1) entries.items.push(desired);
+        else {
+            entries.items[index] = desired;
+            // Existing entries may contain literal credentials. Only show the replacement.
+            diff.push(`- ${DSH_MCP_LOADER} serverName ${server.name} (existing entry omitted)`);
         }
-        const current = entries.items[index];
-        // A reinstall that would rewrite an identical entry keeps the ORIGINAL node, so comments
-        // inside it survive and the file stays byte-identical.
-        if (!sameEntry(current, desired)) entries.items[index] = desired;
+        diff.push(
+            ...new Document([desired])
+                .toString()
+                .trimEnd()
+                .split('\n')
+                .map((line) => `+ ${line}`),
+        );
     }
 
-    const content = String(doc);
-    return { content, servers, changed: content !== (input.existing ?? '') };
+    const content = diff.length === 0 ? (input.existing ?? '') : String(doc);
+    return { content, servers, diff, changed: diff.length > 0 };
 }
 
 /** Everything the action needs: where HOME is, what to publish, and the transaction writer. */
@@ -211,11 +221,7 @@ export function createDshMcpPatchAction(args: DshMcpPatchActionArgs): PostInstal
                 `dsh (dry-run): ${planned.changed ? 'write' : 'unchanged'} ${path}`,
                 ...planned.servers.map((server) => `dsh (dry-run): ${DSH_MCP_LOADER} serverName ${server}`),
             ];
-            if (planned.changed) {
-                const before = existsSync(path) ? readFileSync(path, 'utf8').split('\n').length : 0;
-                const after = planned.content.split('\n').length;
-                lines.push(`dsh (dry-run): ${before} -> ${after} lines`);
-            }
+            lines.push(...planned.diff);
             return { writtenFiles: [], messages: lines };
         },
         async apply(): Promise<PostInstallResult> {
