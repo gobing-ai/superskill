@@ -97,7 +97,7 @@ superskill update [name] [--check] [--json] [--targets <list>] [--marketplace <l
 | `<plugin>` | Required plugin name — a **bare segment** (`assertSafePathSegment`); never a URL/path |
 | `--marketplace <locator>` | Marketplace locator (ADR-034). **Local-first disambiguation:** an existing local path is local; only a non-existent `^[\w.-]+/[\w.-]+$` is GitHub shorthand; `https://`/`git@` are always remote. Local probe: direct file (`.../marketplace.json`) → `<X>/marketplace.json` → `<X>/.claude-plugin/marketplace.json`. **Local-npm rung (ADR-034 amendment 2026-09-24):** a plain `owner/repo` shorthand first resolves from a globally installed bun/npm package (`@owner/repo`, then bare `<repo>` under `$BUN_INSTALL/install/global/node_modules`) that ships a marketplace manifest — served directly, no cache, no marker, no network; explicit GitHub URLs and ref/subdir forms always go remote. Remote content caches at `~/.cache/superskill/marketplaces/<owner>/<repo>/<ref>/`. Overrides configured plugin path and ambient discovery |
 | `--marketplace-source <mode>` | **Deprecated** (ADR-034): warns to stderr, keeps behavior, removal planned. Prefer `--marketplace <locator>` |
-| `--targets <list>` | Comma-separated target names or `all`; overrides configured targets. `all` excludes `grok-bot` (ADR-036): the Bot target is install-only and opt-in — passing it without `--targets grok-bot` errors with guidance |
+| `--targets <list>` | Comma-separated target names or `all`. Overrides configured targets. The install-only `dsh` and `grok-bot` targets require explicit selection (ADR-036). |
 | `--materialize <mode>` | `bridge` (default) \| `full` \| `plugin` — grok-bot only (ADR-036). `bridge` writes the canonical copy under `<sandRoot>/.superskill/grok-bot/skills/<id>/` plus a thin `workflows/<id>/SKILL.md` pointer; `full` writes everything under `workflows/<id>/`; `plugin` writes a Cursor-plugin bundle under `--plugin-dir` (task 0161, layout below). Other targets reject the flag; `plugin` without `--plugin-dir` (or the reverse) exits 2 before staging |
 | `--plugin-dir <path>` | `--materialize plugin` only: the Cursor-plugin bundle root itself, resolved against the invocation directory (one plugin per directory). No Sand root is resolved or created and no registration handoff is written |
 | `--bot-provides <requirement>` | Repeatable, grok-bot only (task 0162): declares a runtime requirement this Bot provides — `hooks`, `subagents`, `local-fs` or `cli:<name>`. Default is nothing provided. An invalid token, or the flag on any other target set, exits 2 before staging |
@@ -107,6 +107,8 @@ superskill update [name] [--check] [--json] [--targets <list>] [--marketplace <l
 | `plugins` | `{ name: string, path: string }[]`; matching path is used when `--marketplace` is absent |
 | `targets` | `Target[]`; an empty array means all targets |
 | `features` | Any of `skills`, `commands`, `subagents`, `hooks`, `mcp`; defaults to all five |
+
+The `dsh` target merges the plugin's MCP servers into `~/.dsh/profiles/headless/cordis.patch.yml` as native `insert` operations. Each loader is matched by package name and `config.serverName`. A reinstall migrates older flat declarations for owned servers and preserves other entries. `--dry-run` prints the planned changes without writing the patch.
 
 ### Host CLI resolution + preflight (native targets)
 

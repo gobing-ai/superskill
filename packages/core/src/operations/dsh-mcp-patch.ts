@@ -2,10 +2,9 @@
  * dsh MCP loader patch (feature B811, task 1470; ADR-036 install-only target).
  *
  * dsh configures MCP in the profile patch layer, not in a project file: the headless profile's
- * `cordis.patch.yml` is a top-level YAML array of loader entries, and an MCP server is one
- * `@deepseek-ai/dsh-mcp-client` entry whose `config.serverName` names it (dsh-mcp-client 0.2.2-rc.1
- * README). Spur only READS that patch (`agent-mcp-readiness.ts`); writing it is this target's job,
- * because the install boundary says Superskill owns installs.
+ * `cordis.patch.yml` contains patch operations. Each new MCP server is an `insert` containing
+ * a `@deepseek-ai/dsh-mcp-client` loader whose `config.serverName` names it. Spur reads the patch
+ * through `agent-mcp-readiness.ts`. Superskill owns the writes.
  *
  * Two invariants make the write safe to repeat:
  *
@@ -21,7 +20,7 @@
  */
 import { existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
-import { Document, isMap, isSeq, parseDocument, Scalar, type YAMLMap, type YAMLSeq } from 'yaml';
+import { Document, isMap, isSeq, parseDocument, Scalar, YAMLMap, YAMLSeq } from 'yaml';
 import type { PostInstallAction, PostInstallResult, TransactionalWrite } from './post-install';
 
 /** The dsh loader package name (dsh-mcp-client README, minimal configuration). */
@@ -99,7 +98,8 @@ function loaderEntry(server: DshMcpServer): YAMLMap {
     const envVars = server.envVars ?? [];
     const transport = server.url === undefined ? 'stdio' : 'streamable-http';
     const lines = [
-        `- name: ${JSON.stringify(DSH_MCP_LOADER)}`,
+        `- id: ${JSON.stringify(`superskill-mcp-${server.name}`)}`,
+        `  name: ${JSON.stringify(DSH_MCP_LOADER)}`,
         '  config:',
         `    serverName: ${JSON.stringify(server.name)}`,
         `    transport: ${transport}`,
@@ -176,16 +176,32 @@ export function planDshMcpPatch(input: {
     for (const server of input.servers) {
         servers.push(server.name);
         const desired = loaderEntry(server);
-        const index = entries.items.findIndex((entry) => isOwnedLoader(entry, server.name));
-        if (index !== -1 && sameEntry(entries.items[index], desired)) continue;
-        if (index === -1) entries.items.push(desired);
-        else {
-            entries.items[index] = desired;
-            // Existing entries may contain literal credentials. Only show the replacement.
+        const legacyIndex = entries.items.findIndex((entry) => isOwnedLoader(entry, server.name));
+        const inserts = entries.items
+            .map((entry): unknown => (isMap(entry) ? entry.get('insert', true) : undefined))
+            .filter((entry): entry is YAMLSeq => isSeq(entry))
+            .find((insert) => insert.items.some((entry) => isOwnedLoader(entry, server.name)));
+        const patch = new YAMLMap();
+        const insert = new YAMLSeq();
+        insert.add(desired);
+        patch.set('insert', insert);
+        if (inserts === undefined) {
+            if (legacyIndex === -1) entries.add(patch);
+            else entries.items[legacyIndex] = patch;
+        } else {
+            const index = inserts.items.findIndex((entry) => isOwnedLoader(entry, server.name));
+            const current = inserts.items[index];
+            if (isMap(current) && typeof current.get('id') === 'string') desired.set('id', current.get('id'));
+            if (legacyIndex === -1 && sameEntry(current, desired)) continue;
+            inserts.items[index] = desired;
+            if (legacyIndex !== -1) entries.items.splice(legacyIndex, 1);
+        }
+        if (legacyIndex !== -1 || inserts !== undefined) {
+            // Existing entries may contain literal credentials. Show only the replacement.
             diff.push(`- ${DSH_MCP_LOADER} serverName ${server.name} (existing entry omitted)`);
         }
         diff.push(
-            ...new Document([desired])
+            ...new Document([patch])
                 .toString()
                 .trimEnd()
                 .split('\n')

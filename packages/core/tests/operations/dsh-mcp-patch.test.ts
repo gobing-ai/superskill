@@ -10,12 +10,13 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { parseDocument } from 'yaml';
+import { isMap, isSeq, parseDocument } from 'yaml';
 import {
     createDshMcpPatchAction,
     DSH_MCP_LOADER,
     type DshMcpServer,
     dshPatchPath,
+    dshServersFromMcpJson,
     planDshMcpPatch,
 } from '../../src/operations/dsh-mcp-patch';
 
@@ -64,6 +65,52 @@ async function install(
 }
 
 describe('1470 R2/AC1 — the absent patch is created with one loader entry', () => {
+    test('installs stdio and HTTP servers declared by the plugin manifest', async () => {
+        const servers = dshServersFromMcpJson({
+            mcpServers: {
+                spur: { command: 'spur', args: ['mcp', '--gateway'], envVars: SERVER.envVars },
+                inspector: { url: 'http://localhost:3000/mcp' },
+            },
+        });
+        await install(servers);
+        expect(parseDocument(written()).toJS()).toMatchObject([
+            { insert: [{ config: { serverName: 'spur', transport: 'stdio', command: 'spur', args: SERVER.args } }] },
+            {
+                insert: [
+                    {
+                        config: {
+                            serverName: 'inspector',
+                            transport: 'streamable-http',
+                            url: 'http://localhost:3000/mcp',
+                        },
+                    },
+                ],
+            },
+        ]);
+        expect(written()).toContain('SPUR_MCP_TOKEN: !!js process.env.SPUR_MCP_TOKEN');
+        expect(() => dshServersFromMcpJson({ mcpServers: { broken: {} } })).toThrow('neither a command nor a url');
+    });
+
+    test('junk in mcp.json is dropped, and an empty command falls back to the url', () => {
+        // An mcp.json grep'd from another client can carry non-string args and env entries; they must
+        // not reach a `!!js` reference. An empty command is not a command, so the url wins.
+        expect(
+            dshServersFromMcpJson({
+                mcpServers: {
+                    spur: { command: 'spur', args: ['mcp', 7], envVars: ['SPUR_MCP_TOKEN', 3] },
+                    docs: { command: '', url: 'https://example.test/mcp' },
+                },
+            }),
+        ).toEqual([
+            { name: 'spur', command: 'spur', args: ['mcp'], envVars: ['SPUR_MCP_TOKEN'] },
+            { name: 'docs', url: 'https://example.test/mcp', envVars: [] },
+        ]);
+        // A manifest that is not an object, or declares no server map, publishes nothing.
+        expect(dshServersFromMcpJson(null)).toEqual([]);
+        expect(dshServersFromMcpJson({ mcpServers: null })).toEqual([]);
+        expect(dshServersFromMcpJson({ mcpServers: { broken: 'spur' } })).toEqual([]);
+    });
+
     test('creates the file and directory, and writes the server verbatim from the declaration', async () => {
         const result = await install();
         expect(result.written).toEqual([dshPatchPath(home)]);
@@ -72,13 +119,19 @@ describe('1470 R2/AC1 — the absent patch is created with one loader entry', ()
         expect(parsed.errors).toEqual([]);
         const entries = parsed.contents as { items: Array<{ get(k: string, s?: boolean): unknown }> };
         expect(entries.items).toHaveLength(1);
-        const entry = entries.items[0];
+        const insert = entries.items[0]?.get('insert', true);
+        if (!isSeq(insert)) throw new Error('expected a native dsh insert patch');
+        expect(insert.items).toHaveLength(1);
+        const entry = insert.items[0];
+        if (!isMap(entry)) throw new Error('expected a loader mapping');
+        expect(entry.get('id')).toBe('superskill-mcp-spur');
         expect(entry?.get('name')).toBe(DSH_MCP_LOADER);
-        const config = entry?.get('config', true) as { get(k: string, s?: boolean): unknown };
+        const config: unknown = entry.get('config', true);
+        if (!isMap(config)) throw new Error('expected a server config mapping');
         expect(config.get('serverName')).toBe('spur');
         expect(config.get('transport')).toBe('stdio');
         expect(config.get('command')).toBe('spur');
-        expect((config.get('args', true) as { toJSON(): unknown }).toJSON()).toEqual(['mcp', '--gateway']);
+        expect(config.get('args', true)?.toJSON()).toEqual(['mcp', '--gateway']);
     });
 
     test('every env var is a !!js process.env reference and no value is written', async () => {
@@ -118,7 +171,7 @@ describe('1470 R4/AC1 — dry-run writes nothing, unparseable input is refused',
         expect(preview.writtenFiles).toEqual([]);
         expect(preview.messages.join('\n')).toContain('dsh (dry-run): write');
         expect(preview.messages.join('\n')).toContain('serverName spur');
-        expect(preview.messages.join('\n')).toContain('+     command: "spur"');
+        expect(preview.messages.join('\n')).toContain('+         command: "spur"');
         // The directory was never created either.
         expect(() => written()).toThrow();
     });
@@ -181,17 +234,11 @@ describe('1470 R3/AC2 — reinstall is idempotent and preserves foreign entries'
         expect(text.startsWith('# operator comment, preserved')).toBe(true);
         const items = (parseDocument(text).contents as { items: unknown[] }).items;
         expect(items).toHaveLength(3);
-        const names = items.map((item) =>
-            (item as { get(k: string, s?: boolean): unknown }).get('name', true) === undefined
-                ? undefined
-                : (item as { get(k: string): unknown }).get('name'),
-        );
-        // Foreign entries keep their positions; the owned spur entry is appended, not interleaved.
-        expect(names).toEqual([DSH_MCP_LOADER, 'some-other-loader', DSH_MCP_LOADER]);
-        const first = items[0] as { get(k: string, s?: boolean): unknown };
-        expect((first.get('config', true) as { get(k: string): unknown }).get('serverName')).toBe('other-server');
-        const last = items[2] as { get(k: string, s?: boolean): unknown };
-        expect((last.get('config', true) as { get(k: string): unknown }).get('serverName')).toBe('spur');
+        expect(parseDocument(text).toJS()).toMatchObject([
+            { name: DSH_MCP_LOADER, config: { serverName: 'other-server' } },
+            { name: 'some-other-loader', config: { keep: 'me' } },
+            { insert: [{ name: DSH_MCP_LOADER, config: { serverName: 'spur' } }] },
+        ]);
     });
 
     test('a stale owned entry is replaced in place, keeping its position', async () => {
@@ -217,29 +264,42 @@ describe('1470 R3/AC2 — reinstall is idempotent and preserves foreign entries'
         expect(text).not.toContain('stale-command');
         const items = (parseDocument(text).contents as { items: unknown[] }).items;
         expect(items).toHaveLength(2);
-        expect((items[0] as { get(k: string): unknown }).get('command')).toBeUndefined();
-        expect(
-            (
-                (items[0] as { get(k: string, s?: boolean): unknown }).get('config', true) as {
-                    get(k: string): unknown;
-                }
-            ).get('command'),
-        ).toBe('spur');
+        expect(parseDocument(text).toJS()).toMatchObject([
+            { insert: [{ name: DSH_MCP_LOADER, config: { command: 'spur' } }] },
+            { name: 'some-other-loader' },
+        ]);
+    });
+
+    test('updating a native insert preserves its group, id and foreign sibling', async () => {
+        const seed = [
+            '- id: operator-group',
+            '  insert:',
+            '    - id: operator-spur',
+            '      name: "@deepseek-ai/dsh-mcp-client"',
+            '      config: { serverName: spur, command: stale-command }',
+            '    - id: sibling',
+            '      name: operator-plugin',
+            '',
+        ].join('\n');
+        const plan = planDshMcpPatch({ existing: seed, servers: [SERVER] });
+        expect(parseDocument(plan.content).toJS()).toMatchObject([
+            {
+                id: 'operator-group',
+                insert: [
+                    { id: 'operator-spur', config: { command: 'spur' } },
+                    { id: 'sibling', name: 'operator-plugin' },
+                ],
+            },
+        ]);
     });
 
     test('two plugins contribute one entry each, keyed by server name', async () => {
         await install([SERVER]);
         await install([SERVER, { name: 'spur-other', command: 'spur', args: ['mcp'] }]);
-        const items = (parseDocument(written()).contents as { items: unknown[] }).items;
-        expect(items).toHaveLength(2);
-        const names = items.map((item) =>
-            (
-                (item as { get(k: string, s?: boolean): unknown }).get('config', true) as {
-                    get(k: string): unknown;
-                }
-            ).get('serverName'),
-        );
-        expect(names).toEqual(['spur', 'spur-other']);
+        expect(parseDocument(written()).toJS()).toMatchObject([
+            { insert: [{ config: { serverName: 'spur' } }] },
+            { insert: [{ config: { serverName: 'spur-other' } }] },
+        ]);
     });
 });
 
